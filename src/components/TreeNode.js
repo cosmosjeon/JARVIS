@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 
-const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) => {
+const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded, onSecondQuestion }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const wrapText = (text, maxWidth) => {
@@ -127,7 +127,7 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
           height={currentHeight}
           style={{ overflow: 'hidden', position: 'relative' }}
         >
-          <NodeAssistantPanel node={node} color={color} onSizeChange={handlePanelSizeChange} />
+          <NodeAssistantPanel node={node} color={color} onSizeChange={handlePanelSizeChange} onSecondQuestion={onSecondQuestion} />
         </foreignObject>
       ) : (
         <motion.text
