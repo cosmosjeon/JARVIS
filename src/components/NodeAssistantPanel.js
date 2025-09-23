@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { treeData } from '../data/treeData';
+import QuestionService from '../services/QuestionService';
 
 export const PANEL_SIZES = {
   compact: { width: 360, height: 180 },
@@ -140,11 +141,26 @@ const MarkdownMessage = ({ text }) => {
   );
 };
 
-const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
-  const summary = useMemo(() => buildSummary(node), [node]);
+const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => {
+  const summary = useMemo(() => {
+    // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
+    if (node.questionData) {
+      return {
+        label: node.keyword || node.id,
+        intro: node.fullText || `${node.keyword || node.id}에 대한 질문과 답변입니다.`,
+        bullets: [
+          `질문: ${node.questionData.question}`,
+          `답변: ${node.questionData.answer}`,
+          `부모 노드: ${node.questionData.parentNodeId}`
+        ]
+      };
+    }
+    return buildSummary(node);
+  }, [node]);
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
   const typingTimers = useRef([]);
+  const questionService = useRef(new QuestionService());
 
   const clearTypingTimers = useCallback(() => {
     typingTimers.current.forEach(clearInterval);
@@ -173,6 +189,15 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
   const sendResponse = useCallback(
     (question) => {
       clearTypingTimers();
+
+      // 질문 수 증가 및 2번째 질문인지 확인
+      const isSecondQuestion = questionService.current.incrementQuestionCount(node.id);
+
+      // 2번째 질문이면 즉시 새 노드 생성 콜백 호출
+      if (isSecondQuestion && onSecondQuestion) {
+        onSecondQuestion(node.id, question);
+      }
+
       const responseText = buildAnswerText(summary, question);
       const timestamp = Date.now();
       const userId = `${timestamp}-user`;
@@ -222,7 +247,7 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
 
       typingTimers.current.push(intervalId);
     },
-    [clearTypingTimers, summary],
+    [clearTypingTimers, summary, node.id, onSecondQuestion],
   );
 
   const handleSend = useCallback(() => {

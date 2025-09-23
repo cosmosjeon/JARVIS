@@ -5,6 +5,7 @@ import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
 import AddNodeButton from './AddNodeButton';
 import TreeAnimationService from '../services/TreeAnimationService';
+import QuestionService from '../services/QuestionService';
 
 const HierarchicalForceTree = () => {
   const svgRef = useRef(null);
@@ -18,6 +19,7 @@ const HierarchicalForceTree = () => {
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
+  const questionService = useRef(new QuestionService());
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -47,6 +49,47 @@ const HierarchicalForceTree = () => {
   const getNodeLevel = (nodeId) => {
     const node = data.nodes.find(n => n.id === nodeId);
     return node ? node.level : 0;
+  };
+
+  // 2번째 질문 처리 함수
+  const handleSecondQuestion = (parentNodeId, question) => {
+    console.log('2번째 질문 감지:', { parentNodeId, question });
+
+    // 부모 노드 정보 가져오기
+    const parentNode = data.nodes.find(n => n.id === parentNodeId);
+    if (!parentNode) {
+      console.error('부모 노드를 찾을 수 없습니다:', parentNodeId);
+      return;
+    }
+
+    // 실제 답변 생성
+    const answer = `${parentNode.keyword || parentNode.id} 관련 질문 "${question}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
+
+    // QuestionService를 통해 새 노드 데이터 생성 (실제 답변 포함)
+    const newNodeData = questionService.current.createSecondQuestionNode(parentNodeId, question, answer, data.nodes);
+
+    console.log('생성된 새 노드 데이터:', newNodeData);
+    console.log('부모 노드 정보:', parentNode);
+
+    // 새 노드를 데이터에 추가
+    const newData = {
+      ...data,
+      nodes: [...data.nodes, newNodeData],
+      links: [...data.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
+    };
+
+    console.log('업데이트된 데이터:', newData);
+    setData(newData);
+
+    // 새 노드로 자동 이동
+    setTimeout(() => {
+      setExpandedNodeId(newNodeData.id);
+      setSelectedNodeId(newNodeData.id);
+      console.log('새 노드로 이동:', newNodeData.id);
+      console.log('새 노드 데이터:', newNodeData);
+    }, 100); // 약간의 지연을 두어 노드가 완전히 생성된 후 이동
+
+    console.log('새 노드 생성됨:', newNodeData);
   };
 
   // 노드 클릭 핸들러
@@ -299,6 +342,7 @@ const HierarchicalForceTree = () => {
                     onDrag={handleDrag}
                     onNodeClick={handleNodeClickForAssistant}
                     isExpanded={expandedNodeId === node.id}
+                    onSecondQuestion={handleSecondQuestion}
                   />
                 </motion.g>
               );
