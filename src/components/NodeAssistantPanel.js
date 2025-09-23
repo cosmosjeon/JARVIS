@@ -1,17 +1,15 @@
-import React, { useEffect, useMemo } from 'react';
-import {
-  AssistantRuntimeProvider,
-  ThreadPrimitive,
-  MessagePrimitive,
-  MessagePartPrimitive,
-  ComposerPrimitive,
-  useAssistantState,
-  useLocalRuntime,
-} from '@assistant-ui/react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { treeData } from '../data/treeData';
 
+export const PANEL_SIZES = {
+  compact: { width: 360, height: 180 },
+  expanded: { width: 600, height: 640 },
+};
+
+const TYPING_INTERVAL_MS = 18;
+
 const parentsByChild = new Map();
-treeData.links.forEach(link => {
+treeData.links.forEach((link) => {
   parentsByChild.set(link.target, link.source);
 });
 
@@ -24,8 +22,8 @@ const buildChain = (nodeId) => {
     if (guard.has(current)) break;
     guard.add(current);
 
-    const match = treeData.nodes.find(n => n.id === current);
-    chain.unshift(match ? (match.keyword || match.id) : current);
+    const match = treeData.nodes.find((n) => n.id === current);
+    chain.unshift(match ? match.keyword || match.id : current);
 
     const parent = parentsByChild.get(current);
     if (!parent) break;
@@ -37,10 +35,10 @@ const buildChain = (nodeId) => {
 
 const getDirectReports = (nodeId) => {
   return treeData.links
-    .filter(link => link.source === nodeId)
-    .map(link => treeData.nodes.find(n => n.id === link.target))
+    .filter((link) => link.source === nodeId)
+    .map((link) => treeData.nodes.find((n) => n.id === link.target))
     .filter(Boolean)
-    .map(node => node.keyword || node.id);
+    .map((node) => node.keyword || node.id);
 };
 
 const getPeers = (nodeId) => {
@@ -48,10 +46,10 @@ const getPeers = (nodeId) => {
   if (!parent) return [];
 
   return treeData.links
-    .filter(link => link.source === parent && link.target !== nodeId)
-    .map(link => treeData.nodes.find(n => n.id === link.target))
+    .filter((link) => link.source === parent && link.target !== nodeId)
+    .map((link) => treeData.nodes.find((n) => n.id === link.target))
     .filter(Boolean)
-    .map(node => node.keyword || node.id);
+    .map((node) => node.keyword || node.id);
 };
 
 const buildSummary = (node) => {
@@ -73,150 +71,270 @@ const buildSummary = (node) => {
   };
 };
 
-const buildAnswerText = (summary) => {
-  const bulletText = summary.bullets.map(item => `• ${item}`).join('\n');
-  return `${summary.intro}\n${bulletText}`.trim();
+const buildAnswerText = (summary, question) => {
+  const bulletText = summary.bullets.map((item) => `- ${item}`).join('\n');
+  const intro = question
+    ? `${summary.label} 관련 질문을 받았습니다.`
+    : `${summary.label} 개요입니다.`;
+  const detail = `${summary.intro}`;
+  const body = [detail, bulletText].filter(Boolean).join('\n\n');
+  return `${intro}\n\n${body}`.trim();
 };
 
-const buildInitialMessages = (summary) => [
-  {
-    role: 'user',
-    content: [{ type: 'text', text: `${summary.label} 역할에 대해 알려줘.` }],
-  },
-  {
-    role: 'assistant',
-    content: [{ type: 'text', text: buildAnswerText(summary) }],
-    status: { type: 'complete', reason: 'stop' },
-  },
-];
+const parseMarkdownBlocks = (text) => {
+  const lines = text.split(/\r?\n/);
+  const blocks = [];
+  let currentList = null;
 
-const extractLatestUserQuestion = (messages) => {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message.role !== 'user') continue;
-    const textParts = Array.isArray(message.content)
-      ? message.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
-      : '';
-    if (textParts.trim()) return textParts.trim();
-  }
-  return '';
-};
+  lines.forEach((line) => {
+    const trimmed = line.trim();
 
-const MessageText = () => (
-  <MessagePartPrimitive.Text
-    smooth
-    component="p"
-    className="whitespace-pre-wrap break-all leading-relaxed text-sm"
-  />
-);
+    if (!trimmed) {
+      currentList = null;
+      return;
+    }
 
-const createMessageComponent = (color) => () => {
-  const role = useAssistantState(({ message }) => message.role);
-  const isAssistant = role === 'assistant';
-  const bubbleStyle = isAssistant
-    ? {
-        backgroundColor: 'rgba(255,255,255,0.9)',
-        color: '#0f172a',
-        border: '1px solid rgba(255,255,255,0.6)',
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (!currentList) {
+        currentList = { type: 'list', items: [] };
+        blocks.push(currentList);
       }
-    : {
-        backgroundColor: 'rgba(0,0,0,0.28)',
-        color: '#ffffff',
-        border: '1px solid rgba(255,255,255,0.25)',
-      };
+      currentList.items.push(trimmed.replace(/^[-*]\s+/, '').trim());
+      return;
+    }
+
+    currentList = null;
+    blocks.push({ type: 'paragraph', content: trimmed });
+  });
+
+  return blocks;
+};
+
+const MarkdownMessage = ({ text }) => {
+  const blocks = useMemo(() => parseMarkdownBlocks(text), [text]);
+
+  if (!blocks.length) {
+    return null;
+  }
 
   return (
-    <MessagePrimitive.Root className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
-      <div
-        className="max-w-[240px] break-all rounded-2xl px-4 py-3 text-sm shadow-sm"
-        style={bubbleStyle}
-      >
-        <MessagePrimitive.Parts components={{ Text: MessageText }} />
-      </div>
-    </MessagePrimitive.Root>
+    <div className="markdown-body">
+      {blocks.map((block, blockIndex) => {
+        if (block.type === 'list') {
+          return (
+            <ul key={`md-list-${blockIndex}`}>
+              {block.items.map((item, itemIndex) => (
+                <li key={`md-list-item-${blockIndex}-${itemIndex}`}>{item}</li>
+              ))}
+            </ul>
+          );
+        }
+
+        return (
+          <p key={`md-paragraph-${blockIndex}`}>
+            {block.content}
+          </p>
+        );
+      })}
+    </div>
   );
 };
 
-const NodeAssistantPanel = ({ node, color }) => {
+const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
   const summary = useMemo(() => buildSummary(node), [node]);
+  const [messages, setMessages] = useState([]);
+  const [composerValue, setComposerValue] = useState('');
+  const typingTimers = useRef([]);
 
-  const adapter = useMemo(() => ({
-    async run({ messages }) {
-      const question = extractLatestUserQuestion(messages);
-      const answer = question
-        ? `${summary.label} 관련 질문을 받았습니다.\n${buildAnswerText(summary)}`
-        : buildAnswerText(summary);
+  const clearTypingTimers = useCallback(() => {
+    typingTimers.current.forEach(clearInterval);
+    typingTimers.current = [];
+  }, []);
 
-      return {
-        content: [{ type: 'text', text: answer }],
-        status: { type: 'complete', reason: 'stop' },
-      };
-    },
-  }), [summary]);
-
-  const runtime = useLocalRuntime(adapter, {
-    initialMessages: buildInitialMessages(summary),
-  });
+  useEffect(() => () => clearTypingTimers(), [clearTypingTimers]);
 
   useEffect(() => {
-    runtime.thread.reset(buildInitialMessages(summary));
-  }, [runtime, summary]);
+    clearTypingTimers();
+    setMessages([]);
+    setComposerValue('');
+  }, [clearTypingTimers, summary]);
 
-  const MessageComponent = useMemo(() => createMessageComponent(color), [color]);
+  const assistantMessageCount = useMemo(
+    () => messages.filter((message) => message.role === 'assistant').length,
+    [messages],
+  );
+
+  useEffect(() => {
+    if (!onSizeChange) return;
+    const nextSize = assistantMessageCount > 0 ? PANEL_SIZES.expanded : PANEL_SIZES.compact;
+    onSizeChange(nextSize);
+  }, [assistantMessageCount, onSizeChange]);
+
+  const sendResponse = useCallback(
+    (question) => {
+      clearTypingTimers();
+      const responseText = buildAnswerText(summary, question);
+      const timestamp = Date.now();
+      const userId = `${timestamp}-user`;
+      setMessages((prev) => [
+        ...prev,
+        { id: userId, role: 'user', text: question },
+      ]);
+
+      const characters = Array.from(responseText);
+      const assistantId = `${timestamp}-assistant`;
+
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: 'assistant', text: '', status: 'typing' },
+      ]);
+
+      if (!characters.length) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId ? { ...message, status: 'complete' } : message,
+          ),
+        );
+        return;
+      }
+
+      let index = 0;
+      const intervalId = setInterval(() => {
+        index += 1;
+        const typedText = characters.slice(0, index).join('');
+        setMessages((prev) =>
+          prev.map((message) => {
+            if (message.id !== assistantId) return message;
+            const isDone = index >= characters.length;
+            return {
+              ...message,
+              text: typedText,
+              status: isDone ? 'complete' : 'typing',
+            };
+          }),
+        );
+
+        if (index >= characters.length) {
+          clearInterval(intervalId);
+          typingTimers.current = typingTimers.current.filter((timer) => timer !== intervalId);
+        }
+      }, TYPING_INTERVAL_MS);
+
+      typingTimers.current.push(intervalId);
+    },
+    [clearTypingTimers, summary],
+  );
+
+  const handleSend = useCallback(() => {
+    const trimmed = composerValue.trim();
+    if (!trimmed) return;
+
+    sendResponse(trimmed);
+    setComposerValue('');
+  }, [composerValue, sendResponse]);
+
+  const handleKeyDown = useCallback(
+    (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend],
+  );
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
+    <div
+      className="flex h-full w-full flex-col rounded-[28px] p-6 shadow-xl"
+      style={{
+        fontFamily: 'Arial, sans-serif',
+        backgroundColor: color,
+        color: '#ffffff',
+        border: '1px solid rgba(255,255,255,0.35)',
+        position: 'relative',
+        zIndex: 10,
+      }}
+    >
       <div
-        className="flex h-full w-full flex-col rounded-[28px] p-6 shadow-xl"
+        className="flex flex-1 flex-col gap-3 rounded-2xl p-4 min-h-0"
         style={{
-          fontFamily: 'Arial, sans-serif',
-          backgroundColor: color,
-          color: '#ffffff',
-          border: '1px solid rgba(255,255,255,0.35)',
-          position: 'relative',
-          zIndex: 10,
+          backgroundColor: 'rgba(255,255,255,0.12)',
+          border: '1px solid rgba(255,255,255,0.28)',
+          boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.24)',
         }}
       >
-        <ThreadPrimitive.Root className="flex flex-1 flex-col gap-4 min-h-0">
-          <div
-            className="flex flex-1 flex-col gap-3 rounded-2xl p-4 min-h-0"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.12)',
-              border: '1px solid rgba(255,255,255,0.28)',
-              boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.24)',
-            }}
-          >
-            <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0">
-              <div className="flex flex-col gap-3">
-                <ThreadPrimitive.Messages components={{ Message: MessageComponent }} />
-              </div>
-            </ThreadPrimitive.Viewport>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0">
+          <div className="flex h-full flex-col gap-3">
+            {messages.map((message) => {
+              const isAssistant = message.role === 'assistant';
 
-            <ComposerPrimitive.Root
-              className="flex items-end gap-2 rounded-xl px-3 py-2"
-              style={{
-                backgroundColor: 'rgba(0,0,0,0.2)',
-                border: '1px solid rgba(255,255,255,0.22)',
-              }}
-            >
-              <ComposerPrimitive.Input
-                placeholder="무엇이든 물어보세요"
-                className="max-h-24 flex-1 resize-none border-none bg-transparent text-sm text-white placeholder:text-slate-200 focus:outline-none"
-              />
-              <ComposerPrimitive.Send
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.28)',
-                  border: '1px solid rgba(255,255,255,0.4)',
-                }}
-              >
-                ↗
-              </ComposerPrimitive.Send>
-            </ComposerPrimitive.Root>
+              return (
+                <div
+                  key={message.id}
+                  className={`flex ${isAssistant ? 'justify-center' : 'justify-end'}`}
+                  data-testid={isAssistant ? 'assistant-message' : 'user-message'}
+                  data-status={message.status || 'complete'}
+                >
+                  <div
+                    className={
+                      isAssistant
+                        ? 'w-full max-w-[520px] break-words rounded-3xl border bg-white/95 px-6 py-4 text-sm leading-relaxed text-slate-900 shadow-md'
+                        : 'max-w-[240px] break-all rounded-2xl px-4 py-3 text-sm text-white shadow-sm'
+                    }
+                    style={
+                      isAssistant
+                        ? { borderColor: color }
+                        : {
+                            backgroundColor: 'rgba(0,0,0,0.28)',
+                            border: '1px solid rgba(255,255,255,0.25)',
+                          }
+                    }
+                  >
+                    {isAssistant ? (
+                      <MarkdownMessage text={message.text} />
+                    ) : (
+                      <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </ThreadPrimitive.Root>
+        </div>
+
+        <form
+          className="flex items-end gap-2 rounded-xl px-3 py-2"
+          style={{
+            backgroundColor: 'rgba(0,0,0,0.2)',
+            border: '1px solid rgba(255,255,255,0.22)',
+          }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSend();
+          }}
+        >
+          <textarea
+            value={composerValue}
+            onChange={(event) => setComposerValue(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="/Users/cosmos/Documents/develop/r/와이어프레임/ui5-1-2.png 같은 파일 경로로 질문을 입력해 주세요"
+            className="max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm text-white placeholder:text-slate-200 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!composerValue.trim()}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg transition-opacity disabled:opacity-40"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.28)',
+              border: '1px solid rgba(255,255,255,0.4)',
+            }}
+            aria-label="메시지 전송"
+          >
+            ↗
+          </button>
+        </form>
       </div>
-    </AssistantRuntimeProvider>
+    </div>
   );
 };
 
