@@ -190,13 +190,21 @@ const HierarchicalForceTree = () => {
   };
 
   useEffect(() => {
-    // Apply drag behavior to all nodes
+    if (!svgRef.current) return;
     const svg = d3.select(svgRef.current);
+
     nodes.forEach(node => {
-      svg.selectAll(`[data-node-id="${node.id}"]`)
-        .call(handleDrag(node.id));
+      const selection = svg.selectAll(`[data-node-id="${node.id}"]`);
+
+      if (expandedNodeId) {
+        selection.on('.drag', null);
+        selection.style('cursor', 'default');
+      } else {
+        selection.call(handleDrag(node.id));
+        selection.style('cursor', 'grab');
+      }
     });
-  }, [nodes]);
+  }, [nodes, expandedNodeId]);
 
   useEffect(() => {
     if (!expandedNodeId) return;
