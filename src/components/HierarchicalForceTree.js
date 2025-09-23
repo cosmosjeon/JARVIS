@@ -158,6 +158,14 @@ const HierarchicalForceTree = () => {
     setExpandedNodeId(node.id);
   };
 
+  // Handle background click to close expanded node
+  const handleBackgroundClick = (event) => {
+    // Check if the click is on the background (not on a node)
+    if (event.target === event.currentTarget || event.target.tagName === 'svg') {
+      setExpandedNodeId(null);
+    }
+  };
+
   // Drag behavior
   const handleDrag = (nodeId) => {
     return d3.drag()
@@ -219,6 +227,7 @@ const HierarchicalForceTree = () => {
         width={dimensions.width}
         height={dimensions.height}
         style={{ background: 'transparent' }}
+        onClick={handleBackgroundClick}
       >
         {/* Arrow marker definition */}
         <defs>
@@ -244,58 +253,58 @@ const HierarchicalForceTree = () => {
 
               if (!sourceNode || !targetNode) return null;
 
-            // Calculate smart curve to avoid line crossing
-            const dx = targetNode.x - sourceNode.x;
-            const dy = targetNode.y - sourceNode.y;
-            const dr = Math.sqrt(dx * dx + dy * dy);
+              // Calculate smart curve to avoid line crossing
+              const dx = targetNode.x - sourceNode.x;
+              const dy = targetNode.y - sourceNode.y;
+              const dr = Math.sqrt(dx * dx + dy * dy);
 
-            // Determine curve direction based on node positions and index to spread links
-            const sourceLevel = treeData.nodes.find(n => n.id === (sourceNode.id || sourceNode.source))?.level || 0;
-            const targetLevel = treeData.nodes.find(n => n.id === (targetNode.id || targetNode.target))?.level || 0;
+              // Determine curve direction based on node positions and index to spread links
+              const sourceLevel = treeData.nodes.find(n => n.id === (sourceNode.id || sourceNode.source))?.level || 0;
+              const targetLevel = treeData.nodes.find(n => n.id === (targetNode.id || targetNode.target))?.level || 0;
 
-            // Create more pronounced curves for cross-level connections
-            const levelDiff = Math.abs(targetLevel - sourceLevel);
-            const baseCurvature = levelDiff > 1 ? 0.4 : 0.2;
-            const indexOffset = (index % 3 - 1) * 0.15; // Spread multiple connections
-            const curvature = baseCurvature + indexOffset;
+              // Create more pronounced curves for cross-level connections
+              const levelDiff = Math.abs(targetLevel - sourceLevel);
+              const baseCurvature = levelDiff > 1 ? 0.4 : 0.2;
+              const indexOffset = (index % 3 - 1) * 0.15; // Spread multiple connections
+              const curvature = baseCurvature + indexOffset;
 
-            const midX = (sourceNode.x + targetNode.x) / 2;
-            const midY = (sourceNode.y + targetNode.y) / 2;
+              const midX = (sourceNode.x + targetNode.x) / 2;
+              const midY = (sourceNode.y + targetNode.y) / 2;
 
-            // Calculate perpendicular offset for curve - stronger for longer distances
-            const normalizedDistance = Math.min(dr / 300, 1); // Normalize distance
-            const perpX = -dy / dr * curvature * dr * (0.15 + normalizedDistance * 0.1);
-            const perpY = dx / dr * curvature * dr * (0.15 + normalizedDistance * 0.1);
+              // Calculate perpendicular offset for curve - stronger for longer distances
+              const normalizedDistance = Math.min(dr / 300, 1); // Normalize distance
+              const perpX = -dy / dr * curvature * dr * (0.15 + normalizedDistance * 0.1);
+              const perpY = dx / dr * curvature * dr * (0.15 + normalizedDistance * 0.1);
 
-            // Use cubic bezier for smoother curves
-            const controlX1 = sourceNode.x + perpX * 0.5;
-            const controlY1 = sourceNode.y + perpY * 0.5;
-            const controlX2 = targetNode.x + perpX * 0.5;
-            const controlY2 = targetNode.y + perpY * 0.5;
+              // Use cubic bezier for smoother curves
+              const controlX1 = sourceNode.x + perpX * 0.5;
+              const controlY1 = sourceNode.y + perpY * 0.5;
+              const controlX2 = targetNode.x + perpX * 0.5;
+              const controlY2 = targetNode.y + perpY * 0.5;
 
-            const pathString = `M ${sourceNode.x} ${sourceNode.y} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${targetNode.x} ${targetNode.y}`;
+              const pathString = `M ${sourceNode.x} ${sourceNode.y} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${targetNode.x} ${targetNode.y}`;
 
-            return (
-              <motion.path
-                key={`${link.source.id || link.source}-${link.target.id || link.target}-${index}`}
-                d={pathString}
-                stroke="rgba(148, 163, 184, 0.55)"
-                strokeOpacity={0.8}
-                strokeWidth={Math.sqrt(link.value || 1) * 1.5}
-                fill="none"
-                markerEnd="url(#arrowhead)"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{
-                  duration: 1.5,
-                  ease: "easeInOut",
-                  delay: index * 0.1
-                }}
-                style={{
-                  filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
-                }}
-              />
-            );
+              return (
+                <motion.path
+                  key={`${link.source.id || link.source}-${link.target.id || link.target}-${index}`}
+                  d={pathString}
+                  stroke="rgba(148, 163, 184, 0.55)"
+                  strokeOpacity={0.8}
+                  strokeWidth={Math.sqrt(link.value || 1) * 1.5}
+                  fill="none"
+                  markerEnd="url(#arrowhead)"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{
+                    duration: 1.5,
+                    ease: "easeInOut",
+                    delay: index * 0.1
+                  }}
+                  style={{
+                    filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
+                  }}
+                />
+              );
             })}
           </g>
 
@@ -307,26 +316,26 @@ const HierarchicalForceTree = () => {
 
               return (
                 <motion.g
-                key={node.id}
-                data-node-id={node.id}
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{
-                  delay: index * 0.1,
-                  type: "spring",
-                  stiffness: 300,
-                  damping: 25
-                }}
-              >
-                <TreeNode
-                  node={node}
-                  position={{ x: node.x || 0, y: node.y || 0 }}
-                  color={colorScheme(levels.get(node.id) || 0)}
-                  onDrag={handleDrag}
-                  onNodeClick={handleNodeClick}
-                  isExpanded={expandedNodeId === node.id}
-                />
-              </motion.g>
+                  key={node.id}
+                  data-node-id={node.id}
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{
+                    delay: index * 0.1,
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 25
+                  }}
+                >
+                  <TreeNode
+                    node={node}
+                    position={{ x: node.x || 0, y: node.y || 0 }}
+                    color={colorScheme(levels.get(node.id) || 0)}
+                    onDrag={handleDrag}
+                    onNodeClick={handleNodeClick}
+                    isExpanded={expandedNodeId === node.id}
+                  />
+                </motion.g>
               );
             })}
           </g>
