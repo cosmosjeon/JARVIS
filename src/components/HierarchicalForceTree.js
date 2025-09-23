@@ -24,13 +24,24 @@ const HierarchicalForceTree = () => {
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
 
+  // 현재 데이터에서 루트 노드 ID 계산 (부모 링크의 타겟이 아닌 노드)
+  const getRootNodeId = () => {
+    const targetIds = new Set(data.links.map(l => (l.target.id || l.target)));
+    const rootNode = data.nodes.find(n => !targetIds.has(n.id));
+    return rootNode ? rootNode.id : null;
+  };
+
   // 노드 추가 함수
   const addNode = (parentId, nodeData) => {
+    // 부모 ID 검증: 유효하지 않으면 루트로 대체
+    const isValidParent = data.nodes.some(n => n.id === parentId);
+    const resolvedParentId = isValidParent ? parentId : getRootNodeId();
+
     const newNode = {
       id: `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       keyword: nodeData.keyword,
       fullText: nodeData.fullText,
-      level: getNodeLevel(parentId) + 1,
+      level: getNodeLevel(resolvedParentId) + 1,
       size: nodeData.size || 10,
     };
 
@@ -38,7 +49,7 @@ const HierarchicalForceTree = () => {
     const newData = {
       ...data,
       nodes: [...data.nodes, newNode],
-      links: [...data.links, { source: parentId, target: newNode.id, value: 1 }]
+      links: [...data.links, { source: resolvedParentId, target: newNode.id, value: 1 }]
     };
 
     setData(newData);
