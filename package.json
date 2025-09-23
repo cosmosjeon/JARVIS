@@ -11,6 +11,7 @@
     "eject": "react-scripts eject"
   },
   "dependencies": {
+    "@playwright/test": "^1.55.1",
     "@types/d3": "^7.4.3",
     "d3": "^7.8.5",
     "framer-motion": "^10.16.16",

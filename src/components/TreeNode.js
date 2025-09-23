@@ -84,7 +84,10 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
       transform={`translate(${position.x || 0}, ${position.y || 0})`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onNodeClick && onNodeClick(node)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onNodeClick && onNodeClick(node);
+      }}
       style={{ cursor: 'pointer' }}
     >
       <motion.rect
@@ -139,14 +142,14 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
         >
           {displayMode === 'hover' && lines.length
             ? lines.map((line, i) => (
-                <tspan
-                  key={i}
-                  x={0}
-                  dy={i === 0 ? -(lines.length - 1) * 9 : 18}
-                >
-                  {line}
-                </tspan>
-              ))
+              <tspan
+                key={i}
+                x={0}
+                dy={i === 0 ? -(lines.length - 1) * 9 : 18}
+              >
+                {line}
+              </tspan>
+            ))
             : node.keyword || node.id}
         </motion.text>
       )}
