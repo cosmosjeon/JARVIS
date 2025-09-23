@@ -141,7 +141,7 @@ const MarkdownMessage = ({ text }) => {
   );
 };
 
-const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => {
+const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion, allNodes = [], onSaveQuestionData }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
     if (node.questionData) {
@@ -170,11 +170,60 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
 
   useEffect(() => () => clearTypingTimers(), [clearTypingTimers]);
 
+  // 노드가 변경될 때 메시지 초기화
   useEffect(() => {
     clearTypingTimers();
-    setMessages([]);
     setComposerValue('');
-  }, [clearTypingTimers, summary]);
+    setMessages([]);
+  }, [node.id, clearTypingTimers]);
+
+  // questionData가 있는 경우 질문과 답변 표시
+  useEffect(() => {
+    console.log('NodeAssistantPanel - node.questionData:', node.questionData);
+    if (node.questionData && node.questionData.question && node.questionData.answer) {
+      const question = node.questionData.question;
+      const answer = node.questionData.answer;
+      console.log('질문과 답변 표시:', { question, answer });
+
+      // 질문을 사용자 메시지로 추가
+      const userMessage = {
+        id: `auto-user-${node.id}-${Date.now()}`,
+        role: 'user',
+        text: question
+      };
+
+      // 답변을 어시스턴트 메시지로 추가 (타이핑 효과와 함께)
+      const assistantMessage = {
+        id: `auto-assistant-${node.id}-${Date.now()}`,
+        role: 'assistant',
+        text: '',
+        status: 'typing'
+      };
+
+      setMessages([userMessage, assistantMessage]);
+
+      // 답변을 타이핑 효과와 함께 표시
+      const characters = Array.from(answer);
+      let index = 0;
+      const intervalId = setInterval(() => {
+        index += 1;
+        const typedText = characters.slice(0, index).join('');
+        setMessages(prev =>
+          prev.map(message =>
+            message.id === assistantMessage.id
+              ? { ...message, text: typedText, status: index >= characters.length ? 'complete' : 'typing' }
+              : message
+          )
+        );
+
+        if (index >= characters.length) {
+          clearInterval(intervalId);
+        }
+      }, TYPING_INTERVAL_MS);
+
+      typingTimers.current.push(intervalId);
+    }
+  }, [node.questionData, node.id]);
 
   const assistantMessageCount = useMemo(
     () => messages.filter((message) => message.role === 'assistant').length,
@@ -191,15 +240,20 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
     (question) => {
       clearTypingTimers();
 
-      // 질문 수 증가 및 2번째 질문인지 확인
-      const isSecondQuestion = questionService.current.incrementQuestionCount(node.id);
-
-      // 2번째 질문이면 즉시 새 노드 생성 콜백 호출
-      if (isSecondQuestion && onSecondQuestion) {
-        onSecondQuestion(node.id, question);
-      }
+      // sendResponse에서는 카운트하지 않음 (handleSend에서 이미 처리됨)
 
       const responseText = buildAnswerText(summary, question);
+
+      // 질문-답변 데이터를 노드에 저장
+      if (onSaveQuestionData) {
+        const questionData = {
+          question,
+          answer: responseText,
+          parentNodeId: null, // 루트 노드는 부모가 없음
+          questionNumber: 1
+        };
+        onSaveQuestionData(node.id, questionData);
+      }
       const timestamp = Date.now();
       const userId = `${timestamp}-user`;
       setMessages((prev) => [
@@ -248,16 +302,24 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
 
       typingTimers.current.push(intervalId);
     },
-    [clearTypingTimers, summary, node.id, onSecondQuestion],
+    [clearTypingTimers, summary, node.id, onSecondQuestion, allNodes],
   );
 
   const handleSend = useCallback(() => {
     const trimmed = composerValue.trim();
     if (!trimmed) return;
 
+    // 엔터를 쳤을 때 새 노드 생성 체크
+    const shouldCreateNewNode = questionService.current.incrementQuestionCount(node.id, allNodes);
+    if (shouldCreateNewNode && onSecondQuestion) {
+      onSecondQuestion(node.id, trimmed);
+      setComposerValue('');
+      return; // 새 노드 생성했으면 기존 답변 로직은 실행하지 않음
+    }
+
     sendResponse(trimmed);
     setComposerValue('');
-  }, [composerValue, sendResponse]);
+  }, [composerValue, sendResponse, node.id, allNodes, onSecondQuestion]);
 
   const handleKeyDown = useCallback(
     (event) => {
@@ -276,6 +338,7 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
   const handleCompositionEnd = useCallback(() => {
     setIsComposing(false);
   }, []);
+
 
   return (
     <div

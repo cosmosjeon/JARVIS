@@ -10,9 +10,20 @@ class QuestionService {
     /**
      * 특정 노드의 질문 수를 증가시키고, 2번째 질문인지 확인
      * @param {string} nodeId - 노드 ID
+     * @param {Array} nodes - 노드 배열 (기존 질문-답변 확인용)
      * @returns {boolean} - 2번째 질문인지 여부
      */
-    incrementQuestionCount(nodeId) {
+    incrementQuestionCount(nodeId, nodes = []) {
+        // 노드에 이미 질문-답변이 있는지 확인
+        const node = nodes.find(n => n.id === nodeId);
+        const hasExistingQuestionData = node && node.questionData;
+
+        // 기존 질문-답변이 있으면 항상 새 노드 생성 (메모리 카운트 문제 해결)
+        if (hasExistingQuestionData) {
+            return true;
+        }
+
+        // 기존 질문-답변이 없으면 첫 번째 질문으로 처리
         const currentCount = this.questionCounts.get(nodeId) || 0;
         const newCount = currentCount + 1;
         this.questionCounts.set(nodeId, newCount);

@@ -6,6 +6,7 @@ import TreeNode from './TreeNode';
 import AddNodeButton from './AddNodeButton';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
+import DataStorageService from '../services/DataStorageService';
 
 const HierarchicalForceTree = () => {
   const svgRef = useRef(null);
@@ -15,11 +16,20 @@ const HierarchicalForceTree = () => {
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [data, setData] = useState(treeData);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
+  const dataStorageService = useRef(new DataStorageService());
+
+  const [data, setData] = useState(() => {
+    // 컴포넌트 초기화 시 저장된 데이터 불러오기
+    const savedData = dataStorageService.current.loadData();
+    if (savedData && savedData.nodes && savedData.nodes.length > 0) {
+      return savedData;
+    }
+    return treeData;
+  });
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -106,6 +116,23 @@ const HierarchicalForceTree = () => {
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
     setSelectedNodeId(nodeId);
+  };
+
+  // 질문-답변 데이터를 노드에 저장하는 함수
+  const handleSaveQuestionData = (nodeId, questionData) => {
+    const updatedNodes = data.nodes.map(node =>
+      node.id === nodeId
+        ? { ...node, questionData }
+        : node
+    );
+
+    const newData = {
+      ...data,
+      nodes: updatedNodes
+    };
+
+    setData(newData);
+    console.log('질문-답변 데이터 저장됨:', { nodeId, questionData });
   };
 
   useEffect(() => {
@@ -255,6 +282,13 @@ const HierarchicalForceTree = () => {
     svg.selectAll(`[data-node-id="${expandedNodeId}"]`).raise();
   }, [expandedNodeId, nodes]);
 
+  // 데이터가 변경될 때마다 자동 저장
+  useEffect(() => {
+    if (data && data.nodes && data.links) {
+      dataStorageService.current.saveData(data);
+    }
+  }, [data]);
+
   // 컴포넌트 언마운트 시 애니메이션 정리
   useEffect(() => {
     return () => {
@@ -354,6 +388,8 @@ const HierarchicalForceTree = () => {
                     onNodeClick={handleNodeClickForAssistant}
                     isExpanded={expandedNodeId === node.id}
                     onSecondQuestion={handleSecondQuestion}
+                    allNodes={data.nodes}
+                    onSaveQuestionData={handleSaveQuestionData}
                   />
                 </motion.g>
               );
@@ -376,6 +412,26 @@ const HierarchicalForceTree = () => {
         <p>Nodes: {nodes.length}</p>
         <p>Links: {links.length}</p>
         <p>Selected Node: {selectedNodeId || 'None'}</p>
+        <p>Data Saved: {dataStorageService.current.hasSavedData() ? '✅ Yes' : '❌ No'}</p>
+        <div className="mt-2 space-y-1">
+          <button
+            onClick={() => {
+              dataStorageService.current.clearData();
+              setData(treeData);
+              setSelectedNodeId(null);
+              setExpandedNodeId(null);
+            }}
+            className="w-full px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+          >
+            Reset to Initial
+          </button>
+          <button
+            onClick={() => dataStorageService.current.clearData()}
+            className="w-full px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600"
+          >
+            Clear Data Only
+          </button>
+        </div>
       </div>
     </div>
   );
