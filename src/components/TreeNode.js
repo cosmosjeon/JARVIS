@@ -105,7 +105,7 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
           y={-currentHeight / 2}
           width={currentWidth}
           height={currentHeight}
-          style={{ overflow: 'visible', position: 'relative' }}
+          style={{ overflow: 'hidden', position: 'relative' }}
         >
           <NodeAssistantPanel node={node} color={color} />
         </foreignObject>

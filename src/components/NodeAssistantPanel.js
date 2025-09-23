@@ -111,7 +111,7 @@ const MessageText = () => (
   <MessagePartPrimitive.Text
     smooth
     component="p"
-    className="whitespace-pre-wrap leading-relaxed text-sm"
+    className="whitespace-pre-wrap break-all leading-relaxed text-sm"
   />
 );
 
@@ -133,7 +133,7 @@ const createMessageComponent = (color) => () => {
   return (
     <MessagePrimitive.Root className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
       <div
-        className="max-w-[240px] rounded-2xl px-4 py-3 text-sm shadow-sm"
+        className="max-w-[240px] break-all rounded-2xl px-4 py-3 text-sm shadow-sm"
         style={bubbleStyle}
       >
         <MessagePrimitive.Parts components={{ Text: MessageText }} />
@@ -195,16 +195,16 @@ const NodeAssistantPanel = ({ node, color }) => {
           </span>
         </div>
 
-        <ThreadPrimitive.Root className="flex flex-1 flex-col gap-4">
+        <ThreadPrimitive.Root className="flex flex-1 flex-col gap-4 min-h-0">
           <div
-            className="flex flex-1 flex-col gap-3 rounded-2xl p-4"
+            className="flex flex-1 flex-col gap-3 rounded-2xl p-4 min-h-0"
             style={{
               backgroundColor: 'rgba(255,255,255,0.12)',
               border: '1px solid rgba(255,255,255,0.28)',
               boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.24)',
             }}
           >
-            <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto pr-1">
+            <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0">
               <div className="flex flex-col gap-3">
                 <ThreadPrimitive.Messages components={{ Message: MessageComponent }} />
               </div>
