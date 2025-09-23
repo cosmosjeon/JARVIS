@@ -48,10 +48,13 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
   // Calculate current dimensions
   const currentWidth = displayMode === 'chat' ? chatSize.width : displayMode === 'hover' ? hoverWidth : baseWidth;
   const currentHeight = displayMode === 'chat' ? chatSize.height : displayMode === 'hover' ? hoverHeight : baseHeight;
-  const fillColor = color;
-  const rectFill = displayMode === 'chat' ? '#ffffff' : fillColor;
-  const rectStroke = displayMode === 'chat' ? color : 'none';
-  const rectStrokeWidth = displayMode === 'chat' ? 2 : 0;
+  const rectFill = displayMode === 'chat'
+    ? 'rgba(15, 23, 42, 0.55)'
+    : 'rgba(148, 163, 184, 0.22)';
+  const rectStroke = displayMode === 'chat'
+    ? 'rgba(255, 255, 255, 0.32)'
+    : 'rgba(255, 255, 255, 0.18)';
+  const rectStrokeWidth = displayMode === 'chat' ? 2 : 1;
 
   useEffect(() => {
     if (!isExpanded || !onNodeClick) return undefined;
@@ -92,7 +95,13 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
         fill={rectFill}
         stroke={rectStroke}
         strokeWidth={rectStrokeWidth}
-        style={{ cursor: 'pointer' }}
+        style={{
+          cursor: 'pointer',
+          mixBlendMode: displayMode === 'chat' ? 'screen' : 'normal',
+          filter: displayMode === 'chat'
+            ? 'drop-shadow(0 18px 42px rgba(15, 23, 42, 0.48))'
+            : 'drop-shadow(0 8px 24px rgba(15, 23, 42, 0.32))',
+        }}
         animate={{
           x: -currentWidth / 2,
           y: -currentHeight / 2,

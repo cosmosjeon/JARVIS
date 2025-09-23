@@ -18,7 +18,7 @@ describe('NodeAssistantPanel', () => {
 
     render(<NodeAssistantPanel node={node} color="#1d4ed8" onSizeChange={handleSizeChange} />);
 
-    const input = screen.getByPlaceholderText('/Users/cosmos/Documents/develop/r/와이어프레임/ui5-1-2.png 같은 파일 경로로 질문을 입력해 주세요');
+    const input = screen.getByPlaceholderText('Ask anything...');
     expect(input).toBeInTheDocument();
 
     expect(handleSizeChange).toHaveBeenCalledTimes(1);
