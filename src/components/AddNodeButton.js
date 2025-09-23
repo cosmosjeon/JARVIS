@@ -17,7 +17,7 @@ const AddNodeButton = ({
         keyword: '',
         fullText: '',
         size: 10,
-        parentId: parentId || 'root'
+        parentId: parentId || ''
     });
 
     // 폼 데이터 핸들러
@@ -35,11 +35,6 @@ const AddNodeButton = ({
             return;
         }
 
-        if (!formData.parentId) {
-            alert('부모 노드를 선택해주세요.');
-            return;
-        }
-
         onAddNode(formData.parentId, formData);
 
         // 폼 리셋
@@ -47,7 +42,7 @@ const AddNodeButton = ({
             keyword: '',
             fullText: '',
             size: 10,
-            parentId: parentId || 'root'
+            parentId: parentId || ''
         });
         setIsFormVisible(false);
         setIsExpanded(false);
@@ -61,7 +56,7 @@ const AddNodeButton = ({
             keyword: '',
             fullText: '',
             size: 10,
-            parentId: parentId || 'root'
+            parentId: parentId || ''
         });
     };
 
