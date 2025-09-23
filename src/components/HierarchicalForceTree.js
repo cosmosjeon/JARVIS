@@ -66,6 +66,26 @@ const HierarchicalForceTree = () => {
 
     const maxLevel = Math.max(...levels.values());
 
+    // Precompute horizontal distribution per level to reduce overlap while keeping hierarchy readable
+    const nodesByLevel = d3.group(nodesCopy, node => levels.get(node.id) || 0);
+    const horizontalScales = new Map();
+
+    nodesByLevel.forEach((nodesAtLevel, level) => {
+      const domain = nodesAtLevel.map(node => node.id);
+      if (!domain.length) return;
+
+      const spread = Math.max(domain.length - 1, 1) * 160;
+      const scale = d3
+        .scalePoint()
+        .domain(domain)
+        .range([
+          dimensions.width / 2 - spread,
+          dimensions.width / 2 + spread,
+        ]);
+
+      horizontalScales.set(level, scale);
+    });
+
     // Create force simulation
     const simulation = d3
       .forceSimulation(nodesCopy)
@@ -76,13 +96,31 @@ const HierarchicalForceTree = () => {
           .id(d => d.id)
           .distance(80)
       )
-      .force('charge', d3.forceManyBody().strength(-400))
+      .force(
+        'charge',
+        d3
+          .forceManyBody()
+          .strength(-800)
+          .distanceMin(40)
+          .distanceMax(Math.max(dimensions.width, dimensions.height))
+      )
       .force('center', d3.forceCenter(dimensions.width / 2, dimensions.height / 2))
       .force(
         'collision',
-        d3.forceCollide().radius(d => (d.size || 8) + 5)
+        d3
+          .forceCollide()
+          .radius(d => (d.size || 8) + 24)
+          .strength(1)
+          .iterations(2)
       )
-      .force('x', d3.forceX(dimensions.width / 2).strength(0.1))
+      .force(
+        'x',
+        d3.forceX(d => {
+          const level = levels.get(d.id) || 0;
+          const scale = horizontalScales.get(level);
+          return scale ? scale(d.id) : dimensions.width / 2;
+        }).strength(0.4)
+      )
       .force(
         'y',
         d3
@@ -152,13 +190,21 @@ const HierarchicalForceTree = () => {
   };
 
   useEffect(() => {
-    // Apply drag behavior to all nodes
+    if (!svgRef.current) return;
     const svg = d3.select(svgRef.current);
+
     nodes.forEach(node => {
-      svg.selectAll(`[data-node-id="${node.id}"]`)
-        .call(handleDrag(node.id));
+      const selection = svg.selectAll(`[data-node-id="${node.id}"]`);
+
+      if (expandedNodeId) {
+        selection.on('.drag', null);
+        selection.style('cursor', 'default');
+      } else {
+        selection.call(handleDrag(node.id));
+        selection.style('cursor', 'grab');
+      }
     });
-  }, [nodes]);
+  }, [nodes, expandedNodeId]);
 
   useEffect(() => {
     if (!expandedNodeId) return;

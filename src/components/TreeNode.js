@@ -38,8 +38,8 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
   const baseHeight = 30;
   const hoverWidth = baseWidth * 1.7;
   const hoverHeight = baseHeight * 1.15;
-  const chatWidth = 300;
-  const chatHeight = 340;
+  const chatWidth = 600;
+  const chatHeight = 680;
   const borderRadius = 8; // Fixed border radius
   const lines = node.fullText ? wrapText(node.fullText, hoverWidth - 40) : [];
 
