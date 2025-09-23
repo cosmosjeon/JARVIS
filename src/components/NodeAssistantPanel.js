@@ -245,25 +245,17 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
 
   return (
     <div
-      className="flex h-full w-full flex-col rounded-[28px] p-6 shadow-xl"
+      className="glass-shell relative flex h-full w-full flex-col rounded-[28px] p-6"
       style={{
         fontFamily: 'Arial, sans-serif',
-        backgroundColor: color,
-        color: '#ffffff',
-        border: '1px solid rgba(255,255,255,0.35)',
+        borderColor: 'rgba(255,255,255,0.25)',
         position: 'relative',
         zIndex: 10,
       }}
     >
-      <div
-        className="flex flex-1 flex-col gap-3 rounded-2xl p-4 min-h-0"
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.12)',
-          border: '1px solid rgba(255,255,255,0.28)',
-          boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.24)',
-        }}
-      >
-        <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0">
+      <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-white/10 opacity-40 mix-blend-screen" />
+      <div className="relative flex flex-1 flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 min-h-0 backdrop-blur-md">
+        <div className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0">
           <div className="flex h-full flex-col gap-3">
             {messages.map((message) => {
               const isAssistant = message.role === 'assistant';
@@ -278,16 +270,8 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
                   <div
                     className={
                       isAssistant
-                        ? 'w-full max-w-[520px] break-words rounded-3xl border bg-white/95 px-6 py-4 text-sm leading-relaxed text-slate-900 shadow-md'
-                        : 'max-w-[240px] break-all rounded-2xl px-4 py-3 text-sm text-white shadow-sm'
-                    }
-                    style={
-                      isAssistant
-                        ? { borderColor: color }
-                        : {
-                            backgroundColor: 'rgba(0,0,0,0.28)',
-                            border: '1px solid rgba(255,255,255,0.25)',
-                          }
+                        ? 'glass-surface w-full max-w-[520px] break-words rounded-3xl border border-white/10 px-6 py-4 text-sm leading-relaxed text-slate-50 shadow-2xl'
+                        : 'max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm'
                     }
                   >
                     {isAssistant ? (
@@ -303,11 +287,7 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
         </div>
 
         <form
-          className="flex items-end gap-2 rounded-xl px-3 py-2"
-          style={{
-            backgroundColor: 'rgba(0,0,0,0.2)',
-            border: '1px solid rgba(255,255,255,0.22)',
-          }}
+          className="glass-surface flex items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
           onSubmit={(event) => {
             event.preventDefault();
             handleSend();
@@ -317,17 +297,13 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
             value={composerValue}
             onChange={(event) => setComposerValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="/Users/cosmos/Documents/develop/r/와이어프레임/ui5-1-2.png 같은 파일 경로로 질문을 입력해 주세요"
-            className="max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm text-white placeholder:text-slate-200 focus:outline-none"
+            placeholder="Ask anything..."
+            className="glass-text-primary max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm placeholder:text-slate-200 focus:outline-none"
           />
           <button
             type="submit"
             disabled={!composerValue.trim()}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg transition-opacity disabled:opacity-40"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.28)',
-              border: '1px solid rgba(255,255,255,0.4)',
-            }}
+            className="glass-chip flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg transition-opacity disabled:opacity-40"
             aria-label="메시지 전송"
           >
             ↗

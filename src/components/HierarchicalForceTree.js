@@ -213,12 +213,12 @@ const HierarchicalForceTree = () => {
   }, [expandedNodeId, nodes]);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div className="relative flex h-screen w-screen overflow-hidden bg-white">
       <svg
         ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
-        style={{ background: 'white' }}
+        style={{ background: 'transparent' }}
       >
         {/* Arrow marker definition */}
         <defs>
@@ -231,7 +231,7 @@ const HierarchicalForceTree = () => {
             markerHeight={6}
             orient="auto"
           >
-            <path d="M0,-5L10,0L0,5" fill="#999" />
+            <path d="M0,-5L10,0L0,5" fill="rgba(148,163,184,0.55)" />
           </marker>
         </defs>
 
@@ -279,8 +279,8 @@ const HierarchicalForceTree = () => {
               <motion.path
                 key={`${link.source.id || link.source}-${link.target.id || link.target}-${index}`}
                 d={pathString}
-                stroke="#999"
-                strokeOpacity={0.7}
+                stroke="rgba(148, 163, 184, 0.55)"
+                strokeOpacity={0.8}
                 strokeWidth={Math.sqrt(link.value || 1) * 1.5}
                 fill="none"
                 markerEnd="url(#arrowhead)"
@@ -292,7 +292,7 @@ const HierarchicalForceTree = () => {
                   delay: index * 0.1
                 }}
                 style={{
-                  filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.1))'
+                  filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
                 }}
               />
             );
