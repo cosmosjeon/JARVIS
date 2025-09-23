@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const ChatWindow = ({ isOpen, onClose, nodeData }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [isComposing, setIsComposing] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -132,11 +133,19 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleCompositionStart = () => {
+    setIsComposing(true);
+  };
+
+  const handleCompositionEnd = () => {
+    setIsComposing(false);
   };
 
   if (!isOpen) return null;
@@ -216,7 +225,9 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
                 placeholder="Ask anything..."
                 className="glass-surface flex-1 rounded-full border border-white/20 bg-transparent px-4 py-2 text-sm text-slate-100 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-300/70"
               />
