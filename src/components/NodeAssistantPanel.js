@@ -70,11 +70,6 @@ const buildSummary = (node) => {
     label,
     intro: `${label}은(는) ${node.fullText}`,
     bullets,
-    followUps: [
-      `${label}의 주요 목표`,
-      `${label}이 협업하는 부서`,
-      `${label} 팀의 현재 과제`,
-    ],
   };
 };
 
@@ -182,19 +177,6 @@ const NodeAssistantPanel = ({ node, color }) => {
           zIndex: 10,
         }}
       >
-        <div className="mb-4 flex items-center">
-          <span
-            className="rounded-full px-4 py-1 text-sm font-semibold"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.18)',
-              color: '#ffffff',
-              border: '1px solid rgba(255,255,255,0.25)',
-            }}
-          >
-            {summary.label}에 대해 설명해 줘
-          </span>
-        </div>
-
         <ThreadPrimitive.Root className="flex flex-1 flex-col gap-4 min-h-0">
           <div
             className="flex flex-1 flex-col gap-3 rounded-2xl p-4 min-h-0"
@@ -231,22 +213,6 @@ const NodeAssistantPanel = ({ node, color }) => {
                 ↗
               </ComposerPrimitive.Send>
             </ComposerPrimitive.Root>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {summary.followUps.map((item, index) => (
-              <span
-                key={`${item}-${index}`}
-                className="rounded-full px-3 py-1 text-xs"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.16)',
-                  border: '1px solid rgba(255,255,255,0.28)',
-                  color: '#ffffff',
-                }}
-              >
-                {item}
-              </span>
-            ))}
           </div>
         </ThreadPrimitive.Root>
       </div>
