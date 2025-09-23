@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const ChatWindow = ({ isOpen, onClose, nodeData }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [isComposing, setIsComposing] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -132,11 +133,19 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleCompositionStart = () => {
+    setIsComposing(true);
+  };
+
+  const handleCompositionEnd = () => {
+    setIsComposing(false);
   };
 
   if (!isOpen) return null;
@@ -147,7 +156,7 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xl"
         onClick={onClose}
       >
         <motion.div
@@ -155,49 +164,50 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.8, opacity: 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
-          className="bg-white rounded-2xl shadow-2xl w-96 h-[600px] flex flex-col"
+          className="glass-shell relative flex h-[600px] w-96 flex-col rounded-2xl"
           onClick={(e) => e.stopPropagation()}
         >
+          <div className="pointer-events-none absolute inset-0 rounded-2xl bg-white/10 opacity-40 mix-blend-screen" />
           {/* Header */}
-          <div className="bg-gray-100 rounded-t-2xl p-4 border-b flex items-center justify-between">
+          <div className="relative flex items-center justify-between rounded-t-2xl border-b border-white/15 bg-white/5 p-4 backdrop-blur-sm">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+              <div className="glass-chip flex h-10 w-10 items-center justify-center rounded-full text-base font-bold text-slate-100">
                 {(nodeData?.keyword || nodeData?.id || '?').charAt(0)}
               </div>
               <div>
-                <h3 className="font-semibold text-gray-800">
+                <h3 className="font-semibold text-slate-50">
                   {nodeData?.keyword || nodeData?.id}
                 </h3>
-                <p className="text-sm text-gray-500">온라인</p>
+                <p className="text-sm text-slate-300 opacity-80">온라인</p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+              className="text-slate-300 transition hover:text-slate-100"
             >
               ×
             </button>
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="glass-scrollbar relative flex-1 space-y-4 overflow-y-auto p-4">
             {messages.map((message) => (
               <div
                 key={message.id}
                 className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
+                  className={`max-w-xs rounded-2xl px-4 py-2 lg:max-w-md ${
                     message.sender === 'user'
-                      ? 'bg-blue-500 text-white'
+                      ? 'glass-chip text-slate-100'
                       : message.sender === 'system'
-                      ? 'bg-gray-200 text-gray-700'
-                      : 'bg-gray-100 text-gray-800'
+                      ? 'glass-surface text-slate-100'
+                      : 'glass-surface text-slate-100'
                   }`}
                 >
                   <p className="text-sm">{message.text}</p>
-                  <p className={`text-xs mt-1 ${
-                    message.sender === 'user' ? 'text-blue-100' : 'text-gray-500'
+                  <p className={`mt-1 text-xs ${
+                    message.sender === 'user' ? 'text-slate-200/80' : 'text-slate-300/70'
                   }`}>
                     {message.timestamp}
                   </p>
@@ -208,21 +218,23 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
           </div>
 
           {/* Input */}
-          <div className="p-4 border-t bg-gray-50 rounded-b-2xl">
+          <div className="rounded-b-2xl border-t border-white/10 bg-white/5 p-4 backdrop-blur-sm">
             <div className="flex space-x-2">
               <input
                 ref={inputRef}
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="메시지를 입력하세요..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onKeyDown={handleKeyDown}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
+                placeholder="Ask anything..."
+                className="glass-surface flex-1 rounded-full border border-white/20 bg-transparent px-4 py-2 text-sm text-slate-100 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-300/70"
               />
               <button
                 onClick={handleSendMessage}
                 disabled={!newMessage.trim()}
-                className="px-6 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                className="glass-chip px-6 py-2 text-slate-100 transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:bg-white/10"
               >
                 전송
               </button>

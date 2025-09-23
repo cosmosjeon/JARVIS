@@ -3,6 +3,8 @@ import * as d3 from 'd3';
 import { motion } from 'framer-motion';
 import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
+import AddNodeButton from './AddNodeButton';
+import TreeAnimationService from '../services/TreeAnimationService';
 
 const HierarchicalForceTree = () => {
   const svgRef = useRef(null);
@@ -11,10 +13,57 @@ const HierarchicalForceTree = () => {
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0 });
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [data, setData] = useState(treeData);
   const simulationRef = useRef(null);
+  const treeAnimationService = useRef(new TreeAnimationService());
+  const animationRef = useRef(null);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
+
+  // 현재 데이터에서 루트 노드 ID 계산 (부모 링크의 타겟이 아닌 노드)
+  const getRootNodeId = () => {
+    const targetIds = new Set(data.links.map(l => (l.target.id || l.target)));
+    const rootNode = data.nodes.find(n => !targetIds.has(n.id));
+    return rootNode ? rootNode.id : null;
+  };
+
+  // 노드 추가 함수
+  const addNode = (parentId, nodeData) => {
+    // 부모 ID 검증: 유효하지 않으면 루트로 대체
+    const isValidParent = data.nodes.some(n => n.id === parentId);
+    const resolvedParentId = isValidParent ? parentId : getRootNodeId();
+
+    const newNode = {
+      id: `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      keyword: nodeData.keyword,
+      fullText: nodeData.fullText,
+      level: getNodeLevel(resolvedParentId) + 1,
+      size: nodeData.size || 10,
+    };
+
+    // 새 노드를 데이터에 추가
+    const newData = {
+      ...data,
+      nodes: [...data.nodes, newNode],
+      links: [...data.links, { source: resolvedParentId, target: newNode.id, value: 1 }]
+    };
+
+    setData(newData);
+    console.log('Node added:', newNode);
+  };
+
+  // 노드 레벨 계산
+  const getNodeLevel = (nodeId) => {
+    const node = data.nodes.find(n => n.id === nodeId);
+    return node ? node.level : 0;
+  };
+
+  // 노드 클릭 핸들러
+  const handleNodeClick = (nodeId) => {
+    setSelectedNodeId(nodeId);
+  };
 
   useEffect(() => {
     if (!svgRef.current) return undefined;
@@ -51,62 +100,39 @@ const HierarchicalForceTree = () => {
   }, []);
 
   useEffect(() => {
-    // Initialize data
-    const nodesCopy = treeData.nodes.map(d => ({ ...d }));
-    const linksCopy = treeData.links.map(d => ({ ...d }));
+    // 기존 애니메이션 정리
+    if (animationRef.current) {
+      animationRef.current.stop();
+    }
 
-    setNodes(nodesCopy);
-    setLinks(linksCopy);
+    // Tree layout과 애니메이션을 사용하여 노드 위치 계산
+    const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
+      nodes, // 현재 노드 위치
+      data.nodes,
+      data.links,
+      dimensions,
+      (animatedNodes, animatedLinks) => {
+        setNodes(animatedNodes);
+        setLinks(animatedLinks);
+      }
+    );
 
-    // Calculate levels for hierarchical positioning
-    const levels = new Map();
-    nodesCopy.forEach(node => {
-      levels.set(node.id, node.level || 0);
-    });
+    animationRef.current = animation;
 
-    const maxLevel = Math.max(...levels.values());
-
-    // Create force simulation
-    const simulation = d3
-      .forceSimulation(nodesCopy)
-      .force(
-        'link',
-        d3
-          .forceLink(linksCopy)
-          .id(d => d.id)
-          .distance(80)
-      )
-      .force('charge', d3.forceManyBody().strength(-400))
-      .force('center', d3.forceCenter(dimensions.width / 2, dimensions.height / 2))
-      .force(
-        'collision',
-        d3.forceCollide().radius(d => (d.size || 8) + 5)
-      )
-      .force('x', d3.forceX(dimensions.width / 2).strength(0.1))
-      .force(
-        'y',
-        d3
-          .forceY(d => {
-            const level = levels.get(d.id) || 0;
-            return 100 + (level * (dimensions.height - 200)) / maxLevel;
-          })
-          .strength(0.8)
-      );
-
-    simulationRef.current = simulation;
-
-    // Update positions on simulation tick
-    simulation.on('tick', () => {
-      setNodes([...nodesCopy]);
-    });
+    // 기존 force simulation 정리
+    if (simulationRef.current) {
+      simulationRef.current.stop();
+    }
 
     return () => {
-      simulation.stop();
+      if (animationRef.current) {
+        animationRef.current.stop();
+      }
     };
-  }, [dimensions]);
+  }, [dimensions, data]);
 
   // Handle node click for assistant focus
-  const handleNodeClick = (payload) => {
+  const handleNodeClickForAssistant = (payload) => {
     if (!payload) return;
 
     if (payload.type === 'dismiss') {
@@ -118,47 +144,67 @@ const HierarchicalForceTree = () => {
     if (!node || !node.id) return;
 
     setExpandedNodeId(node.id);
+    setSelectedNodeId(node.id);
   };
 
-  // Drag behavior
+  // Handle background click to close expanded node
+  const handleBackgroundClick = (event) => {
+    // Check if the click is on the background (not on a node)
+    if (event.target === event.currentTarget || event.target.tagName === 'svg') {
+      setExpandedNodeId(null);
+    }
+  };
+
+  // Drag behavior - 애니메이션 중에도 드래그 가능
   const handleDrag = (nodeId) => {
     return d3.drag()
       .on('start', (event) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0.3).restart();
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-          node.fx = node.x;
-          node.fy = node.y;
+        // 드래그 시작 시 애니메이션 일시 정지
+        if (animationRef.current) {
+          animationRef.current.stop();
         }
       })
       .on('drag', (event) => {
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
-          node.fx = event.x;
-          node.fy = event.y;
+          // 직접 위치 업데이트
+          node.x = event.x;
+          node.y = event.y;
           setNodes([...nodes]);
-          // Restart simulation with lower alpha for smoother movement
-          simulationRef.current?.alphaTarget(0.1).restart();
         }
       })
       .on('end', (event) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0);
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-          node.fx = null;
-          node.fy = null;
-        }
+        // 드래그 종료 시 tree layout으로 다시 정렬
+        const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
+          nodes,
+          data.nodes,
+          data.links,
+          dimensions,
+          (animatedNodes, animatedLinks) => {
+            setNodes(animatedNodes);
+            setLinks(animatedLinks);
+          }
+        );
+        animationRef.current = animation;
       });
   };
 
   useEffect(() => {
-    // Apply drag behavior to all nodes
+    if (!svgRef.current) return;
     const svg = d3.select(svgRef.current);
+
     nodes.forEach(node => {
-      svg.selectAll(`[data-node-id="${node.id}"]`)
-        .call(handleDrag(node.id));
+      const selection = svg.selectAll(`[data-node-id="${node.id}"]`);
+
+      if (expandedNodeId) {
+        selection.on('.drag', null);
+        selection.style('cursor', 'default');
+      } else {
+        selection.call(handleDrag(node.id));
+        selection.style('cursor', 'grab');
+      }
     });
-  }, [nodes]);
+  }, [nodes, expandedNodeId]);
 
   useEffect(() => {
     if (!expandedNodeId) return;
@@ -166,13 +212,24 @@ const HierarchicalForceTree = () => {
     svg.selectAll(`[data-node-id="${expandedNodeId}"]`).raise();
   }, [expandedNodeId, nodes]);
 
+  // 컴포넌트 언마운트 시 애니메이션 정리
+  useEffect(() => {
+    return () => {
+      if (animationRef.current) {
+        animationRef.current.stop();
+      }
+      treeAnimationService.current.cleanup();
+    };
+  }, []);
+
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div className="relative flex h-screen w-screen overflow-hidden bg-white">
       <svg
         ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
-        style={{ background: 'white' }}
+        style={{ background: 'transparent' }}
+        onClick={handleBackgroundClick}
       >
         {/* Arrow marker definition */}
         <defs>
@@ -185,108 +242,97 @@ const HierarchicalForceTree = () => {
             markerHeight={6}
             orient="auto"
           >
-            <path d="M0,-5L10,0L0,5" fill="#999" />
+            <path d="M0,-5L10,0L0,5" fill="rgba(148,163,184,0.55)" />
           </marker>
         </defs>
 
         {/* Links */}
         <g transform={`translate(${viewTransform.x}, ${viewTransform.y})`}>
           <g className="links">
-            {links.map((link, index) => {
-              const sourceNode = nodes.find(n => n.id === link.source.id || n.id === link.source);
-              const targetNode = nodes.find(n => n.id === link.target.id || n.id === link.target);
+            {links
+              // TreeLayoutService에서 이미 정렬된 링크 사용
+              .map((link, index) => {
+                const sourceNode = nodes.find(n => n.id === link.source);
+                const targetNode = nodes.find(n => n.id === link.target);
 
-              if (!sourceNode || !targetNode) return null;
+                if (!sourceNode || !targetNode) return null;
 
-            // Calculate smart curve to avoid line crossing
-            const dx = targetNode.x - sourceNode.x;
-            const dy = targetNode.y - sourceNode.y;
-            const dr = Math.sqrt(dx * dx + dy * dy);
+                // Tree layout에서는 직선 링크 사용 (더 깔끔함)
+                const pathString = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
 
-            // Determine curve direction based on node positions and index to spread links
-            const sourceLevel = treeData.nodes.find(n => n.id === (sourceNode.id || sourceNode.source))?.level || 0;
-            const targetLevel = treeData.nodes.find(n => n.id === (targetNode.id || targetNode.target))?.level || 0;
-
-            // Create more pronounced curves for cross-level connections
-            const levelDiff = Math.abs(targetLevel - sourceLevel);
-            const baseCurvature = levelDiff > 1 ? 0.4 : 0.2;
-            const indexOffset = (index % 3 - 1) * 0.15; // Spread multiple connections
-            const curvature = baseCurvature + indexOffset;
-
-            const midX = (sourceNode.x + targetNode.x) / 2;
-            const midY = (sourceNode.y + targetNode.y) / 2;
-
-            // Calculate perpendicular offset for curve - stronger for longer distances
-            const normalizedDistance = Math.min(dr / 300, 1); // Normalize distance
-            const perpX = -dy / dr * curvature * dr * (0.15 + normalizedDistance * 0.1);
-            const perpY = dx / dr * curvature * dr * (0.15 + normalizedDistance * 0.1);
-
-            // Use cubic bezier for smoother curves
-            const controlX1 = sourceNode.x + perpX * 0.5;
-            const controlY1 = sourceNode.y + perpY * 0.5;
-            const controlX2 = targetNode.x + perpX * 0.5;
-            const controlY2 = targetNode.y + perpY * 0.5;
-
-            const pathString = `M ${sourceNode.x} ${sourceNode.y} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${targetNode.x} ${targetNode.y}`;
-
-            return (
-              <motion.path
-                key={`${link.source.id || link.source}-${link.target.id || link.target}-${index}`}
-                d={pathString}
-                stroke="#999"
-                strokeOpacity={0.7}
-                strokeWidth={Math.sqrt(link.value || 1) * 1.5}
-                fill="none"
-                markerEnd="url(#arrowhead)"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{
-                  duration: 1.5,
-                  ease: "easeInOut",
-                  delay: index * 0.1
-                }}
-                style={{
-                  filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.1))'
-                }}
-              />
-            );
-            })}
+                return (
+                  <motion.path
+                    key={`${link.source}-${link.target}-${index}`}
+                    d={pathString}
+                    stroke="rgba(148, 163, 184, 0.55)"
+                    strokeOpacity={0.8}
+                    strokeWidth={Math.sqrt(link.value || 1) * 1.5}
+                    fill="none"
+                    markerEnd="url(#arrowhead)"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{
+                      duration: 1.5,
+                      ease: "easeInOut",
+                      delay: index * 0.1
+                    }}
+                    style={{
+                      filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
+                    }}
+                  />
+                );
+              })}
           </g>
 
           {/* Nodes */}
           <g className="nodes">
             {nodes.map((node, index) => {
-              const levels = new Map();
-              treeData.nodes.forEach(n => levels.set(n.id, n.level || 0));
+              // Tree layout에서는 depth를 사용
+              const nodeDepth = node.depth || 0;
 
               return (
                 <motion.g
-                key={node.id}
-                data-node-id={node.id}
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{
-                  delay: index * 0.1,
-                  type: "spring",
-                  stiffness: 300,
-                  damping: 25
-                }}
-              >
-                <TreeNode
-                  node={node}
-                  position={{ x: node.x || 0, y: node.y || 0 }}
-                  color={colorScheme(levels.get(node.id) || 0)}
-                  onDrag={handleDrag}
-                  onNodeClick={handleNodeClick}
-                  isExpanded={expandedNodeId === node.id}
-                />
-              </motion.g>
+                  key={node.id}
+                  data-node-id={node.id}
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{
+                    delay: index * 0.1,
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 25
+                  }}
+                >
+                  <TreeNode
+                    node={node}
+                    position={{ x: node.x || 0, y: node.y || 0 }}
+                    color={colorScheme(nodeDepth)}
+                    onDrag={handleDrag}
+                    onNodeClick={handleNodeClickForAssistant}
+                    isExpanded={expandedNodeId === node.id}
+                  />
+                </motion.g>
               );
             })}
           </g>
         </g>
       </svg>
 
+      {/* 노드 추가 버튼 */}
+      <AddNodeButton
+        parentId={selectedNodeId}
+        onAddNode={addNode}
+        position={{ x: 20, y: 20 }}
+        availableNodes={nodes}
+      />
+
+      {/* 디버그 정보 */}
+      <div className="absolute top-4 right-4 bg-white p-4 rounded shadow-lg z-10">
+        <h3 className="font-bold">Debug Info</h3>
+        <p>Nodes: {nodes.length}</p>
+        <p>Links: {links.length}</p>
+        <p>Selected Node: {selectedNodeId || 'None'}</p>
+      </div>
     </div>
   );
 };

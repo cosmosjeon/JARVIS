@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import NodeAssistantPanel from './NodeAssistantPanel';
+import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 
 const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -38,8 +38,7 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
   const baseHeight = 30;
   const hoverWidth = baseWidth * 1.7;
   const hoverHeight = baseHeight * 1.15;
-  const chatWidth = 300;
-  const chatHeight = 340;
+  const [chatSize, setChatSize] = useState(PANEL_SIZES.compact);
   const borderRadius = 8; // Fixed border radius
   const lines = node.fullText ? wrapText(node.fullText, hoverWidth - 40) : [];
 
@@ -47,12 +46,15 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
   const displayMode = isExpanded ? 'chat' : (isHovered && node.fullText ? 'hover' : 'normal');
 
   // Calculate current dimensions
-  const currentWidth = displayMode === 'chat' ? chatWidth : displayMode === 'hover' ? hoverWidth : baseWidth;
-  const currentHeight = displayMode === 'chat' ? chatHeight : displayMode === 'hover' ? hoverHeight : baseHeight;
-  const fillColor = color;
-  const rectFill = displayMode === 'chat' ? '#ffffff' : fillColor;
-  const rectStroke = displayMode === 'chat' ? color : 'none';
-  const rectStrokeWidth = displayMode === 'chat' ? 2 : 0;
+  const currentWidth = displayMode === 'chat' ? chatSize.width : displayMode === 'hover' ? hoverWidth : baseWidth;
+  const currentHeight = displayMode === 'chat' ? chatSize.height : displayMode === 'hover' ? hoverHeight : baseHeight;
+  const rectFill = displayMode === 'chat'
+    ? 'rgba(15, 23, 42, 0.55)'
+    : 'rgba(148, 163, 184, 0.22)';
+  const rectStroke = displayMode === 'chat'
+    ? 'rgba(255, 255, 255, 0.32)'
+    : 'rgba(255, 255, 255, 0.18)';
+  const rectStrokeWidth = displayMode === 'chat' ? 2 : 1;
 
   useEffect(() => {
     if (!isExpanded || !onNodeClick) return undefined;
@@ -68,12 +70,24 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isExpanded, onNodeClick]);
 
+  useEffect(() => {
+    if (!isExpanded) return;
+    setChatSize(PANEL_SIZES.compact);
+  }, [isExpanded]);
+
+  const handlePanelSizeChange = useCallback((size) => {
+    setChatSize(size);
+  }, []);
+
   return (
     <g
       transform={`translate(${position.x || 0}, ${position.y || 0})`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onNodeClick && onNodeClick(node)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onNodeClick && onNodeClick(node);
+      }}
       style={{ cursor: 'pointer' }}
     >
       <motion.rect
@@ -84,7 +98,13 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
         fill={rectFill}
         stroke={rectStroke}
         strokeWidth={rectStrokeWidth}
-        style={{ cursor: 'pointer' }}
+        style={{
+          cursor: 'pointer',
+          mixBlendMode: displayMode === 'chat' ? 'screen' : 'normal',
+          filter: displayMode === 'chat'
+            ? 'drop-shadow(0 18px 42px rgba(15, 23, 42, 0.48))'
+            : 'drop-shadow(0 8px 24px rgba(15, 23, 42, 0.32))',
+        }}
         animate={{
           x: -currentWidth / 2,
           y: -currentHeight / 2,
@@ -105,9 +125,9 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
           y={-currentHeight / 2}
           width={currentWidth}
           height={currentHeight}
-          style={{ overflow: 'visible', position: 'relative' }}
+          style={{ overflow: 'hidden', position: 'relative' }}
         >
-          <NodeAssistantPanel node={node} color={color} />
+          <NodeAssistantPanel node={node} color={color} onSizeChange={handlePanelSizeChange} />
         </foreignObject>
       ) : (
         <motion.text
@@ -122,14 +142,14 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded }) =>
         >
           {displayMode === 'hover' && lines.length
             ? lines.map((line, i) => (
-                <tspan
-                  key={i}
-                  x={0}
-                  dy={i === 0 ? -(lines.length - 1) * 9 : 18}
-                >
-                  {line}
-                </tspan>
-              ))
+              <tspan
+                key={i}
+                x={0}
+                dy={i === 0 ? -(lines.length - 1) * 9 : 18}
+              >
+                {line}
+              </tspan>
+            ))
             : node.keyword || node.id}
         </motion.text>
       )}
