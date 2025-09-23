@@ -144,6 +144,7 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
   const summary = useMemo(() => buildSummary(node), [node]);
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
+  const [isComposing, setIsComposing] = useState(false);
   const typingTimers = useRef([]);
 
   const clearTypingTimers = useCallback(() => {
@@ -235,13 +236,21 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
 
   const handleKeyDown = useCallback(
     (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
         event.preventDefault();
         handleSend();
       }
     },
-    [handleSend],
+    [handleSend, isComposing],
   );
+
+  const handleCompositionStart = useCallback(() => {
+    setIsComposing(true);
+  }, []);
+
+  const handleCompositionEnd = useCallback(() => {
+    setIsComposing(false);
+  }, []);
 
   return (
     <div
@@ -297,6 +306,8 @@ const NodeAssistantPanel = ({ node, color, onSizeChange }) => {
             value={composerValue}
             onChange={(event) => setComposerValue(event.target.value)}
             onKeyDown={handleKeyDown}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
             placeholder="Ask anything..."
             className="glass-text-primary max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm placeholder:text-slate-200 focus:outline-none"
           />
