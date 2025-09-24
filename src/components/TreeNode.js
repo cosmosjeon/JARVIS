@@ -79,7 +79,7 @@ const TreeNode = ({
 
     if (currentNode.fullText && currentNode.fullText.trim()) {
       const stopwords = new Set([
-        'the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were','be','as','by','at','from','that','this','it'
+        'the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'for', 'with', 'is', 'are', 'was', 'were', 'be', 'as', 'by', 'at', 'from', 'that', 'this', 'it'
       ]);
       const tokens = currentNode.fullText
         .replace(/[.,\/#!$%^&*;:{}=_`~()\[\]\-]/g, ' ')
@@ -171,6 +171,8 @@ const TreeNode = ({
     <g
       transform={`translate(${position.x || 0}, ${position.y || 0})`}
       style={{ cursor: isExpanded ? 'default' : 'pointer' }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       <motion.rect
         width={currentWidth}
@@ -187,8 +189,6 @@ const TreeNode = ({
             ? 'drop-shadow(0 18px 42px rgba(15, 23, 42, 0.48))'
             : 'drop-shadow(0 8px 24px rgba(15, 23, 42, 0.32))',
         }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         onClick={(e) => {
           if (isExpanded) {
             return;
@@ -216,16 +216,16 @@ const TreeNode = ({
           y={-currentHeight / 2}
           width={currentWidth}
           height={currentHeight}
-          style={{ 
-            overflow: 'hidden', 
+          style={{
+            overflow: 'hidden',
             position: 'relative',
             pointerEvents: 'auto',
             zIndex: 1000
           }}
         >
-          <div 
-            style={{ 
-              width: '100%', 
+          <div
+            style={{
+              width: '100%',
               height: '100%',
               pointerEvents: 'auto',
               position: 'relative',

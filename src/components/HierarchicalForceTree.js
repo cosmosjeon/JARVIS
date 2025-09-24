@@ -544,17 +544,17 @@ const HierarchicalForceTree = () => {
               {links
                 // TreeLayoutService에서 이미 정렬된 링크 사용
                 .map((link, index) => {
-                const sourceNode = nodes.find(n => n.id === link.source);
-                const targetNode = nodes.find(n => n.id === link.target);
+                  const sourceNode = nodes.find(n => n.id === link.source);
+                  const targetNode = nodes.find(n => n.id === link.target);
 
-                if (!sourceNode || !targetNode) return null;
+                  if (!sourceNode || !targetNode) return null;
 
-                // Calculate source position from toggle icon bottom edge
-                const sourceX = sourceNode.x;
-                const sourceY = sourceNode.y + 14 + 10; // Toggle icon is 14px below node center + 10px (half of 20px icon height)
-                
-                const shouldAnimate = link.isNew;
-                const pathString = `M ${sourceX} ${sourceY} L ${targetNode.x} ${targetNode.y}`;
+                  // Calculate source position from toggle icon bottom edge
+                  const sourceX = sourceNode.x;
+                  const sourceY = sourceNode.y + 14 + 10; // Toggle icon is 14px below node center + 10px (half of 20px icon height)
+
+                  const shouldAnimate = link.isNew;
+                  const pathString = `M ${sourceX} ${sourceY} L ${targetNode.x} ${targetNode.y}`;
 
                   return (
                     <motion.path
