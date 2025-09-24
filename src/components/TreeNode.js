@@ -255,7 +255,7 @@ const TreeNode = ({
           fontSize={displayMode === 'hover' ? 12 : 12}
           fontFamily="Arial, sans-serif"
           fontWeight="bold"
-          fill="#fff"
+          fill="#000"
           style={{ pointerEvents: 'none' }}
           transition={{ duration: 0.15 }}
         >
@@ -284,7 +284,7 @@ const TreeNode = ({
             fontFamily="Arial, sans-serif"
             fontSize={deleteIconFontSize}
             fontWeight="bold"
-            fill="#fff"
+            fill="#000"
           >
             ×
           </text>
