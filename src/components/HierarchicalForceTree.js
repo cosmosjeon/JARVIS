@@ -549,8 +549,12 @@ const HierarchicalForceTree = () => {
 
                 if (!sourceNode || !targetNode) return null;
 
+                // Calculate source position from toggle icon bottom edge
+                const sourceX = sourceNode.x;
+                const sourceY = sourceNode.y + 14 + 10; // Toggle icon is 14px below node center + 10px (half of 20px icon height)
+                
                 const shouldAnimate = link.isNew;
-                const pathString = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
+                const pathString = `M ${sourceX} ${sourceY} L ${targetNode.x} ${targetNode.y}`;
 
                   return (
                     <motion.path
