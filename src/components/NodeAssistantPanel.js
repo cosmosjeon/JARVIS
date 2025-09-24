@@ -391,15 +391,15 @@ const NodeAssistantPanel = ({
       // 루트 노드인지 확인 (CEO 노드)
       const isRootNode = node.id === 'CEO';
 
-      // 질문 수 증가 및 2번째 질문인지 확인 (루트 노드만)
-      const isSecondQuestion = skipSecondQuestionCheck
-        ? false
-        : isRootNode
+      // 동작 복원: 루트 노드(CEO)는 2번째 질문일 때만 생성, 그 외 노드는 즉시 생성
+      let shouldCreateChild = false;
+      if (!skipSecondQuestionCheck) {
+        shouldCreateChild = isRootNode
           ? questionServiceRef.current.incrementQuestionCount(node.id)
-          : true; // 루트 노드가 아니면 바로 새 노드 생성
+          : true;
+      }
 
-      // 2번째 질문이거나 루트 노드가 아니면 즉시 새 노드 생성 콜백 호출
-      if (isSecondQuestion && onSecondQuestion) {
+      if (shouldCreateChild && onSecondQuestion) {
         onSecondQuestion(node.id, question);
       }
 

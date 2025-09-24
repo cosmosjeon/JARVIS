@@ -54,7 +54,7 @@ const TreeNode = ({
     return lines.slice(0, 3); // Fewer lines for horizontal layout
   };
 
-  // Create concise hover summary (<= 4 words)
+  // Create hover text: for question nodes, show full question; otherwise concise (<= 4 words)
   const summarizeForHover = (currentNode) => {
     const limitWords = (text, maxWords = 4) =>
       (text || '')
@@ -63,6 +63,12 @@ const TreeNode = ({
         .split(/\s+/)
         .slice(0, maxWords)
         .join(' ');
+
+    // If node has questionData, prefer full question on hover
+    if (currentNode.questionData && typeof currentNode.questionData.question === 'string') {
+      const q = currentNode.questionData.question.trim();
+      if (q) return q;
+    }
 
     if (currentNode.keyword && currentNode.keyword.trim()) {
       return limitWords(currentNode.keyword, 4);
@@ -92,8 +98,8 @@ const TreeNode = ({
   const charUnit = 9;
   const sidePadding = 24;
   const computedHoverWidth = Math.max(54, hoverText.length * charUnit + sidePadding);
-  const hoverWidth = Math.max(baseWidth, computedHoverWidth);
-  const hoverHeight = Math.max(baseHeight, 34);
+  const hoverWidth = Math.max(Math.ceil(baseWidth * 1.35), computedHoverWidth);
+  const hoverHeight = Math.max(Math.ceil(baseHeight * 1.35), 34);
   const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation));
   const borderRadius = 8; // Fixed border radius
 
@@ -233,7 +239,7 @@ const TreeNode = ({
 
       {isHovered && !isExpanded && typeof onRemoveNode === 'function' && (
         <g
-          transform={`translate(${currentWidth / 2 + 12}, 0)`}
+          transform={`translate(${currentWidth / 2 - 12}, 0)`}
           onClick={(e) => {
             e.stopPropagation();
             onRemoveNode(node.id);
