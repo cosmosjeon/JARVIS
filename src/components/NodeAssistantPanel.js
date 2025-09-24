@@ -141,7 +141,16 @@ const MarkdownMessage = ({ text }) => {
   );
 };
 
-const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => {
+const NodeAssistantPanel = ({
+  node,
+  color,
+  onSizeChange,
+  onSecondQuestion,
+  onPlaceholderCreate,
+  questionService: externalQuestionService,
+  initialConversation = [],
+  onConversationChange = () => {},
+}) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
     if (node.questionData) {
@@ -157,11 +166,37 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
     }
     return buildSummary(node);
   }, [node]);
-  const [messages, setMessages] = useState([]);
+  const normalizedInitialConversation = useMemo(() => {
+    if (!Array.isArray(initialConversation)) return [];
+    return initialConversation.map((message) => ({ ...message }));
+  }, [initialConversation]);
+
+  const [messages, setMessages] = useState(() => normalizedInitialConversation);
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
+  const [placeholderNotice, setPlaceholderNotice] = useState(null);
+  const [pendingSelection, setPendingSelection] = useState([]);
   const typingTimers = useRef([]);
-  const questionService = useRef(new QuestionService());
+  const questionServiceRef = useRef(externalQuestionService ?? new QuestionService());
+  const isHydratingRef = useRef(true);
+  const hasBootstrappedRef = useRef(false);
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    if (externalQuestionService) {
+      questionServiceRef.current = externalQuestionService;
+    }
+  }, [externalQuestionService]);
+
+  useEffect(() => {
+    if (!placeholderNotice) return undefined;
+    const timeoutId = window.setTimeout(() => setPlaceholderNotice(null), 2400);
+    return () => window.clearTimeout(timeoutId);
+  }, [placeholderNotice]);
+
+  const clearPendingSelection = useCallback(() => {
+    setPendingSelection([]);
+  }, []);
 
   const clearTypingTimers = useCallback(() => {
     typingTimers.current.forEach(clearInterval);
@@ -172,9 +207,11 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
 
   useEffect(() => {
     clearTypingTimers();
-    setMessages([]);
+    setMessages(normalizedInitialConversation);
     setComposerValue('');
-  }, [clearTypingTimers, summary]);
+    isHydratingRef.current = true;
+    hasBootstrappedRef.current = false;
+  }, [clearTypingTimers, normalizedInitialConversation]);
 
   const assistantMessageCount = useMemo(
     () => messages.filter((message) => message.role === 'assistant').length,
@@ -187,19 +224,29 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
     onSizeChange(nextSize);
   }, [assistantMessageCount, onSizeChange]);
 
+  useEffect(() => {
+    if (isHydratingRef.current) {
+      isHydratingRef.current = false;
+      return;
+    }
+    onConversationChange(messages.map((message) => ({ ...message })));
+  }, [messages, onConversationChange]);
+
   const sendResponse = useCallback(
-    (question) => {
+    (question, { skipSecondQuestionCheck = false, overrideAnswerText } = {}) => {
       clearTypingTimers();
 
       // 질문 수 증가 및 2번째 질문인지 확인
-      const isSecondQuestion = questionService.current.incrementQuestionCount(node.id);
+      const isSecondQuestion = skipSecondQuestionCheck
+        ? false
+        : questionServiceRef.current.incrementQuestionCount(node.id);
 
       // 2번째 질문이면 즉시 새 노드 생성 콜백 호출
       if (isSecondQuestion && onSecondQuestion) {
         onSecondQuestion(node.id, question);
       }
 
-      const responseText = buildAnswerText(summary, question);
+      const responseText = overrideAnswerText ?? buildAnswerText(summary, question);
       const timestamp = Date.now();
       const userId = `${timestamp}-user`;
       setMessages((prev) => [
@@ -251,6 +298,17 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
     [clearTypingTimers, summary, node.id, onSecondQuestion],
   );
 
+  useEffect(() => {
+    if (!node.questionData) return;
+    if (normalizedInitialConversation.length > 0) return;
+    if (hasBootstrappedRef.current) return;
+    hasBootstrappedRef.current = true;
+    sendResponse(node.questionData.question, {
+      skipSecondQuestionCheck: true,
+      overrideAnswerText: node.questionData.answer,
+    });
+  }, [node.questionData, normalizedInitialConversation.length, sendResponse]);
+
   const handleSend = useCallback(() => {
     const trimmed = composerValue.trim();
     if (!trimmed) return;
@@ -259,14 +317,71 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
     setComposerValue('');
   }, [composerValue, sendResponse]);
 
+  const collectTextsFromSelection = useCallback((selection) => {
+    if (!selection || selection.isCollapsed) return [];
+    if (!panelRef.current) return [];
+
+    const container = panelRef.current;
+    const elementNodeType = typeof Node !== 'undefined' ? Node.ELEMENT_NODE : 1;
+    const collected = [];
+
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      const range = selection.getRangeAt(index);
+      if (!range) continue;
+      const ancestor = range.commonAncestorContainer?.nodeType === elementNodeType
+        ? range.commonAncestorContainer
+        : range.commonAncestorContainer?.parentElement;
+      if (!ancestor || !container.contains(ancestor)) {
+        continue;
+      }
+      const rawText = range.toString();
+      if (!rawText) continue;
+      const normalized = rawText.trim()
+        .replace(/^[-*\s•]+/, '')
+        .replace(/[-*\s•]+$/, '')
+        .trim();
+      if (normalized) {
+        collected.push(normalized);
+      }
+    }
+
+    return Array.from(new Set(collected));
+  }, [panelRef]);
+
+  const extractSelectionTexts = useCallback((explicitSelection = null) => {
+    const selection = explicitSelection ?? (typeof window !== 'undefined' ? window.getSelection() : null);
+    const activeTexts = collectTextsFromSelection(selection);
+    if (activeTexts.length > 0) {
+      return activeTexts;
+    }
+
+    return pendingSelection;
+  }, [collectTextsFromSelection, pendingSelection]);
+
   const handleKeyDown = useCallback(
     (event) => {
       if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
+        const selectionTexts = extractSelectionTexts();
+        if (selectionTexts.length > 0) {
+          event.preventDefault();
+          onPlaceholderCreate?.(node.id, selectionTexts);
+          if (typeof window !== 'undefined') {
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+          }
+          setComposerValue('');
+          clearPendingSelection();
+          setPlaceholderNotice({ type: 'success', message: `${selectionTexts.length}개의 플레이스홀더가 생성되었습니다.` });
+          return;
+        }
+        if (!composerValue.trim()) {
+          setPlaceholderNotice({ type: 'warning', message: '선택된 텍스트가 없습니다. 답변에서 텍스트를 선택한 뒤 Enter를 눌러주세요.' });
+        }
         event.preventDefault();
         handleSend();
       }
     },
-    [handleSend, isComposing],
+    [handleSend, isComposing, extractSelectionTexts, node.id, onPlaceholderCreate, composerValue, clearPendingSelection],
   );
 
   const handleCompositionStart = useCallback(() => {
@@ -277,8 +392,52 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
     setIsComposing(false);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleSelectionSnapshot = () => {
+      const selection = window.getSelection();
+      const texts = collectTextsFromSelection(selection);
+      if (texts.length > 0) {
+        setPendingSelection(texts);
+      }
+    };
+
+    document.addEventListener('mouseup', handleSelectionSnapshot);
+    document.addEventListener('selectionchange', handleSelectionSnapshot);
+
+    return () => {
+      document.removeEventListener('mouseup', handleSelectionSnapshot);
+      document.removeEventListener('selectionchange', handleSelectionSnapshot);
+    };
+  }, [collectTextsFromSelection, panelRef]);
+
+  useEffect(() => {
+    if (!onPlaceholderCreate) return undefined;
+
+    const handleGlobalEnter = (event) => {
+      if (event.key !== 'Enter' || event.shiftKey || isComposing) return;
+      if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+
+      const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+      const selectionTexts = extractSelectionTexts(selection);
+      if (!selectionTexts.length) return;
+
+      event.preventDefault();
+      onPlaceholderCreate(node.id, selectionTexts);
+      selection?.removeAllRanges();
+      setComposerValue('');
+      clearPendingSelection();
+      setPlaceholderNotice({ type: 'success', message: `${selectionTexts.length}개의 플레이스홀더가 생성되었습니다.` });
+    };
+
+    window.addEventListener('keydown', handleGlobalEnter, true);
+    return () => window.removeEventListener('keydown', handleGlobalEnter, true);
+  }, [extractSelectionTexts, isComposing, node.id, onPlaceholderCreate, clearPendingSelection]);
+
   return (
     <div
+      ref={panelRef}
       className="glass-shell relative flex h-full w-full flex-col rounded-[28px] p-6"
       style={{
         fontFamily: 'Arial, sans-serif',
@@ -336,6 +495,13 @@ const NodeAssistantPanel = ({ node, color, onSizeChange, onSecondQuestion }) => 
             placeholder="Ask anything..."
             className="glass-text-primary max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm placeholder:text-slate-200 focus:outline-none"
           />
+          {placeholderNotice && (
+            <span
+              className={`text-xs ${placeholderNotice.type === 'success' ? 'text-emerald-200' : 'text-amber-200'} whitespace-nowrap`}
+            >
+              {placeholderNotice.message}
+            </span>
+          )}
           <button
             type="submit"
             disabled={!composerValue.trim()}

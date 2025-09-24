@@ -109,7 +109,6 @@ src/
 
 - `npm start` - Development server with hot reload
 - `npm build` - Production build
-- `npm test` - Run tests
 - `npm eject` - Eject from Create React App (⚠️ irreversible)
 
 Enjoy building beautiful, interactive tree visualizations! 🎉

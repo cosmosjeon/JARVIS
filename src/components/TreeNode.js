@@ -2,7 +2,28 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 
-const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded, onSecondQuestion }) => {
+const selectPanelSize = (conversation) => {
+  if (!Array.isArray(conversation)) {
+    return PANEL_SIZES.compact;
+  }
+
+  const hasAssistantReply = conversation.some((message) => message.role === 'assistant');
+  return hasAssistantReply ? PANEL_SIZES.expanded : PANEL_SIZES.compact;
+};
+
+const TreeNode = ({
+  node,
+  position,
+  color,
+  onDrag,
+  onNodeClick,
+  isExpanded,
+  onSecondQuestion,
+  onPlaceholderCreate,
+  questionService,
+  initialConversation = [],
+  onConversationChange = () => {},
+}) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const wrapText = (text, maxWidth) => {
@@ -38,7 +59,7 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded, onSe
   const baseHeight = 30;
   const hoverWidth = baseWidth * 1.7;
   const hoverHeight = baseHeight * 1.15;
-  const [chatSize, setChatSize] = useState(PANEL_SIZES.compact);
+  const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation));
   const borderRadius = 8; // Fixed border radius
   const lines = node.fullText ? wrapText(node.fullText, hoverWidth - 40) : [];
 
@@ -71,9 +92,9 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded, onSe
   }, [isExpanded, onNodeClick]);
 
   useEffect(() => {
-    if (!isExpanded) return;
-    setChatSize(PANEL_SIZES.compact);
-  }, [isExpanded]);
+    const preferredSize = selectPanelSize(initialConversation);
+    setChatSize((current) => (current === preferredSize ? current : preferredSize));
+  }, [initialConversation, isExpanded]);
 
   const handlePanelSizeChange = useCallback((size) => {
     setChatSize(size);
@@ -127,7 +148,16 @@ const TreeNode = ({ node, position, color, onDrag, onNodeClick, isExpanded, onSe
           height={currentHeight}
           style={{ overflow: 'hidden', position: 'relative' }}
         >
-          <NodeAssistantPanel node={node} color={color} onSizeChange={handlePanelSizeChange} onSecondQuestion={onSecondQuestion} />
+          <NodeAssistantPanel
+            node={node}
+            color={color}
+            onSizeChange={handlePanelSizeChange}
+            onSecondQuestion={onSecondQuestion}
+            onPlaceholderCreate={onPlaceholderCreate}
+            questionService={questionService}
+            initialConversation={initialConversation}
+            onConversationChange={onConversationChange}
+          />
         </foreignObject>
       ) : (
         <motion.text

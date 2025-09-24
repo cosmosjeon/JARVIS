@@ -76,6 +76,22 @@ class QuestionService {
     }
 
     /**
+     * 특정 노드의 질문 수를 명시적으로 설정
+     * @param {string} nodeId - 노드 ID
+     * @param {number} nextCount - 설정할 질문 수
+     */
+    setQuestionCount(nodeId, nextCount) {
+        if (typeof nextCount !== 'number' || Number.isNaN(nextCount)) {
+            return;
+        }
+        if (nextCount <= 0) {
+            this.resetQuestionCount(nodeId);
+            return;
+        }
+        this.questionCounts.set(nodeId, nextCount);
+    }
+
+    /**
      * 모든 질문 카운트 초기화
      */
     resetAllQuestionCounts() {

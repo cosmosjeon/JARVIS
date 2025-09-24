@@ -20,6 +20,7 @@ const HierarchicalForceTree = () => {
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
+  const conversationStoreRef = useRef(new Map());
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -53,6 +54,7 @@ const HierarchicalForceTree = () => {
     };
 
     setData(newData);
+    conversationStoreRef.current.set(newNode.id, []);
     console.log('Node added:', newNode);
   };
 
@@ -79,6 +81,13 @@ const HierarchicalForceTree = () => {
     // QuestionService를 통해 새 노드 데이터 생성 (실제 답변 포함)
     const newNodeData = questionService.current.createSecondQuestionNode(parentNodeId, question, answer, data.nodes);
 
+    const timestamp = Date.now();
+    const initialConversation = [
+      { id: `${timestamp}-user`, role: 'user', text: question },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete' }
+    ];
+    conversationStoreRef.current.set(newNodeData.id, initialConversation);
+
     console.log('생성된 새 노드 데이터:', newNodeData);
     console.log('부모 노드 정보:', parentNode);
 
@@ -91,6 +100,7 @@ const HierarchicalForceTree = () => {
 
     console.log('업데이트된 데이터:', newData);
     setData(newData);
+    questionService.current.setQuestionCount(parentNodeId, 1);
 
     // 새 노드로 자동 이동
     setTimeout(() => {
@@ -103,17 +113,92 @@ const HierarchicalForceTree = () => {
     console.log('새 노드 생성됨:', newNodeData);
   };
 
+  const getInitialConversationForNode = (nodeId) => {
+    const stored = conversationStoreRef.current.get(nodeId);
+    return stored ? stored.map((message) => ({ ...message })) : [];
+  };
+
+  const handleConversationChange = (nodeId, messages) => {
+    conversationStoreRef.current.set(
+      nodeId,
+      Array.isArray(messages) ? messages.map((message) => ({ ...message })) : []
+    );
+  };
+
+  const handlePlaceholderCreate = (parentNodeId, keywords) => {
+    if (!Array.isArray(keywords) || keywords.length === 0) return;
+    const parentExists = data.nodes.some((node) => node.id === parentNodeId);
+    if (!parentExists) return;
+
+    const parentLevel = getNodeLevel(parentNodeId);
+    const timestamp = Date.now();
+
+    const placeholderNodes = keywords.map((keyword, index) => {
+      const id = `placeholder_${timestamp}_${index}_${Math.random().toString(36).slice(2, 8)}`;
+      const label = keyword && keyword.trim().length > 0 ? keyword.trim() : `Placeholder ${index + 1}`;
+      return {
+        id,
+        keyword: `Placeholder: ${label}`,
+        fullText: '',
+        level: parentLevel + 1,
+        size: 12,
+        status: 'placeholder',
+        placeholder: {
+          parentNodeId,
+          createdAt: timestamp,
+        },
+      };
+    });
+
+    const placeholderLinks = placeholderNodes.map((node) => ({
+      source: parentNodeId,
+      target: node.id,
+      value: 1,
+    }));
+
+    const newData = {
+      ...data,
+      nodes: [...data.nodes, ...placeholderNodes],
+      links: [...data.links, ...placeholderLinks],
+    };
+
+    setData(newData);
+    placeholderNodes.forEach((node) => {
+      conversationStoreRef.current.set(node.id, []);
+    });
+
+    setSelectedNodeId(parentNodeId);
+    setExpandedNodeId(parentNodeId);
+  };
+
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
     setSelectedNodeId(nodeId);
   };
 
   useEffect(() => {
+    data.nodes.forEach((node) => {
+      if (!conversationStoreRef.current.has(node.id)) {
+        conversationStoreRef.current.set(node.id, []);
+      }
+    });
+  }, [data.nodes]);
+
+  useEffect(() => {
     if (!svgRef.current) return undefined;
 
     const svgSelection = d3.select(svgRef.current);
+    const zoomFactory = typeof d3.zoom === 'function' ? d3.zoom : null;
+    if (!zoomFactory) {
+      return undefined;
+    }
 
-    const zoomBehaviour = d3.zoom()
+    const zoomInstance = zoomFactory();
+    if (!zoomInstance || typeof zoomInstance.scaleExtent !== 'function') {
+      return undefined;
+    }
+
+    const zoomBehaviour = zoomInstance
       .scaleExtent([1, 1])
       .filter((event) => {
         if (event.type === 'wheel' || event.type === 'dblclick') return false;
@@ -354,6 +439,10 @@ const HierarchicalForceTree = () => {
                     onNodeClick={handleNodeClickForAssistant}
                     isExpanded={expandedNodeId === node.id}
                     onSecondQuestion={handleSecondQuestion}
+                    onPlaceholderCreate={handlePlaceholderCreate}
+                    questionService={questionService.current}
+                    initialConversation={getInitialConversationForNode(node.id)}
+                    onConversationChange={(messages) => handleConversationChange(node.id, messages)}
                   />
                 </motion.g>
               );
