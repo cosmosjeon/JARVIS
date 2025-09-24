@@ -5,6 +5,7 @@ import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
+import { markNewLinks } from '../utils/linkAnimationUtils';
 
 const HierarchicalForceTree = () => {
   const svgRef = useRef(null);
@@ -20,6 +21,7 @@ const HierarchicalForceTree = () => {
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
+  const linkKeysRef = useRef(new Set());
   const hasCleanedQ2Ref = useRef(false);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
 
@@ -398,7 +400,9 @@ const HierarchicalForceTree = () => {
       dimensions,
       (animatedNodes, animatedLinks) => {
         setNodes(animatedNodes);
-        setLinks(animatedLinks);
+        const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
+        linkKeysRef.current = nextKeys;
+        setLinks(annotatedLinks);
       }
     );
 
@@ -467,7 +471,9 @@ const HierarchicalForceTree = () => {
           dimensions,
           (animatedNodes, animatedLinks) => {
             setNodes(animatedNodes);
-            setLinks(animatedLinks);
+            const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
+            linkKeysRef.current = nextKeys;
+            setLinks(annotatedLinks);
           }
         );
         animationRef.current = animation;
@@ -543,7 +549,7 @@ const HierarchicalForceTree = () => {
 
                 if (!sourceNode || !targetNode) return null;
 
-                // Tree layout에서는 직선 링크 사용 (더 깔끔함)
+                const shouldAnimate = link.isNew;
                 const pathString = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
 
                   return (
