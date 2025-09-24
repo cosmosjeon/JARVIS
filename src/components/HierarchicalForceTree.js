@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
@@ -21,6 +21,7 @@ const HierarchicalForceTree = () => {
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
   const hasCleanedQ2Ref = useRef(false);
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -118,6 +119,57 @@ const HierarchicalForceTree = () => {
 
     console.log('새 노드 생성됨:', newNodeData);
   };
+
+  // 부모 -> 자식 맵 계산 (원본 데이터 기준)
+  const childrenByParent = React.useMemo(() => {
+    const map = new Map();
+    const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+    data.links.forEach((l) => {
+      const sourceId = normalizeId(l.source);
+      const targetId = normalizeId(l.target);
+      if (!map.has(sourceId)) map.set(sourceId, []);
+      map.get(sourceId).push(targetId);
+    });
+    return map;
+  }, [data.links]);
+
+  // 접힘 토글
+  const toggleCollapse = (nodeId) => {
+    setCollapsedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
+      return next;
+    });
+  };
+
+  // 접힘 상태에 따른 보이는 노드/링크 계산
+  const visibleGraph = React.useMemo(() => {
+    const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+    const rootId = getRootNodeId();
+    if (!rootId) {
+      return { nodes: data.nodes.slice(), links: data.links.slice(), visibleSet: new Set(data.nodes.map(n => n.id)) };
+    }
+
+    const visible = new Set();
+    const stack = [rootId];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (visible.has(current)) continue;
+      visible.add(current);
+      if (collapsedNodeIds.has(current)) continue; // 하위는 숨김
+      const children = childrenByParent.get(current) || [];
+      for (const child of children) stack.push(child);
+    }
+
+    const filteredNodes = data.nodes.filter((n) => visible.has(n.id));
+    const filteredLinks = data.links.filter((l) => {
+      const s = normalizeId(l.source);
+      const t = normalizeId(l.target);
+      return visible.has(s) && visible.has(t) && !collapsedNodeIds.has(s);
+    });
+
+    return { nodes: filteredNodes, links: filteredLinks, visibleSet: visible };
+  }, [data, collapsedNodeIds, childrenByParent]);
 
   const getInitialConversationForNode = (nodeId) => {
     const stored = conversationStoreRef.current.get(nodeId);
@@ -341,8 +393,8 @@ const HierarchicalForceTree = () => {
     // Tree layout과 애니메이션을 사용하여 노드 위치 계산
     const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
       nodes, // 현재 노드 위치
-      data.nodes,
-      data.links,
+      visibleGraph.nodes,
+      visibleGraph.links,
       dimensions,
       (animatedNodes, animatedLinks) => {
         setNodes(animatedNodes);
@@ -362,7 +414,7 @@ const HierarchicalForceTree = () => {
         animationRef.current.stop();
       }
     };
-  }, [dimensions, data]);
+  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
 
   // Handle node click for assistant focus
   const handleNodeClickForAssistant = (payload) => {
@@ -410,8 +462,8 @@ const HierarchicalForceTree = () => {
         // 드래그 종료 시 tree layout으로 다시 정렬
         const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
           nodes,
-          data.nodes,
-          data.links,
+          visibleGraph.nodes,
+          visibleGraph.links,
           dimensions,
           (animatedNodes, animatedLinks) => {
             setNodes(animatedNodes);
@@ -482,9 +534,10 @@ const HierarchicalForceTree = () => {
         {/* Links */}
         <g transform={`translate(${viewTransform.x}, ${viewTransform.y})`}>
           <g className="links">
-            {links
-              // TreeLayoutService에서 이미 정렬된 링크 사용
-              .map((link, index) => {
+            <AnimatePresence>
+              {links
+                // TreeLayoutService에서 이미 정렬된 링크 사용
+                .map((link, index) => {
                 const sourceNode = nodes.find(n => n.id === link.source);
                 const targetNode = nodes.find(n => n.id === link.target);
 
@@ -493,28 +546,30 @@ const HierarchicalForceTree = () => {
                 // Tree layout에서는 직선 링크 사용 (더 깔끔함)
                 const pathString = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
 
-                return (
-                  <motion.path
-                    key={`${link.source}-${link.target}-${index}`}
-                    d={pathString}
-                    stroke="rgba(148, 163, 184, 0.55)"
-                    strokeOpacity={0.8}
-                    strokeWidth={Math.sqrt(link.value || 1) * 1.5}
-                    fill="none"
-                    markerEnd="url(#arrowhead)"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{
-                      duration: 1.5,
-                      ease: "easeInOut",
-                      delay: index * 0.1
-                    }}
-                    style={{
-                      filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
-                    }}
-                  />
-                );
-              })}
+                  return (
+                    <motion.path
+                      key={`${link.source}-${link.target}-${index}`}
+                      d={pathString}
+                      stroke="rgba(148, 163, 184, 0.55)"
+                      strokeOpacity={0.8}
+                      strokeWidth={Math.sqrt(link.value || 1) * 1.5}
+                      fill="none"
+                      markerEnd="url(#arrowhead)"
+                      initial={{ pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1 }}
+                      exit={{ pathLength: 0, opacity: 0 }}
+                      transition={{
+                        duration: 0.45,
+                        ease: "easeInOut",
+                        delay: index * 0.06
+                      }}
+                      style={{
+                        filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
+                      }}
+                    />
+                  );
+                })}
+            </AnimatePresence>
           </g>
 
           {/* Nodes */}
@@ -549,6 +604,9 @@ const HierarchicalForceTree = () => {
                     initialConversation={getInitialConversationForNode(node.id)}
                     onConversationChange={(messages) => handleConversationChange(node.id, messages)}
                     onRemoveNode={removeNodeAndDescendants}
+                    hasChildren={(childrenByParent.get(node.id) || []).length > 0}
+                    isCollapsed={collapsedNodeIds.has(node.id)}
+                    onToggleCollapse={toggleCollapse}
                   />
                 </motion.g>
               );
@@ -557,13 +615,7 @@ const HierarchicalForceTree = () => {
         </g>
       </svg>
 
-      {/* 디버그 정보 */}
-      <div className="absolute top-4 right-4 bg-white p-4 rounded shadow-lg z-10">
-        <h3 className="font-bold">Debug Info</h3>
-        <p>Nodes: {nodes.length}</p>
-        <p>Links: {links.length}</p>
-        <p>Selected Node: {selectedNodeId || 'None'}</p>
-      </div>
+      {/* 디버그 패널 제거됨 */}
     </div>
   );
 };
