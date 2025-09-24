@@ -41,9 +41,15 @@ class QuestionService {
         const timestamp = Date.now();
         const randomId = Math.random().toString(36).substr(2, 9);
 
+        const firstWord = (question || '')
+            .toString()
+            .trim()
+            .split(/\s+/)
+            .find(Boolean) || 'Q';
+
         return {
             id: `node_${timestamp}_${randomId}`,
-            keyword: `Q2: ${question.substring(0, 20)}${question.length > 20 ? '...' : ''}`,
+            keyword: firstWord,
             fullText: `질문: ${question}\n\n답변: ${answer}`,
             level: this.getNodeLevel(parentNodeId, nodes) + 1,
             size: 12,
