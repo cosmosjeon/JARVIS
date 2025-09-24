@@ -22,6 +22,7 @@ const HierarchicalForceTree = () => {
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
   const linkKeysRef = useRef(new Set());
+  const hasCleanedQ2Ref = useRef(false);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
