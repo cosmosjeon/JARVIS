@@ -448,7 +448,8 @@ const NodeAssistantPanel = ({
         fontFamily: 'Arial, sans-serif',
         borderColor: 'rgba(255,255,255,0.25)',
         position: 'relative',
-        zIndex: 10,
+        zIndex: 1001,
+        pointerEvents: 'auto',
       }}
     >
       <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-white/10 opacity-40 mix-blend-screen" />
@@ -490,6 +491,7 @@ const NodeAssistantPanel = ({
             event.preventDefault();
             handleSend();
           }}
+          style={{ pointerEvents: 'auto', zIndex: 1002 }}
         >
           <textarea
             value={composerValue}
@@ -499,6 +501,8 @@ const NodeAssistantPanel = ({
             onCompositionEnd={handleCompositionEnd}
             placeholder="Ask anything..."
             className="glass-text-primary max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm placeholder:text-slate-200 focus:outline-none"
+            style={{ pointerEvents: 'auto' }}
+            autoFocus={false}
           />
           {placeholderNotice && (
             <span
@@ -512,6 +516,11 @@ const NodeAssistantPanel = ({
             disabled={!composerValue.trim()}
             className="glass-chip flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg transition-opacity disabled:opacity-40"
             aria-label="메시지 전송"
+            style={{ pointerEvents: 'auto' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSend();
+            }}
           >
             ↗
           </button>
