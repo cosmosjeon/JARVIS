@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
-import { treeData } from '../data/treeData';
 import QuestionService from '../services/QuestionService';
 
 export const PANEL_SIZES = {
@@ -10,71 +9,9 @@ export const PANEL_SIZES = {
 
 const TYPING_INTERVAL_MS = 18;
 
-const parentsByChild = new Map();
-treeData.links.forEach((link) => {
-  parentsByChild.set(link.target, link.source);
-});
-
-const buildChain = (nodeId) => {
-  const chain = [];
-  let current = nodeId;
-  const guard = new Set();
-
-  while (current) {
-    if (guard.has(current)) break;
-    guard.add(current);
-
-    const match = treeData.nodes.find((n) => n.id === current);
-    chain.unshift(match ? match.keyword || match.id : current);
-
-    const parent = parentsByChild.get(current);
-    if (!parent) break;
-    current = parent;
-  }
-
-  return chain;
-};
-
-const getDirectReports = (nodeId) => {
-  return treeData.links
-    .filter((link) => link.source === nodeId)
-    .map((link) => treeData.nodes.find((n) => n.id === link.target))
-    .filter(Boolean)
-    .map((node) => node.keyword || node.id);
-};
-
-const getPeers = (nodeId) => {
-  const parent = parentsByChild.get(nodeId);
-  if (!parent) return [];
-
-  return treeData.links
-    .filter((link) => link.source === parent && link.target !== nodeId)
-    .map((link) => treeData.nodes.find((n) => n.id === link.target))
-    .filter(Boolean)
-    .map((node) => node.keyword || node.id);
-};
-
-const buildSummary = (node) => {
-  const label = node.keyword || node.id;
-  const chain = buildChain(node.id);
-  const reports = getDirectReports(node.id);
-  const peers = getPeers(node.id);
-
-  const bullets = [
-    chain.length > 1 ? `보고 체계: ${chain.join(' → ')}` : null,
-    reports.length ? `리드 팀: ${reports.join(', ')}` : null,
-    peers.length ? `협업 파트너: ${peers.join(', ')}` : null,
-  ].filter(Boolean);
-
-  return {
-    label,
-    intro: `${label}은(는) ${node.fullText}`,
-    bullets,
-  };
-};
-
 const buildAnswerText = (summary, question) => {
-  const bulletText = summary.bullets.map((item) => `- ${item}`).join('\n');
+  const bulletSource = Array.isArray(summary?.bullets) ? summary.bullets : [];
+  const bulletText = bulletSource.map((item) => `- ${item}`).join('\n');
   const intro = question
     ? `${summary.label} 관련 질문을 받았습니다.`
     : `${summary.label} 개요입니다.`;
@@ -151,6 +88,8 @@ const NodeAssistantPanel = ({
   questionService: externalQuestionService,
   initialConversation = [],
   onConversationChange = () => { },
+  nodeSummary,
+  isRootNode: isRootNodeProp = false,
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -165,8 +104,16 @@ const NodeAssistantPanel = ({
         ]
       };
     }
-    return buildSummary(node);
-  }, [node]);
+    if (nodeSummary) {
+      return nodeSummary;
+    }
+    const label = node.keyword || node.id;
+    return {
+      label,
+      intro: node.fullText ? `${label}은(는) ${node.fullText}` : `${label} 개요입니다.`,
+      bullets: [],
+    };
+  }, [node, nodeSummary]);
   const normalizedInitialConversation = useMemo(() => {
     if (!Array.isArray(initialConversation)) return [];
     return initialConversation.map((message) => ({ ...message }));
@@ -388,13 +335,12 @@ const NodeAssistantPanel = ({
     (question, { skipSecondQuestionCheck = false, overrideAnswerText } = {}) => {
       clearTypingTimers();
 
-      // 루트 노드인지 확인 (CEO 노드)
-      const isRootNode = node.id === 'CEO';
+      const resolvedIsRootNode = isRootNodeProp;
 
-      // 동작 복원: 루트 노드(CEO)는 2번째 질문일 때만 생성, 그 외 노드는 즉시 생성
+      // 동작 복원: 루트 노드는 2번째 질문일 때만 생성, 그 외 노드는 즉시 생성
       let shouldCreateChild = false;
       if (!skipSecondQuestionCheck) {
-        shouldCreateChild = isRootNode
+        shouldCreateChild = resolvedIsRootNode
           ? questionServiceRef.current.incrementQuestionCount(node.id)
           : true;
       }
@@ -452,7 +398,7 @@ const NodeAssistantPanel = ({
 
       typingTimers.current.push(intervalId);
     },
-    [clearTypingTimers, summary, node.id, onSecondQuestion],
+    [clearTypingTimers, summary, node.id, onSecondQuestion, isRootNodeProp],
   );
 
   useEffect(() => {
