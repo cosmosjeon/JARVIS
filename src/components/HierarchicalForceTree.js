@@ -5,6 +5,7 @@ import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
+import { markNewLinks } from '../utils/linkAnimationUtils';
 
 const HierarchicalForceTree = () => {
   const svgRef = useRef(null);
@@ -20,7 +21,7 @@ const HierarchicalForceTree = () => {
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
-  const hasCleanedQ2Ref = useRef(false);
+  const linkKeysRef = useRef(new Set());
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -346,7 +347,9 @@ const HierarchicalForceTree = () => {
       dimensions,
       (animatedNodes, animatedLinks) => {
         setNodes(animatedNodes);
-        setLinks(animatedLinks);
+        const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
+        linkKeysRef.current = nextKeys;
+        setLinks(annotatedLinks);
       }
     );
 
@@ -415,7 +418,9 @@ const HierarchicalForceTree = () => {
           dimensions,
           (animatedNodes, animatedLinks) => {
             setNodes(animatedNodes);
-            setLinks(animatedLinks);
+            const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
+            linkKeysRef.current = nextKeys;
+            setLinks(annotatedLinks);
           }
         );
         animationRef.current = animation;
@@ -484,31 +489,27 @@ const HierarchicalForceTree = () => {
           <g className="links">
             {links
               // TreeLayoutService에서 이미 정렬된 링크 사용
-              .map((link, index) => {
+              .map((link) => {
                 const sourceNode = nodes.find(n => n.id === link.source);
                 const targetNode = nodes.find(n => n.id === link.target);
 
                 if (!sourceNode || !targetNode) return null;
 
-                // Tree layout에서는 직선 링크 사용 (더 깔끔함)
+                const shouldAnimate = link.isNew;
                 const pathString = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
 
                 return (
                   <motion.path
-                    key={`${link.source}-${link.target}-${index}`}
+                    key={link.key}
                     d={pathString}
                     stroke="rgba(148, 163, 184, 0.55)"
                     strokeOpacity={0.8}
                     strokeWidth={Math.sqrt(link.value || 1) * 1.5}
                     fill="none"
                     markerEnd="url(#arrowhead)"
-                    initial={{ pathLength: 0 }}
+                    initial={shouldAnimate ? { pathLength: 0 } : false}
                     animate={{ pathLength: 1 }}
-                    transition={{
-                      duration: 1.5,
-                      ease: "easeInOut",
-                      delay: index * 0.1
-                    }}
+                    transition={shouldAnimate ? { duration: 1.5, ease: 'easeInOut' } : { duration: 0 }}
                     style={{
                       filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
                     }}
