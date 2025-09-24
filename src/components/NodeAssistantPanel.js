@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Highlighter from 'web-highlighter';
 import { treeData } from '../data/treeData';
 import QuestionService from '../services/QuestionService';
 
@@ -175,12 +176,16 @@ const NodeAssistantPanel = ({
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
   const [placeholderNotice, setPlaceholderNotice] = useState(null);
-  const [pendingSelection, setPendingSelection] = useState([]);
+  const [isHighlightMode, setIsHighlightMode] = useState(false);
   const typingTimers = useRef([]);
   const questionServiceRef = useRef(externalQuestionService ?? new QuestionService());
   const isHydratingRef = useRef(true);
   const hasBootstrappedRef = useRef(false);
   const panelRef = useRef(null);
+  const highlightRootRef = useRef(null);
+  const highlighterRef = useRef(null);
+  const highlightHandlersRef = useRef({ create: null, remove: null });
+  const highlightSourceMapRef = useRef(new Map());
 
   useEffect(() => {
     if (externalQuestionService) {
@@ -194,9 +199,156 @@ const NodeAssistantPanel = ({
     return () => window.clearTimeout(timeoutId);
   }, [placeholderNotice]);
 
-  const clearPendingSelection = useCallback(() => {
-    setPendingSelection([]);
+  const getHighlightTexts = useCallback(() => {
+    const uniqueTexts = new Set();
+    highlightSourceMapRef.current.forEach((text) => {
+      if (typeof text === 'string') {
+        const trimmed = text.trim();
+        if (trimmed) {
+          uniqueTexts.add(trimmed);
+        }
+      }
+    });
+    return Array.from(uniqueTexts.values());
   }, []);
+
+  const clearHighlightSelections = useCallback(() => {
+    highlightSourceMapRef.current.clear();
+    if (highlighterRef.current) {
+      try {
+        highlighterRef.current.removeAll();
+      } catch (error) {
+        // 하이라이터 정리 과정에서의 오류는 사용자 흐름과 직접 관련이 없으므로 무시
+      }
+    }
+  }, []);
+
+  const handleHighlighterCreate = useCallback(({ sources = [] }) => {
+    if (!Array.isArray(sources) || sources.length === 0) return;
+    let added = false;
+    sources.forEach((source) => {
+      if (!source) return;
+      const { id, text } = source;
+      if (typeof text !== 'string') return;
+      const normalized = text.trim();
+      if (!normalized) return;
+      const sourceId = id || `${normalized}-${Math.random().toString(36).slice(2, 10)}`;
+      highlightSourceMapRef.current.set(sourceId, normalized);
+      added = true;
+    });
+    if (added) {
+      const size = getHighlightTexts().length;
+      setPlaceholderNotice({ type: 'info', message: `${size}개의 텍스트가 하이라이트되었습니다.` });
+    }
+  }, [getHighlightTexts]);
+
+  const handleHighlighterRemove = useCallback(({ ids = [] }) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    let removed = false;
+    ids.forEach((id) => {
+      if (highlightSourceMapRef.current.delete(id)) {
+        removed = true;
+      }
+    });
+    if (removed) {
+      const remaining = getHighlightTexts().length;
+      if (remaining === 0) {
+        setPlaceholderNotice({ type: 'info', message: '하이라이트된 텍스트가 없습니다.' });
+      } else {
+        setPlaceholderNotice({ type: 'info', message: `${remaining}개의 텍스트가 하이라이트되었습니다.` });
+      }
+    }
+  }, [getHighlightTexts]);
+
+  const enableHighlightMode = useCallback(() => {
+    if (highlighterRef.current) {
+      return true;
+    }
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    const root = highlightRootRef.current;
+    if (!root) {
+      setPlaceholderNotice({ type: 'warning', message: '하이라이트 영역을 찾을 수 없습니다.' });
+      return false;
+    }
+    try {
+      const highlighter = new Highlighter({
+        $root: root,
+        exceptSelectors: ['textarea', 'button', '[contenteditable="true"]'],
+        style: {
+          className: 'node-highlight-wrap',
+        },
+      });
+      highlightSourceMapRef.current.clear();
+      const createHandler = (payload) => handleHighlighterCreate(payload);
+      const removeHandler = (payload) => handleHighlighterRemove(payload);
+      highlighter.on(Highlighter.event.CREATE, createHandler);
+      highlighter.on(Highlighter.event.REMOVE, removeHandler);
+      highlighter.run();
+      highlighterRef.current = highlighter;
+      highlightHandlersRef.current = { create: createHandler, remove: removeHandler };
+      setPlaceholderNotice({ type: 'info', message: '하이라이트 모드가 활성화되었습니다.' });
+      return true;
+    } catch (error) {
+      setPlaceholderNotice({ type: 'warning', message: '하이라이트 초기화에 실패했습니다.' });
+      return false;
+    }
+  }, [handleHighlighterCreate, handleHighlighterRemove]);
+
+  const disableHighlightMode = useCallback(() => {
+    const instance = highlighterRef.current;
+    const { create, remove } = highlightHandlersRef.current;
+    if (instance) {
+      if (create) {
+        instance.off(Highlighter.event.CREATE, create);
+      }
+      if (remove) {
+        instance.off(Highlighter.event.REMOVE, remove);
+      }
+      try {
+        instance.removeAll();
+      } catch (error) {
+        // removeAll 실패는 무시
+      }
+      instance.dispose();
+    }
+    highlighterRef.current = null;
+    highlightHandlersRef.current = { create: null, remove: null };
+    highlightSourceMapRef.current.clear();
+  }, []);
+
+  useEffect(() => () => disableHighlightMode(), [disableHighlightMode]);
+
+  const handleHighlightToggle = useCallback(() => {
+    setIsHighlightMode((prev) => {
+      if (prev) {
+        disableHighlightMode();
+        setPlaceholderNotice({ type: 'info', message: '하이라이트 모드가 비활성화되었습니다.' });
+        return false;
+      }
+      const enabled = enableHighlightMode();
+      if (!enabled) {
+        return false;
+      }
+      return true;
+    });
+  }, [disableHighlightMode, enableHighlightMode]);
+
+  const attemptHighlightPlaceholderCreate = useCallback(() => {
+    if (!isHighlightMode) return false;
+    const highlightTexts = getHighlightTexts();
+    if (!highlightTexts.length) {
+      setPlaceholderNotice({ type: 'warning', message: '하이라이트된 텍스트가 없습니다. 단어를 하이라이트한 뒤 Enter를 눌러주세요.' });
+      return false;
+    }
+
+    onPlaceholderCreate?.(node.id, highlightTexts);
+    clearHighlightSelections();
+    setPlaceholderNotice({ type: 'success', message: `${highlightTexts.length}개의 플레이스홀더가 생성되었습니다.` });
+    setComposerValue('');
+    return true;
+  }, [clearHighlightSelections, getHighlightTexts, isHighlightMode, node.id, onPlaceholderCreate]);
 
   const clearTypingTimers = useCallback(() => {
     typingTimers.current.forEach(clearInterval);
@@ -322,71 +474,21 @@ const NodeAssistantPanel = ({
     setComposerValue('');
   }, [composerValue, sendResponse]);
 
-  const collectTextsFromSelection = useCallback((selection) => {
-    if (!selection || selection.isCollapsed) return [];
-    if (!panelRef.current) return [];
-
-    const container = panelRef.current;
-    const elementNodeType = typeof Node !== 'undefined' ? Node.ELEMENT_NODE : 1;
-    const collected = [];
-
-    for (let index = 0; index < selection.rangeCount; index += 1) {
-      const range = selection.getRangeAt(index);
-      if (!range) continue;
-      const ancestor = range.commonAncestorContainer?.nodeType === elementNodeType
-        ? range.commonAncestorContainer
-        : range.commonAncestorContainer?.parentElement;
-      if (!ancestor || !container.contains(ancestor)) {
-        continue;
-      }
-      const rawText = range.toString();
-      if (!rawText) continue;
-      const normalized = rawText.trim()
-        .replace(/^[-*\s•]+/, '')
-        .replace(/[-*\s•]+$/, '')
-        .trim();
-      if (normalized) {
-        collected.push(normalized);
-      }
-    }
-
-    return Array.from(new Set(collected));
-  }, [panelRef]);
-
-  const extractSelectionTexts = useCallback((explicitSelection = null) => {
-    const selection = explicitSelection ?? (typeof window !== 'undefined' ? window.getSelection() : null);
-    const activeTexts = collectTextsFromSelection(selection);
-    if (activeTexts.length > 0) {
-      return activeTexts;
-    }
-
-    return pendingSelection;
-  }, [collectTextsFromSelection, pendingSelection]);
-
   const handleKeyDown = useCallback(
     (event) => {
       if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
-        const selectionTexts = extractSelectionTexts();
-        if (selectionTexts.length > 0) {
-          event.preventDefault();
-          onPlaceholderCreate?.(node.id, selectionTexts);
-          if (typeof window !== 'undefined') {
-            const selection = window.getSelection();
-            selection?.removeAllRanges();
+        event.preventDefault();
+        if (isHighlightMode) {
+          const created = attemptHighlightPlaceholderCreate();
+          if (!created) {
+            return;
           }
-          setComposerValue('');
-          clearPendingSelection();
-          setPlaceholderNotice({ type: 'success', message: `${selectionTexts.length}개의 플레이스홀더가 생성되었습니다.` });
           return;
         }
-        if (!composerValue.trim()) {
-          setPlaceholderNotice({ type: 'warning', message: '선택된 텍스트가 없습니다. 답변에서 텍스트를 선택한 뒤 Enter를 눌러주세요.' });
-        }
-        event.preventDefault();
         handleSend();
       }
     },
-    [handleSend, isComposing, extractSelectionTexts, node.id, onPlaceholderCreate, composerValue, clearPendingSelection],
+    [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode],
   );
 
   const handleCompositionStart = useCallback(() => {
@@ -398,47 +500,18 @@ const NodeAssistantPanel = ({
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    const handleSelectionSnapshot = () => {
-      const selection = window.getSelection();
-      const texts = collectTextsFromSelection(selection);
-      if (texts.length > 0) {
-        setPendingSelection(texts);
-      }
-    };
-
-    document.addEventListener('mouseup', handleSelectionSnapshot);
-    document.addEventListener('selectionchange', handleSelectionSnapshot);
-
-    return () => {
-      document.removeEventListener('mouseup', handleSelectionSnapshot);
-      document.removeEventListener('selectionchange', handleSelectionSnapshot);
-    };
-  }, [collectTextsFromSelection, panelRef]);
-
-  useEffect(() => {
-    if (!onPlaceholderCreate) return undefined;
+    if (!onPlaceholderCreate || !isHighlightMode) return undefined;
 
     const handleGlobalEnter = (event) => {
       if (event.key !== 'Enter' || event.shiftKey || isComposing) return;
       if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
-
-      const selection = typeof window !== 'undefined' ? window.getSelection() : null;
-      const selectionTexts = extractSelectionTexts(selection);
-      if (!selectionTexts.length) return;
-
       event.preventDefault();
-      onPlaceholderCreate(node.id, selectionTexts);
-      selection?.removeAllRanges();
-      setComposerValue('');
-      clearPendingSelection();
-      setPlaceholderNotice({ type: 'success', message: `${selectionTexts.length}개의 플레이스홀더가 생성되었습니다.` });
+      attemptHighlightPlaceholderCreate();
     };
 
     window.addEventListener('keydown', handleGlobalEnter, true);
     return () => window.removeEventListener('keydown', handleGlobalEnter, true);
-  }, [extractSelectionTexts, isComposing, node.id, onPlaceholderCreate, clearPendingSelection]);
+  }, [attemptHighlightPlaceholderCreate, isComposing, isHighlightMode, onPlaceholderCreate]);
 
   return (
     <div
@@ -453,7 +526,10 @@ const NodeAssistantPanel = ({
     >
       <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-white/10 opacity-40 mix-blend-screen" />
       <div className="relative flex flex-1 flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 min-h-0 backdrop-blur-md">
-        <div className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0">
+        <div
+          ref={highlightRootRef}
+          className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0"
+        >
           <div className="flex h-full flex-col gap-3">
             {messages.map((message) => {
               const isAssistant = message.role === 'assistant';
@@ -491,6 +567,17 @@ const NodeAssistantPanel = ({
             handleSend();
           }}
         >
+          <button
+            type="button"
+            aria-label="하이라이트 모드"
+            aria-pressed={isHighlightMode}
+            onClick={handleHighlightToggle}
+            className={`glass-chip flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-200/60 ${
+              isHighlightMode ? 'bg-emerald-500/40 text-emerald-100' : 'bg-white/10 text-slate-100 hover:bg-white/20'
+            }`}
+          >
+            🖍
+          </button>
           <textarea
             value={composerValue}
             onChange={(event) => setComposerValue(event.target.value)}
