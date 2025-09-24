@@ -24,6 +24,9 @@ const TreeNode = ({
   initialConversation = [],
   onConversationChange = () => { },
   onRemoveNode,
+  hasChildren = false,
+  isCollapsed = false,
+  onToggleCollapse,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -99,7 +102,8 @@ const TreeNode = ({
   const sidePadding = 24;
   const computedHoverWidth = Math.max(54, hoverText.length * charUnit + sidePadding);
   const hoverWidth = Math.max(Math.ceil(baseWidth * 1.35), computedHoverWidth);
-  const hoverHeight = Math.max(Math.ceil(baseHeight * 1.35), 34);
+  // Only expand horizontally on hover; keep height unchanged
+  const hoverHeight = baseHeight;
   const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation));
   const borderRadius = 8; // Fixed border radius
 
@@ -116,6 +120,12 @@ const TreeNode = ({
     ? 'rgba(255, 255, 255, 0.6)' // 더 진한 테두리로 변경
     : 'rgba(255, 255, 255, 0.18)';
   const rectStrokeWidth = displayMode === 'chat' ? 2 : 1;
+
+  // Hover delete icon sizing (scaled to 80%)
+  const deleteIconScale = 0.8;
+  const deleteIconRadius = 10 * deleteIconScale;
+  const deleteIconFontSize = 12 * deleteIconScale;
+  const deleteIconStrokeWidth = 1.5 * deleteIconScale;
 
   useEffect(() => {
     if (!isExpanded || !onNodeClick) return undefined;
@@ -143,16 +153,6 @@ const TreeNode = ({
   return (
     <g
       transform={`translate(${position.x || 0}, ${position.y || 0})`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={(e) => {
-        // 확장된 노드에서는 클릭 이벤트를 처리하지 않음 (NodeAssistantPanel이 처리)
-        if (isExpanded) {
-          return;
-        }
-        e.stopPropagation();
-        onNodeClick && onNodeClick(node);
-      }}
       style={{ cursor: isExpanded ? 'default' : 'pointer' }}
     >
       <motion.rect
@@ -169,6 +169,15 @@ const TreeNode = ({
           filter: displayMode === 'chat'
             ? 'drop-shadow(0 18px 42px rgba(15, 23, 42, 0.48))'
             : 'drop-shadow(0 8px 24px rgba(15, 23, 42, 0.32))',
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onClick={(e) => {
+          if (isExpanded) {
+            return;
+          }
+          e.stopPropagation();
+          onNodeClick && onNodeClick(node);
         }}
         animate={{
           x: -currentWidth / 2,
@@ -247,22 +256,67 @@ const TreeNode = ({
           style={{ cursor: 'pointer' }}
         >
           <circle
-            r={10}
+            r={deleteIconRadius}
             fill="rgba(239, 68, 68, 0.95)"
             stroke="rgba(255, 255, 255, 0.9)"
-            strokeWidth={1.5}
+            strokeWidth={deleteIconStrokeWidth}
           />
           <text
             textAnchor="middle"
             dominantBaseline="central"
             fontFamily="Arial, sans-serif"
-            fontSize={12}
+            fontSize={deleteIconFontSize}
             fontWeight="bold"
             fill="#fff"
           >
             ×
           </text>
           <title>노드 제거</title>
+        </g>
+      )}
+
+      {/* Subtree collapse/expand toggle */}
+      {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
+        <g
+          transform={`translate(0, ${currentHeight / 2 + 14})`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse(node.id);
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <rect
+            x={-10}
+            y={-10}
+            width={20}
+            height={20}
+            rx={4}
+            ry={4}
+            fill="rgba(148, 163, 184, 0.3)"
+            stroke="rgba(255,255,255,0.6)"
+            strokeWidth={1}
+          />
+          {/* Icon: collapsed => vertical chevron (˅), expanded => vertical chevron (˄) */}
+          {isCollapsed ? (
+            <path
+              d="M -4 -1 L 0 3 L 4 -1"
+              fill="none"
+              stroke="rgba(255,255,255,0.95)"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : (
+            <path
+              d="M -4 1 L 0 -3 L 4 1"
+              fill="none"
+              stroke="rgba(255,255,255,0.95)"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+          <title>{isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}</title>
         </g>
       )}
     </g>
