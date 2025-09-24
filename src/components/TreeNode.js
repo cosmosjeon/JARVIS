@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 
@@ -126,6 +126,23 @@ const TreeNode = ({
   const deleteIconRadius = 10 * deleteIconScale;
   const deleteIconFontSize = 12 * deleteIconScale;
   const deleteIconStrokeWidth = 1.5 * deleteIconScale;
+
+  // Prevent rapid double toggles to avoid race with layout animation
+  const lastToggleTsRef = useRef(0);
+  const handleTogglePointer = useCallback((e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.nativeEvent && typeof e.nativeEvent.stopImmediatePropagation === 'function') {
+        e.nativeEvent.stopImmediatePropagation();
+      }
+    }
+    if (typeof onToggleCollapse !== 'function') return;
+    const now = Date.now();
+    if (now - lastToggleTsRef.current < 250) return; // debounce
+    lastToggleTsRef.current = now;
+    onToggleCollapse(node.id);
+  }, [onToggleCollapse, node.id]);
 
   useEffect(() => {
     if (!isExpanded || !onNodeClick) return undefined;
@@ -279,11 +296,14 @@ const TreeNode = ({
       {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
         <g
           transform={`translate(0, ${currentHeight / 2 + 14})`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleCollapse(node.id);
-          }}
-          style={{ cursor: 'pointer' }}
+          onClick={handleTogglePointer}
+          onMouseDown={handleTogglePointer}
+          onPointerDown={handleTogglePointer}
+          onTouchStart={handleTogglePointer}
+          style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+          role="button"
+          aria-label={isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}
+          data-node-toggle="true"
         >
           <rect
             x={-10}
@@ -295,6 +315,7 @@ const TreeNode = ({
             fill="rgba(148, 163, 184, 0.3)"
             stroke="rgba(255,255,255,0.6)"
             strokeWidth={1}
+            data-node-toggle="true"
           />
           {/* Icon: collapsed => vertical chevron (˅), expanded => vertical chevron (˄) */}
           {isCollapsed ? (
@@ -305,6 +326,7 @@ const TreeNode = ({
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
+              data-node-toggle="true"
             />
           ) : (
             <path
@@ -314,6 +336,7 @@ const TreeNode = ({
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
+              data-node-toggle="true"
             />
           )}
           <title>{isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}</title>
