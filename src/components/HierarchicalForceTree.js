@@ -544,13 +544,13 @@ const HierarchicalForceTree = () => {
               {links
                 // TreeLayoutService에서 이미 정렬된 링크 사용
                 .map((link, index) => {
-                const sourceNode = nodes.find(n => n.id === link.source);
-                const targetNode = nodes.find(n => n.id === link.target);
+                  const sourceNode = nodes.find(n => n.id === link.source);
+                  const targetNode = nodes.find(n => n.id === link.target);
 
-                if (!sourceNode || !targetNode) return null;
+                  if (!sourceNode || !targetNode) return null;
 
-                const shouldAnimate = link.isNew;
-                const pathString = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
+                  const shouldAnimate = link.isNew;
+                  const pathString = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
 
                   return (
                     <motion.path
