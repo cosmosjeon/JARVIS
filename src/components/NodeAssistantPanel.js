@@ -149,7 +149,7 @@ const NodeAssistantPanel = ({
   onPlaceholderCreate,
   questionService: externalQuestionService,
   initialConversation = [],
-  onConversationChange = () => {},
+  onConversationChange = () => { },
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -236,12 +236,17 @@ const NodeAssistantPanel = ({
     (question, { skipSecondQuestionCheck = false, overrideAnswerText } = {}) => {
       clearTypingTimers();
 
-      // 질문 수 증가 및 2번째 질문인지 확인
+      // 루트 노드인지 확인 (CEO 노드)
+      const isRootNode = node.id === 'CEO';
+
+      // 질문 수 증가 및 2번째 질문인지 확인 (루트 노드만)
       const isSecondQuestion = skipSecondQuestionCheck
         ? false
-        : questionServiceRef.current.incrementQuestionCount(node.id);
+        : isRootNode
+          ? questionServiceRef.current.incrementQuestionCount(node.id)
+          : true; // 루트 노드가 아니면 바로 새 노드 생성
 
-      // 2번째 질문이면 즉시 새 노드 생성 콜백 호출
+      // 2번째 질문이거나 루트 노드가 아니면 즉시 새 노드 생성 콜백 호출
       if (isSecondQuestion && onSecondQuestion) {
         onSecondQuestion(node.id, question);
       }

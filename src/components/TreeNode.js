@@ -22,7 +22,7 @@ const TreeNode = ({
   onPlaceholderCreate,
   questionService,
   initialConversation = [],
-  onConversationChange = () => {},
+  onConversationChange = () => { },
   onRemoveNode,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -71,10 +71,10 @@ const TreeNode = ({
   const currentWidth = displayMode === 'chat' ? chatSize.width : displayMode === 'hover' ? hoverWidth : baseWidth;
   const currentHeight = displayMode === 'chat' ? chatSize.height : displayMode === 'hover' ? hoverHeight : baseHeight;
   const rectFill = displayMode === 'chat'
-    ? 'rgba(15, 23, 42, 0.55)'
+    ? 'rgba(15, 23, 42, 0.85)' // 더 진한 색상으로 변경
     : 'rgba(148, 163, 184, 0.22)';
   const rectStroke = displayMode === 'chat'
-    ? 'rgba(255, 255, 255, 0.32)'
+    ? 'rgba(255, 255, 255, 0.6)' // 더 진한 테두리로 변경
     : 'rgba(255, 255, 255, 0.18)';
   const rectStrokeWidth = displayMode === 'chat' ? 2 : 1;
 
@@ -126,7 +126,7 @@ const TreeNode = ({
         strokeWidth={rectStrokeWidth}
         style={{
           cursor: 'pointer',
-          mixBlendMode: displayMode === 'chat' ? 'screen' : 'normal',
+          mixBlendMode: 'normal', // 모든 노드에 normal 적용
           filter: displayMode === 'chat'
             ? 'drop-shadow(0 18px 42px rgba(15, 23, 42, 0.48))'
             : 'drop-shadow(0 8px 24px rgba(15, 23, 42, 0.32))',

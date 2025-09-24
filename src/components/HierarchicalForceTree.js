@@ -101,13 +101,19 @@ const HierarchicalForceTree = () => {
     setData(newData);
     questionService.current.setQuestionCount(parentNodeId, 1);
 
-    // 새 노드로 자동 이동
+    // 새 노드로 즉시 이동
+    setExpandedNodeId(newNodeData.id);
+    setSelectedNodeId(newNodeData.id);
+    console.log('새 노드로 이동:', newNodeData.id);
+
+    // 입력 필드에 포커스 주기 (약간의 지연)
     setTimeout(() => {
-      setExpandedNodeId(newNodeData.id);
-      setSelectedNodeId(newNodeData.id);
-      console.log('새 노드로 이동:', newNodeData.id);
-      console.log('새 노드 데이터:', newNodeData);
-    }, 100); // 약간의 지연을 두어 노드가 완전히 생성된 후 이동
+      const input = document.querySelector('textarea[placeholder="Ask anything..."]');
+      if (input) {
+        input.focus();
+        console.log('입력 필드에 포커스 설정됨');
+      }
+    }, 50); // 노드가 렌더링된 후 포커스
 
     console.log('새 노드 생성됨:', newNodeData);
   };
