@@ -23,6 +23,7 @@ const TreeNode = ({
   questionService,
   initialConversation = [],
   onConversationChange = () => {},
+  onRemoveNode,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -182,6 +183,35 @@ const TreeNode = ({
             ))
             : node.keyword || node.id}
         </motion.text>
+      )}
+
+      {isExpanded && typeof onRemoveNode === 'function' && (
+        <g
+          transform={`translate(${currentWidth / 2 - 12}, ${-currentHeight / 2 + 12})`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemoveNode(node.id);
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <circle
+            r={10}
+            fill="rgba(239, 68, 68, 0.95)"
+            stroke="rgba(255, 255, 255, 0.9)"
+            strokeWidth={1.5}
+          />
+          <text
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontFamily="Arial, sans-serif"
+            fontSize={12}
+            fontWeight="bold"
+            fill="#fff"
+          >
+            ×
+          </text>
+          <title>노드 제거</title>
+        </g>
       )}
     </g>
   );

@@ -3,7 +3,6 @@ import * as d3 from 'd3';
 import { motion } from 'framer-motion';
 import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
-import AddNodeButton from './AddNodeButton';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 
@@ -169,6 +168,53 @@ const HierarchicalForceTree = () => {
 
     setSelectedNodeId(parentNodeId);
     setExpandedNodeId(parentNodeId);
+  };
+
+  // 노드 및 하위 노드 제거 함수
+  const removeNodeAndDescendants = (nodeId) => {
+    if (!nodeId) return;
+
+    const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+
+    const toRemove = new Set();
+    const stack = [nodeId];
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (toRemove.has(current)) continue;
+      toRemove.add(current);
+
+      // 현재 노드의 자식 노드들을 스택에 추가
+      data.links.forEach((link) => {
+        const sourceId = normalizeId(link.source);
+        const targetId = normalizeId(link.target);
+        if (sourceId === current) {
+          stack.push(targetId);
+        }
+      });
+    }
+
+    const newNodes = data.nodes.filter((n) => !toRemove.has(n.id));
+    const newLinks = data.links.filter((l) => {
+      const sourceId = normalizeId(l.source);
+      const targetId = normalizeId(l.target);
+      return !toRemove.has(sourceId) && !toRemove.has(targetId);
+    });
+
+    setData({ ...data, nodes: newNodes, links: newLinks });
+
+    // 대화 상태 정리
+    toRemove.forEach((id) => {
+      conversationStoreRef.current.delete(id);
+    });
+
+    // 선택/확장 상태 초기화
+    if (selectedNodeId && toRemove.has(selectedNodeId)) {
+      setSelectedNodeId(null);
+    }
+    if (expandedNodeId && toRemove.has(expandedNodeId)) {
+      setExpandedNodeId(null);
+    }
   };
 
   // 노드 클릭 핸들러
@@ -443,6 +489,7 @@ const HierarchicalForceTree = () => {
                     questionService={questionService.current}
                     initialConversation={getInitialConversationForNode(node.id)}
                     onConversationChange={(messages) => handleConversationChange(node.id, messages)}
+                    onRemoveNode={removeNodeAndDescendants}
                   />
                 </motion.g>
               );
@@ -450,14 +497,6 @@ const HierarchicalForceTree = () => {
           </g>
         </g>
       </svg>
-
-      {/* 노드 추가 버튼 */}
-      <AddNodeButton
-        parentId={selectedNodeId}
-        onAddNode={addNode}
-        position={{ x: 20, y: 20 }}
-        availableNodes={nodes}
-      />
 
       {/* 디버그 정보 */}
       <div className="absolute top-4 right-4 bg-white p-4 rounded shadow-lg z-10">
