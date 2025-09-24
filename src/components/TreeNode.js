@@ -107,10 +107,14 @@ const TreeNode = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={(e) => {
+        // 확장된 노드에서는 클릭 이벤트를 처리하지 않음 (NodeAssistantPanel이 처리)
+        if (isExpanded) {
+          return;
+        }
         e.stopPropagation();
         onNodeClick && onNodeClick(node);
       }}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: isExpanded ? 'default' : 'pointer' }}
     >
       <motion.rect
         width={currentWidth}
@@ -147,18 +151,37 @@ const TreeNode = ({
           y={-currentHeight / 2}
           width={currentWidth}
           height={currentHeight}
-          style={{ overflow: 'hidden', position: 'relative' }}
+          style={{ 
+            overflow: 'hidden', 
+            position: 'relative',
+            pointerEvents: 'auto',
+            zIndex: 1000
+          }}
         >
-          <NodeAssistantPanel
-            node={node}
-            color={color}
-            onSizeChange={handlePanelSizeChange}
-            onSecondQuestion={onSecondQuestion}
-            onPlaceholderCreate={onPlaceholderCreate}
-            questionService={questionService}
-            initialConversation={initialConversation}
-            onConversationChange={onConversationChange}
-          />
+          <div 
+            style={{ 
+              width: '100%', 
+              height: '100%',
+              pointerEvents: 'auto',
+              position: 'relative',
+              zIndex: 1000
+            }}
+            onClick={(e) => {
+              // foreignObject 내부 클릭 이벤트가 제대로 전파되도록 함
+              e.stopPropagation();
+            }}
+          >
+            <NodeAssistantPanel
+              node={node}
+              color={color}
+              onSizeChange={handlePanelSizeChange}
+              onSecondQuestion={onSecondQuestion}
+              onPlaceholderCreate={onPlaceholderCreate}
+              questionService={questionService}
+              initialConversation={initialConversation}
+              onConversationChange={onConversationChange}
+            />
+          </div>
         </foreignObject>
       ) : (
         <motion.text
