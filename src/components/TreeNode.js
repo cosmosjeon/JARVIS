@@ -27,6 +27,7 @@ const TreeNode = ({
   hasChildren = false,
   isCollapsed = false,
   onToggleCollapse,
+  viewTransform = { x: 0, y: 0, k: 1 }, // 뷰포트 변환 상태 추가
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -126,9 +127,9 @@ const TreeNode = ({
     let panelX = -currentWidth / 2;
     let panelY = -currentHeight / 2;
 
-    // 화면 경계 체크 및 조정
-    const nodeX = position.x || 0;
-    const nodeY = position.y || 0;
+    // 뷰포트 변환을 고려한 실제 화면 좌표 계산
+    const nodeX = (position.x || 0) * viewTransform.k + viewTransform.x;
+    const nodeY = (position.y || 0) * viewTransform.k + viewTransform.y;
 
     // 오른쪽 경계 체크
     if (nodeX + panelX + currentWidth > screenWidth - margin) {

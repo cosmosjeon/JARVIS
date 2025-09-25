@@ -595,7 +595,13 @@ const HierarchicalForceTree = () => {
         ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
-        style={{ background: 'transparent' }}
+        style={{
+          background: 'transparent',
+          // 화질 개선을 위한 설정
+          shapeRendering: 'geometricPrecision',
+          textRendering: 'optimizeLegibility',
+          imageRendering: 'optimizeQuality'
+        }}
         onClick={handleBackgroundClick}
       >
         {/* Arrow marker definition */}
@@ -692,6 +698,7 @@ const HierarchicalForceTree = () => {
                     hasChildren={(childrenByParent.get(node.id) || []).length > 0}
                     isCollapsed={collapsedNodeIds.has(node.id)}
                     onToggleCollapse={toggleCollapse}
+                    viewTransform={viewTransform}
                   />
                 </motion.g>
               );

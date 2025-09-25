@@ -17,6 +17,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background: #ffffff;
   color: #0f172a;
+  /* 화질 개선을 위한 설정 */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  text-rendering: optimizeLegibility;
+  -webkit-text-stroke: 0.01em transparent;
 }
 
 .App {

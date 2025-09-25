@@ -187,6 +187,15 @@ const createWindow = () => {
       nodeIntegration: false,
       devTools: isDev,
       spellcheck: false,
+      // 화질 개선을 위한 설정
+      enableRemoteModule: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      // 고해상도 렌더링 설정
+      offscreen: false,
+      // GPU 가속 활성화
+      hardwareAcceleration: true,
     },
   });
 
