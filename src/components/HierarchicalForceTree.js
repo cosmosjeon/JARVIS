@@ -515,6 +515,17 @@ const HierarchicalForceTree = () => {
         setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
       });
 
+    const defaultWheelDelta = zoomBehaviour.wheelDelta();
+    zoomBehaviour.wheelDelta((event) => {
+      const base = typeof defaultWheelDelta === 'function'
+        ? defaultWheelDelta(event)
+        : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
+      if (event.ctrlKey || event.metaKey) {
+        return base * 0.35;
+      }
+      return base;
+    });
+
     svgSelection
       .style('touch-action', 'none')
       .call(zoomBehaviour)
@@ -745,6 +756,22 @@ const HierarchicalForceTree = () => {
     const svg = d3.select(svgRef.current);
     svg.selectAll(`[data-node-id="${expandedNodeId}"]`).raise();
   }, [expandedNodeId, nodes]);
+
+  useEffect(() => {
+    if (!expandedNodeId) return undefined;
+    if (typeof document === 'undefined') return undefined;
+
+    const handleDocumentPointerDown = (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-node-id]')) {
+        return;
+      }
+      setExpandedNodeId(null);
+    };
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+    return () => document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+  }, [expandedNodeId]);
 
   // 컴포넌트 언마운트 시 애니메이션 정리
   useEffect(() => {
