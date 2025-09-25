@@ -2,7 +2,6 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain, nativeTheme, shell } = require('electron');
 const { createLogBridge } = require('./logger');
 const { createHotkeyManager } = require('./hotkeys');
-const clipboard = require('./clipboard');
 const accessibility = require('./accessibility');
 const logs = require('./logs');
 const settingsStore = require('./settings');
@@ -18,10 +17,10 @@ let hotkeyManager;
 let tray;
 
 const windowConfig = {
-  frameless: false,
-  transparent: false,
-  alwaysOnTop: false,
-  skipTaskbar: false,
+  frameless: true,        // 창 테두리 제거 (투명 효과 필수)
+  transparent: true,      // 창을 투명하게 만듦
+  alwaysOnTop: true,      // 항상 위에 표시
+  skipTaskbar: true,      // 작업표시줄에 안 보이게
 };
 
 const DEFAULT_ACCELERATOR = settingsStore.defaultAccelerator;
@@ -56,23 +55,23 @@ const handleHotkeyTrigger = () => {
   }
 
   ensureWindowFocus();
+  logger?.info('Main window shown via hotkey');
+};
 
-  const result = clipboard.getText();
-  if (result.success) {
-    mainWindow.webContents.send('widget:showFromClipboard', {
-      text: result.text,
-      source: 'clipboard',
-      timestamp: Date.now(),
-    });
-    logger?.info('Clipboard text dispatched to renderer', {
-      length: result.text.length,
-    });
+const handleAltBacktickToggle = () => {
+  if (!mainWindow) {
+    logger?.warn('Alt+` triggered but main window is not available');
+    return;
+  }
+
+  logger?.info('Alt+` triggered - toggling window visibility');
+
+  if (mainWindow.isVisible()) {
+    mainWindow.hide();
+    logger?.info('Main window hidden via Alt+`');
   } else {
-    logger?.warn('Clipboard read failed', result.error);
-    mainWindow.webContents.send('widget:clipboardError', {
-      error: result.error,
-      timestamp: Date.now(),
-    });
+    ensureWindowFocus();
+    logger?.info('Main window shown via Alt+`');
   }
 };
 
@@ -82,14 +81,21 @@ const registerPrimaryHotkey = () => {
   }
   hotkeyManager.unregisterAll?.();
 
-  const accelerator = typeof settings.accelerator === 'string' && settings.accelerator.trim()
-    ? settings.accelerator.trim()
-    : DEFAULT_ACCELERATOR;
-  const options = {};
+  // Windows에서 더블 Ctrl 사용 시 Ctrl 키만 등록
+  let accelerator, options = {};
+
   if (process.platform === 'win32' && settings.doubleCtrlEnabled) {
-    options.enableDoubleCtrl = true;
+    accelerator = 'Alt+`';
+    options.enableDoubleCtrl = false; // Alt+`를 한 번만 누르면 감지
+  } else {
+    accelerator = typeof settings.accelerator === 'string' && settings.accelerator.trim()
+      ? settings.accelerator.trim()
+      : DEFAULT_ACCELERATOR;
   }
-  const success = hotkeyManager.registerToggle({ accelerator, handler: handleHotkeyTrigger, options });
+
+  // Alt+` 키인 경우 Alt+` 토글 핸들러 사용
+  const handler = (accelerator === 'Alt+`') ? handleAltBacktickToggle : handleHotkeyTrigger;
+  const success = hotkeyManager.registerToggle({ accelerator, handler, options });
   if (success) {
     logger?.info('Primary hotkey registered', { accelerator, doubleCtrl: options.enableDoubleCtrl || false });
   } else {
@@ -123,7 +129,7 @@ const applyTraySettings = () => {
     if (!tray) {
       tray = createTray({
         getWindow: () => mainWindow,
-        onToggle: () => handleHotkeyTrigger(),
+        onToggle: () => handleAltBacktickToggle(),
         onShowSettings: () => {
           logger?.info('Settings placeholder invoked from tray');
           ensureWindowFocus();
@@ -147,18 +153,33 @@ const broadcastSettings = () => {
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
+    // 창 크기 설정
     width: 1024,
     height: 720,
     minWidth: 520,
     minHeight: 360,
-    show: false,
-    title: 'JARVIS Widget',
-    backgroundColor: '#111827',
+
+    // 🔑 투명도 핵심 설정들
+    transparent: true,           // 창을 투명하게 만듦
+    backgroundColor: '#00000000', // 완전 투명 배경 (알파 채널 00)
+    frame: false,               // 창 테두리 제거 (투명 효과 필수)
+
+    // 창 동작 설정
+    alwaysOnTop: true,          // 항상 위에 표시
+    skipTaskbar: true,          // 작업표시줄에 안 보이게
+    hasShadow: false,           // 창 그림자 제거
+    resizable: true,            // 크기 조절 가능
+    movable: true,              // 이동 가능
+
+    // 기타 설정
+    show: false,                // 처음엔 숨김 (준비되면 표시)
+    fullscreenable: false,
+    maximizable: false,
+    minimizable: false,
+    titleBarStyle: 'hidden',    // 타이틀바 숨김
     autoHideMenuBar: true,
-    frame: !windowConfig.frameless,
-    transparent: windowConfig.transparent,
-    alwaysOnTop: windowConfig.alwaysOnTop,
-    skipTaskbar: windowConfig.skipTaskbar,
+    title: 'JARVIS Widget',
+
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -246,10 +267,6 @@ app.whenReady().then(() => {
       changed = true;
     }
 
-    if (typeof payload.autoPasteEnabled === 'boolean' && payload.autoPasteEnabled !== settings.autoPasteEnabled) {
-      settings.autoPasteEnabled = payload.autoPasteEnabled;
-      changed = true;
-    }
 
     if (typeof payload.trayEnabled === 'boolean' && payload.trayEnabled !== settings.trayEnabled) {
       settings.trayEnabled = payload.trayEnabled;
@@ -284,17 +301,14 @@ app.whenReady().then(() => {
     if (!mainWindow) {
       return { success: false, error: { code: 'no_window', message: 'Main window not available' } };
     }
-    if (!mainWindow.isVisible()) {
-      ensureWindowFocus();
-      return { success: true, visible: true };
-    }
-    if (mainWindow.isFocused()) {
-      mainWindow.hide();
-      logger?.info('Main window hidden via IPC');
-      return { success: true, visible: false };
-    }
-    ensureWindowFocus();
-    return { success: true, visible: true };
+
+    const wasVisible = mainWindow.isVisible();
+    handleAltBacktickToggle();
+
+    return {
+      success: true,
+      visible: !wasVisible
+    };
   });
 
   ipcMain.handle('window:updateConfig', (_event, config = {}) => {

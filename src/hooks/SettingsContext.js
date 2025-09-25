@@ -6,14 +6,12 @@ const defaultAccelerator = typeof process !== 'undefined' && process?.platform =
 
 const SettingsContext = createContext({
   doubleCtrlEnabled: true,
-  autoPasteEnabled: true,
   trayEnabled: true,
   accelerator: defaultAccelerator,
-  setDoubleCtrlEnabled: () => {},
-  setAutoPasteEnabled: () => {},
-  setTrayEnabled: () => {},
-  setAccelerator: () => {},
-  resetAccelerator: () => {},
+  setDoubleCtrlEnabled: () => { },
+  setTrayEnabled: () => { },
+  setAccelerator: () => { },
+  resetAccelerator: () => { },
 });
 
 const normalizeBoolean = (value, fallback = true) => {
@@ -26,7 +24,6 @@ const normalizeBoolean = (value, fallback = true) => {
 export const SettingsProvider = ({ children }) => {
   const isWindows = typeof process !== 'undefined' && process?.platform === 'win32';
   const [doubleCtrlEnabled, setDoubleCtrlEnabledState] = useState(isWindows);
-  const [autoPasteEnabled, setAutoPasteEnabledState] = useState(true);
   const [trayEnabled, setTrayEnabledState] = useState(true);
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
   const [accelerator, setAcceleratorState] = useState(defaultAccelerator);
@@ -48,7 +45,6 @@ export const SettingsProvider = ({ children }) => {
     const applySettings = (next = {}) => {
       if (!mounted) return;
       setDoubleCtrlEnabledState(normalizeBoolean(next.doubleCtrlEnabled, isWindows));
-      setAutoPasteEnabledState(normalizeBoolean(next.autoPasteEnabled, true));
       setTrayEnabledState(normalizeBoolean(next.trayEnabled, true));
       if (typeof next.accelerator === 'string' && next.accelerator.trim()) {
         setAcceleratorState(next.accelerator.trim());
@@ -91,11 +87,6 @@ export const SettingsProvider = ({ children }) => {
     window.jarvisAPI?.log?.('info', 'settings_double_ctrl_changed', { enabled: next });
   }, [updateSettings]);
 
-  const setAutoPasteEnabled = useCallback((next) => {
-    setAutoPasteEnabledState(next);
-    updateSettings({ autoPasteEnabled: next });
-    window.jarvisAPI?.log?.('info', 'settings_auto_paste_changed', { enabled: next });
-  }, [updateSettings]);
 
   const setTrayEnabled = useCallback((next) => {
     setTrayEnabledState(next);
@@ -142,18 +133,16 @@ export const SettingsProvider = ({ children }) => {
 
   const value = useMemo(() => ({
     doubleCtrlEnabled,
-    autoPasteEnabled,
     trayEnabled,
     accelerator,
     accessibilityGranted,
     setDoubleCtrlEnabled,
-    setAutoPasteEnabled,
     setTrayEnabled,
     setAccelerator,
     resetAccelerator,
     refreshAccessibilityStatus,
     requestAccessibility,
-  }), [doubleCtrlEnabled, autoPasteEnabled, trayEnabled, accelerator, accessibilityGranted, setDoubleCtrlEnabled, setAutoPasteEnabled, setTrayEnabled, setAccelerator, resetAccelerator, refreshAccessibilityStatus, requestAccessibility]);
+  }), [doubleCtrlEnabled, trayEnabled, accelerator, accessibilityGranted, setDoubleCtrlEnabled, setTrayEnabled, setAccelerator, resetAccelerator, refreshAccessibilityStatus, requestAccessibility]);
 
   return (
     <SettingsContext.Provider value={value}>

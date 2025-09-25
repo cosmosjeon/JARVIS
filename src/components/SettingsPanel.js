@@ -5,12 +5,10 @@ import HotkeyRecorderModal from './HotkeyRecorderModal';
 const SettingsPanel = () => {
   const {
     doubleCtrlEnabled,
-    autoPasteEnabled,
     trayEnabled,
     accelerator,
     accessibilityGranted,
     setDoubleCtrlEnabled,
-    setAutoPasteEnabled,
     setTrayEnabled,
     setAccelerator,
     resetAccelerator,
@@ -38,7 +36,7 @@ const SettingsPanel = () => {
       <h2 className="text-lg font-semibold text-slate-50">설정 (실험용)</h2>
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <span>더블 Ctrl 토글</span>
+          <span>Alt+` 토글</span>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -46,17 +44,6 @@ const SettingsPanel = () => {
               onChange={(event) => setDoubleCtrlEnabled(event.target.checked)}
             />
             <span className="text-xs text-slate-300">윈도우에서 창 열기/닫기</span>
-          </label>
-        </div>
-        <div className="flex items-center justify-between">
-          <span>자동 붙여넣기</span>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={autoPasteEnabled}
-              onChange={(event) => setAutoPasteEnabled(event.target.checked)}
-            />
-            <span className="text-xs text-slate-300">클립보드 → 입력창 자동 채우기</span>
           </label>
         </div>
         <div className="flex items-center justify-between">
@@ -74,7 +61,7 @@ const SettingsPanel = () => {
           <span>현재 단축키</span>
           <div className="flex items-center gap-2 text-xs text-slate-200">
             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 font-mono text-slate-50">
-              {accelerator}
+              Alt+`
             </span>
             <button
               type="button"
