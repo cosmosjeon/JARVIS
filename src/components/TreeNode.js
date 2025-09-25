@@ -263,41 +263,44 @@ const TreeNode = ({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-      <motion.rect
-        width={currentWidth}
-        height={currentHeight}
-        rx={borderRadius}
-        ry={borderRadius}
-        fill={rectFill}
-        stroke={rectStroke}
-        strokeWidth={rectStrokeWidth}
-        style={{
-          cursor: 'pointer',
-          mixBlendMode: 'normal', // 투명 창에서 블렌드 모드 고정
-          filter: 'none', // 투명 배경 잔상 방지를 위해 그림자 제거
-          // 상위 컨테이너가 pointer-events: none인 상태에서 노드 영역만 다시 활성화
-          pointerEvents: 'auto',
-        }}
-        onClick={(e) => {
-          if (isExpanded) {
-            return;
-          }
-          e.stopPropagation();
-          onNodeClick && onNodeClick(node);
-        }}
-        animate={{
-          x: -currentWidth / 2,
-          y: -currentHeight / 2,
-          width: currentWidth,
-          height: currentHeight,
-        }}
-        transition={{
-          type: 'spring',
-          stiffness: 260,
-          damping: 24,
-          duration: 0.25,
-        }}
-      />
+      {/* Hide background rectangle when node is expanded (chat mode) */}
+      {displayMode !== 'chat' && (
+        <motion.rect
+          width={currentWidth}
+          height={currentHeight}
+          rx={borderRadius}
+          ry={borderRadius}
+          fill={rectFill}
+          stroke={rectStroke}
+          strokeWidth={rectStrokeWidth}
+          style={{
+            cursor: 'pointer',
+            mixBlendMode: 'normal', // 투명 창에서 블렌드 모드 고정
+            filter: 'none', // 투명 배경 잔상 방지를 위해 그림자 제거
+            // 상위 컨테이너가 pointer-events: none인 상태에서 노드 영역만 다시 활성화
+            pointerEvents: 'auto',
+          }}
+          onClick={(e) => {
+            if (isExpanded) {
+              return;
+            }
+            e.stopPropagation();
+            onNodeClick && onNodeClick(node);
+          }}
+          animate={{
+            x: -currentWidth / 2,
+            y: -currentHeight / 2,
+            width: currentWidth,
+            height: currentHeight,
+          }}
+          transition={{
+            type: 'spring',
+            stiffness: 260,
+            damping: 24,
+            duration: 0.25,
+          }}
+        />
+      )}
 
       {displayMode === 'chat' ? (
         shouldUsePortal ? null : (

@@ -520,6 +520,27 @@ const HierarchicalForceTree = () => {
       .call(zoomBehaviour)
       .on('dblclick.zoom', null);
 
+    const handleBackgroundPointerDown = (event) => {
+      if (!expandedNodeId) return;
+      const svgElement = svgSelection.node();
+      if (!svgElement) return;
+      const pointer = svgElement.createSVGPoint();
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+      const screenPoint = pointer.matrixTransform(svgElement.getScreenCTM()?.inverse?.() ?? svgElement.getScreenCTM());
+      if (!screenPoint) {
+        setExpandedNodeId(null);
+        return;
+      }
+      const [x, y] = [screenPoint.x, screenPoint.y];
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-node-id]')) {
+        return;
+      }
+      setExpandedNodeId(null);
+    };
+
+    svgSelection.on('pointerdown.background', handleBackgroundPointerDown);
     svgSelection.on('wheel.treepan', (event) => {
       if (isPinchZoomWheel(event)) {
         return;
@@ -544,6 +565,7 @@ const HierarchicalForceTree = () => {
     });
 
     return () => {
+      svgSelection.on('pointerdown.background', null);
       svgSelection.on('.zoom', null);
       svgSelection.on('.treepan', null);
     };
