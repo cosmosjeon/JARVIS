@@ -25,6 +25,12 @@ const HierarchicalForceTree = () => {
   const hasCleanedQ2Ref = useRef(false);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
   const contentGroupRef = useRef(null);
+  const overlayContainerRef = useRef(null);
+  const [overlayElement, setOverlayElement] = useState(null);
+
+  useEffect(() => {
+    setOverlayElement(overlayContainerRef.current);
+  }, []);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -301,20 +307,40 @@ const HierarchicalForceTree = () => {
       return undefined;
     }
 
+    const isSecondaryButtonDrag = (evt) => {
+      if (typeof evt.button === 'number' && (evt.button === 1 || evt.button === 2)) return true;
+      if (typeof evt.buttons === 'number') {
+        const mask = evt.buttons;
+        return (mask & 4) === 4 || (mask & 2) === 2;
+      }
+      return false;
+    };
+
+    const allowTouchGesture = (evt) => {
+      if (evt.type.startsWith('touch')) {
+        const touches = evt.touches || (evt.originalEvent && evt.originalEvent.touches);
+        return Boolean(touches && touches.length > 1);
+      }
+      if (evt.type.startsWith('pointer') && evt.pointerType === 'touch') {
+        return true;
+      }
+      return false;
+    };
+
     const zoomBehaviour = zoomFactory()
       .scaleExtent([0.3, 4])
       .filter((event) => {
         const target = event.target instanceof Element ? event.target : null;
-        // Block zoom/pan when interacting inside embedded HTML panels
         if (target && target.closest('foreignObject')) return false;
-        // Allow wheel for zooming
-        if (event.type === 'wheel') return true;
-        // Disable double-click zoom to avoid surprises
-        if (event.type === 'dblclick') return false;
-        // Prevent panning when drag starts on a node; node drag has priority
         if (target && target.closest('[data-node-id]')) return false;
-        // Allow touch gestures and left-button drag for panning
-        return event.type.startsWith('touch') || event.button === 0;
+        if (event.type === 'wheel') return true;
+        if (event.type === 'dblclick') return false;
+        if (allowTouchGesture(event)) return true;
+        if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') return true;
+        if (event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'mousedown' || event.type === 'mousemove') {
+          return isSecondaryButtonDrag(event);
+        }
+        return false;
       })
       .on('zoom', (event) => {
         setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
@@ -624,6 +650,8 @@ const HierarchicalForceTree = () => {
                     hasChildren={(childrenByParent.get(node.id) || []).length > 0}
                     isCollapsed={collapsedNodeIds.has(node.id)}
                     onToggleCollapse={toggleCollapse}
+                    viewTransform={viewTransform}
+                    overlayElement={overlayElement}
                   />
                 </motion.g>
               );
@@ -633,6 +661,11 @@ const HierarchicalForceTree = () => {
       </svg>
 
       {/* 디버그 패널 제거됨 */}
+      <div
+        ref={overlayContainerRef}
+        className="pointer-events-none absolute inset-0 z-10"
+        style={{ overflow: 'visible' }}
+      />
     </div>
   );
 };

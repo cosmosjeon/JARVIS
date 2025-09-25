@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 import { createTreeNodeSummary, isTreeRootNode } from '../services/TreeSummaryService';
@@ -28,6 +29,8 @@ const TreeNode = ({
   hasChildren = false,
   isCollapsed = false,
   onToggleCollapse,
+  viewTransform = { x: 0, y: 0, k: 1 },
+  overlayElement = null,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -170,14 +173,79 @@ const TreeNode = ({
 
   const memoizedSummary = useMemo(() => createTreeNodeSummary(node), [node]);
   const memoizedIsRoot = useMemo(() => isTreeRootNode(node), [node]);
+  const nodePosition = position || { x: 0, y: 0 };
+
+  const normalizedTransform = useMemo(() => {
+    if (!viewTransform || typeof viewTransform !== 'object') {
+      return { x: 0, y: 0, k: 1 };
+    }
+    const { x = 0, y = 0, k = 1 } = viewTransform;
+    return { x, y, k: Number.isFinite(k) && k > 0 ? k : 1 };
+  }, [viewTransform]);
+
+  const shouldUsePortal = displayMode === 'chat' && overlayElement;
+
+  const portalContent = useMemo(() => {
+    if (!shouldUsePortal) return null;
+
+    const nodeX = nodePosition.x || 0;
+    const nodeY = nodePosition.y || 0;
+    const screenX = normalizedTransform.x + nodeX * normalizedTransform.k;
+    const screenY = normalizedTransform.y + nodeY * normalizedTransform.k;
+
+    return createPortal(
+      <div
+        style={{
+          position: 'absolute',
+          left: `${screenX}px`,
+          top: `${screenY}px`,
+          width: `${currentWidth}px`,
+          height: `${currentHeight}px`,
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'auto',
+          zIndex: 1010,
+          willChange: 'transform',
+        }}
+        data-node-id={node.id}
+      >
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'auto',
+            position: 'relative',
+            zIndex: 1000,
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        >
+          <NodeAssistantPanel
+            node={node}
+            color={color}
+            onSizeChange={handlePanelSizeChange}
+            onSecondQuestion={onSecondQuestion}
+            onPlaceholderCreate={onPlaceholderCreate}
+            questionService={questionService}
+            initialConversation={initialConversation}
+            onConversationChange={onConversationChange}
+            nodeSummary={memoizedSummary}
+            isRootNode={memoizedIsRoot}
+          />
+        </div>
+      </div>,
+      overlayElement,
+    );
+  }, [shouldUsePortal, overlayElement, normalizedTransform, nodePosition.x, nodePosition.y, currentWidth, currentHeight, node, color, handlePanelSizeChange, onSecondQuestion, onPlaceholderCreate, questionService, initialConversation, onConversationChange, memoizedSummary, memoizedIsRoot]);
 
   return (
-    <g
-      transform={`translate(${position.x || 0}, ${position.y || 0})`}
-      style={{ cursor: isExpanded ? 'default' : 'pointer' }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
+    <>
+      <g
+        transform={`translate(${nodePosition.x || 0}, ${nodePosition.y || 0})`}
+        style={{ cursor: isExpanded ? 'default' : 'pointer' }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
       <motion.rect
         width={currentWidth}
         height={currentHeight}
@@ -192,6 +260,8 @@ const TreeNode = ({
           filter: displayMode === 'chat'
             ? 'drop-shadow(0 18px 42px rgba(15, 23, 42, 0.48))'
             : 'drop-shadow(0 8px 24px rgba(15, 23, 42, 0.32))',
+          opacity: shouldUsePortal ? 0 : 1,
+          pointerEvents: shouldUsePortal ? 'none' : 'auto',
         }}
         onClick={(e) => {
           if (isExpanded) {
@@ -215,6 +285,7 @@ const TreeNode = ({
       />
 
       {displayMode === 'chat' ? (
+        shouldUsePortal ? null : (
         <foreignObject
           x={-currentWidth / 2}
           y={-currentHeight / 2}
@@ -254,6 +325,7 @@ const TreeNode = ({
             />
           </div>
         </foreignObject>
+        )
       ) : (
         <motion.text
           textAnchor="middle"
@@ -348,7 +420,9 @@ const TreeNode = ({
           <title>{isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}</title>
         </g>
       )}
-    </g>
+      </g>
+      {portalContent}
+    </>
   );
 };
 
