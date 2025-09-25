@@ -4,7 +4,7 @@ const { app } = require('electron');
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
-const defaultAccelerator = process.platform === 'darwin' ? 'Command+`' : 'Control+Shift+J';
+const defaultAccelerator = process.platform === 'darwin' ? 'Command+1' : 'Control+Shift+J';
 
 const defaultSettings = {
   doubleCtrlEnabled: process.platform === 'win32',
