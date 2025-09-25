@@ -66,4 +66,12 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
     ipcRenderer.on('settings:changed', listener);
     return () => ipcRenderer.removeListener('settings:changed', listener);
   },
+  onPassThroughToggle: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+    const listener = () => handler();
+    ipcRenderer.on('pass-through:toggle', listener);
+    return () => ipcRenderer.removeListener('pass-through:toggle', listener);
+  },
 });

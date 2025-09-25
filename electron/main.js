@@ -1,5 +1,5 @@
 const path = require('path');
-const { app, BrowserWindow, ipcMain, nativeTheme, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeTheme, shell, screen, globalShortcut } = require('electron');
 const { createLogBridge } = require('./logger');
 const { createHotkeyManager } = require('./hotkeys');
 const accessibility = require('./accessibility');
@@ -118,6 +118,23 @@ const persistSettings = () => {
   const success = settingsStore.writeSettings(settings);
   if (!success) {
     logger?.warn('Failed to persist settings');
+  }
+};
+
+const registerPassThroughShortcut = () => {
+  const accelerator = 'CommandOrControl+2';
+  const success = globalShortcut.register(accelerator, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    ensureWindowFocus();
+    mainWindow.webContents.send('pass-through:toggle');
+  });
+
+  if (success) {
+    logger?.info('Pass-through shortcut registered', { accelerator });
+  } else {
+    logger?.warn('Failed to register pass-through shortcut', { accelerator });
   }
 };
 
@@ -257,6 +274,7 @@ app.whenReady().then(() => {
   createWindow();
   applyHotkeySettings();
   applyTraySettings();
+  registerPassThroughShortcut();
   broadcastSettings();
   ipcMain.handle('system:ping', () => 'pong');
   ipcMain.handle('logger:write', (_event, payload) => {
@@ -483,6 +501,7 @@ app.on('browser-window-created', (_, window) => {
 });
 
 app.on('will-quit', () => {
+  globalShortcut.unregister('CommandOrControl+2');
   hotkeyManager?.dispose?.();
   tray?.dispose?.();
 });
