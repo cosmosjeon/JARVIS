@@ -49,6 +49,10 @@ const handleHotkeyTrigger = () => {
     });
   } else {
     logger?.warn('Clipboard read failed', result.error);
+    mainWindow?.webContents.send('widget:clipboardError', {
+      error: result.error,
+      timestamp: Date.now(),
+    });
   }
 };
 
@@ -57,7 +61,11 @@ const registerPrimaryHotkey = () => {
     hotkeyManager = createHotkeyManager(logger);
   }
   const accelerator = DEFAULT_ACCELERATOR;
-  const success = hotkeyManager.registerToggle({ accelerator, handler: handleHotkeyTrigger });
+  const options = {};
+  if (process.platform === 'win32') {
+    options.enableDoubleCtrl = true;
+  }
+  const success = hotkeyManager.registerToggle({ accelerator, handler: handleHotkeyTrigger, options });
   if (success) {
     logger?.info('Primary hotkey registered', { accelerator });
   } else {

@@ -25,9 +25,10 @@
    - 결과를 renderer로 `widget:showFromClipboard` IPC
 3. renderer
    - `jarvisAPI.onClipboard(payload)` (preload 확장, 2025-09-25 추가)
+   - `jarvisAPI.onClipboardError(payload)`로 오류 코드 수신 → 입력창 초기화 + 토스트 표시
    - NodeAssistantPanel 입력창 자동 채우기 및 포커스 이동 → 하이라이트 placeholder 흐름 유지
 4. UI
-   - 안내 토스트: "클립보드가 비어 있습니다" / "복사 후 다시 시도"
+   - 안내 토스트: "클립보드가 비어 있습니다" / "복사 후 다시 시도" / "10KB 이하로 줄여주세요"
    - 설정에서 "자동 붙여넣기" 토글 제공 (기본 ON)
 
 ## 보안 고려
@@ -35,6 +36,6 @@
 - 10KB 초과 텍스트는 `too_large` 에러와 함께 클립보드 수동 붙여넣기 안내
 
 ## TODO
-- [ ] `sanitizeText` 유닛 테스트 추가 (trim, whitespace collapse)
-- [ ] Renderer 입력 필드 자동 채우기 UX 정의
-- [ ] 클립보드 권한 문구 (macOS) 번역 검토
+- [x] `sanitizeText` 유닛 테스트 추가 (trim, whitespace collapse)
+- [x] Renderer 입력 필드 자동 채우기 UX 정의 (NodeAssistantPanel 자동 포커스 + 토스트 반영)
+- [x] 클립보드 권한 문구 (macOS) 번역 검토 → `sprint3-clipboard-permissions.md`

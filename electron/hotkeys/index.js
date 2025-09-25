@@ -57,13 +57,13 @@ const createHotkeyManager = (logger) => {
     return adapter;
   };
 
-  const registerToggle = ({ accelerator, handler }) => {
+  const registerToggle = ({ accelerator, handler, options = {} }) => {
     if (!app.isReady()) {
       throw new Error('Cannot register hotkeys before app is ready');
     }
 
     const activeAdapter = ensureAdapter();
-    const success = activeAdapter.register({ accelerator, handler });
+    const success = activeAdapter.register({ accelerator, handler, ...options });
     registered = registered || success;
     return success;
   };

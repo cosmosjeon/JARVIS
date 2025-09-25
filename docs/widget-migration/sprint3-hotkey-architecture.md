@@ -26,6 +26,8 @@
            ↳ 실패 시 state:notify IPC
 ```
 - 임시 기본 단축키: macOS `Command+Shift+J`, Windows/Linux `Control+Shift+J`
+- Windows 더블 Ctrl PoC: `enableDoubleCtrl` 플래그(포커스된 창 기준 `before-input-event`에서 더블 Ctrl 감지, 글로벌 훅은 추후 iohook 도입 예정)
+- Hotkey manager API: `registerToggle({ accelerator, handler, options })` → `options.enableDoubleCtrl` 등 확장 예정
 
 ## 설정 저장
 - Renderer에서 사용자 설정을 `state:widget:update` IPC로 저장

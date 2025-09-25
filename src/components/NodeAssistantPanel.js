@@ -302,6 +302,34 @@ const NodeAssistantPanel = ({
 
   useEffect(() => () => disableHighlightMode(), [disableHighlightMode]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const api = window.jarvisAPI;
+    if (!api?.onClipboardError) {
+      return undefined;
+    }
+
+    const unsubscribe = api.onClipboardError((payload = {}) => {
+      const code = payload?.error?.code;
+      let message = '클립보드 읽기에 실패했습니다. 다시 시도해주세요.';
+      if (code === 'empty') {
+        message = '클립보드에 텍스트가 없습니다. 복사 후 다시 시도하세요.';
+      } else if (code === 'too_large') {
+        message = '클립보드 텍스트가 너무 깁니다. 10KB 이하로 줄여주세요.';
+      }
+      disableHighlightMode();
+      setIsHighlightMode(false);
+      setComposerValue('');
+      setPlaceholderNotice({ type: 'warning', message });
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [disableHighlightMode]);
+
   const handleHighlightToggle = useCallback(() => {
     setIsHighlightMode((prev) => {
       if (prev) {
