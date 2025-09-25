@@ -39,6 +39,7 @@ const HierarchicalForceTree = () => {
   const contentGroupRef = useRef(null);
   const overlayContainerRef = useRef(null);
   const [overlayElement, setOverlayElement] = useState(null);
+  const [isResizing, setIsResizing] = useState(false);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -422,7 +423,10 @@ const HierarchicalForceTree = () => {
 
   useEffect(() => {
     const handleResize = () => {
+      setIsResizing(true);
       setDimensions(getViewportDimensions());
+      if (handleResize._t) clearTimeout(handleResize._t);
+      handleResize._t = setTimeout(() => setIsResizing(false), 140);
     };
 
     window.addEventListener('resize', handleResize);
@@ -559,13 +563,23 @@ const HierarchicalForceTree = () => {
   }, []);
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden bg-transparent">
+    <div
+      className="relative flex h-full w-full overflow-hidden bg-transparent"
+      style={{
+        // 투명 창에서 이전 프레임 잔상 방지: 독립 합성 레이어 확보
+        willChange: 'transform, opacity',
+        transform: 'translateZ(0)',
+        WebkitTransform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
+      }}
+    >
       <svg
         ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
-        style={{ background: 'transparent' }}
         onClick={handleBackgroundClick}
+        style={{ background: 'rgba(0,0,0,0.001)' }}
       >
         {/* Arrow marker definition */}
         <defs>
@@ -583,7 +597,12 @@ const HierarchicalForceTree = () => {
         </defs>
 
         {/* Links */}
-        <g ref={contentGroupRef} transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
+        <g
+          ref={contentGroupRef}
+          key={`${dimensions.width}x${dimensions.height}`}
+          transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
+          style={{ opacity: isResizing ? 0.999 : 1 }}
+        >
           <g className="links">
             <AnimatePresence>
               {links
@@ -603,7 +622,7 @@ const HierarchicalForceTree = () => {
 
                   return (
                     <motion.path
-                      key={`${link.source}-${link.target}-${index}`}
+                      key={`${String(link.source)}->${String(link.target)}`}
                       d={pathString}
                       stroke="rgba(148, 163, 184, 0.55)"
                       strokeOpacity={0.8}
