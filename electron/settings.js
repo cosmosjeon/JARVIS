@@ -1,0 +1,44 @@
+const fs = require('fs');
+const path = require('path');
+const { app } = require('electron');
+
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+
+const defaultSettings = {
+  doubleCtrlEnabled: process.platform === 'win32',
+  autoPasteEnabled: true,
+  trayEnabled: true,
+};
+
+const readSettings = () => {
+  try {
+    if (!fs.existsSync(SETTINGS_FILE)) {
+      return { ...defaultSettings };
+    }
+    const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaultSettings,
+      ...parsed,
+    };
+  } catch (error) {
+    return { ...defaultSettings };
+  }
+};
+
+const writeSettings = (settings) => {
+  try {
+    fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+module.exports = {
+  SETTINGS_FILE,
+  defaultSettings,
+  readSettings,
+  writeSettings,
+};

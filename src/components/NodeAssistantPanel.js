@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
 import QuestionService from '../services/QuestionService';
+import { useSettings } from '../hooks/SettingsContext';
 
 export const PANEL_SIZES = {
   compact: { width: 360, height: 180 },
@@ -122,6 +123,7 @@ const NodeAssistantPanel = ({
   const [messages, setMessages] = useState(() => normalizedInitialConversation);
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
+  const { autoPasteEnabled } = useSettings();
   const [placeholderNotice, setPlaceholderNotice] = useState(null);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const typingTimers = useRef([]);
@@ -278,6 +280,11 @@ const NodeAssistantPanel = ({
     }
 
     const unsubscribeClipboard = api.onClipboard((payload = {}) => {
+      if (!autoPasteEnabled) {
+        setPlaceholderNotice({ type: 'info', message: '자동 붙여넣기 비활성화 상태입니다.' });
+        return;
+      }
+
       const rawText = typeof payload.text === 'string' ? payload.text : '';
       const trimmed = rawText.trim();
       if (!trimmed) {
@@ -315,7 +322,7 @@ const NodeAssistantPanel = ({
       unsubscribeClipboard?.();
       unsubscribeError?.();
     };
-  }, [disableHighlightMode]);
+  }, [disableHighlightMode, autoPasteEnabled]);
 
   const handleHighlightToggle = useCallback(() => {
     setIsHighlightMode((prev) => {

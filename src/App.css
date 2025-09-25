@@ -109,3 +109,18 @@ body {
 .node-highlight-wrap:hover {
   background: rgba(16, 185, 129, 0.4);
 }
+
+.App-overlay {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  pointer-events: none;
+  z-index: 2000;
+}
+
+.App-overlay > * {
+  pointer-events: auto;
+}

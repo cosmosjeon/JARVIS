@@ -3,6 +3,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('jarvisAPI', {
   ping: () => ipcRenderer.invoke('system:ping'),
   updateWindowConfig: (config) => ipcRenderer.invoke('window:updateConfig', config),
+  toggleWindow: () => ipcRenderer.invoke('window:toggleVisibility'),
+  checkAccessibilityPermission: () => ipcRenderer.invoke('system:accessibility:check'),
+  requestAccessibilityPermission: () => ipcRenderer.invoke('system:accessibility:request'),
+  exportLogs: (options) => ipcRenderer.invoke('logs:export', options),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  updateSettings: (payload) => ipcRenderer.invoke('settings:update', payload),
   log: (level, message, meta) => ipcRenderer.invoke('logger:write', { level, message, meta }),
   onLog: (handler) => {
     if (typeof handler !== 'function') {
@@ -27,5 +33,21 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('widget:clipboardError', listener);
     return () => ipcRenderer.removeListener('widget:clipboardError', listener);
+  },
+  onTrayCommand: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('tray:command', listener);
+    return () => ipcRenderer.removeListener('tray:command', listener);
+  },
+  onSettings: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('settings:changed', listener);
+    return () => ipcRenderer.removeListener('settings:changed', listener);
   },
 });

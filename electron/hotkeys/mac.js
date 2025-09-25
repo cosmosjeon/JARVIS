@@ -1,4 +1,4 @@
-const { globalShortcut, systemPreferences } = require('electron');
+const { globalShortcut, systemPreferences, shell } = require('electron');
 
 const hasAccessibilityPermission = () => {
   if (process.platform !== 'darwin' || typeof systemPreferences?.isTrustedAccessibilityClient !== 'function') {
@@ -11,17 +11,40 @@ const hasAccessibilityPermission = () => {
   }
 };
 
+const ensureAccessibilityPermission = ({ prompt = false } = {}) => {
+  if (process.platform !== 'darwin' || typeof systemPreferences?.isTrustedAccessibilityClient !== 'function') {
+    return true;
+  }
+  try {
+    const trusted = systemPreferences.isTrustedAccessibilityClient(prompt);
+    if (!trusted && prompt) {
+      shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    }
+    return trusted;
+  } catch (error) {
+    return false;
+  }
+};
+
 module.exports = (logger) => {
   const scopedHandlers = new Map();
 
-  const register = ({ accelerator, handler }) => {
+  const register = ({ accelerator, handler, enableDoubleCtrl = false, promptForPermission = false }) => {
     if (!accelerator || typeof handler !== 'function') {
       logger?.warn?.('macOS hotkey register: invalid params', { accelerator });
       return false;
     }
 
-    if (!hasAccessibilityPermission()) {
-      logger?.warn?.('macOS accessibility permission missing; falling back to globalShortcut', { accelerator });
+    const hasPermission = promptForPermission
+      ? ensureAccessibilityPermission({ prompt: true })
+      : hasAccessibilityPermission();
+
+    if (!hasPermission) {
+      logger?.warn?.('macOS accessibility permission missing; hotkey may not work until granted', { accelerator });
+    }
+
+    if (enableDoubleCtrl) {
+      logger?.info?.('macOS double Ctrl requested but not implemented yet; using accelerator fallback', { accelerator });
     }
 
     const wrappedHandler = () => {
@@ -57,5 +80,6 @@ module.exports = (logger) => {
     register,
     unregisterAll,
     dispose,
+    ensureAccessibilityPermission,
   };
 };

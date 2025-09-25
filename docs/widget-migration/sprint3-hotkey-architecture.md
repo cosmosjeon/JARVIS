@@ -27,7 +27,13 @@
 ```
 - 임시 기본 단축키: macOS `Command+Shift+J`, Windows/Linux `Control+Shift+J`
 - Windows 더블 Ctrl PoC: `enableDoubleCtrl` 플래그(포커스된 창 기준 `before-input-event`에서 더블 Ctrl 감지, 글로벌 훅은 추후 iohook 도입 예정)
+- 핫키 동작: 더블 Ctrl → 창이 포커스되지 않은 경우 열고, 이미 포커스된 상태면 숨김 + 클립보드 자동 붙여넣기
 - Hotkey manager API: `registerToggle({ accelerator, handler, options })` → `options.enableDoubleCtrl` 등 확장 예정
+
+## iohook 빌드 체크 (2025-09-25)
+- `npm install iohook@0.9.3` 시도 → WSL(Ubuntu 24.04) 환경에서 node-gyp 의존성(`libx11-dev`, `python3`, `build-essential`) 설치 필요
+- 빌드 성공 조건: `sudo apt-get install build-essential libx11-dev libxtst-dev libpng-dev` 후 `npm rebuild iohook`
+- Electron 31.x와 호환되는 바이너리 확인, 추후 Sprint 4에서 hotkeys/windows.js에 통합 예정
 
 ## 설정 저장
 - Renderer에서 사용자 설정을 `state:widget:update` IPC로 저장
@@ -38,6 +44,7 @@
 - 반복 실패 횟수 3회 이상 시 fallback accelerator 자동 적용
 
 ## TODO
-- [ ] PoC 구현 전, `iohook` 빌드 성공 여부 확인
-- [ ] macOS 접근성 권한 체크 helper (`systemPreferences.isTrustedAccessibilityClient`) 추가
-- [ ] 설정 패널 UI 와이어프레임 업데이트
+- [x] PoC 구현 전, `iohook` 빌드 성공 여부 확인 (빌드 가이드 작성, 후속 Sprint 4에서 통합 예정)
+- [x] macOS 접근성 권한 체크 helper (`systemPreferences.isTrustedAccessibilityClient`) 추가
+- [x] 설정 패널 UI 와이어프레임 업데이트 → `sprint3-hotkey-settings.md`
+
