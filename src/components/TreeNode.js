@@ -16,7 +16,6 @@ const TreeNode = ({
   node,
   position,
   color,
-  onDrag,
   onNodeClick,
   isExpanded,
   onSecondQuestion,
@@ -114,6 +113,47 @@ const TreeNode = ({
   // Calculate current dimensions
   const currentWidth = displayMode === 'chat' ? chatSize.width : displayMode === 'hover' ? hoverWidth : baseWidth;
   const currentHeight = displayMode === 'chat' ? chatSize.height : displayMode === 'hover' ? hoverHeight : baseHeight;
+
+  // Calculate panel position to keep it within screen bounds
+  const getPanelPosition = () => {
+    if (displayMode !== 'chat') return { x: -currentWidth / 2, y: -currentHeight / 2 };
+
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    const margin = 20; // 화면 가장자리에서의 여백
+
+    // 노드 위치 기준으로 패널 위치 계산
+    let panelX = -currentWidth / 2;
+    let panelY = -currentHeight / 2;
+
+    // 화면 경계 체크 및 조정
+    const nodeX = position.x || 0;
+    const nodeY = position.y || 0;
+
+    // 오른쪽 경계 체크
+    if (nodeX + panelX + currentWidth > screenWidth - margin) {
+      panelX = screenWidth - margin - currentWidth - nodeX;
+    }
+
+    // 왼쪽 경계 체크
+    if (nodeX + panelX < margin) {
+      panelX = margin - nodeX;
+    }
+
+    // 아래쪽 경계 체크
+    if (nodeY + panelY + currentHeight > screenHeight - margin) {
+      panelY = screenHeight - margin - currentHeight - nodeY;
+    }
+
+    // 위쪽 경계 체크
+    if (nodeY + panelY < margin) {
+      panelY = margin - nodeY;
+    }
+
+    return { x: panelX, y: panelY };
+  };
+
+  const panelPosition = getPanelPosition();
   const rectFill = displayMode === 'chat'
     ? 'rgba(15, 23, 42, 0.85)' // 더 진한 색상으로 변경
     : 'rgba(148, 163, 184, 0.22)';
@@ -168,13 +208,21 @@ const TreeNode = ({
     setChatSize(size);
   }, []);
 
+  // 패널 크기나 위치가 변경될 때마다 위치 재계산
+  useEffect(() => {
+    if (displayMode === 'chat') {
+      // 패널 위치가 화면 경계를 벗어나지 않도록 강제로 재계산
+      // getPanelPosition 함수가 이미 처리하므로 여기서는 추가 로직이 필요 없음
+    }
+  }, [displayMode, currentWidth, currentHeight, position.x, position.y]);
+
   const memoizedSummary = useMemo(() => createTreeNodeSummary(node), [node]);
   const memoizedIsRoot = useMemo(() => isTreeRootNode(node), [node]);
 
   return (
     <g
       transform={`translate(${position.x || 0}, ${position.y || 0})`}
-      style={{ cursor: isExpanded ? 'default' : 'pointer' }}
+      style={{ cursor: 'pointer' }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -201,8 +249,8 @@ const TreeNode = ({
           onNodeClick && onNodeClick(node);
         }}
         animate={{
-          x: -currentWidth / 2,
-          y: -currentHeight / 2,
+          x: displayMode === 'chat' ? panelPosition.x : -currentWidth / 2,
+          y: displayMode === 'chat' ? panelPosition.y : -currentHeight / 2,
           width: currentWidth,
           height: currentHeight,
         }}
@@ -216,8 +264,8 @@ const TreeNode = ({
 
       {displayMode === 'chat' ? (
         <foreignObject
-          x={-currentWidth / 2}
-          y={-currentHeight / 2}
+          x={panelPosition.x}
+          y={panelPosition.y}
           width={currentWidth}
           height={currentHeight}
           style={{

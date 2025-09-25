@@ -112,7 +112,7 @@ body {
 
 .App-overlay {
   position: fixed;
-  bottom: 32px;
+  top: 32px;
   right: 32px;
   display: flex;
   flex-direction: column;

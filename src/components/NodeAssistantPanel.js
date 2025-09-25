@@ -4,8 +4,8 @@ import QuestionService from '../services/QuestionService';
 import { useSettings } from '../hooks/SettingsContext';
 
 export const PANEL_SIZES = {
-  compact: { width: 360, height: 180 },
-  expanded: { width: 600, height: 640 },
+  compact: { width: 320, height: 160 },
+  expanded: { width: 480, height: 400 },
 };
 
 const TYPING_INTERVAL_MS = 18;
@@ -577,9 +577,8 @@ const NodeAssistantPanel = ({
             aria-label="하이라이트 모드"
             aria-pressed={isHighlightMode}
             onClick={handleHighlightToggle}
-            className={`glass-chip flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-200/60 ${
-              isHighlightMode ? 'bg-emerald-500/40 text-emerald-100' : 'bg-white/10 text-slate-100 hover:bg-white/20'
-            }`}
+            className={`glass-chip flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-200/60 ${isHighlightMode ? 'bg-emerald-500/40 text-emerald-100' : 'bg-white/10 text-slate-100 hover:bg-white/20'
+              }`}
           >
             🖍
           </button>

@@ -13,7 +13,8 @@ const HierarchicalForceTree = () => {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
-  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0 });
+  // viewTransform 제거 - 노드 영역만 드래그 가능하도록 수정
+  // const [viewTransform, setViewTransform] = useState({ x: 0, y: 0 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [data, setData] = useState(treeData);
   const simulationRef = useRef(null);
@@ -291,39 +292,40 @@ const HierarchicalForceTree = () => {
     });
   }, [data.nodes]);
 
-  useEffect(() => {
-    if (!svgRef.current) return undefined;
+  // 줌/팬 기능 제거 - 노드 영역만 드래그 가능하도록 수정
+  // useEffect(() => {
+  //   if (!svgRef.current) return undefined;
 
-    const svgSelection = d3.select(svgRef.current);
-    const zoomFactory = typeof d3.zoom === 'function' ? d3.zoom : null;
-    if (!zoomFactory) {
-      return undefined;
-    }
+  //   const svgSelection = d3.select(svgRef.current);
+  //   const zoomFactory = typeof d3.zoom === 'function' ? d3.zoom : null;
+  //   if (!zoomFactory) {
+  //     return undefined;
+  //   }
 
-    const zoomInstance = zoomFactory();
-    if (!zoomInstance || typeof zoomInstance.scaleExtent !== 'function') {
-      return undefined;
-    }
+  //   const zoomInstance = zoomFactory();
+  //   if (!zoomInstance || typeof zoomInstance.scaleExtent !== 'function') {
+  //     return undefined;
+  //   }
 
-    const zoomBehaviour = zoomInstance
-      .scaleExtent([1, 1])
-      .filter((event) => {
-        if (event.type === 'wheel' || event.type === 'dblclick') return false;
-        const target = event.target instanceof Element ? event.target : null;
-        if (target && target.closest('[data-node-id]')) return false;
-        // Left button only
-        return event.button === 0;
-      })
-      .on('zoom', (event) => {
-        setViewTransform({ x: event.transform.x, y: event.transform.y });
-      });
+  //   const zoomBehaviour = zoomInstance
+  //     .scaleExtent([1, 1])
+  //     .filter((event) => {
+  //       if (event.type === 'wheel' || event.type === 'dblclick') return false;
+  //       const target = event.target instanceof Element ? event.target : null;
+  //       if (target && target.closest('[data-node-id]')) return false;
+  //       // Left button only
+  //       return event.button === 0;
+  //     })
+  //     .on('zoom', (event) => {
+  //       setViewTransform({ x: event.transform.x, y: event.transform.y });
+  //     });
 
-    svgSelection.call(zoomBehaviour).on('dblclick.zoom', null);
+  //   svgSelection.call(zoomBehaviour).on('dblclick.zoom', null);
 
-    return () => {
-      svgSelection.on('.zoom', null);
-    };
-  }, []);
+  //   return () => {
+  //     svgSelection.on('.zoom', null);
+  //   };
+  // }, []);
 
   // 과거 생성된 Q2 노드들(및 하위 노드) 정리 - 최초 1회만 수행
   useEffect(() => {
@@ -444,58 +446,9 @@ const HierarchicalForceTree = () => {
     }
   };
 
-  // Drag behavior - 애니메이션 중에도 드래그 가능
-  const handleDrag = (nodeId) => {
-    return d3.drag()
-      .on('start', (event) => {
-        // 드래그 시작 시 애니메이션 일시 정지
-        if (animationRef.current) {
-          animationRef.current.stop();
-        }
-      })
-      .on('drag', (event) => {
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-          // 직접 위치 업데이트
-          node.x = event.x;
-          node.y = event.y;
-          setNodes([...nodes]);
-        }
-      })
-      .on('end', (event) => {
-        // 드래그 종료 시 tree layout으로 다시 정렬
-        const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
-          nodes,
-          visibleGraph.nodes,
-          visibleGraph.links,
-          dimensions,
-          (animatedNodes, animatedLinks) => {
-            setNodes(animatedNodes);
-            const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
-            linkKeysRef.current = nextKeys;
-            setLinks(annotatedLinks);
-          }
-        );
-        animationRef.current = animation;
-      });
-  };
+  // 드래그 기능 제거됨
 
-  useEffect(() => {
-    if (!svgRef.current) return;
-    const svg = d3.select(svgRef.current);
-
-    nodes.forEach(node => {
-      const selection = svg.selectAll(`[data-node-id="${node.id}"]`);
-
-      if (expandedNodeId) {
-        selection.on('.drag', null);
-        selection.style('cursor', 'default');
-      } else {
-        selection.call(handleDrag(node.id));
-        selection.style('cursor', 'grab');
-      }
-    });
-  }, [nodes, expandedNodeId]);
+  // 드래그 관련 useEffect 제거됨
 
   useEffect(() => {
     if (!expandedNodeId) return;
@@ -538,7 +491,7 @@ const HierarchicalForceTree = () => {
         </defs>
 
         {/* Links */}
-        <g transform={`translate(${viewTransform.x}, ${viewTransform.y})`}>
+        <g>
           <g className="links">
             <AnimatePresence>
               {links
@@ -605,7 +558,6 @@ const HierarchicalForceTree = () => {
                     node={node}
                     position={{ x: node.x || 0, y: node.y || 0 }}
                     color={colorScheme(nodeDepth)}
-                    onDrag={handleDrag}
                     onNodeClick={handleNodeClickForAssistant}
                     isExpanded={expandedNodeId === node.id}
                     onSecondQuestion={handleSecondQuestion}
