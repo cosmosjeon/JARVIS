@@ -101,7 +101,10 @@ class TreeLayoutService {
                 links: layoutLinks
             };
         } catch (error) {
-            console.error('Tree layout calculation failed:', error);
+            // 개발 환경에서만 상세 오류 로그 출력
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Tree layout calculation failed:', error);
+            }
             // 에러 발생 시 원본 데이터 반환
             return {
                 nodes: nodes.map(node => ({ ...node, x: node.x || 0, y: node.y || 0 })),

@@ -67,9 +67,12 @@ const HierarchicalForceTree = () => {
         });
       }
     } catch (error) {
-      // IPC 호출 실패는 사용자 상호작용에 직접적 영향이 없으므로 콘솔 로그로 제한
-      // eslint-disable-next-line no-console
-      console.error('마우스 패스스루 설정 실패:', error);
+      // IPC 호출 실패는 사용자 상호작용에 직접적 영향이 없으므로 조용히 처리
+      // 개발 환경에서만 로그 출력
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('마우스 패스스루 설정 실패:', error);
+      }
     }
   }, []);
 
@@ -123,11 +126,23 @@ const HierarchicalForceTree = () => {
           setWindowMousePassthrough(true);
         }
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.warn('커서 위치 폴링 실패:', error);
+        // 개발 환경에서만 로그 출력하고, 같은 오류 반복 방지
+        if (process.env.NODE_ENV === 'development' && !pollCursor.lastError) {
+          // eslint-disable-next-line no-console
+          console.warn('커서 위치 폴링 실패:', error);
+          pollCursor.lastError = Date.now();
+        }
       } finally {
         if (!cancelled) {
-          timerId = window.setTimeout(pollCursor, 40);
+          // 오류 발생 시 폴링 간격을 늘려서 부하 감소
+          const delay = pollCursor.lastError ? 1000 : 40;
+          timerId = window.setTimeout(() => {
+            // 5초 후 오류 플래그 리셋
+            if (pollCursor.lastError && Date.now() - pollCursor.lastError > 5000) {
+              pollCursor.lastError = null;
+            }
+            pollCursor();
+          }, delay);
         }
       }
     };
@@ -175,7 +190,6 @@ const HierarchicalForceTree = () => {
 
     setData(newData);
     conversationStoreRef.current.set(newNode.id, []);
-    console.log('Node added:', newNode);
   };
 
   // 노드 레벨 계산
@@ -186,12 +200,9 @@ const HierarchicalForceTree = () => {
 
   // 2번째 질문 처리 함수
   const handleSecondQuestion = (parentNodeId, question) => {
-    console.log('2번째 질문 감지:', { parentNodeId, question });
-
     // 부모 노드 정보 가져오기
     const parentNode = data.nodes.find(n => n.id === parentNodeId);
     if (!parentNode) {
-      console.error('부모 노드를 찾을 수 없습니다:', parentNodeId);
       return;
     }
 
@@ -208,9 +219,6 @@ const HierarchicalForceTree = () => {
     ];
     conversationStoreRef.current.set(newNodeData.id, initialConversation);
 
-    console.log('생성된 새 노드 데이터:', newNodeData);
-    console.log('부모 노드 정보:', parentNode);
-
     // 새 노드를 데이터에 추가
     const newData = {
       ...data,
@@ -218,25 +226,20 @@ const HierarchicalForceTree = () => {
       links: [...data.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
     };
 
-    console.log('업데이트된 데이터:', newData);
     setData(newData);
     questionService.current.setQuestionCount(parentNodeId, 1);
 
     // 새 노드로 즉시 이동
     setExpandedNodeId(newNodeData.id);
     setSelectedNodeId(newNodeData.id);
-    console.log('새 노드로 이동:', newNodeData.id);
 
     // 입력 필드에 포커스 주기 (약간의 지연)
     setTimeout(() => {
       const input = document.querySelector('textarea[placeholder="Ask anything..."]');
       if (input) {
         input.focus();
-        console.log('입력 필드에 포커스 설정됨');
       }
     }, 50); // 노드가 렌더링된 후 포커스
-
-    console.log('새 노드 생성됨:', newNodeData);
   };
 
   // 부모 -> 자식 맵 계산 (원본 데이터 기준)
@@ -303,13 +306,11 @@ const HierarchicalForceTree = () => {
 
   const rootDragHandlePosition = React.useMemo(() => {
     if (!rootNodeForDragHandle) return null;
-    const nodeX = rootNodeForDragHandle.x || 0;
-    const nodeY = rootNodeForDragHandle.y || 0;
-    const screenX = viewTransform.x + nodeX * viewTransform.k;
-    const screenY = viewTransform.y + nodeY * viewTransform.k;
-    const anchorY = Math.max(screenY - 80, 32);
-    return { x: screenX, y: anchorY };
-  }, [rootNodeForDragHandle, viewTransform]);
+    // 고정 위치: 화면 상단 중앙에 고정 (줌/팬 변환 무시)
+    const screenX = dimensions.width / 2;
+    const screenY = 32; // 화면 상단에서 32px 떨어진 고정 위치
+    return { x: screenX, y: screenY };
+  }, [rootNodeForDragHandle, dimensions.width]);
 
   const handleConversationChange = (nodeId, messages) => {
     conversationStoreRef.current.set(
@@ -777,10 +778,11 @@ const HierarchicalForceTree = () => {
         ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
+        data-interactive-zone="true"
         style={{
           background: 'rgba(0,0,0,0.001)',
-          // SVG 전체는 기본적으로 이벤트를 통과시키고, 실제 노드 요소에서만 다시 활성화
-          pointerEvents: 'none',
+          // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
+          pointerEvents: 'auto',
         }}
       >
         {/* Arrow marker definition */}
