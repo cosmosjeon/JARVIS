@@ -17,8 +17,8 @@ let hotkeyManager;
 let tray;
 
 const windowConfig = {
-  frameless: true,        // 창 테두리 제거 (투명 효과 필수)
-  transparent: true,      // 창을 투명하게 만듦
+  frameless: false,       // 창 테두리 표시
+  transparent: false,     // 투명 효과 비활성화
   alwaysOnTop: true,      // 항상 위에 표시
   skipTaskbar: true,      // 작업표시줄에 안 보이게
 };
@@ -159,24 +159,24 @@ const createWindow = () => {
     minWidth: 520,
     minHeight: 360,
 
-    // 🔑 투명도 핵심 설정들
-    transparent: true,           // 창을 투명하게 만듦
-    backgroundColor: '#00000000', // 완전 투명 배경 (알파 채널 00)
-    frame: false,               // 창 테두리 제거 (투명 효과 필수)
+    // 창 프레임 설정
+    frame: true,                // 창 테두리 및 상단바 표시
+    transparent: false,         // 투명 효과 비활성화
+    backgroundColor: '#ffffff', // 흰색 배경
 
     // 창 동작 설정
     alwaysOnTop: true,          // 항상 위에 표시
     skipTaskbar: true,          // 작업표시줄에 안 보이게
-    hasShadow: false,           // 창 그림자 제거
+    hasShadow: true,            // 창 그림자 표시
     resizable: true,            // 크기 조절 가능
     movable: true,              // 이동 가능
 
     // 기타 설정
     show: false,                // 처음엔 숨김 (준비되면 표시)
-    fullscreenable: false,
-    maximizable: false,
-    minimizable: false,
-    titleBarStyle: 'hidden',    // 타이틀바 숨김
+    fullscreenable: true,
+    maximizable: true,
+    minimizable: true,
+    titleBarStyle: 'default',   // 기본 타이틀바 표시
     autoHideMenuBar: true,
     title: 'JARVIS Widget',
 
