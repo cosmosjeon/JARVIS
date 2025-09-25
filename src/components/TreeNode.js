@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
+import { createTreeNodeSummary, isTreeRootNode } from '../services/TreeSummaryService';
 
 const selectPanelSize = (conversation) => {
   if (!Array.isArray(conversation)) {
@@ -167,6 +168,9 @@ const TreeNode = ({
     setChatSize(size);
   }, []);
 
+  const memoizedSummary = useMemo(() => createTreeNodeSummary(node), [node]);
+  const memoizedIsRoot = useMemo(() => isTreeRootNode(node), [node]);
+
   return (
     <g
       transform={`translate(${position.x || 0}, ${position.y || 0})`}
@@ -245,6 +249,8 @@ const TreeNode = ({
               questionService={questionService}
               initialConversation={initialConversation}
               onConversationChange={onConversationChange}
+              nodeSummary={memoizedSummary}
+              isRootNode={memoizedIsRoot}
             />
           </div>
         </foreignObject>

@@ -3,6 +3,7 @@ import { act } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import NodeAssistantPanel, { PANEL_SIZES } from '../NodeAssistantPanel';
 import { treeData } from '../../data/treeData';
+import { createTreeNodeSummary, isTreeRootNode } from '../../services/TreeSummaryService';
 
 jest.mock('web-highlighter', () => {
   const instances = [];
@@ -48,6 +49,22 @@ describe('NodeAssistantPanel', () => {
     jest.useRealTimers();
   });
 
+  it('초기 렌더링이 예상된 스냅샷과 일치한다', () => {
+    const node = treeData.nodes[0];
+    const summary = createTreeNodeSummary(node);
+
+    const { asFragment } = render(
+      <NodeAssistantPanel
+        node={node}
+        color="#1d4ed8"
+        nodeSummary={summary}
+        isRootNode={isTreeRootNode(node)}
+      />,
+    );
+
+    expect(asFragment()).toMatchSnapshot();
+  });
+
   it('starts empty and shows path-style placeholder, then renders centered markdown after first question', async () => {
     jest.useFakeTimers();
 
@@ -55,7 +72,17 @@ describe('NodeAssistantPanel', () => {
     const handleSizeChange = jest.fn();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    render(<NodeAssistantPanel node={node} color="#1d4ed8" onSizeChange={handleSizeChange} />);
+    const summary = createTreeNodeSummary(node);
+
+    render(
+      <NodeAssistantPanel
+        node={node}
+        color="#1d4ed8"
+        onSizeChange={handleSizeChange}
+        nodeSummary={summary}
+        isRootNode={isTreeRootNode(node)}
+      />,
+    );
 
     const input = screen.getByPlaceholderText('Ask anything...');
     expect(input).toBeInTheDocument();
@@ -87,7 +114,16 @@ describe('NodeAssistantPanel', () => {
     const node = treeData.nodes[0];
     const user = userEvent.setup();
 
-    render(<NodeAssistantPanel node={node} color="#1d4ed8" />);
+    const summary = createTreeNodeSummary(node);
+
+    render(
+      <NodeAssistantPanel
+        node={node}
+        color="#1d4ed8"
+        nodeSummary={summary}
+        isRootNode={isTreeRootNode(node)}
+      />,
+    );
 
     const toggleButton = screen.getByRole('button', { name: '하이라이트 모드' });
     expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
@@ -114,11 +150,15 @@ describe('NodeAssistantPanel', () => {
     const onPlaceholderCreate = jest.fn();
     const user = userEvent.setup();
 
+    const summary = createTreeNodeSummary(node);
+
     render(
       <NodeAssistantPanel
         node={node}
         color="#1d4ed8"
         onPlaceholderCreate={onPlaceholderCreate}
+        nodeSummary={summary}
+        isRootNode={isTreeRootNode(node)}
       />,
     );
 
