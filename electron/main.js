@@ -1,5 +1,5 @@
 const path = require('path');
-const { app, BrowserWindow, ipcMain, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeTheme, shell, screen } = require('electron');
 const { createLogBridge } = require('./logger');
 const { createHotkeyManager } = require('./hotkeys');
 const accessibility = require('./accessibility');
@@ -287,6 +287,69 @@ app.whenReady().then(() => {
   ipcMain.handle('logs:export', (_event, payload = {}) => logs.exportLogs(payload));
 
   ipcMain.handle('settings:get', () => ({ success: true, settings: { ...settings } }));
+
+  ipcMain.handle('window:setMousePassthrough', (_event, payload = {}) => {
+    if (!mainWindow) {
+      return { success: false, error: { code: 'no_window', message: 'Main window not available' } };
+    }
+
+    const ignore = typeof payload.ignore === 'boolean' ? payload.ignore : true;
+    const forward = payload.forward !== false;
+
+    try {
+      const options = ignore && forward ? { forward: true } : undefined;
+      mainWindow.setIgnoreMouseEvents(ignore, options);
+      if (logger && typeof logger.debug === 'function') {
+        logger.debug('window_mouse_passthrough_updated', { ignore, forward });
+      }
+      return { success: true, ignore };
+    } catch (error) {
+      if (logger && typeof logger.error === 'function') {
+        logger.error('window_mouse_passthrough_failed', { message: error?.message });
+      }
+      return {
+        success: false,
+        error: {
+          code: 'set_ignore_failed',
+          message: error?.message || 'Failed to update mouse passthrough state',
+        },
+      };
+    }
+  });
+
+  ipcMain.handle('cursor:getRelativePosition', () => {
+    if (!mainWindow) {
+      return { success: false, inside: false };
+    }
+
+    try {
+      const cursorPoint = screen.getCursorScreenPoint();
+      const bounds = mainWindow.getBounds();
+      const inside = cursorPoint.x >= bounds.x
+        && cursorPoint.x <= bounds.x + bounds.width
+        && cursorPoint.y >= bounds.y
+        && cursorPoint.y <= bounds.y + bounds.height;
+
+      if (!inside) {
+        return { success: true, inside: false };
+      }
+
+      const relativeX = cursorPoint.x - bounds.x;
+      const relativeY = cursorPoint.y - bounds.y;
+
+      return {
+        success: true,
+        inside: true,
+        x: relativeX,
+        y: relativeY,
+      };
+    } catch (error) {
+      if (logger && typeof logger.warn === 'function') {
+        logger.warn('cursor_position_failed', { message: error?.message });
+      }
+      return { success: false, inside: false };
+    }
+  });
 
   ipcMain.handle('settings:update', (_event, payload = {}) => {
     let changed = false;

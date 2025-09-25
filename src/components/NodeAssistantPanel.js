@@ -527,6 +527,7 @@ const NodeAssistantPanel = ({
         zIndex: 1001,
         pointerEvents: 'auto',
       }}
+      data-interactive-zone="true"
     >
       <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-white/10 opacity-40 mix-blend-screen" />
       <div className="relative flex flex-1 flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 min-h-0 backdrop-blur-md">

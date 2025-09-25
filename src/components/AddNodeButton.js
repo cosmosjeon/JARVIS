@@ -67,6 +67,7 @@ const AddNodeButton = ({
                 left: position.x,
                 top: position.y
             }}
+            data-interactive-zone="true"
         >
             {/* 메인 버튼 */}
             <motion.button
