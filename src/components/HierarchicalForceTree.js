@@ -41,6 +41,7 @@ const HierarchicalForceTree = () => {
   const [overlayElement, setOverlayElement] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
   const isIgnoringMouseRef = useRef(false);
+  const [isPassThrough, setIsPassThrough] = useState(false);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -77,85 +78,58 @@ const HierarchicalForceTree = () => {
   }, []);
 
   useEffect(() => {
-    setWindowMousePassthrough(true);
-    return () => {
-      setWindowMousePassthrough(false);
-    };
-  }, [setWindowMousePassthrough]);
+    setWindowMousePassthrough(isPassThrough);
+    return () => setWindowMousePassthrough(false);
+  }, [isPassThrough, setWindowMousePassthrough]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return undefined;
     }
 
-    const api = window.jarvisAPI;
-    if (!api || typeof api.setMousePassthrough !== 'function' || typeof api.getCursorPosition !== 'function') {
+    window.dispatchEvent(new CustomEvent('jarvis-interactive-mode:changed', {
+      detail: { enabled: !isPassThrough },
+    }));
+
+    return undefined;
+  }, [isPassThrough]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
       return undefined;
     }
 
-    let cancelled = false;
-    let timerId = null;
-
-    const evaluateInteractiveAtPoint = (x, y) => {
-      if (typeof document === 'undefined') {
-        return false;
-      }
-
-      const element = document.elementFromPoint(x, y);
-      if (!element) {
-        return false;
-      }
-
-      const interactive = element.closest('[data-interactive-zone="true"]')
-        || element.closest('[data-window-chrome="true"]');
-
-      return Boolean(interactive);
-    };
-
-    const pollCursor = async () => {
-      if (cancelled) {
-        return;
-      }
-
-      try {
-        const info = await api.getCursorPosition();
-        if (info?.success && info.inside) {
-          const isInteractive = evaluateInteractiveAtPoint(info.x, info.y);
-          setWindowMousePassthrough(!isInteractive);
-        } else {
-          setWindowMousePassthrough(true);
-        }
-      } catch (error) {
-        // 개발 환경에서만 로그 출력하고, 같은 오류 반복 방지
-        if (process.env.NODE_ENV === 'development' && !pollCursor.lastError) {
-          // eslint-disable-next-line no-console
-          console.warn('커서 위치 폴링 실패:', error);
-          pollCursor.lastError = Date.now();
-        }
-      } finally {
-        if (!cancelled) {
-          // 오류 발생 시 폴링 간격을 늘려서 부하 감소
-          const delay = pollCursor.lastError ? 1000 : 40;
-          timerId = window.setTimeout(() => {
-            // 5초 후 오류 플래그 리셋
-            if (pollCursor.lastError && Date.now() - pollCursor.lastError > 5000) {
-              pollCursor.lastError = null;
-            }
-            pollCursor();
-          }, delay);
-        }
+    const handleToggle = () => setIsPassThrough((prev) => !prev);
+    const handleSet = (event) => {
+      if (typeof event.detail?.enabled === 'boolean') {
+        setIsPassThrough(!event.detail.enabled);
       }
     };
 
-    pollCursor();
+    window.addEventListener('jarvis-interactive-mode:toggle', handleToggle);
+    window.addEventListener('jarvis-interactive-mode:set', handleSet);
 
     return () => {
-      cancelled = true;
-      if (timerId) {
-        window.clearTimeout(timerId);
+      window.removeEventListener('jarvis-interactive-mode:toggle', handleToggle);
+      window.removeEventListener('jarvis-interactive-mode:set', handleSet);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.jarvisAPI?.onPassThroughToggle !== 'function') {
+      return undefined;
+    }
+
+    const unsubscribe = window.jarvisAPI.onPassThroughToggle(() => {
+      setIsPassThrough((prev) => !prev);
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
       }
     };
-  }, [setWindowMousePassthrough]);
+  }, []);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -553,6 +527,9 @@ const HierarchicalForceTree = () => {
 
     svgSelection.on('pointerdown.background', handleBackgroundPointerDown);
     svgSelection.on('wheel.treepan', (event) => {
+      if (isPassThrough) {
+        return;
+      }
       if (isPinchZoomWheel(event)) {
         return;
       }
@@ -697,15 +674,31 @@ const HierarchicalForceTree = () => {
   };
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
+  const exitPassThroughAnd = (callback) => (event) => {
+    if (isPassThrough) {
+      setWindowMousePassthrough(false);
+      setIsPassThrough(false);
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+      }
+    }
+    if (typeof callback === 'function') {
+      callback(event);
+    }
+  };
+
   const handleDrag = (nodeId) => {
     return d3.drag()
-      .on('start', (event) => {
+      .on('start', exitPassThroughAnd((event) => {
         // 드래그 시작 시 애니메이션 일시 정지
         if (animationRef.current) {
           animationRef.current.stop();
         }
-      })
-      .on('drag', (event) => {
+      }))
+      .on('drag', exitPassThroughAnd((event) => {
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
           // 현재 줌/팬이 적용된 컨테이너 좌표계에서 포인터 좌표를 계산
@@ -715,7 +708,7 @@ const HierarchicalForceTree = () => {
           node.y = pointer[1];
           setNodes([...nodes]);
         }
-      })
+      }))
       .on('end', (event) => {
         // 드래그 종료 시 tree layout으로 다시 정렬
         const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
@@ -741,7 +734,7 @@ const HierarchicalForceTree = () => {
     nodes.forEach(node => {
       const selection = svg.selectAll(`[data-node-id="${node.id}"]`);
 
-      if (expandedNodeId) {
+      if (expandedNodeId || isPassThrough) {
         selection.on('.drag', null);
         selection.style('cursor', 'default');
       } else {
@@ -749,7 +742,7 @@ const HierarchicalForceTree = () => {
         selection.style('cursor', 'grab');
       }
     });
-  }, [nodes, expandedNodeId]);
+  }, [nodes, expandedNodeId, isPassThrough]);
 
   useEffect(() => {
     if (!expandedNodeId) return;
@@ -793,10 +786,18 @@ const HierarchicalForceTree = () => {
         WebkitTransform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
-        // 노드 외 영역 투명 클릭 스루를 위해 기본적으로 마우스 이벤트 무시
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
       }}
     >
+      <div
+        className="pointer-events-none absolute right-4 top-4 text-xs font-medium tracking-wide"
+        style={{
+          color: isPassThrough ? 'rgba(226,232,240,0.7)' : 'rgba(34,197,94,0.9)',
+          textShadow: isPassThrough ? '0 0 8px rgba(15,23,42,0.55)' : '0 0 10px rgba(34,197,94,0.65)',
+        }}
+      >
+        {isPassThrough ? '패스스루 모드 (⌘+2)' : '인터랙션 모드 (⌘+2)'}
+      </div>
       {rootDragHandlePosition && (
         <div
           className="pointer-events-auto"
@@ -820,6 +821,14 @@ const HierarchicalForceTree = () => {
             zIndex: 40,
           }}
           data-interactive-zone="true"
+          onPointerDown={(event) => {
+            if (isPassThrough) {
+              event.preventDefault();
+              event.stopPropagation();
+              setWindowMousePassthrough(false);
+              setIsPassThrough(false);
+            }
+          }}
           aria-hidden="true"
         />
       )}
