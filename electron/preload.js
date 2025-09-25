@@ -4,6 +4,20 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   ping: () => ipcRenderer.invoke('system:ping'),
   updateWindowConfig: (config) => ipcRenderer.invoke('window:updateConfig', config),
   toggleWindow: () => ipcRenderer.invoke('window:toggleVisibility'),
+  windowControls: {
+    minimize: () => ipcRenderer.invoke('window:control', 'minimize'),
+    maximize: () => ipcRenderer.invoke('window:control', 'maximize'),
+    close: () => ipcRenderer.invoke('window:control', 'close'),
+    getState: () => ipcRenderer.invoke('window:getState'),
+    onStateChange: (handler) => {
+      if (typeof handler !== 'function') {
+        return () => {};
+      }
+      const listener = (_event, payload) => handler(payload);
+      ipcRenderer.on('window:state', listener);
+      return () => ipcRenderer.removeListener('window:state', listener);
+    },
+  },
   checkAccessibilityPermission: () => ipcRenderer.invoke('system:accessibility:check'),
   requestAccessibilityPermission: () => ipcRenderer.invoke('system:accessibility:request'),
   exportLogs: (options) => ipcRenderer.invoke('logs:export', options),

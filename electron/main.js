@@ -15,10 +15,13 @@ let mainWindow;
 let logger;
 let hotkeyManager;
 let tray;
+let broadcastWindowState = () => {};
+
+const WINDOW_CHROME_HEIGHT = 48; // 커스텀 타이틀바 높이와 맞춤
 
 const windowConfig = {
-  frameless: false,       // 창 테두리 표시
-  transparent: false,     // 투명 효과 비활성화
+  frameless: true,        // 기본적으로 프레임 없는 창 사용
+  transparent: true,      // 완전 투명 창 사용
   alwaysOnTop: true,      // 항상 위에 표시
   skipTaskbar: true,      // 작업표시줄에 안 보이게
 };
@@ -152,6 +155,8 @@ const broadcastSettings = () => {
 };
 
 const createWindow = () => {
+  const isMac = process.platform === 'darwin';
+
   mainWindow = new BrowserWindow({
     // 창 크기 설정
     width: 1024,
@@ -160,9 +165,9 @@ const createWindow = () => {
     minHeight: 360,
 
     // 창 프레임 설정
-    frame: true,                // 창 테두리 및 상단바 표시
-    transparent: false,         // 투명 효과 비활성화
-    backgroundColor: '#ffffff', // 흰색 배경
+    frame: !windowConfig.frameless,           // windowConfig 기반 프레임 표시
+    transparent: windowConfig.transparent,    // 완전 투명 창 사용
+    backgroundColor: '#00000000',             // 완전 투명 배경
 
     // 창 동작 설정
     alwaysOnTop: true,          // 항상 위에 표시
@@ -176,7 +181,16 @@ const createWindow = () => {
     fullscreenable: true,
     maximizable: true,
     minimizable: true,
-    titleBarStyle: 'default',   // 기본 타이틀바 표시
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac
+      ? {
+          titleBarOverlay: {
+            color: '#00000000',
+            symbolColor: '#ffffff',
+            height: WINDOW_CHROME_HEIGHT,
+          },
+        }
+      : {}),
     autoHideMenuBar: true,
     title: 'JARVIS Widget',
 
@@ -189,6 +203,21 @@ const createWindow = () => {
       spellcheck: false,
     },
   });
+
+  mainWindow.setBackgroundColor('#00000000');
+
+  broadcastWindowState = () => {
+    if (!mainWindow) return;
+    mainWindow.webContents.send('window:state', {
+      maximized: mainWindow.isMaximized(),
+      fullscreen: mainWindow.isFullScreen(),
+    });
+  };
+
+  mainWindow.on('maximize', broadcastWindowState);
+  mainWindow.on('unmaximize', broadcastWindowState);
+  mainWindow.on('enter-full-screen', broadcastWindowState);
+  mainWindow.on('leave-full-screen', broadcastWindowState);
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();
@@ -217,6 +246,7 @@ const createWindow = () => {
 
   mainWindow.webContents.on('did-finish-load', () => {
     broadcastSettings();
+    broadcastWindowState();
   });
 };
 
@@ -311,6 +341,53 @@ app.whenReady().then(() => {
     };
   });
 
+  ipcMain.handle('window:control', (_event, action) => {
+    if (!mainWindow) {
+      return { success: false, error: { code: 'no_window', message: 'Main window not available' } };
+    }
+
+    switch (action) {
+      case 'minimize':
+        mainWindow.minimize();
+        broadcastWindowState();
+        break;
+      case 'maximize':
+        if (mainWindow.isMaximized()) {
+          mainWindow.unmaximize();
+        } else {
+          mainWindow.maximize();
+        }
+        broadcastWindowState();
+        break;
+      case 'close':
+        mainWindow.close();
+        break;
+      default:
+        return { success: false, error: { code: 'invalid_action', message: 'Unsupported window control action' } };
+    }
+
+    return {
+      success: true,
+      action,
+      maximized: mainWindow.isMaximized(),
+    };
+  });
+
+  ipcMain.handle('window:getState', () => {
+    if (!mainWindow) {
+      return { success: false, error: { code: 'no_window', message: 'Main window not available' } };
+    }
+
+    return {
+      success: true,
+      state: {
+        maximized: mainWindow.isMaximized(),
+        fullscreen: mainWindow.isFullScreen(),
+        visible: mainWindow.isVisible(),
+      },
+    };
+  });
+
   ipcMain.handle('window:updateConfig', (_event, config = {}) => {
     Object.assign(windowConfig, {
       frameless: Boolean(config.frameless),
@@ -324,9 +401,7 @@ app.whenReady().then(() => {
     mainWindow.setAlwaysOnTop(windowConfig.alwaysOnTop, 'floating', 1);
     mainWindow.setSkipTaskbar(windowConfig.skipTaskbar);
 
-    if (windowConfig.frameless !== mainWindow.isFrameless()) {
-      mainWindow.setMenuBarVisibility(!windowConfig.frameless);
-    }
+    mainWindow.setMenuBarVisibility(!windowConfig.frameless);
 
     logger?.info('Window config updated', windowConfig);
     return windowConfig;

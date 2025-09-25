@@ -1,0 +1,62 @@
+import React, { useEffect, useState } from 'react';
+
+const DEFAULT_WINDOW_STATE = {
+  maximized: false,
+  fullscreen: false,
+};
+
+const WindowChrome = () => {
+  const [windowState, setWindowState] = useState(DEFAULT_WINDOW_STATE);
+
+  useEffect(() => {
+    const api = window.jarvisAPI?.windowControls;
+    if (!api) {
+      return undefined;
+    }
+
+    let detachListener = () => {};
+
+    if (typeof api.onStateChange === 'function') {
+      detachListener = api.onStateChange((payload = {}) => {
+        setWindowState((prev) => ({
+          ...prev,
+          ...payload,
+        }));
+      });
+    }
+
+    if (typeof api.getState === 'function') {
+      api.getState().then((response) => {
+        if (response?.success && response.state) {
+          setWindowState((prev) => ({
+            ...prev,
+            ...response.state,
+          }));
+        }
+      }).catch(() => {});
+    }
+
+    return () => {
+      detachListener?.();
+    };
+  }, []);
+
+  const handleControlClick = (action) => {
+    const api = window.jarvisAPI?.windowControls;
+    if (!api || typeof api[action] !== 'function') {
+      return;
+    }
+    api[action]();
+  };
+
+  return (
+    <header className="window-chrome">
+      <div className="window-chrome__drag">
+        <span className="window-chrome__title">JARVIS Widget</span>
+      </div>
+      {/* controls removed */}
+    </header>
+  );
+};
+
+export default WindowChrome;

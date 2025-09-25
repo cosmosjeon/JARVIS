@@ -7,9 +7,21 @@ import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
 
+const WINDOW_CHROME_HEIGHT = 48;
+
+const getViewportDimensions = () => {
+  if (typeof window === 'undefined') {
+    return { width: 1024, height: 720 - WINDOW_CHROME_HEIGHT };
+  }
+  return {
+    width: window.innerWidth,
+    height: Math.max(window.innerHeight - WINDOW_CHROME_HEIGHT, 0),
+  };
+};
+
 const HierarchicalForceTree = () => {
   const svgRef = useRef(null);
-  const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [dimensions, setDimensions] = useState(getViewportDimensions());
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
@@ -379,7 +391,7 @@ const HierarchicalForceTree = () => {
 
   useEffect(() => {
     const handleResize = () => {
-      setDimensions({ width: window.innerWidth, height: window.innerHeight });
+      setDimensions(getViewportDimensions());
     };
 
     window.addEventListener('resize', handleResize);
@@ -514,7 +526,7 @@ const HierarchicalForceTree = () => {
   }, []);
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-white">
+    <div className="relative flex h-full w-full overflow-hidden bg-transparent">
       <svg
         ref={svgRef}
         width={dimensions.width}
@@ -572,9 +584,6 @@ const HierarchicalForceTree = () => {
                         duration: 0.45,
                         ease: "easeInOut",
                         delay: index * 0.06
-                      }}
-                      style={{
-                        filter: 'drop-shadow(0px 12px 28px rgba(15,23,42,0.32))'
                       }}
                     />
                   );
