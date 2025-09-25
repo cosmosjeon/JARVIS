@@ -147,40 +147,6 @@ const NodeAssistantPanel = ({
     return () => window.clearTimeout(timeoutId);
   }, [placeholderNotice]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-    const api = window.jarvisAPI;
-    if (!api?.onClipboard) {
-      return undefined;
-    }
-
-    const unsubscribe = api.onClipboard((payload = {}) => {
-      const rawText = typeof payload.text === 'string' ? payload.text : '';
-      const trimmed = rawText.trim();
-      if (!trimmed) {
-        setPlaceholderNotice({ type: 'warning', message: '클립보드에서 텍스트를 찾을 수 없습니다. 복사 후 다시 시도하세요.' });
-        return;
-      }
-
-      setIsHighlightMode((prev) => {
-        if (prev) {
-          disableHighlightMode();
-        }
-        return false;
-      });
-
-      setComposerValue(trimmed);
-      composerRef.current?.focus?.();
-      setPlaceholderNotice({ type: 'info', message: '클립보드 텍스트가 입력창에 채워졌습니다.' });
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [disableHighlightMode]);
-
   const getHighlightTexts = useCallback(() => {
     const uniqueTexts = new Set();
     highlightSourceMapRef.current.forEach((text) => {
@@ -307,11 +273,31 @@ const NodeAssistantPanel = ({
       return undefined;
     }
     const api = window.jarvisAPI;
-    if (!api?.onClipboardError) {
+    if (!api?.onClipboard) {
       return undefined;
     }
 
-    const unsubscribe = api.onClipboardError((payload = {}) => {
+    const unsubscribeClipboard = api.onClipboard((payload = {}) => {
+      const rawText = typeof payload.text === 'string' ? payload.text : '';
+      const trimmed = rawText.trim();
+      if (!trimmed) {
+        setPlaceholderNotice({ type: 'warning', message: '클립보드에서 텍스트를 찾을 수 없습니다. 복사 후 다시 시도하세요.' });
+        return;
+      }
+
+      setIsHighlightMode((prev) => {
+        if (prev) {
+          disableHighlightMode();
+        }
+        return false;
+      });
+
+      setComposerValue(trimmed);
+      composerRef.current?.focus?.();
+      setPlaceholderNotice({ type: 'info', message: '클립보드 텍스트가 입력창에 채워졌습니다.' });
+    });
+
+    const unsubscribeError = api.onClipboardError?.((payload = {}) => {
       const code = payload?.error?.code;
       let message = '클립보드 읽기에 실패했습니다. 다시 시도해주세요.';
       if (code === 'empty') {
@@ -326,7 +312,8 @@ const NodeAssistantPanel = ({
     });
 
     return () => {
-      unsubscribe?.();
+      unsubscribeClipboard?.();
+      unsubscribeError?.();
     };
   }, [disableHighlightMode]);
 
