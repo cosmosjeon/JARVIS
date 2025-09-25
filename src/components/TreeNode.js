@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 import { createTreeNodeSummary, isTreeRootNode } from '../services/TreeSummaryService';
+import { useSmartPositioning } from '../hooks/useSmartPositioning';
 
 const selectPanelSize = (conversation) => {
   if (!Array.isArray(conversation)) {
@@ -33,6 +34,13 @@ const TreeNode = ({
   overlayElement = null,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+
+  // Reset hover state when node is no longer expanded
+  useEffect(() => {
+    if (!isExpanded) {
+      setIsHovered(false);
+    }
+  }, [isExpanded]);
 
   const wrapText = (text, maxWidth) => {
     const words = text.split(' ');
@@ -185,23 +193,29 @@ const TreeNode = ({
 
   const shouldUsePortal = displayMode === 'chat' && overlayElement;
 
-  const portalContent = useMemo(() => {
-    if (!shouldUsePortal) return null;
+  // Use smart positioning for the panel
+  const { position: smartPosition, adjustedSize, isPositioned } = useSmartPositioning(
+    nodePosition,
+    { width: currentWidth, height: currentHeight },
+    normalizedTransform,
+    overlayElement ? { current: overlayElement } : null
+  );
 
-    const nodeX = nodePosition.x || 0;
-    const nodeY = nodePosition.y || 0;
-    const screenX = normalizedTransform.x + nodeX * normalizedTransform.k;
-    const screenY = normalizedTransform.y + nodeY * normalizedTransform.k;
+  const portalContent = useMemo(() => {
+    if (!shouldUsePortal || !isPositioned) return null;
 
     return createPortal(
-      <div
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.8 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
         style={{
           position: 'absolute',
-          left: `${screenX}px`,
-          top: `${screenY}px`,
-          width: `${currentWidth}px`,
-          height: `${currentHeight}px`,
-          transform: 'translate(-50%, -50%)',
+          left: `${smartPosition.x}px`,
+          top: `${smartPosition.y}px`,
+          width: `${adjustedSize.width}px`,
+          height: `${adjustedSize.height}px`,
           pointerEvents: 'auto',
           zIndex: 1010,
           willChange: 'transform',
@@ -235,10 +249,10 @@ const TreeNode = ({
             isRootNode={memoizedIsRoot}
           />
         </div>
-      </div>,
+      </motion.div>,
       overlayElement,
     );
-  }, [shouldUsePortal, overlayElement, normalizedTransform, nodePosition.x, nodePosition.y, currentWidth, currentHeight, node, color, handlePanelSizeChange, onSecondQuestion, onPlaceholderCreate, questionService, initialConversation, onConversationChange, memoizedSummary, memoizedIsRoot]);
+  }, [shouldUsePortal, isPositioned, overlayElement, smartPosition, adjustedSize, node, color, handlePanelSizeChange, onSecondQuestion, onPlaceholderCreate, questionService, initialConversation, onConversationChange, memoizedSummary, memoizedIsRoot]);
 
   return (
     <>
