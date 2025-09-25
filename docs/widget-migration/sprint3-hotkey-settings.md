@@ -37,6 +37,6 @@
 4. macOS 접근성 버튼 → `jarvisAPI.requestAccessibilityPermission()` 호출 (SettingsPanel에서 브리지 사용)
 
 ## 후속 작업
-- [ ] 단축키 레코더 모달 컴포넌트 구현
-- [ ] `jarvisAPI.requestAccessibilityPermission` 브리지 추가
-- [ ] UI 스타일을 기존 glass 디자인 시스템에 맞춰 적용
+- [x] 단축키 레코더 모달 컴포넌트 구현 (`src/components/HotkeyRecorderModal.js`, SettingsPanel 연동)
+- [x] `jarvisAPI.requestAccessibilityPermission` 브리지 추가 (preload/main 2025-09-25 적용)
+- [x] UI 스타일을 기존 glass 디자인 시스템에 맞춰 적용 (SettingsPanel glass surface + 모달 스타일 반영)

@@ -24,7 +24,7 @@ const windowConfig = {
   skipTaskbar: false,
 };
 
-const DEFAULT_ACCELERATOR = process.platform === 'darwin' ? 'Command+Shift+J' : 'Control+Shift+J';
+const DEFAULT_ACCELERATOR = settingsStore.defaultAccelerator;
 
 let settings = { ...settingsStore.defaultSettings };
 
@@ -82,7 +82,9 @@ const registerPrimaryHotkey = () => {
   }
   hotkeyManager.unregisterAll?.();
 
-  const accelerator = DEFAULT_ACCELERATOR;
+  const accelerator = typeof settings.accelerator === 'string' && settings.accelerator.trim()
+    ? settings.accelerator.trim()
+    : DEFAULT_ACCELERATOR;
   const options = {};
   if (process.platform === 'win32' && settings.doubleCtrlEnabled) {
     options.enableDoubleCtrl = true;
@@ -253,6 +255,21 @@ app.whenReady().then(() => {
       settings.trayEnabled = payload.trayEnabled;
       applyTraySettings();
       changed = true;
+    }
+
+    if (typeof payload.accelerator === 'string') {
+      const normalized = payload.accelerator.trim();
+      if (normalized && normalized !== settings.accelerator) {
+        settings.accelerator = normalized;
+        applyHotkeySettings();
+        changed = true;
+      }
+    } else if (payload.accelerator === null) {
+      if (settings.accelerator !== DEFAULT_ACCELERATOR) {
+        settings.accelerator = DEFAULT_ACCELERATOR;
+        applyHotkeySettings();
+        changed = true;
+      }
     }
 
     if (changed) {

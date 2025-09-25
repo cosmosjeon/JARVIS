@@ -17,7 +17,7 @@
 ## 후속 TODO
 - [x] Electron `Tray` 인스턴스 생성 및 메뉴 구성 (Windows/macOS 분기)
 - [x] `tray:command` IPC 설계 → Renderer 이벤트 통합
-- [ ] 설정 패널에 "트레이 아이콘 사용" 토글 추가 검토
+- [x] 설정 패널에 "트레이 아이콘 사용" 토글 추가 (SettingsPanel + SettingsContext 저장)
 
 ## 접근성 권한 연계 메모
 - macOS 트레이 메뉴에 "접근성 권한 확인" 항목 추가 (main → `app.emit('tray:accessibility-check')`)

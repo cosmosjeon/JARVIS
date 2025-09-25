@@ -35,5 +35,14 @@
 
 ## 후속 TODO
 - [x] `jarvisAPI.exportLogs()` 브리지 설계
-- [ ] 자동 재시도 간격/횟수 정책 정의 (예: 3회 2초 간격)
-- [ ] 접근성 권한 가이드와 연동 (macOS)
+- [x] 자동 재시도 간격/횟수 정책 정의 (기본 3회, 최초 2초 지연 후 2초 간격)
+- [x] 접근성 권한 가이드와 연동 (macOS 배너/Tray → `SettingsContext`에서 helper 호출)
+
+### 자동 재시도 정책 (2025-09-25 업데이트)
+- `autoRetryPolicy = { enabled: true, maxAttempts: 3, initialDelayMs: 2000, intervalMs: 2000 }`
+- `ErrorRecoveryCard`가 정책을 받아 retry를 자동으로 스케줄하며, 각 시도는 `error_recovery_auto_retry_attempt` 로그를 남김
+- 자동 재시도 실패 시에도 사용자는 수동으로 “다시 시도” 버튼을 눌러 흐름을 이어갈 수 있음
+
+### 접근성 연동
+- `SettingsContext`에서 `jarvisAPI.onTrayCommand`를 구독해 macOS 트레이 메뉴의 “접근성 권한 확인”을 눌렀을 때 `requestAccessibility()`를 호출
+- 접근성 권한 상태는 `AccessibilityPermissionBanner`와 설정 패널에 동시에 반영되어 안내 모달과 토스트가 중복되지 않게 함

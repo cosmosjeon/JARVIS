@@ -1,12 +1,19 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+const defaultAccelerator = typeof process !== 'undefined' && process?.platform === 'darwin'
+  ? 'Command+Shift+J'
+  : 'Control+Shift+J';
+
 const SettingsContext = createContext({
   doubleCtrlEnabled: true,
   autoPasteEnabled: true,
   trayEnabled: true,
+  accelerator: defaultAccelerator,
   setDoubleCtrlEnabled: () => {},
   setAutoPasteEnabled: () => {},
   setTrayEnabled: () => {},
+  setAccelerator: () => {},
+  resetAccelerator: () => {},
 });
 
 const normalizeBoolean = (value, fallback = true) => {
@@ -22,6 +29,7 @@ export const SettingsProvider = ({ children }) => {
   const [autoPasteEnabled, setAutoPasteEnabledState] = useState(true);
   const [trayEnabled, setTrayEnabledState] = useState(true);
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
+  const [accelerator, setAcceleratorState] = useState(defaultAccelerator);
 
   const refreshAccessibilityStatus = useCallback(async () => {
     try {
@@ -42,6 +50,11 @@ export const SettingsProvider = ({ children }) => {
       setDoubleCtrlEnabledState(normalizeBoolean(next.doubleCtrlEnabled, isWindows));
       setAutoPasteEnabledState(normalizeBoolean(next.autoPasteEnabled, true));
       setTrayEnabledState(normalizeBoolean(next.trayEnabled, true));
+      if (typeof next.accelerator === 'string' && next.accelerator.trim()) {
+        setAcceleratorState(next.accelerator.trim());
+      } else {
+        setAcceleratorState(defaultAccelerator);
+      }
     };
 
     const load = async () => {
@@ -96,17 +109,51 @@ export const SettingsProvider = ({ children }) => {
     return result;
   }, [refreshAccessibilityStatus]);
 
+  const setAccelerator = useCallback((next) => {
+    if (typeof next === 'string' && next.trim()) {
+      const normalized = next.trim();
+      setAcceleratorState(normalized);
+      updateSettings({ accelerator: normalized });
+      window.jarvisAPI?.log?.('info', 'settings_accelerator_changed', { accelerator: normalized });
+    }
+  }, [updateSettings]);
+
+  const resetAccelerator = useCallback(() => {
+    setAcceleratorState(defaultAccelerator);
+    updateSettings({ accelerator: defaultAccelerator });
+    window.jarvisAPI?.log?.('info', 'settings_accelerator_reset');
+  }, [updateSettings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.jarvisAPI?.onTrayCommand) {
+      return undefined;
+    }
+    const unsubscribe = window.jarvisAPI.onTrayCommand(async (payload = {}) => {
+      const { command } = payload;
+      if (command === 'accessibility-check') {
+        await requestAccessibility();
+      }
+      if (command === 'settings') {
+        refreshAccessibilityStatus();
+      }
+    });
+    return () => unsubscribe?.();
+  }, [refreshAccessibilityStatus, requestAccessibility]);
+
   const value = useMemo(() => ({
     doubleCtrlEnabled,
     autoPasteEnabled,
     trayEnabled,
+    accelerator,
     accessibilityGranted,
     setDoubleCtrlEnabled,
     setAutoPasteEnabled,
     setTrayEnabled,
+    setAccelerator,
+    resetAccelerator,
     refreshAccessibilityStatus,
     requestAccessibility,
-  }), [doubleCtrlEnabled, autoPasteEnabled, trayEnabled, accessibilityGranted, setDoubleCtrlEnabled, setAutoPasteEnabled, setTrayEnabled, refreshAccessibilityStatus, requestAccessibility]);
+  }), [doubleCtrlEnabled, autoPasteEnabled, trayEnabled, accelerator, accessibilityGranted, setDoubleCtrlEnabled, setAutoPasteEnabled, setTrayEnabled, setAccelerator, resetAccelerator, refreshAccessibilityStatus, requestAccessibility]);
 
   return (
     <SettingsContext.Provider value={value}>

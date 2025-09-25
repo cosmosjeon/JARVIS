@@ -1,22 +1,37 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSettings } from '../hooks/SettingsContext';
+import HotkeyRecorderModal from './HotkeyRecorderModal';
 
 const SettingsPanel = () => {
   const {
     doubleCtrlEnabled,
     autoPasteEnabled,
     trayEnabled,
+    accelerator,
     accessibilityGranted,
     setDoubleCtrlEnabled,
     setAutoPasteEnabled,
     setTrayEnabled,
+    setAccelerator,
+    resetAccelerator,
     refreshAccessibilityStatus,
     requestAccessibility,
   } = useSettings();
 
+  const [recorderOpen, setRecorderOpen] = useState(false);
+
   useEffect(() => {
     refreshAccessibilityStatus();
   }, [refreshAccessibilityStatus]);
+
+  const handleRecorderClose = () => setRecorderOpen(false);
+
+  const handleAcceleratorSave = (value) => {
+    if (typeof value === 'string' && value.trim()) {
+      setAccelerator(value);
+    }
+    setRecorderOpen(false);
+  };
 
   return (
     <div className="glass-surface flex w-full max-w-md flex-col gap-4 rounded-3xl border border-white/10 bg-white/10 p-4 text-sm text-slate-100 shadow-2xl">
@@ -55,6 +70,28 @@ const SettingsPanel = () => {
             <span className="text-xs text-slate-300">앱 실행 시 트레이 표시</span>
           </label>
         </div>
+        <div className="flex items-center justify-between">
+          <span>현재 단축키</span>
+          <div className="flex items-center gap-2 text-xs text-slate-200">
+            <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 font-mono text-slate-50">
+              {accelerator}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRecorderOpen(true)}
+              className="glass-chip rounded-full bg-white/15 px-2 py-1 text-xs text-slate-50 hover:bg-white/25"
+            >
+              변경
+            </button>
+            <button
+              type="button"
+              onClick={resetAccelerator}
+              className="glass-chip rounded-full bg-slate-500/40 px-2 py-1 text-xs text-slate-50 hover:bg-slate-500/60"
+            >
+              기본값
+            </button>
+          </div>
+        </div>
       </section>
       <section className="space-y-2">
         <div className="flex items-center justify-between">
@@ -71,6 +108,13 @@ const SettingsPanel = () => {
           권한 확인 / 요청
         </button>
       </section>
+      {recorderOpen && (
+        <HotkeyRecorderModal
+          currentAccelerator={accelerator}
+          onSave={handleAcceleratorSave}
+          onClose={handleRecorderClose}
+        />
+      )}
     </div>
   );
 };

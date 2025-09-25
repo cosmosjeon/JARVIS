@@ -17,5 +17,5 @@
 - 기본은 한국어, 추후 영어/일본어 번역 필요 여부를 Sprint 4에서 검토
 
 ## 후속 TODO
-- [ ] 접근성 권한 확인 helper에서 안내 모달 트리거 연결
-- [ ] Renderer에서 모달 UI 컴포넌트 설계
+- [x] 접근성 권한 확인 helper에서 안내 모달 트리거 연결 (SettingsContext + AccessibilityPermissionBanner)
+- [x] Renderer에서 모달 UI 컴포넌트 설계 (`AccessibilityPermissionBanner`, macOS 안내 모달/토스트 정리)

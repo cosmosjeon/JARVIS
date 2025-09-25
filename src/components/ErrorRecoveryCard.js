@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const ErrorRecoveryCard = ({
   title = '문제가 발생했습니다',
@@ -6,7 +6,11 @@ const ErrorRecoveryCard = ({
   onRetry,
   onExport,
   actions = [],
+  autoRetryPolicy,
 }) => {
+  const timerRef = useRef(null);
+  const attemptRef = useRef(0);
+
   const handleRetry = async () => {
     try {
       await onRetry?.();
@@ -24,6 +28,47 @@ const ErrorRecoveryCard = ({
       window.jarvisAPI?.log?.('error', 'error_recovery_export_failed', { message: error?.message });
     }
   };
+
+  useEffect(() => {
+    if (!autoRetryPolicy?.enabled || typeof onRetry !== 'function') {
+      return undefined;
+    }
+
+    const {
+      maxAttempts = 3,
+      initialDelayMs = 2000,
+      intervalMs = 2000,
+    } = autoRetryPolicy;
+
+    const scheduleNext = (delay) => {
+      if (attemptRef.current >= maxAttempts) {
+        return;
+      }
+      timerRef.current = setTimeout(async () => {
+        attemptRef.current += 1;
+        window.jarvisAPI?.log?.('info', 'error_recovery_auto_retry_attempt', {
+          attempt: attemptRef.current,
+          maxAttempts,
+        });
+        try {
+          await onRetry();
+        } catch (error) {
+          window.jarvisAPI?.log?.('warn', 'error_recovery_auto_retry_failed', { message: error?.message });
+        }
+        scheduleNext(intervalMs);
+      }, delay);
+    };
+
+    scheduleNext(initialDelayMs);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+      timerRef.current = null;
+      attemptRef.current = 0;
+    };
+  }, [autoRetryPolicy, onRetry]);
 
   return (
     <div className="glass-surface flex flex-col gap-3 rounded-2xl border border-white/10 bg-rose-500/10 p-4 text-sm text-rose-50 shadow-xl">

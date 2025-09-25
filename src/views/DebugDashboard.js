@@ -115,6 +115,7 @@ const DebugDashboard = () => {
           ]}
           onRetry={simulateRetry}
           onExport={simulateExport}
+          autoRetryPolicy={{ enabled: true, maxAttempts: 3, initialDelayMs: 2000, intervalMs: 2000 }}
         />
       )}
       {trayEvents.length > 0 && (

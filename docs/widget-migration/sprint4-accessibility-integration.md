@@ -21,6 +21,6 @@
   - 설명 텍스트: `sprint3-clipboard-permissions.md` 참고
 
 ## 후속 TODO
-- [ ] `jarvisAPI.checkAccessibilityPermission` 브리지 구현 (mac 전용 no-op)
-- [ ] 배너 컴포넌트 작성 (`AccessibilityPermissionBanner`)
-- [ ] 트레이 메뉴 구축 후 `tray:command` IPC에 통합
+- [x] `jarvisAPI.checkAccessibilityPermission` 브리지 구현 (preload/main 연결)
+- [x] 배너 컴포넌트 작성 (`AccessibilityPermissionBanner`, SettingsContext와 연동)
+- [x] 트레이 메뉴 구축 후 `tray:command` IPC에 통합 (SettingsContext에서 접근성 트레이 이벤트 처리)

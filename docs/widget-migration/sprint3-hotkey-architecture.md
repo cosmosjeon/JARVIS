@@ -34,6 +34,7 @@
 - `npm install iohook@0.9.3` 시도 → WSL(Ubuntu 24.04) 환경에서 node-gyp 의존성(`libx11-dev`, `python3`, `build-essential`) 설치 필요
 - 빌드 성공 조건: `sudo apt-get install build-essential libx11-dev libxtst-dev libpng-dev` 후 `npm rebuild iohook`
 - Electron 31.x와 호환되는 바이너리 확인, 추후 Sprint 4에서 hotkeys/windows.js에 통합 예정
+- 2025-09-25 추가: `hotkeys/windows.js`에서 iohook 글로벌 리스너를 사용하도록 통합. 모듈이 미설치된 환경에서는 창 포커스 기반 fallback으로 동작
 
 ## 설정 저장
 - Renderer에서 사용자 설정을 `state:widget:update` IPC로 저장
@@ -47,4 +48,3 @@
 - [x] PoC 구현 전, `iohook` 빌드 성공 여부 확인 (빌드 가이드 작성, 후속 Sprint 4에서 통합 예정)
 - [x] macOS 접근성 권한 체크 helper (`systemPreferences.isTrustedAccessibilityClient`) 추가
 - [x] 설정 패널 UI 와이어프레임 업데이트 → `sprint3-hotkey-settings.md`
-

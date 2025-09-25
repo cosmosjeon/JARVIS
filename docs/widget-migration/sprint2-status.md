@@ -10,14 +10,14 @@
 ## 남은 TODO (Sprint 3로 이관)
 1. 실제 실행 검증 (담당 TBD)
    - [x] `npm run electron:dev` 스타트업 로그/스크린샷 문서화 → `docs/widget-migration/runs/2025-09-25-electron-dev.md`
-   - [ ] `npm run electron:build` 산출물 smoke test 기록 → 빌드 ID, OS별 실행 결과 (Sprint 3 Kickoff 태스크)
+   - [ ] `npm run electron:build` 산출물 smoke test 기록 → **WSL 환경 sandbox 제약으로 실패 (2025-09-25 실행 기록 참고)**
 2. 창 옵션 QA (담당 TBD)
    - [ ] Windows: 투명+alwaysOnTop 시 포커스/텍스트 선명도 확인 (스크린샷 포함) – Sprint 3 QA 트랙으로 이동
    - [ ] macOS: frameless+vibrancy 실험 결과 기록, 접근성 권한 안내 캡처 – Sprint 3 QA 트랙으로 이동
 3. 로깅 전략 마무리
-   - [ ] 로그 순환/보존 정책 확정 (현재 512KB 회전 스텁 → 목표 7일 보존?) – Sprint 3 문서화 트랙으로 이동
-   - [ ] renderer 로그 레벨 가이드 작성 (info/warn/error 기준) – Sprint 3 문서화 트랙으로 이동
-   - [ ] crash/error 업로드 플로우 초안 (Phase 4 연계) – Sprint 3 준비 태스크로 이동
+   - [x] 로그 순환/보존 정책 확정 (1MB 회전 + 7일 보존) – `electron/logger.js` 반영
+   - [x] renderer 로그 레벨 가이드 작성 (info/warn/error 기준) – `sprint2-logging-debug.md` 갱신
+   - [x] crash/error 업로드 플로우 초안 (Phase 4 연계) – `sprint2-logging-debug.md`에 전략 기재
 
 ## 스프린트 종료 메모 (2025-09-25)
 - Electron dev run 검증 완료, 런북 `runs/2025-09-25-electron-dev.md` 작성
