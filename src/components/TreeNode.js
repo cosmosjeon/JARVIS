@@ -220,6 +220,7 @@ const TreeNode = ({
           zIndex: 1010,
           willChange: 'transform',
         }}
+        data-interactive-zone="true"
         data-node-id={node.id}
       >
         <div
@@ -230,6 +231,7 @@ const TreeNode = ({
             position: 'relative',
             zIndex: 1000,
           }}
+          data-interactive-zone="true"
           onClick={(e) => {
             e.stopPropagation();
           }}
@@ -256,46 +258,46 @@ const TreeNode = ({
     <>
       <g
         transform={`translate(${nodePosition.x || 0}, ${nodePosition.y || 0})`}
-        style={{ cursor: isExpanded ? 'default' : 'pointer' }}
+        style={{ cursor: isExpanded ? 'default' : 'pointer', pointerEvents: 'auto' }}
+        data-interactive-zone="true"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-      {/* Hide background rectangle when node is expanded (chat mode) */}
-      {displayMode !== 'chat' && (
-        <motion.rect
-          width={currentWidth}
-          height={currentHeight}
-          rx={borderRadius}
-          ry={borderRadius}
-          fill={rectFill}
-          stroke={rectStroke}
-          strokeWidth={rectStrokeWidth}
-          style={{
-            cursor: 'pointer',
-            mixBlendMode: 'normal', // 투명 창에서 블렌드 모드 고정
-            filter: 'none', // 투명 배경 잔상 방지를 위해 그림자 제거
-          }}
-          onClick={(e) => {
-            if (isExpanded) {
-              return;
-            }
-            e.stopPropagation();
-            onNodeClick && onNodeClick(node);
-          }}
-          animate={{
-            x: -currentWidth / 2,
-            y: -currentHeight / 2,
-            width: currentWidth,
-            height: currentHeight,
-          }}
-          transition={{
-            type: 'spring',
-            stiffness: 260,
-            damping: 24,
-            duration: 0.25,
-          }}
-        />
-      )}
+      <motion.rect
+        width={currentWidth}
+        height={currentHeight}
+        rx={borderRadius}
+        ry={borderRadius}
+        fill={rectFill}
+        stroke={rectStroke}
+        strokeWidth={rectStrokeWidth}
+        style={{
+          cursor: 'pointer',
+          mixBlendMode: 'normal', // 투명 창에서 블렌드 모드 고정
+          filter: 'none', // 투명 배경 잔상 방지를 위해 그림자 제거
+          // 상위 컨테이너가 pointer-events: none인 상태에서 노드 영역만 다시 활성화
+          pointerEvents: 'auto',
+        }}
+        onClick={(e) => {
+          if (isExpanded) {
+            return;
+          }
+          e.stopPropagation();
+          onNodeClick && onNodeClick(node);
+        }}
+        animate={{
+          x: -currentWidth / 2,
+          y: -currentHeight / 2,
+          width: currentWidth,
+          height: currentHeight,
+        }}
+        transition={{
+          type: 'spring',
+          stiffness: 260,
+          damping: 24,
+          duration: 0.25,
+        }}
+      />
 
       {displayMode === 'chat' ? (
         shouldUsePortal ? null : (
@@ -319,6 +321,7 @@ const TreeNode = ({
               position: 'relative',
               zIndex: 1000
             }}
+            data-interactive-zone="true"
             onClick={(e) => {
               // foreignObject 내부 클릭 이벤트가 제대로 전파되도록 함
               e.stopPropagation();
@@ -361,7 +364,7 @@ const TreeNode = ({
             e.stopPropagation();
             onRemoveNode(node.id);
           }}
-          style={{ cursor: 'pointer' }}
+          style={{ cursor: 'pointer', pointerEvents: 'auto' }}
         >
           <circle
             r={deleteIconRadius}

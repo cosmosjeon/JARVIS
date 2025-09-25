@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from '../data/treeData';
@@ -40,10 +40,107 @@ const HierarchicalForceTree = () => {
   const overlayContainerRef = useRef(null);
   const [overlayElement, setOverlayElement] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
+  const isIgnoringMouseRef = useRef(false);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
   }, []);
+
+  const setWindowMousePassthrough = useCallback((shouldIgnore = true) => {
+    if (typeof window === 'undefined') return;
+    const api = window.jarvisAPI;
+    if (!api || typeof api.setMousePassthrough !== 'function') {
+      return;
+    }
+
+    if (isIgnoringMouseRef.current === shouldIgnore) {
+      return;
+    }
+
+    try {
+      const result = api.setMousePassthrough({ ignore: shouldIgnore, forward: true });
+      isIgnoringMouseRef.current = shouldIgnore;
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => {
+          // 실패 시 다음 이벤트에서 재시도할 수 있도록 상태를 되돌려 둔다
+          isIgnoringMouseRef.current = !shouldIgnore;
+        });
+      }
+    } catch (error) {
+      // IPC 호출 실패는 사용자 상호작용에 직접적 영향이 없으므로 콘솔 로그로 제한
+      // eslint-disable-next-line no-console
+      console.error('마우스 패스스루 설정 실패:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    setWindowMousePassthrough(true);
+    return () => {
+      setWindowMousePassthrough(false);
+    };
+  }, [setWindowMousePassthrough]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const api = window.jarvisAPI;
+    if (!api || typeof api.setMousePassthrough !== 'function' || typeof api.getCursorPosition !== 'function') {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timerId = null;
+
+    const evaluateInteractiveAtPoint = (x, y) => {
+      if (typeof document === 'undefined') {
+        return false;
+      }
+
+      const element = document.elementFromPoint(x, y);
+      if (!element) {
+        return false;
+      }
+
+      const interactive = element.closest('[data-interactive-zone="true"]')
+        || element.closest('[data-window-chrome="true"]');
+
+      return Boolean(interactive);
+    };
+
+    const pollCursor = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      try {
+        const info = await api.getCursorPosition();
+        if (info?.success && info.inside) {
+          const isInteractive = evaluateInteractiveAtPoint(info.x, info.y);
+          setWindowMousePassthrough(!isInteractive);
+        } else {
+          setWindowMousePassthrough(true);
+        }
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('커서 위치 폴링 실패:', error);
+      } finally {
+        if (!cancelled) {
+          timerId = window.setTimeout(pollCursor, 40);
+        }
+      }
+    };
+
+    pollCursor();
+
+    return () => {
+      cancelled = true;
+      if (timerId) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [setWindowMousePassthrough]);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -197,6 +294,22 @@ const HierarchicalForceTree = () => {
     const stored = conversationStoreRef.current.get(nodeId);
     return stored ? stored.map((message) => ({ ...message })) : [];
   };
+
+  const rootNodeForDragHandle = React.useMemo(() => {
+    const rootId = getRootNodeId();
+    if (!rootId) return null;
+    return nodes.find((node) => node.id === rootId) || null;
+  }, [nodes, data]);
+
+  const rootDragHandlePosition = React.useMemo(() => {
+    if (!rootNodeForDragHandle) return null;
+    const nodeX = rootNodeForDragHandle.x || 0;
+    const nodeY = rootNodeForDragHandle.y || 0;
+    const screenX = viewTransform.x + nodeX * viewTransform.k;
+    const screenY = viewTransform.y + nodeY * viewTransform.k;
+    const anchorY = Math.max(screenY - 80, 32);
+    return { x: screenX, y: anchorY };
+  }, [rootNodeForDragHandle, viewTransform]);
 
   const handleConversationChange = (nodeId, messages) => {
     conversationStoreRef.current.set(
@@ -549,14 +662,6 @@ const HierarchicalForceTree = () => {
     setSelectedNodeId(node.id);
   };
 
-  // Handle background click to close expanded node
-  const handleBackgroundClick = (event) => {
-    // Check if the click is on the background (not on a node)
-    if (event.target === event.currentTarget || event.target.tagName === 'svg') {
-      setExpandedNodeId(null);
-    }
-  };
-
   // Drag behavior - 애니메이션 중에도 드래그 가능
   const handleDrag = (nodeId) => {
     return d3.drag()
@@ -638,14 +743,45 @@ const HierarchicalForceTree = () => {
         WebkitTransform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
+        // 노드 외 영역 투명 클릭 스루를 위해 기본적으로 마우스 이벤트 무시
+        pointerEvents: 'none',
       }}
     >
+      {rootDragHandlePosition && (
+        <div
+          className="pointer-events-auto"
+          style={{
+            position: 'absolute',
+            left: `${rootDragHandlePosition.x}px`,
+            top: `${rootDragHandlePosition.y}px`,
+            transform: 'translate(-50%, -100%)',
+            width: 260,
+            height: 68,
+            borderRadius: 20,
+            border: '1px solid rgba(148, 163, 184, 0.35)',
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.35), rgba(15, 23, 42, 0.45))',
+            boxShadow: '0 18px 42px rgba(15, 23, 42, 0.32)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            WebkitAppRegion: 'drag',
+            pointerEvents: 'auto',
+            cursor: 'grab',
+            padding: '12px 18px',
+            zIndex: 40,
+          }}
+          data-interactive-zone="true"
+          aria-hidden="true"
+        />
+      )}
       <svg
         ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
-        onClick={handleBackgroundClick}
-        style={{ background: 'rgba(0,0,0,0.001)' }}
+        style={{
+          background: 'rgba(0,0,0,0.001)',
+          // SVG 전체는 기본적으로 이벤트를 통과시키고, 실제 노드 요소에서만 다시 활성화
+          pointerEvents: 'none',
+        }}
       >
         {/* Arrow marker definition */}
         <defs>
@@ -669,7 +805,7 @@ const HierarchicalForceTree = () => {
           transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
           style={{ opacity: isResizing ? 0.999 : 1 }}
         >
-          <g className="links">
+          <g className="links" style={{ pointerEvents: 'none' }}>
             <AnimatePresence>
               {links
                 // TreeLayoutService에서 이미 정렬된 링크 사용
@@ -727,6 +863,8 @@ const HierarchicalForceTree = () => {
                     stiffness: 300,
                     damping: 25
                   }}
+                  style={{ pointerEvents: 'auto' }}
+                  data-interactive-zone="true"
                 >
                   <TreeNode
                     node={node}

@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
       return () => ipcRenderer.removeListener('window:state', listener);
     },
   },
+  setMousePassthrough: (options) => ipcRenderer.invoke('window:setMousePassthrough', options),
+  getCursorPosition: () => ipcRenderer.invoke('cursor:getRelativePosition'),
   checkAccessibilityPermission: () => ipcRenderer.invoke('system:accessibility:check'),
   requestAccessibilityPermission: () => ipcRenderer.invoke('system:accessibility:request'),
   exportLogs: (options) => ipcRenderer.invoke('logs:export', options),

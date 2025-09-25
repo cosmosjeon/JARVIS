@@ -50,8 +50,8 @@ const WindowChrome = () => {
   };
 
   return (
-    <header className="window-chrome">
-      <div className="window-chrome__drag">
+    <header className="window-chrome" data-interactive-zone="true" data-window-chrome="true">
+      <div className="window-chrome__drag" data-interactive-zone="true">
         <span className="window-chrome__title">JARVIS Widget</span>
       </div>
       {/* controls removed */}

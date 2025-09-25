@@ -40,16 +40,6 @@ body {
   font-family: 'Arial', sans-serif;
 }
 
-.App::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 2px solid rgba(148, 163, 184, 0.6);
-  border-radius: 18px;
-  pointer-events: none;
-  box-shadow: 0 0 28px rgba(15, 23, 42, 0.35);
-}
-
 .App-content {
   position: relative;
   flex: 1 1 auto;
