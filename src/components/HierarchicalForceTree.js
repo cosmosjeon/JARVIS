@@ -13,7 +13,7 @@ const HierarchicalForceTree = () => {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
-  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0 });
+  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [data, setData] = useState(treeData);
   const simulationRef = useRef(null);
@@ -24,6 +24,13 @@ const HierarchicalForceTree = () => {
   const linkKeysRef = useRef(new Set());
   const hasCleanedQ2Ref = useRef(false);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
+  const contentGroupRef = useRef(null);
+  const overlayContainerRef = useRef(null);
+  const [overlayElement, setOverlayElement] = useState(null);
+
+  useEffect(() => {
+    setOverlayElement(overlayContainerRef.current);
+  }, []);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -300,25 +307,49 @@ const HierarchicalForceTree = () => {
       return undefined;
     }
 
-    const zoomInstance = zoomFactory();
-    if (!zoomInstance || typeof zoomInstance.scaleExtent !== 'function') {
-      return undefined;
-    }
+    const isSecondaryButtonDrag = (evt) => {
+      if (typeof evt.button === 'number' && (evt.button === 1 || evt.button === 2)) return true;
+      if (typeof evt.buttons === 'number') {
+        const mask = evt.buttons;
+        return (mask & 4) === 4 || (mask & 2) === 2;
+      }
+      return false;
+    };
 
-    const zoomBehaviour = zoomInstance
-      .scaleExtent([1, 1])
+    const allowTouchGesture = (evt) => {
+      if (evt.type.startsWith('touch')) {
+        const touches = evt.touches || (evt.originalEvent && evt.originalEvent.touches);
+        return Boolean(touches && touches.length > 1);
+      }
+      if (evt.type.startsWith('pointer') && evt.pointerType === 'touch') {
+        return true;
+      }
+      return false;
+    };
+
+    const zoomBehaviour = zoomFactory()
+      .scaleExtent([0.3, 4])
       .filter((event) => {
-        if (event.type === 'wheel' || event.type === 'dblclick') return false;
         const target = event.target instanceof Element ? event.target : null;
+        if (target && target.closest('foreignObject')) return false;
         if (target && target.closest('[data-node-id]')) return false;
-        // Left button only
-        return event.button === 0;
+        if (event.type === 'wheel') return true;
+        if (event.type === 'dblclick') return false;
+        if (allowTouchGesture(event)) return true;
+        if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') return true;
+        if (event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'mousedown' || event.type === 'mousemove') {
+          return isSecondaryButtonDrag(event);
+        }
+        return false;
       })
       .on('zoom', (event) => {
-        setViewTransform({ x: event.transform.x, y: event.transform.y });
+        setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
       });
 
-    svgSelection.call(zoomBehaviour).on('dblclick.zoom', null);
+    svgSelection
+      .style('touch-action', 'none')
+      .call(zoomBehaviour)
+      .on('dblclick.zoom', null);
 
     return () => {
       svgSelection.on('.zoom', null);
@@ -456,9 +487,11 @@ const HierarchicalForceTree = () => {
       .on('drag', (event) => {
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
-          // 직접 위치 업데이트
-          node.x = event.x;
-          node.y = event.y;
+          // 현재 줌/팬이 적용된 컨테이너 좌표계에서 포인터 좌표를 계산
+          const container = contentGroupRef.current || svgRef.current;
+          const pointer = d3.pointer(event, container);
+          node.x = pointer[0];
+          node.y = pointer[1];
           setNodes([...nodes]);
         }
       })
@@ -538,7 +571,7 @@ const HierarchicalForceTree = () => {
         </defs>
 
         {/* Links */}
-        <g transform={`translate(${viewTransform.x}, ${viewTransform.y})`}>
+        <g ref={contentGroupRef} transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
           <g className="links">
             <AnimatePresence>
               {links
@@ -617,6 +650,8 @@ const HierarchicalForceTree = () => {
                     hasChildren={(childrenByParent.get(node.id) || []).length > 0}
                     isCollapsed={collapsedNodeIds.has(node.id)}
                     onToggleCollapse={toggleCollapse}
+                    viewTransform={viewTransform}
+                    overlayElement={overlayElement}
                   />
                 </motion.g>
               );
@@ -626,6 +661,11 @@ const HierarchicalForceTree = () => {
       </svg>
 
       {/* 디버그 패널 제거됨 */}
+      <div
+        ref={overlayContainerRef}
+        className="pointer-events-none absolute inset-0 z-10"
+        style={{ overflow: 'visible' }}
+      />
     </div>
   );
 };
