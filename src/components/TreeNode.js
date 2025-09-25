@@ -256,12 +256,8 @@ const TreeNode = ({
         strokeWidth={rectStrokeWidth}
         style={{
           cursor: 'pointer',
-          mixBlendMode: 'normal', // 모든 노드에 normal 적용
-          filter: displayMode === 'chat'
-            ? 'drop-shadow(0 18px 42px rgba(15, 23, 42, 0.48))'
-            : 'drop-shadow(0 8px 24px rgba(15, 23, 42, 0.32))',
-          opacity: shouldUsePortal ? 0 : 1,
-          pointerEvents: shouldUsePortal ? 'none' : 'auto',
+          mixBlendMode: 'normal', // 투명 창에서 블렌드 모드 고정
+          filter: 'none', // 투명 배경 잔상 방지를 위해 그림자 제거
         }}
         onClick={(e) => {
           if (isExpanded) {
