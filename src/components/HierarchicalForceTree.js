@@ -13,8 +13,7 @@ const HierarchicalForceTree = () => {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
-  // viewTransform 제거 - 노드 영역만 드래그 가능하도록 수정
-  // const [viewTransform, setViewTransform] = useState({ x: 0, y: 0 });
+  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [data, setData] = useState(treeData);
   const simulationRef = useRef(null);
@@ -446,9 +445,133 @@ const HierarchicalForceTree = () => {
     }
   };
 
-  // 드래그 기능 제거됨
+  // 노드들의 경계 영역 계산
+  const getNodesBounds = () => {
+    if (nodes.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
-  // 드래그 관련 useEffect 제거됨
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+    nodes.forEach(node => {
+      const x = node.x || 0;
+      const y = node.y || 0;
+      const width = 200; // 노드의 대략적인 너비
+      const height = 50; // 노드의 대략적인 높이
+
+      minX = Math.min(minX, x - width / 2);
+      maxX = Math.max(maxX, x + width / 2);
+      minY = Math.min(minY, y - height / 2);
+      maxY = Math.max(maxY, y + height / 2);
+    });
+
+    // 여백 추가
+    const padding = 100;
+    return {
+      minX: minX - padding,
+      maxX: maxX + padding,
+      minY: minY - padding,
+      maxY: maxY + padding
+    };
+  };
+
+  // 줌 기능 구현
+  useEffect(() => {
+    if (!svgRef.current) return undefined;
+
+    const svgSelection = d3.select(svgRef.current);
+    const zoomFactory = typeof d3.zoom === 'function' ? d3.zoom : null;
+    if (!zoomFactory) {
+      return undefined;
+    }
+
+    const zoomInstance = zoomFactory();
+    if (!zoomInstance || typeof zoomInstance.scaleExtent !== 'function') {
+      return undefined;
+    }
+
+    const zoomBehaviour = zoomInstance
+      .scaleExtent([1, 3]) // 최소 1배(리셋 화면), 최대 3배 확대
+      .filter((event) => {
+        // 노드가 확장된 상태에서는 줌 비활성화
+        if (expandedNodeId && event.type === 'wheel') return false;
+
+        // 마우스 휠은 노드가 닫혀있을 때만 허용
+        if (event.type === 'wheel') return true;
+
+        // 좌클릭 드래그는 노드가 아닌 빈 공간에서만 허용
+        if (event.type === 'mousedown' && event.button === 0) {
+          const target = event.target;
+          // 노드나 노드 내부 요소가 아닌 경우만 팬 허용
+          return !target.closest('[data-node-id]') && target.tagName !== 'text';
+        }
+
+        return false;
+      })
+      .on('zoom', (event) => {
+        // 노드 영역 경계 내에서만 팬 허용
+        const bounds = getNodesBounds();
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+
+        // 현재 변환된 위치 계산
+        const newX = event.transform.x;
+        const newY = event.transform.y;
+        const scale = event.transform.k;
+
+        // 경계 체크
+        let constrainedX = newX;
+        let constrainedY = newY;
+
+        // 1배 줌일 때는 좌우 영역을 더 넓게 허용
+        const horizontalPadding = scale === 1 ? screenWidth * 0.3 : 0; // 1배 줌일 때 화면 너비의 30% 추가 여백
+        const verticalPadding = scale === 1 ? screenHeight * 0.2 : 0; // 1배 줌일 때 화면 높이의 20% 추가 여백
+
+        // 왼쪽 경계 체크
+        if (newX > horizontalPadding) constrainedX = horizontalPadding;
+        if (newX < screenWidth - (bounds.maxX - bounds.minX) * scale - horizontalPadding) {
+          constrainedX = screenWidth - (bounds.maxX - bounds.minX) * scale - horizontalPadding;
+        }
+
+        // 위쪽 경계 체크
+        if (newY > verticalPadding) constrainedY = verticalPadding;
+        if (newY < screenHeight - (bounds.maxY - bounds.minY) * scale - verticalPadding) {
+          constrainedY = screenHeight - (bounds.maxY - bounds.minY) * scale - verticalPadding;
+        }
+
+        setViewTransform({
+          x: constrainedX,
+          y: constrainedY,
+          k: scale
+        });
+      });
+
+    // 더블클릭 이벤트를 별도로 처리
+    svgSelection.on('dblclick', (event) => {
+      // 노드가 확장된 상태에서는 줌 리셋 비활성화
+      if (expandedNodeId) return;
+
+      // 노드 내부 요소가 아닌 경우에만 줌 리셋 허용
+      const target = event.target;
+      if (target.closest('[data-node-id]') || target.tagName === 'text') {
+        return;
+      }
+
+      event.preventDefault();
+
+      // React 상태 업데이트
+      setViewTransform({ x: 0, y: 0, k: 1 });
+
+      // D3 zoom behavior의 내부 transform도 리셋
+      const resetTransform = d3.zoomIdentity.translate(0, 0).scale(1);
+      svgSelection.call(zoomBehaviour.transform, resetTransform);
+    });
+
+    svgSelection.call(zoomBehaviour);
+
+    return () => {
+      svgSelection.on('.zoom', null);
+      svgSelection.on('dblclick', null);
+    };
+  }, [expandedNodeId, nodes]);
 
   useEffect(() => {
     if (!expandedNodeId) return;
@@ -491,7 +614,7 @@ const HierarchicalForceTree = () => {
         </defs>
 
         {/* Links */}
-        <g>
+        <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
           <g className="links">
             <AnimatePresence>
               {links

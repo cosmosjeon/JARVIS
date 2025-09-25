@@ -39,6 +39,18 @@ const SettingsPanel = () => {
         </div>
       </div>
 
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-sm">뷰포트 리셋</span>
+          <span className="text-xs text-slate-300">더블클릭하면 1배 줌으로 리셋됩니다</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-200">
+          <span className="rounded-full border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-slate-50 text-xs" style={{ fontSize: '10px' }}>
+            더블클릭
+          </span>
+        </div>
+      </div>
+
       {recorderOpen && (
         <HotkeyRecorderModal
           currentAccelerator={accelerator}
