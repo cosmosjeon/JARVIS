@@ -13,7 +13,7 @@ const HierarchicalForceTree = () => {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
-  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0 });
+  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [data, setData] = useState(treeData);
   const simulationRef = useRef(null);
@@ -24,6 +24,7 @@ const HierarchicalForceTree = () => {
   const linkKeysRef = useRef(new Set());
   const hasCleanedQ2Ref = useRef(false);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
+  const contentGroupRef = useRef(null);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -300,25 +301,29 @@ const HierarchicalForceTree = () => {
       return undefined;
     }
 
-    const zoomInstance = zoomFactory();
-    if (!zoomInstance || typeof zoomInstance.scaleExtent !== 'function') {
-      return undefined;
-    }
-
-    const zoomBehaviour = zoomInstance
-      .scaleExtent([1, 1])
+    const zoomBehaviour = zoomFactory()
+      .scaleExtent([0.3, 4])
       .filter((event) => {
-        if (event.type === 'wheel' || event.type === 'dblclick') return false;
         const target = event.target instanceof Element ? event.target : null;
+        // Block zoom/pan when interacting inside embedded HTML panels
+        if (target && target.closest('foreignObject')) return false;
+        // Allow wheel for zooming
+        if (event.type === 'wheel') return true;
+        // Disable double-click zoom to avoid surprises
+        if (event.type === 'dblclick') return false;
+        // Prevent panning when drag starts on a node; node drag has priority
         if (target && target.closest('[data-node-id]')) return false;
-        // Left button only
-        return event.button === 0;
+        // Allow touch gestures and left-button drag for panning
+        return event.type.startsWith('touch') || event.button === 0;
       })
       .on('zoom', (event) => {
-        setViewTransform({ x: event.transform.x, y: event.transform.y });
+        setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
       });
 
-    svgSelection.call(zoomBehaviour).on('dblclick.zoom', null);
+    svgSelection
+      .style('touch-action', 'none')
+      .call(zoomBehaviour)
+      .on('dblclick.zoom', null);
 
     return () => {
       svgSelection.on('.zoom', null);
@@ -456,9 +461,11 @@ const HierarchicalForceTree = () => {
       .on('drag', (event) => {
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
-          // 직접 위치 업데이트
-          node.x = event.x;
-          node.y = event.y;
+          // 현재 줌/팬이 적용된 컨테이너 좌표계에서 포인터 좌표를 계산
+          const container = contentGroupRef.current || svgRef.current;
+          const pointer = d3.pointer(event, container);
+          node.x = pointer[0];
+          node.y = pointer[1];
           setNodes([...nodes]);
         }
       })
@@ -538,7 +545,7 @@ const HierarchicalForceTree = () => {
         </defs>
 
         {/* Links */}
-        <g transform={`translate(${viewTransform.x}, ${viewTransform.y})`}>
+        <g ref={contentGroupRef} transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
           <g className="links">
             <AnimatePresence>
               {links
