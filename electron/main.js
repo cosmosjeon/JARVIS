@@ -182,7 +182,7 @@ const createWindow = () => {
     minHeight: 360,
 
     // 창 프레임 설정
-    frame: !windowConfig.frameless,           // windowConfig 기반 프레임 표시
+    frame: false,                             // 완전히 프레임 제거
     transparent: windowConfig.transparent,    // 완전 투명 창 사용
     backgroundColor: '#00000000',             // 완전 투명 배경
 
@@ -195,19 +195,13 @@ const createWindow = () => {
 
     // 기타 설정
     show: false,                // 처음엔 숨김 (준비되면 표시)
-    fullscreenable: true,
-    maximizable: true,
-    minimizable: true,
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    ...(isMac
-      ? {
-          titleBarOverlay: {
-            color: '#00000000',
-            symbolColor: '#ffffff',
-            height: WINDOW_CHROME_HEIGHT,
-          },
-        }
-      : {}),
+    fullscreenable: false,
+    maximizable: false,
+    minimizable: false,
+    titleBarStyle: process.platform === 'darwin' ? 'customButtonsOnHover' : 'default',
+    ...(process.platform === 'darwin' ? {
+      trafficLightPosition: { x: -1000, y: -1000 }  // 트래픽 라이트를 완전히 화면 밖으로
+    } : {}),
     autoHideMenuBar: true,
     title: 'JARVIS Widget',
 
@@ -237,6 +231,14 @@ const createWindow = () => {
   mainWindow.on('leave-full-screen', broadcastWindowState);
 
   mainWindow.on('ready-to-show', () => {
+    // 완전한 위젯 모드를 위해 메뉴바 완전히 제거
+    mainWindow.setMenuBarVisibility(false);
+
+    // macOS에서 트래픽 라이트 버튼 완전히 숨기기
+    if (process.platform === 'darwin') {
+      mainWindow.setWindowButtonVisibility?.(false);
+    }
+
     mainWindow?.show();
     logger?.info('Main window ready');
   });
