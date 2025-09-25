@@ -320,6 +320,10 @@ const HierarchicalForceTree = () => {
       return undefined;
     }
 
+    const DOM_DELTA_PIXEL = 0;
+    const DOM_DELTA_LINE = 1;
+    const DOM_DELTA_PAGE = 2;
+
     const isSecondaryButtonDrag = (evt) => {
       if (typeof evt.button === 'number' && (evt.button === 1 || evt.button === 2)) return true;
       if (typeof evt.buttons === 'number') {
@@ -340,13 +344,51 @@ const HierarchicalForceTree = () => {
       return false;
     };
 
+    const isPinchZoomWheel = (evt) => {
+      if (!evt) return false;
+      if (evt.ctrlKey || evt.metaKey) return true;
+      if (typeof evt.deltaZ === 'number' && evt.deltaZ !== 0) return true;
+      const capabilities = evt.sourceCapabilities;
+      if (capabilities && capabilities.firesTouchEvents) {
+        const absDelta = Math.abs(evt.deltaY || 0) + Math.abs(evt.deltaX || 0);
+        if (absDelta > 0 && absDelta < 1.25) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isTrackpadScrollWheel = (evt) => {
+      if (!evt) return false;
+      if (evt.ctrlKey || evt.metaKey) return false;
+      const mode = typeof evt.deltaMode === 'number' ? evt.deltaMode : DOM_DELTA_PIXEL;
+      if (mode !== DOM_DELTA_PIXEL) return false;
+      const capabilities = evt.sourceCapabilities;
+      if (capabilities && capabilities.firesTouchEvents) return true;
+      const absX = Math.abs(evt.deltaX || 0);
+      const absY = Math.abs(evt.deltaY || 0);
+      const magnitude = Math.max(absX, absY);
+      if (magnitude === 0) return false;
+      return magnitude <= 200;
+    };
+
+    const normalizeWheelDelta = (value, mode) => {
+      if (!Number.isFinite(value)) return 0;
+      if (mode === DOM_DELTA_LINE) return value * 16;
+      if (mode === DOM_DELTA_PAGE) return value * 120;
+      return value;
+    };
     const zoomBehaviour = zoomFactory()
       .scaleExtent([0.3, 4])
       .filter((event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (target && target.closest('foreignObject')) return false;
         if (target && target.closest('[data-node-id]')) return false;
-        if (event.type === 'wheel') return true;
+        if (event.type === 'wheel') {
+          if (isPinchZoomWheel(event)) return true;
+          if (isTrackpadScrollWheel(event)) return false;
+          return false;
+        }
         if (event.type === 'dblclick') return false;
         if (allowTouchGesture(event)) return true;
         if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') return true;
@@ -364,8 +406,32 @@ const HierarchicalForceTree = () => {
       .call(zoomBehaviour)
       .on('dblclick.zoom', null);
 
+    svgSelection.on('wheel.treepan', (event) => {
+      if (isPinchZoomWheel(event)) {
+        return;
+      }
+      if (!isTrackpadScrollWheel(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      const mode = typeof event.deltaMode === 'number' ? event.deltaMode : DOM_DELTA_PIXEL;
+      const deltaX = normalizeWheelDelta(event.deltaX || 0, mode);
+      const deltaY = normalizeWheelDelta(event.deltaY || 0, mode);
+      if (deltaX === 0 && deltaY === 0) {
+        return;
+      }
+
+      const currentTransform = d3.zoomTransform(svgSelection.node());
+      const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
+      const panX = -deltaX / scale;
+      const panY = -deltaY / scale;
+      zoomBehaviour.translateBy(svgSelection, panX, panY);
+    });
+
     return () => {
       svgSelection.on('.zoom', null);
+      svgSelection.on('.treepan', null);
     };
   }, []);
 
