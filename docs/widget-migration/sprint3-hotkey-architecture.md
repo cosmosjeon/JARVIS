@@ -25,6 +25,7 @@
            ↳ jarvisAPI.onLog 로깅
            ↳ 실패 시 state:notify IPC
 ```
+- 임시 기본 단축키: macOS `Command+Shift+J`, Windows/Linux `Control+Shift+J`
 
 ## 설정 저장
 - Renderer에서 사용자 설정을 `state:widget:update` IPC로 저장

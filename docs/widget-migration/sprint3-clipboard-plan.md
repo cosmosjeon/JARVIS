@@ -24,8 +24,8 @@
    - 핫키 핸들러에서 `clipboard.getText()` 호출
    - 결과를 renderer로 `widget:showFromClipboard` IPC
 3. renderer
-   - `jarvisAPI.onClipboard(payload)` (preload 확장)
-   - NodeAssistantPanel에 `initialClipboardText` 전달 → 하이라이트 placeholder로 변환
+   - `jarvisAPI.onClipboard(payload)` (preload 확장, 2025-09-25 추가)
+   - NodeAssistantPanel 입력창 자동 채우기 및 포커스 이동 → 하이라이트 placeholder 흐름 유지
 4. UI
    - 안내 토스트: "클립보드가 비어 있습니다" / "복사 후 다시 시도"
    - 설정에서 "자동 붙여넣기" 토글 제공 (기본 ON)

@@ -1,6 +1,8 @@
 const path = require('path');
 const { app, BrowserWindow, ipcMain, nativeTheme, shell } = require('electron');
 const { createLogBridge } = require('./logger');
+const { createHotkeyManager } = require('./hotkeys');
+const clipboard = require('./clipboard');
 
 const isDev = !app.isPackaged;
 
@@ -8,12 +10,60 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 let mainWindow;
 let logger;
+let hotkeyManager;
 
 const windowConfig = {
   frameless: false,
   transparent: false,
   alwaysOnTop: false,
   skipTaskbar: false,
+};
+
+const DEFAULT_ACCELERATOR = process.platform === 'darwin' ? 'Command+Shift+J' : 'Control+Shift+J';
+
+const ensureWindowFocus = () => {
+  if (!mainWindow) {
+    return;
+  }
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.focus();
+};
+
+const handleHotkeyTrigger = () => {
+  logger?.info('Primary hotkey triggered');
+  ensureWindowFocus();
+  const result = clipboard.getText();
+  if (result.success) {
+    mainWindow?.webContents.send('widget:showFromClipboard', {
+      text: result.text,
+      source: 'clipboard',
+      timestamp: Date.now(),
+    });
+    logger?.info('Clipboard text dispatched to renderer', {
+      length: result.text.length,
+    });
+  } else {
+    logger?.warn('Clipboard read failed', result.error);
+  }
+};
+
+const registerPrimaryHotkey = () => {
+  if (!hotkeyManager) {
+    hotkeyManager = createHotkeyManager(logger);
+  }
+  const accelerator = DEFAULT_ACCELERATOR;
+  const success = hotkeyManager.registerToggle({ accelerator, handler: handleHotkeyTrigger });
+  if (success) {
+    logger?.info('Primary hotkey registered', { accelerator });
+  } else {
+    logger?.warn('Primary hotkey registration failed', { accelerator });
+  }
+  return success;
 };
 
 const createWindow = () => {
@@ -70,6 +120,7 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
   logger = createLogBridge(() => mainWindow);
   createWindow();
+  registerPrimaryHotkey();
   ipcMain.handle('system:ping', () => 'pong');
   ipcMain.handle('logger:write', (_event, payload) => {
     const { level = 'info', message = '', meta = {} } = payload || {};
@@ -117,6 +168,10 @@ app.whenReady().then(() => {
 app.on('browser-window-created', (_, window) => {
   window.setMenuBarVisibility(false);
   logger?.info('Browser window created');
+});
+
+app.on('will-quit', () => {
+  hotkeyManager?.dispose?.();
 });
 
 app.on('window-all-closed', () => {

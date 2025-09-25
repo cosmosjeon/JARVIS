@@ -131,6 +131,7 @@ const NodeAssistantPanel = ({
   const panelRef = useRef(null);
   const highlightRootRef = useRef(null);
   const highlighterRef = useRef(null);
+  const composerRef = useRef(null);
   const highlightHandlersRef = useRef({ create: null, remove: null });
   const highlightSourceMapRef = useRef(new Map());
 
@@ -145,6 +146,40 @@ const NodeAssistantPanel = ({
     const timeoutId = window.setTimeout(() => setPlaceholderNotice(null), 2400);
     return () => window.clearTimeout(timeoutId);
   }, [placeholderNotice]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const api = window.jarvisAPI;
+    if (!api?.onClipboard) {
+      return undefined;
+    }
+
+    const unsubscribe = api.onClipboard((payload = {}) => {
+      const rawText = typeof payload.text === 'string' ? payload.text : '';
+      const trimmed = rawText.trim();
+      if (!trimmed) {
+        setPlaceholderNotice({ type: 'warning', message: '클립보드에서 텍스트를 찾을 수 없습니다. 복사 후 다시 시도하세요.' });
+        return;
+      }
+
+      setIsHighlightMode((prev) => {
+        if (prev) {
+          disableHighlightMode();
+        }
+        return false;
+      });
+
+      setComposerValue(trimmed);
+      composerRef.current?.focus?.();
+      setPlaceholderNotice({ type: 'info', message: '클립보드 텍스트가 입력창에 채워졌습니다.' });
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [disableHighlightMode]);
 
   const getHighlightTexts = useCallback(() => {
     const uniqueTexts = new Set();
@@ -527,6 +562,7 @@ const NodeAssistantPanel = ({
             🖍
           </button>
           <textarea
+            ref={composerRef}
             value={composerValue}
             onChange={(event) => setComposerValue(event.target.value)}
             onKeyDown={handleKeyDown}

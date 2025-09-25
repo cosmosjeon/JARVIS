@@ -12,4 +12,12 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
     ipcRenderer.on('app:log', listener);
     return () => ipcRenderer.removeListener('app:log', listener);
   },
+  onClipboard: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('widget:showFromClipboard', listener);
+    return () => ipcRenderer.removeListener('widget:showFromClipboard', listener);
+  },
 });
