@@ -175,15 +175,17 @@ const HierarchicalForceTree = () => {
   };
 
   // 2번째 질문 처리 함수
-  const handleSecondQuestion = (parentNodeId, question) => {
+  const handleSecondQuestion = (parentNodeId, question, answerFromLLM, metadata = {}) => {
     // 부모 노드 정보 가져오기
     const parentNode = data.nodes.find(n => n.id === parentNodeId);
     if (!parentNode) {
       return;
     }
 
-    // 실제 답변 생성
-    const answer = `${parentNode.keyword || parentNode.id} 관련 질문 "${question}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
+    const fallbackAnswer = `${parentNode.keyword || parentNode.id} 관련 질문 "${question}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
+    const answer = typeof answerFromLLM === 'string' && answerFromLLM.trim()
+      ? answerFromLLM.trim()
+      : fallbackAnswer;
 
     // QuestionService를 통해 새 노드 데이터 생성 (실제 답변 포함)
     const newNodeData = questionService.current.createSecondQuestionNode(parentNodeId, question, answer, data.nodes);
@@ -191,7 +193,7 @@ const HierarchicalForceTree = () => {
     const timestamp = Date.now();
     const initialConversation = [
       { id: `${timestamp}-user`, role: 'user', text: question },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete' }
+      { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata }
     ];
     conversationStoreRef.current.set(newNodeData.id, initialConversation);
 
@@ -227,6 +229,17 @@ const HierarchicalForceTree = () => {
       const targetId = normalizeId(l.target);
       if (!map.has(sourceId)) map.set(sourceId, []);
       map.get(sourceId).push(targetId);
+    });
+    return map;
+  }, [data.links]);
+
+  const parentByChild = React.useMemo(() => {
+    const map = new Map();
+    const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+    data.links.forEach((link) => {
+      const sourceId = normalizeId(link.source);
+      const targetId = normalizeId(link.target);
+      map.set(targetId, sourceId);
     });
     return map;
   }, [data.links]);
@@ -287,38 +300,52 @@ const HierarchicalForceTree = () => {
     setShowBootstrapChat(isEmpty);
   }, [data.nodes]);
 
-  const handleBootstrapSubmit = (text) => {
+  const handleBootstrapSubmit = async (text) => {
     if (!text || !text.trim()) return;
-    const rootId = `root_${Date.now().toString(36)}`;
+
     const userQuestion = text.trim();
-    const bootstrapAnswer = `초기 질문을 받았습니다.\n\n- 주제: ${userQuestion}\n- 시작 노드를 생성했어요. 이어서 하위 항목을 추가하거나 질문을 이어가세요.`;
-    const rootNode = {
-      id: rootId,
-      keyword: userQuestion,
-      fullText: '',
-      level: 0,
-      size: 20,
-    };
-    const newData = {
-      nodes: [rootNode],
-      links: [],
-    };
-    setData(newData);
-    // 초기 대화를 직접 채워 넣어 즉시 UI에 표시되도록 함
-    const ts = Date.now();
-    conversationStoreRef.current.set(rootId, [
-      { id: `${ts}-user`, role: 'user', text: userQuestion, timestamp: ts },
-      { id: `${ts}-assistant`, role: 'assistant', text: bootstrapAnswer, status: 'complete', timestamp: ts },
-    ]);
-    // 루트 노드는 두 번째 질문에서 분기되도록 카운트를 1로 설정
+    const timestamp = Date.now();
+
     try {
+      const response = await handleRequestAnswer({
+        node: { id: '__bootstrap__' },
+        question: userQuestion,
+        isRootNode: true,
+      });
+
+      const rootId = `root_${Date.now().toString(36)}`;
+      const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
+      const keyword = userQuestion.split(/\s+/).slice(0, 3).join(' ');
+
+      const rootNode = {
+        id: rootId,
+        keyword: keyword || userQuestion,
+        fullText: answer || userQuestion,
+        level: 0,
+        size: 20,
+        status: 'answered',
+        question: userQuestion,
+        answer,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      setData({ nodes: [rootNode], links: [] });
+
+      conversationStoreRef.current.set(rootId, [
+        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
+      ]);
+
       questionService.current.setQuestionCount(rootId, 1);
-    } catch (e) {
-      // no-op
+      setExpandedNodeId(rootId);
+      setSelectedNodeId(rootId);
+      setShowBootstrapChat(false);
+    } catch (error) {
+      const message = error?.message || '루트 노드 생성 중 오류가 발생했습니다.';
+      window.jarvisAPI?.log?.('error', 'bootstrap_failed', { message });
+      throw error;
     }
-    setExpandedNodeId(rootId);
-    setSelectedNodeId(rootId);
-    setShowBootstrapChat(false);
   };
 
   const handleConversationChange = (nodeId, messages) => {
@@ -327,6 +354,81 @@ const HierarchicalForceTree = () => {
       Array.isArray(messages) ? messages.map((message) => ({ ...message })) : []
     );
   };
+
+  const buildContextMessages = useCallback((nodeId) => {
+    if (!nodeId) return [];
+
+    const chain = [];
+    const guard = new Set();
+    let current = nodeId;
+
+    while (current) {
+      if (guard.has(current)) break;
+      guard.add(current);
+      chain.unshift(current);
+      current = parentByChild.get(current) || null;
+    }
+
+    const collected = [];
+    chain.forEach((id) => {
+      const history = conversationStoreRef.current.get(id) || [];
+      history.forEach((entry) => {
+        if (!entry || typeof entry.text !== 'string') {
+          return;
+        }
+        const text = entry.text.trim();
+        if (!text) {
+          return;
+        }
+        const role = entry.role === 'assistant' ? 'assistant' : 'user';
+        collected.push({ role, content: text });
+      });
+    });
+
+    const MAX_HISTORY_MESSAGES = 12;
+    return collected.length > MAX_HISTORY_MESSAGES
+      ? collected.slice(collected.length - MAX_HISTORY_MESSAGES)
+      : collected;
+  }, [parentByChild]);
+
+  const invokeAgent = useCallback(async (channel, payload = {}) => {
+    const api = window.jarvisAPI;
+    if (!api || typeof api[channel] !== 'function') {
+      throw new Error('AI 에이전트 브리지가 준비되지 않았습니다.');
+    }
+    const result = await api[channel](payload);
+    if (!result?.success) {
+      const message = result?.error?.message || 'AI 응답을 가져오지 못했습니다.';
+      const code = result?.error?.code || 'agent_error';
+      const error = new Error(message);
+      error.code = code;
+      throw error;
+    }
+    return result;
+  }, []);
+
+  const handleRequestAnswer = useCallback(
+    async ({ node: targetNode, question, isRootNode }) => {
+      const trimmedQuestion = (question || '').trim();
+      if (!trimmedQuestion) {
+        throw new Error('질문이 비어있습니다.');
+      }
+
+      const nodeId = targetNode?.id;
+      const historyMessages = buildContextMessages(nodeId);
+      const messages = [...historyMessages, { role: 'user', content: trimmedQuestion }];
+
+      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', {
+        question: trimmedQuestion,
+        messages,
+        nodeId,
+        isRootNode,
+      });
+
+      return response;
+    },
+    [buildContextMessages, invokeAgent],
+  );
 
   const handlePlaceholderCreate = (parentNodeId, keywords) => {
     if (!Array.isArray(keywords) || keywords.length === 0) return;
@@ -373,6 +475,46 @@ const HierarchicalForceTree = () => {
     setSelectedNodeId(parentNodeId);
     setExpandedNodeId(parentNodeId);
   };
+
+  const handleAnswerComplete = useCallback((nodeId, payload = {}) => {
+    if (!nodeId) return;
+
+    const question = typeof payload.question === 'string' ? payload.question.trim() : '';
+    const answer = typeof payload.answer === 'string' ? payload.answer.trim() : '';
+
+    setData((prev) => {
+      const nextNodes = prev.nodes.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+
+        const nextKeyword = node.status === 'placeholder' && question
+          ? question.split(/\s+/).slice(0, 3).join(' ')
+          : node.keyword;
+
+        return {
+          ...node,
+          keyword: nextKeyword || node.keyword,
+          fullText: answer || node.fullText || '',
+          question: question || node.question || '',
+          answer: answer || node.answer || '',
+          status: 'answered',
+          updatedAt: Date.now(),
+        };
+      });
+
+      return {
+        ...prev,
+        nodes: nextNodes,
+      };
+    });
+  }, []);
+
+  const handleAnswerError = useCallback((nodeId, payload = {}) => {
+    if (!nodeId) return;
+    const message = payload?.error?.message || 'answer request failed';
+    window.jarvisAPI?.log?.('warn', 'agent_answer_error', { nodeId, message });
+  }, []);
 
   // 노드 및 하위 노드 제거 함수
   const removeNodeAndDescendants = (nodeId) => {
@@ -1004,6 +1146,9 @@ const HierarchicalForceTree = () => {
                     questionService={questionService.current}
                     initialConversation={getInitialConversationForNode(node.id)}
                     onConversationChange={(messages) => handleConversationChange(node.id, messages)}
+                    onRequestAnswer={handleRequestAnswer}
+                    onAnswerComplete={handleAnswerComplete}
+                    onAnswerError={handleAnswerError}
                     onRemoveNode={removeNodeAndDescendants}
                     hasChildren={(childrenByParent.get(node.id) || []).length > 0}
                     isCollapsed={collapsedNodeIds.has(node.id)}

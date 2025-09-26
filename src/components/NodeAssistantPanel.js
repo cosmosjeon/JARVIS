@@ -93,6 +93,9 @@ const NodeAssistantPanel = ({
   isRootNode: isRootNodeProp = false,
   bootstrapMode = false,
   onBootstrapFirstSend,
+  onRequestAnswer,
+  onAnswerComplete,
+  onAnswerError,
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -390,46 +393,19 @@ const NodeAssistantPanel = ({
     onConversationChange(messages.map((message) => ({ ...message })));
   }, [messages, onConversationChange]);
 
-  const sendResponse = useCallback(
-    (question, { skipSecondQuestionCheck = false, overrideAnswerText } = {}) => {
-      clearTypingTimers();
+  const animateAssistantResponse = useCallback(
+    (assistantId, answerText, context = {}) => {
+      const characters = Array.from(answerText || '');
 
-      const resolvedIsRootNode = isRootNodeProp;
-
-      // 동작 복원: 루트 노드는 2번째 질문일 때만 생성, 그 외 노드는 즉시 생성
-      let shouldCreateChild = false;
-      if (!skipSecondQuestionCheck) {
-        shouldCreateChild = resolvedIsRootNode
-          ? questionServiceRef.current.incrementQuestionCount(node.id)
-          : true;
-      }
-
-      if (shouldCreateChild && onSecondQuestion) {
-        onSecondQuestion(node.id, question);
-      }
-
-      const responseText = overrideAnswerText ?? buildAnswerText(summary, question);
-      const timestamp = Date.now();
-      const userId = `${timestamp}-user`;
-      setMessages((prev) => [
-        ...prev,
-        { id: userId, role: 'user', text: question },
-      ]);
-
-      const characters = Array.from(responseText);
-      const assistantId = `${timestamp}-assistant`;
-
-      setMessages((prev) => [
-        ...prev,
-        { id: assistantId, role: 'assistant', text: '', status: 'typing' },
-      ]);
-
-      if (!characters.length) {
+      if (characters.length === 0) {
         setMessages((prev) =>
           prev.map((message) =>
-            message.id === assistantId ? { ...message, status: 'complete' } : message,
+            message.id === assistantId
+              ? { ...message, text: '', status: 'complete' }
+              : message,
           ),
         );
+        onAnswerComplete?.(node.id, { ...context, answer: '' });
         return;
       }
 
@@ -452,12 +428,107 @@ const NodeAssistantPanel = ({
         if (index >= characters.length) {
           clearInterval(intervalId);
           typingTimers.current = typingTimers.current.filter((timer) => timer !== intervalId);
+          onAnswerComplete?.(node.id, { ...context, answer: typedText });
         }
       }, TYPING_INTERVAL_MS);
 
       typingTimers.current.push(intervalId);
     },
-    [clearTypingTimers, summary, node.id, onSecondQuestion, isRootNodeProp],
+    [node.id, onAnswerComplete],
+  );
+
+  const sendResponse = useCallback(
+    async (question, { skipSecondQuestionCheck = false, overrideAnswerText } = {}) => {
+      clearTypingTimers();
+
+      const resolvedIsRootNode = isRootNodeProp;
+
+      let shouldCreateChild = false;
+      if (!skipSecondQuestionCheck) {
+        shouldCreateChild = resolvedIsRootNode
+          ? questionServiceRef.current.incrementQuestionCount(node.id)
+          : true;
+      }
+
+      const timestamp = Date.now();
+      const userId = `${timestamp}-user`;
+      const assistantId = `${timestamp}-assistant`;
+
+      setMessages((prev) => [
+        ...prev,
+        { id: userId, role: 'user', text: question },
+        { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
+      ]);
+
+      try {
+        let answerText = overrideAnswerText ?? '';
+        let metadata = null;
+
+        if (!answerText) {
+          if (typeof onRequestAnswer === 'function') {
+            const result = await onRequestAnswer({
+              node,
+              question,
+              isRootNode: resolvedIsRootNode,
+              shouldCreateChild,
+            });
+            answerText = result?.answer ?? '';
+            metadata = result || {};
+          } else {
+            answerText = buildAnswerText(summary, question);
+          }
+        }
+
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId
+              ? { ...message, text: '', status: 'typing' }
+              : message,
+          ),
+        );
+
+        animateAssistantResponse(assistantId, answerText, {
+          question,
+          metadata,
+          shouldCreateChild,
+          isRootNode: resolvedIsRootNode,
+        });
+
+        if (shouldCreateChild && onSecondQuestion) {
+          onSecondQuestion(node.id, question, answerText, metadata);
+        }
+      } catch (error) {
+        const messageText = error?.message || '요청 처리 중 오류가 발생했습니다.';
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId
+              ? { ...message, text: `⚠️ ${messageText}`, status: 'error' }
+              : message,
+          ),
+        );
+        if (resolvedIsRootNode && !skipSecondQuestionCheck) {
+          const current = questionServiceRef.current.getQuestionCount(node.id);
+          questionServiceRef.current.setQuestionCount(node.id, Math.max(current - 1, 0));
+        }
+        onAnswerError?.(node.id, {
+          question,
+          error,
+          shouldCreateChild,
+          isRootNode: resolvedIsRootNode,
+        });
+      }
+    },
+    [
+      animateAssistantResponse,
+      clearTypingTimers,
+      isRootNodeProp,
+      node,
+      onAnswerError,
+      onRequestAnswer,
+      onSecondQuestion,
+      questionServiceRef,
+      summary,
+    ],
   );
 
   useEffect(() => {
@@ -471,22 +542,22 @@ const NodeAssistantPanel = ({
     });
   }, [node.questionData, normalizedInitialConversation.length, sendResponse]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = composerValue.trim();
     if (!trimmed) return;
 
     if (bootstrapMode) {
       const hasAnyUser = messages.some((m) => m.role === 'user');
       if (!hasAnyUser && typeof onBootstrapFirstSend === 'function') {
-        onBootstrapFirstSend(trimmed);
+        await onBootstrapFirstSend(trimmed);
         setComposerValue('');
         return;
       }
     }
 
-    sendResponse(trimmed);
+    await sendResponse(trimmed);
     setComposerValue('');
-  }, [composerValue, sendResponse]);
+  }, [bootstrapMode, composerValue, messages, onBootstrapFirstSend, sendResponse]);
 
   const handleKeyDown = useCallback(
     (event) => {
@@ -499,7 +570,7 @@ const NodeAssistantPanel = ({
           }
           return;
         }
-        handleSend();
+        handleSend().catch(() => {});
       }
     },
     [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode],
@@ -580,7 +651,7 @@ const NodeAssistantPanel = ({
           className="glass-surface flex items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
           onSubmit={(event) => {
             event.preventDefault();
-            handleSend();
+            handleSend().catch(() => {});
           }}
           style={{ pointerEvents: 'auto', zIndex: 1002 }}
         >

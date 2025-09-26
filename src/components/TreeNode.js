@@ -26,6 +26,9 @@ const TreeNode = ({
   questionService,
   initialConversation = [],
   onConversationChange = () => { },
+  onRequestAnswer,
+  onAnswerComplete,
+  onAnswerError,
   onRemoveNode,
   hasChildren = false,
   isCollapsed = false,
@@ -247,12 +250,15 @@ const TreeNode = ({
             onConversationChange={onConversationChange}
             nodeSummary={memoizedSummary}
             isRootNode={memoizedIsRoot}
+            onRequestAnswer={onRequestAnswer}
+            onAnswerComplete={onAnswerComplete}
+            onAnswerError={onAnswerError}
           />
         </div>
       </motion.div>,
       overlayElement,
     );
-  }, [shouldUsePortal, isPositioned, overlayElement, smartPosition, adjustedSize, node, color, handlePanelSizeChange, onSecondQuestion, onPlaceholderCreate, questionService, initialConversation, onConversationChange, memoizedSummary, memoizedIsRoot]);
+  }, [shouldUsePortal, isPositioned, overlayElement, smartPosition, adjustedSize, node, color, handlePanelSizeChange, onSecondQuestion, onPlaceholderCreate, questionService, initialConversation, onConversationChange, memoizedSummary, memoizedIsRoot, onRequestAnswer, onAnswerComplete, onAnswerError]);
 
   return (
     <>
@@ -341,6 +347,9 @@ const TreeNode = ({
               onConversationChange={onConversationChange}
               nodeSummary={memoizedSummary}
               isRootNode={memoizedIsRoot}
+              onRequestAnswer={onRequestAnswer}
+              onAnswerComplete={onAnswerComplete}
+              onAnswerError={onAnswerError}
             />
           </div>
         </foreignObject>

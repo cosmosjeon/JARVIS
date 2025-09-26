@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   exportLogs: (options) => ipcRenderer.invoke('logs:export', options),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (payload) => ipcRenderer.invoke('settings:update', payload),
+  askRoot: (payload) => ipcRenderer.invoke('agent:askRoot', payload),
+  askChild: (payload) => ipcRenderer.invoke('agent:askChild', payload),
   log: (level, message, meta) => ipcRenderer.invoke('logger:write', { level, message, meta }),
   onLog: (handler) => {
     if (typeof handler !== 'function') {

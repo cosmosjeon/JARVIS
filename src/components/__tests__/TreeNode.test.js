@@ -51,7 +51,10 @@ describe('TreeNode', () => {
 
     // Expect TreeNode to bubble the branch request to its parent
     expect(mockOnSecondQuestion).toHaveBeenCalledTimes(1);
-    expect(mockOnSecondQuestion).toHaveBeenCalledWith(node.id, '두 번째 메시지');
+    const callArgs = mockOnSecondQuestion.mock.calls[0];
+    expect(callArgs[0]).toBe(node.id);
+    expect(callArgs[1]).toBe('두 번째 메시지');
+    expect(typeof callArgs[2]).toBe('string');
 
     jest.useRealTimers();
   });
