@@ -91,6 +91,8 @@ const NodeAssistantPanel = ({
   onConversationChange = () => { },
   nodeSummary,
   isRootNode: isRootNodeProp = false,
+  bootstrapMode = false,
+  onBootstrapFirstSend,
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -472,6 +474,15 @@ const NodeAssistantPanel = ({
   const handleSend = useCallback(() => {
     const trimmed = composerValue.trim();
     if (!trimmed) return;
+
+    if (bootstrapMode) {
+      const hasAnyUser = messages.some((m) => m.role === 'user');
+      if (!hasAnyUser && typeof onBootstrapFirstSend === 'function') {
+        onBootstrapFirstSend(trimmed);
+        setComposerValue('');
+        return;
+      }
+    }
 
     sendResponse(trimmed);
     setComposerValue('');

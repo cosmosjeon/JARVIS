@@ -3,7 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import TreeNode from '../TreeNode';
-import { treeData } from '../../data/treeData';
 import QuestionService from '../../services/QuestionService';
 import { PANEL_SIZES } from '../NodeAssistantPanel';
 
@@ -15,7 +14,7 @@ describe('TreeNode', () => {
   it('bubbles branch requests from NodeAssistantPanel to parent', async () => {
     jest.useFakeTimers();
 
-    const node = treeData.nodes[0]; // CEO node
+    const node = { id: 'root', keyword: 'Root', fullText: '', level: 0, size: 20 };
     const mockOnSecondQuestion = jest.fn();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
@@ -60,7 +59,7 @@ describe('TreeNode', () => {
   it('maintains question count across re-renders when sharing QuestionService', async () => {
     jest.useFakeTimers();
 
-    const node = treeData.nodes[0];
+    const node = { id: 'root', keyword: 'Root', fullText: '', level: 0, size: 20 };
     const sharedQuestionService = new QuestionService();
     const mockOnSecondQuestion = jest.fn();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
@@ -136,7 +135,7 @@ describe('TreeNode', () => {
   it('restores expanded panel size when reopening with existing assistant replies', async () => {
     jest.useFakeTimers();
 
-    const node = treeData.nodes[0];
+    const node = { id: 'root', keyword: 'Root', fullText: '', level: 0, size: 20 };
     const storedConversation = [
       { id: 'seed-user', role: 'user', text: '이전 질문' },
       { id: 'seed-assistant', role: 'assistant', text: '이전 답변', status: 'complete' },

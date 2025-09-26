@@ -6,6 +6,7 @@ import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
+import NodeAssistantPanel from './NodeAssistantPanel';
 
 const WINDOW_CHROME_HEIGHT = 48;
 
@@ -42,6 +43,7 @@ const HierarchicalForceTree = () => {
   const [isResizing, setIsResizing] = useState(false);
   const isIgnoringMouseRef = useRef(false);
   const [isPassThrough, setIsPassThrough] = useState(false);
+  const [showBootstrapChat, setShowBootstrapChat] = useState(false);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -272,19 +274,52 @@ const HierarchicalForceTree = () => {
     return stored ? stored.map((message) => ({ ...message })) : [];
   };
 
-  const rootNodeForDragHandle = React.useMemo(() => {
-    const rootId = getRootNodeId();
-    if (!rootId) return null;
-    return nodes.find((node) => node.id === rootId) || null;
-  }, [nodes, data]);
-
+  // 노드가 없어도 드래그 핸들을 항상 표시하기 위한 고정 위치
   const rootDragHandlePosition = React.useMemo(() => {
-    if (!rootNodeForDragHandle) return null;
-    // 고정 위치: 화면 상단 중앙에 고정 (줌/팬 변환 무시)
     const screenX = dimensions.width / 2;
     const screenY = 32; // 화면 상단에서 32px 떨어진 고정 위치
     return { x: screenX, y: screenY };
-  }, [rootNodeForDragHandle, dimensions.width]);
+  }, [dimensions.width]);
+
+  // 초기 부팅 시(빈 그래프) 드래그 핸들 바로 아래에 채팅창 표시
+  useEffect(() => {
+    const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
+    setShowBootstrapChat(isEmpty);
+  }, [data.nodes]);
+
+  const handleBootstrapSubmit = (text) => {
+    if (!text || !text.trim()) return;
+    const rootId = `root_${Date.now().toString(36)}`;
+    const userQuestion = text.trim();
+    const bootstrapAnswer = `초기 질문을 받았습니다.\n\n- 주제: ${userQuestion}\n- 시작 노드를 생성했어요. 이어서 하위 항목을 추가하거나 질문을 이어가세요.`;
+    const rootNode = {
+      id: rootId,
+      keyword: userQuestion,
+      fullText: '',
+      level: 0,
+      size: 20,
+    };
+    const newData = {
+      nodes: [rootNode],
+      links: [],
+    };
+    setData(newData);
+    // 초기 대화를 직접 채워 넣어 즉시 UI에 표시되도록 함
+    const ts = Date.now();
+    conversationStoreRef.current.set(rootId, [
+      { id: `${ts}-user`, role: 'user', text: userQuestion, timestamp: ts },
+      { id: `${ts}-assistant`, role: 'assistant', text: bootstrapAnswer, status: 'complete', timestamp: ts },
+    ]);
+    // 루트 노드는 두 번째 질문에서 분기되도록 카운트를 1로 설정
+    try {
+      questionService.current.setQuestionCount(rootId, 1);
+    } catch (e) {
+      // no-op
+    }
+    setExpandedNodeId(rootId);
+    setSelectedNodeId(rootId);
+    setShowBootstrapChat(false);
+  };
 
   const handleConversationChange = (nodeId, messages) => {
     conversationStoreRef.current.set(
@@ -831,6 +866,37 @@ const HierarchicalForceTree = () => {
           }}
           aria-hidden="true"
         />
+      )}
+      {showBootstrapChat && rootDragHandlePosition && overlayElement && (
+        <div
+          className="pointer-events-none absolute"
+          style={{
+            left: `${rootDragHandlePosition.x}px`,
+            top: `${rootDragHandlePosition.y}px`,
+            transform: 'translate(-50%, 8px)',
+            width: 600,
+            height: 640,
+            zIndex: 1000,
+          }}
+          data-interactive-zone="true"
+        >
+          <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
+            <NodeAssistantPanel
+              node={{ id: 'bootstrap', keyword: '', fullText: '' }}
+              color={d3.schemeCategory10[0]}
+              onSizeChange={() => {}}
+              onSecondQuestion={() => {}}
+              onPlaceholderCreate={() => {}}
+              questionService={questionService.current}
+              initialConversation={[]}
+              onConversationChange={() => {}}
+              nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
+              isRootNode={true}
+              bootstrapMode={true}
+              onBootstrapFirstSend={handleBootstrapSubmit}
+            />
+          </div>
+        </div>
       )}
       <svg
         ref={svgRef}
