@@ -549,8 +549,34 @@ const NodeAssistantPanel = ({
     if (bootstrapMode) {
       const hasAnyUser = messages.some((m) => m.role === 'user');
       if (!hasAnyUser && typeof onBootstrapFirstSend === 'function') {
-        await onBootstrapFirstSend(trimmed);
-        setComposerValue('');
+        const timestamp = Date.now();
+        const userId = `${timestamp}-user`;
+        const assistantId = `${timestamp}-assistant`;
+
+        setMessages((prev) => [
+          ...prev,
+          { id: userId, role: 'user', text: trimmed },
+          { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
+        ]);
+
+        try {
+          await onBootstrapFirstSend(trimmed);
+        } catch (error) {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    text: `⚠️ ${error?.message || '루트 노드 생성 중 오류가 발생했습니다.'}`,
+                    status: 'error',
+                  }
+                : message,
+            ),
+          );
+          throw error;
+        } finally {
+          setComposerValue('');
+        }
         return;
       }
     }

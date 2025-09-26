@@ -170,7 +170,7 @@ const HierarchicalForceTree = () => {
     };
 
     setData(newData);
-    conversationStoreRef.current.set(newNode.id, []);
+    setConversationForNode(newNode.id, []);
   };
 
   // 노드 레벨 계산
@@ -257,7 +257,7 @@ const HierarchicalForceTree = () => {
       { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
       { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata }
     ];
-    conversationStoreRef.current.set(newNodeData.id, initialConversation);
+    setConversationForNode(newNodeData.id, initialConversation);
 
     setData((prev) => ({
       ...prev,
@@ -345,6 +345,13 @@ const HierarchicalForceTree = () => {
     return stored ? stored.map((message) => ({ ...message })) : [];
   };
 
+  const setConversationForNode = useCallback((nodeId, messages) => {
+    const normalized = Array.isArray(messages)
+      ? messages.map((message) => ({ ...message }))
+      : [];
+    conversationStoreRef.current.set(nodeId, normalized);
+  }, []);
+
   // 노드가 없어도 드래그 핸들을 항상 표시하기 위한 고정 위치
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
@@ -363,6 +370,11 @@ const HierarchicalForceTree = () => {
 
     const userQuestion = text.trim();
     const timestamp = Date.now();
+
+    setConversationForNode('__bootstrap__', [
+      { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
+    ]);
 
     try {
       const response = await handleRequestAnswer({
@@ -390,16 +402,21 @@ const HierarchicalForceTree = () => {
 
       setData({ nodes: [rootNode], links: [] });
 
-      conversationStoreRef.current.set(rootId, [
+      setConversationForNode(rootId, [
         { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
         { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
       ]);
+      conversationStoreRef.current.delete('__bootstrap__');
 
       questionService.current.setQuestionCount(rootId, 1);
       setExpandedNodeId(rootId);
       setSelectedNodeId(rootId);
       setShowBootstrapChat(false);
     } catch (error) {
+      setConversationForNode('__bootstrap__', [
+        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: '⚠️ 루트 노드 생성 중 오류가 발생했습니다.', status: 'error', timestamp: Date.now() },
+      ]);
       const message = error?.message || '루트 노드 생성 중 오류가 발생했습니다.';
       window.jarvisAPI?.log?.('error', 'bootstrap_failed', { message });
       throw error;
@@ -407,10 +424,7 @@ const HierarchicalForceTree = () => {
   };
 
   const handleConversationChange = (nodeId, messages) => {
-    conversationStoreRef.current.set(
-      nodeId,
-      Array.isArray(messages) ? messages.map((message) => ({ ...message })) : []
-    );
+    setConversationForNode(nodeId, messages);
   };
 
   const buildContextMessages = useCallback((nodeId) => {
@@ -527,7 +541,7 @@ const HierarchicalForceTree = () => {
 
     setData(newData);
     placeholderNodes.forEach((node) => {
-      conversationStoreRef.current.set(node.id, []);
+      setConversationForNode(node.id, []);
     });
 
     setSelectedNodeId(parentNodeId);
@@ -638,7 +652,7 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     data.nodes.forEach((node) => {
       if (!conversationStoreRef.current.has(node.id)) {
-        conversationStoreRef.current.set(node.id, []);
+        setConversationForNode(node.id, []);
       }
     });
   }, [data.nodes]);
@@ -1105,14 +1119,14 @@ const HierarchicalForceTree = () => {
         >
           <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
             <NodeAssistantPanel
-              node={{ id: 'bootstrap', keyword: '', fullText: '' }}
+              node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
               color={d3.schemeCategory10[0]}
               onSizeChange={() => {}}
               onSecondQuestion={() => {}}
               onPlaceholderCreate={() => {}}
               questionService={questionService.current}
-              initialConversation={[]}
-              onConversationChange={() => {}}
+              initialConversation={getInitialConversationForNode('__bootstrap__')}
+              onConversationChange={(messages) => handleConversationChange('__bootstrap__', messages)}
               nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
               isRootNode={true}
               bootstrapMode={true}
