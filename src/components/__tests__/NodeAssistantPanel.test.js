@@ -2,7 +2,6 @@ import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import NodeAssistantPanel, { PANEL_SIZES } from '../NodeAssistantPanel';
-import { treeData } from '../../data/treeData';
 import { createTreeNodeSummary, isTreeRootNode } from '../../services/TreeSummaryService';
 
 jest.mock('web-highlighter', () => {
@@ -50,7 +49,7 @@ describe('NodeAssistantPanel', () => {
   });
 
   it('초기 렌더링이 예상된 스냅샷과 일치한다', () => {
-    const node = treeData.nodes[0];
+    const node = { id: 'root', keyword: 'Root', fullText: '' };
     const summary = createTreeNodeSummary(node);
 
     const { asFragment } = render(
@@ -68,7 +67,7 @@ describe('NodeAssistantPanel', () => {
   it('starts empty and shows path-style placeholder, then renders centered markdown after first question', async () => {
     jest.useFakeTimers();
 
-    const node = treeData.nodes[0];
+    const node = { id: 'root', keyword: 'Root', fullText: '' };
     const handleSizeChange = jest.fn();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
@@ -111,7 +110,7 @@ describe('NodeAssistantPanel', () => {
   });
 
   it('토글 버튼으로 하이라이트 모드를 전환하고 Highlighter 인스턴스를 관리한다', async () => {
-    const node = treeData.nodes[0];
+    const node = { id: 'root', keyword: 'Root', fullText: '' };
     const user = userEvent.setup();
 
     const summary = createTreeNodeSummary(node);

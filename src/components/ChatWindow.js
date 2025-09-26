@@ -1,98 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ChatWindow = ({ isOpen, onClose, nodeData }) => {
+// anchorPosition: { x, y } 가 전달되면 해당 좌표 기준으로 고정 위치에 렌더링
+// onSubmit 이 전달되면 첫 전송 시 상위에서 처리하도록 콜백 호출
+const ChatWindow = ({ isOpen, onClose, nodeData, anchorPosition, onSubmit }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [isComposing, setIsComposing] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Dummy messages based on node type
-  const getDummyMessages = (node) => {
-    const baseMessages = [
-      {
-        id: 1,
-        sender: 'system',
-        text: `${node.keyword || node.id}에 대한 정보를 제공해드릴게요.`,
-        timestamp: new Date(Date.now() - 300000).toLocaleTimeString()
-      },
-      {
-        id: 2,
-        sender: 'user',
-        text: '현재 업무 현황은 어떤가요?',
-        timestamp: new Date(Date.now() - 240000).toLocaleTimeString()
-      }
-    ];
-
-    const nodeSpecificMessages = {
-      'CEO': [
-        {
-          id: 3,
-          sender: 'assistant',
-          text: '전체 회사 전략을 수립하고 이끌어가고 있습니다. 현재 Q4 목표 달성을 위해 각 부서와 협력하고 있어요.',
-          timestamp: new Date(Date.now() - 180000).toLocaleTimeString()
-        }
-      ],
-      'CTO': [
-        {
-          id: 3,
-          sender: 'assistant',
-          text: '기술 로드맵을 검토하고 새로운 아키텍처 도입을 준비 중입니다. AI 기술 스택 업그레이드도 진행하고 있어요.',
-          timestamp: new Date(Date.now() - 180000).toLocaleTimeString()
-        }
-      ],
-      'CFO': [
-        {
-          id: 3,
-          sender: 'assistant',
-          text: '재무 계획 수립과 예산 관리를 담당하고 있습니다. 투자 포트폴리오 최적화 작업을 진행 중이에요.',
-          timestamp: new Date(Date.now() - 180000).toLocaleTimeString()
-        }
-      ],
-      'CMO': [
-        {
-          id: 3,
-          sender: 'assistant',
-          text: '마케팅 캠페인 기획과 브랜드 전략을 수립하고 있습니다. 신제품 런칭을 위한 준비를 하고 있어요.',
-          timestamp: new Date(Date.now() - 180000).toLocaleTimeString()
-        }
-      ],
-      'Eng Mgr': [
-        {
-          id: 3,
-          sender: 'assistant',
-          text: '개발팀 리드와 기술 전략을 담당하고 있습니다. 현재 새로운 프로젝트 아키텍처 설계를 진행 중이에요.',
-          timestamp: new Date(Date.now() - 180000).toLocaleTimeString()
-        }
-      ]
-    };
-
-    const specificMessages = nodeSpecificMessages[node.keyword || node.id] || [
-      {
-        id: 3,
-        sender: 'assistant',
-        text: `${node.keyword || node.id} 역할을 맡아 업무를 진행하고 있습니다. 팀과 협력하여 목표를 달성하고 있어요.`,
-        timestamp: new Date(Date.now() - 180000).toLocaleTimeString()
-      }
-    ];
-
-    return [...baseMessages, ...specificMessages, {
-      id: 4,
-      sender: 'user',
-      text: '더 자세한 정보를 알려주세요.',
-      timestamp: new Date(Date.now() - 120000).toLocaleTimeString()
-    }, {
-      id: 5,
-      sender: 'assistant',
-      text: '네, 궁금한 점이 있으시면 언제든 말씀해 주세요!',
-      timestamp: new Date(Date.now() - 60000).toLocaleTimeString()
-    }];
-  };
+  // 더미 메시지 생성 제거: 초기 메시지는 빈 배열 유지
 
   useEffect(() => {
     if (isOpen && nodeData) {
-      setMessages(getDummyMessages(nodeData));
+      setMessages([]);
     }
   }, [isOpen, nodeData]);
 
@@ -120,16 +42,20 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
       setMessages(prev => [...prev, userMessage]);
       setNewMessage('');
 
-      // Simulate assistant response
-      setTimeout(() => {
-        const assistantMessage = {
-          id: messages.length + 2,
-          sender: 'assistant',
-          text: '답변을 준비 중입니다. 잠시만 기다려주세요.',
-          timestamp: new Date().toLocaleTimeString()
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-      }, 1000);
+      if (typeof onSubmit === 'function') {
+        onSubmit(userMessage.text);
+      } else {
+        // 기본 동작: 간단한 응답 시뮬레이션 유지
+        setTimeout(() => {
+          const assistantMessage = {
+            id: messages.length + 2,
+            sender: 'assistant',
+            text: '답변을 준비 중입니다. 잠시만 기다려주세요.',
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        }, 1000);
+      }
     }
   };
 
@@ -156,8 +82,9 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xl"
-        onClick={onClose}
+        className={anchorPosition ? undefined : "fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xl"}
+        style={anchorPosition ? { position: 'absolute', left: anchorPosition.x, top: anchorPosition.y } : undefined}
+        onClick={anchorPosition ? undefined : onClose}
       >
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
@@ -166,6 +93,7 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
           className="glass-shell relative flex h-[600px] w-96 flex-col rounded-2xl"
           onClick={(e) => e.stopPropagation()}
+          style={anchorPosition ? { transform: 'translate(-50%, 8px)' } : undefined}
         >
           <div className="pointer-events-none absolute inset-0 rounded-2xl bg-white/10 opacity-40 mix-blend-screen" />
           {/* Header */}
@@ -181,12 +109,14 @@ const ChatWindow = ({ isOpen, onClose, nodeData }) => {
                 <p className="text-sm text-slate-300 opacity-80">온라인</p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="text-slate-300 transition hover:text-slate-100"
-            >
-              ×
-            </button>
+            {!anchorPosition && (
+              <button
+                onClick={onClose}
+                className="text-slate-300 transition hover:text-slate-100"
+              >
+                ×
+              </button>
+            )}
           </div>
 
           {/* Messages */}

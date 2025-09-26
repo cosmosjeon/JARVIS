@@ -3,7 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import TreeNode from '../TreeNode';
-import { treeData } from '../../data/treeData';
 import QuestionService from '../../services/QuestionService';
 import { PANEL_SIZES } from '../NodeAssistantPanel';
 
@@ -15,7 +14,7 @@ describe('TreeNode', () => {
   it('bubbles branch requests from NodeAssistantPanel to parent', async () => {
     jest.useFakeTimers();
 
-    const node = treeData.nodes[0]; // CEO node
+    const node = { id: 'root', keyword: 'Root', fullText: '', level: 0, size: 20 };
     const mockOnSecondQuestion = jest.fn();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
@@ -52,7 +51,10 @@ describe('TreeNode', () => {
 
     // Expect TreeNode to bubble the branch request to its parent
     expect(mockOnSecondQuestion).toHaveBeenCalledTimes(1);
-    expect(mockOnSecondQuestion).toHaveBeenCalledWith(node.id, '두 번째 메시지');
+    const callArgs = mockOnSecondQuestion.mock.calls[0];
+    expect(callArgs[0]).toBe(node.id);
+    expect(callArgs[1]).toBe('두 번째 메시지');
+    expect(typeof callArgs[2]).toBe('string');
 
     jest.useRealTimers();
   });
@@ -60,7 +62,7 @@ describe('TreeNode', () => {
   it('maintains question count across re-renders when sharing QuestionService', async () => {
     jest.useFakeTimers();
 
-    const node = treeData.nodes[0];
+    const node = { id: 'root', keyword: 'Root', fullText: '', level: 0, size: 20 };
     const sharedQuestionService = new QuestionService();
     const mockOnSecondQuestion = jest.fn();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
@@ -136,7 +138,7 @@ describe('TreeNode', () => {
   it('restores expanded panel size when reopening with existing assistant replies', async () => {
     jest.useFakeTimers();
 
-    const node = treeData.nodes[0];
+    const node = { id: 'root', keyword: 'Root', fullText: '', level: 0, size: 20 };
     const storedConversation = [
       { id: 'seed-user', role: 'user', text: '이전 질문' },
       { id: 'seed-assistant', role: 'assistant', text: '이전 답변', status: 'complete' },

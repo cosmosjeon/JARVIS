@@ -6,6 +6,7 @@ import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
+import NodeAssistantPanel from './NodeAssistantPanel';
 
 const WINDOW_CHROME_HEIGHT = 48;
 
@@ -42,6 +43,7 @@ const HierarchicalForceTree = () => {
   const [isResizing, setIsResizing] = useState(false);
   const isIgnoringMouseRef = useRef(false);
   const [isPassThrough, setIsPassThrough] = useState(false);
+  const [showBootstrapChat, setShowBootstrapChat] = useState(false);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -173,15 +175,17 @@ const HierarchicalForceTree = () => {
   };
 
   // 2번째 질문 처리 함수
-  const handleSecondQuestion = (parentNodeId, question) => {
+  const handleSecondQuestion = (parentNodeId, question, answerFromLLM, metadata = {}) => {
     // 부모 노드 정보 가져오기
     const parentNode = data.nodes.find(n => n.id === parentNodeId);
     if (!parentNode) {
       return;
     }
 
-    // 실제 답변 생성
-    const answer = `${parentNode.keyword || parentNode.id} 관련 질문 "${question}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
+    const fallbackAnswer = `${parentNode.keyword || parentNode.id} 관련 질문 "${question}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
+    const answer = typeof answerFromLLM === 'string' && answerFromLLM.trim()
+      ? answerFromLLM.trim()
+      : fallbackAnswer;
 
     // QuestionService를 통해 새 노드 데이터 생성 (실제 답변 포함)
     const newNodeData = questionService.current.createSecondQuestionNode(parentNodeId, question, answer, data.nodes);
@@ -189,7 +193,7 @@ const HierarchicalForceTree = () => {
     const timestamp = Date.now();
     const initialConversation = [
       { id: `${timestamp}-user`, role: 'user', text: question },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete' }
+      { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata }
     ];
     conversationStoreRef.current.set(newNodeData.id, initialConversation);
 
@@ -225,6 +229,17 @@ const HierarchicalForceTree = () => {
       const targetId = normalizeId(l.target);
       if (!map.has(sourceId)) map.set(sourceId, []);
       map.get(sourceId).push(targetId);
+    });
+    return map;
+  }, [data.links]);
+
+  const parentByChild = React.useMemo(() => {
+    const map = new Map();
+    const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+    data.links.forEach((link) => {
+      const sourceId = normalizeId(link.source);
+      const targetId = normalizeId(link.target);
+      map.set(targetId, sourceId);
     });
     return map;
   }, [data.links]);
@@ -272,19 +287,66 @@ const HierarchicalForceTree = () => {
     return stored ? stored.map((message) => ({ ...message })) : [];
   };
 
-  const rootNodeForDragHandle = React.useMemo(() => {
-    const rootId = getRootNodeId();
-    if (!rootId) return null;
-    return nodes.find((node) => node.id === rootId) || null;
-  }, [nodes, data]);
-
+  // 노드가 없어도 드래그 핸들을 항상 표시하기 위한 고정 위치
   const rootDragHandlePosition = React.useMemo(() => {
-    if (!rootNodeForDragHandle) return null;
-    // 고정 위치: 화면 상단 중앙에 고정 (줌/팬 변환 무시)
     const screenX = dimensions.width / 2;
     const screenY = 32; // 화면 상단에서 32px 떨어진 고정 위치
     return { x: screenX, y: screenY };
-  }, [rootNodeForDragHandle, dimensions.width]);
+  }, [dimensions.width]);
+
+  // 초기 부팅 시(빈 그래프) 드래그 핸들 바로 아래에 채팅창 표시
+  useEffect(() => {
+    const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
+    setShowBootstrapChat(isEmpty);
+  }, [data.nodes]);
+
+  const handleBootstrapSubmit = async (text) => {
+    if (!text || !text.trim()) return;
+
+    const userQuestion = text.trim();
+    const timestamp = Date.now();
+
+    try {
+      const response = await handleRequestAnswer({
+        node: { id: '__bootstrap__' },
+        question: userQuestion,
+        isRootNode: true,
+      });
+
+      const rootId = `root_${Date.now().toString(36)}`;
+      const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
+      const keyword = userQuestion.split(/\s+/).slice(0, 3).join(' ');
+
+      const rootNode = {
+        id: rootId,
+        keyword: keyword || userQuestion,
+        fullText: answer || userQuestion,
+        level: 0,
+        size: 20,
+        status: 'answered',
+        question: userQuestion,
+        answer,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      setData({ nodes: [rootNode], links: [] });
+
+      conversationStoreRef.current.set(rootId, [
+        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
+      ]);
+
+      questionService.current.setQuestionCount(rootId, 1);
+      setExpandedNodeId(rootId);
+      setSelectedNodeId(rootId);
+      setShowBootstrapChat(false);
+    } catch (error) {
+      const message = error?.message || '루트 노드 생성 중 오류가 발생했습니다.';
+      window.jarvisAPI?.log?.('error', 'bootstrap_failed', { message });
+      throw error;
+    }
+  };
 
   const handleConversationChange = (nodeId, messages) => {
     conversationStoreRef.current.set(
@@ -292,6 +354,81 @@ const HierarchicalForceTree = () => {
       Array.isArray(messages) ? messages.map((message) => ({ ...message })) : []
     );
   };
+
+  const buildContextMessages = useCallback((nodeId) => {
+    if (!nodeId) return [];
+
+    const chain = [];
+    const guard = new Set();
+    let current = nodeId;
+
+    while (current) {
+      if (guard.has(current)) break;
+      guard.add(current);
+      chain.unshift(current);
+      current = parentByChild.get(current) || null;
+    }
+
+    const collected = [];
+    chain.forEach((id) => {
+      const history = conversationStoreRef.current.get(id) || [];
+      history.forEach((entry) => {
+        if (!entry || typeof entry.text !== 'string') {
+          return;
+        }
+        const text = entry.text.trim();
+        if (!text) {
+          return;
+        }
+        const role = entry.role === 'assistant' ? 'assistant' : 'user';
+        collected.push({ role, content: text });
+      });
+    });
+
+    const MAX_HISTORY_MESSAGES = 12;
+    return collected.length > MAX_HISTORY_MESSAGES
+      ? collected.slice(collected.length - MAX_HISTORY_MESSAGES)
+      : collected;
+  }, [parentByChild]);
+
+  const invokeAgent = useCallback(async (channel, payload = {}) => {
+    const api = window.jarvisAPI;
+    if (!api || typeof api[channel] !== 'function') {
+      throw new Error('AI 에이전트 브리지가 준비되지 않았습니다.');
+    }
+    const result = await api[channel](payload);
+    if (!result?.success) {
+      const message = result?.error?.message || 'AI 응답을 가져오지 못했습니다.';
+      const code = result?.error?.code || 'agent_error';
+      const error = new Error(message);
+      error.code = code;
+      throw error;
+    }
+    return result;
+  }, []);
+
+  const handleRequestAnswer = useCallback(
+    async ({ node: targetNode, question, isRootNode }) => {
+      const trimmedQuestion = (question || '').trim();
+      if (!trimmedQuestion) {
+        throw new Error('질문이 비어있습니다.');
+      }
+
+      const nodeId = targetNode?.id;
+      const historyMessages = buildContextMessages(nodeId);
+      const messages = [...historyMessages, { role: 'user', content: trimmedQuestion }];
+
+      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', {
+        question: trimmedQuestion,
+        messages,
+        nodeId,
+        isRootNode,
+      });
+
+      return response;
+    },
+    [buildContextMessages, invokeAgent],
+  );
 
   const handlePlaceholderCreate = (parentNodeId, keywords) => {
     if (!Array.isArray(keywords) || keywords.length === 0) return;
@@ -338,6 +475,46 @@ const HierarchicalForceTree = () => {
     setSelectedNodeId(parentNodeId);
     setExpandedNodeId(parentNodeId);
   };
+
+  const handleAnswerComplete = useCallback((nodeId, payload = {}) => {
+    if (!nodeId) return;
+
+    const question = typeof payload.question === 'string' ? payload.question.trim() : '';
+    const answer = typeof payload.answer === 'string' ? payload.answer.trim() : '';
+
+    setData((prev) => {
+      const nextNodes = prev.nodes.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+
+        const nextKeyword = node.status === 'placeholder' && question
+          ? question.split(/\s+/).slice(0, 3).join(' ')
+          : node.keyword;
+
+        return {
+          ...node,
+          keyword: nextKeyword || node.keyword,
+          fullText: answer || node.fullText || '',
+          question: question || node.question || '',
+          answer: answer || node.answer || '',
+          status: 'answered',
+          updatedAt: Date.now(),
+        };
+      });
+
+      return {
+        ...prev,
+        nodes: nextNodes,
+      };
+    });
+  }, []);
+
+  const handleAnswerError = useCallback((nodeId, payload = {}) => {
+    if (!nodeId) return;
+    const message = payload?.error?.message || 'answer request failed';
+    window.jarvisAPI?.log?.('warn', 'agent_answer_error', { nodeId, message });
+  }, []);
 
   // 노드 및 하위 노드 제거 함수
   const removeNodeAndDescendants = (nodeId) => {
@@ -832,6 +1009,37 @@ const HierarchicalForceTree = () => {
           aria-hidden="true"
         />
       )}
+      {showBootstrapChat && rootDragHandlePosition && overlayElement && (
+        <div
+          className="pointer-events-none absolute"
+          style={{
+            left: `${rootDragHandlePosition.x}px`,
+            top: `${rootDragHandlePosition.y}px`,
+            transform: 'translate(-50%, 8px)',
+            width: 600,
+            height: 640,
+            zIndex: 1000,
+          }}
+          data-interactive-zone="true"
+        >
+          <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
+            <NodeAssistantPanel
+              node={{ id: 'bootstrap', keyword: '', fullText: '' }}
+              color={d3.schemeCategory10[0]}
+              onSizeChange={() => {}}
+              onSecondQuestion={() => {}}
+              onPlaceholderCreate={() => {}}
+              questionService={questionService.current}
+              initialConversation={[]}
+              onConversationChange={() => {}}
+              nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
+              isRootNode={true}
+              bootstrapMode={true}
+              onBootstrapFirstSend={handleBootstrapSubmit}
+            />
+          </div>
+        </div>
+      )}
       <svg
         ref={svgRef}
         width={dimensions.width}
@@ -938,6 +1146,9 @@ const HierarchicalForceTree = () => {
                     questionService={questionService.current}
                     initialConversation={getInitialConversationForNode(node.id)}
                     onConversationChange={(messages) => handleConversationChange(node.id, messages)}
+                    onRequestAnswer={handleRequestAnswer}
+                    onAnswerComplete={handleAnswerComplete}
+                    onAnswerError={handleAnswerError}
                     onRemoveNode={removeNodeAndDescendants}
                     hasChildren={(childrenByParent.get(node.id) || []).length > 0}
                     isCollapsed={collapsedNodeIds.has(node.id)}

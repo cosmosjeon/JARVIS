@@ -1,3 +1,4 @@
+require('dotenv').config();
 const path = require('path');
 const { app, BrowserWindow, ipcMain, nativeTheme, shell, screen, globalShortcut } = require('electron');
 const { createLogBridge } = require('./logger');
@@ -6,6 +7,7 @@ const accessibility = require('./accessibility');
 const logs = require('./logs');
 const settingsStore = require('./settings');
 const { createTray } = require('./tray');
+const { LLMService } = require('./services/llm-service');
 
 const isDev = !app.isPackaged;
 
@@ -16,6 +18,7 @@ let logger;
 let hotkeyManager;
 let tray;
 let broadcastWindowState = () => {};
+let llmService;
 
 const WINDOW_CHROME_HEIGHT = 48; // 커스텀 타이틀바 높이와 맞춤
 
@@ -273,6 +276,7 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
   loadSettings();
   logger = createLogBridge(() => mainWindow);
+  llmService = new LLMService({ logger });
   createWindow();
   applyHotkeySettings();
   applyTraySettings();
@@ -305,6 +309,44 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('logs:export', (_event, payload = {}) => logs.exportLogs(payload));
+
+  const handleLLMRequest = async (_event, payload = {}) => {
+    try {
+      const {
+        messages = [],
+        model,
+        temperature,
+        maxTokens,
+      } = payload;
+
+      const sanitizedMessages = Array.isArray(messages) ? messages : [];
+
+      const result = await llmService.ask({
+        messages: sanitizedMessages,
+        model,
+        temperature,
+        maxTokens,
+      });
+
+      return { success: true, ...result };
+    } catch (error) {
+      const code = error?.code || 'openai_request_failed';
+      const message = error?.message || 'OpenAI request failed';
+      if (logger && typeof logger.error === 'function') {
+        logger.error('agent_request_failed', { code, message });
+      }
+      return {
+        success: false,
+        error: {
+          code,
+          message,
+        },
+      };
+    }
+  };
+
+  ipcMain.handle('agent:askRoot', handleLLMRequest);
+  ipcMain.handle('agent:askChild', handleLLMRequest);
 
   ipcMain.handle('settings:get', () => ({ success: true, settings: { ...settings } }));
 
