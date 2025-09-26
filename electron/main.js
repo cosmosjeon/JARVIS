@@ -14,6 +14,7 @@ const isDev = !app.isPackaged;
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 let mainWindow;
+let libraryWindow;
 let logger;
 let hotkeyManager;
 let tray;
@@ -174,6 +175,16 @@ const broadcastSettings = () => {
   mainWindow.webContents.send('settings:changed', { ...settings });
 };
 
+const getRendererUrl = (mode = 'widget') => {
+  const baseUrl = isDev
+    ? process.env.ELECTRON_START_URL || 'http://localhost:3000'
+    : `file://${path.join(__dirname, '..', 'build', 'index.html')}`;
+  if (mode === 'widget') {
+    return baseUrl.includes('?') ? `${baseUrl}&mode=widget` : `${baseUrl}?mode=widget`;
+  }
+  return baseUrl.includes('?') ? `${baseUrl}&mode=${mode}` : `${baseUrl}?mode=${mode}`;
+};
+
 const createWindow = () => {
   const isMac = process.platform === 'darwin';
 
@@ -259,9 +270,7 @@ const createWindow = () => {
     }
   });
 
-  const startUrl = isDev
-    ? process.env.ELECTRON_START_URL || 'http://localhost:3000'
-    : `file://${path.join(__dirname, '..', 'build', 'index.html')}`;
+  const startUrl = getRendererUrl('widget');
 
   logger?.info('Loading URL', { startUrl });
   mainWindow.loadURL(startUrl);
@@ -272,12 +281,60 @@ const createWindow = () => {
   });
 };
 
+const createLibraryWindow = () => {
+  if (libraryWindow && !libraryWindow.isDestroyed()) {
+    libraryWindow.focus();
+    return;
+  }
+
+  libraryWindow = new BrowserWindow({
+    width: 1280,
+    height: 840,
+    minWidth: 960,
+    minHeight: 600,
+    show: false,
+    title: 'JARVIS Library',
+    backgroundColor: '#0f172a',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      devTools: isDev,
+      spellcheck: false,
+    },
+  });
+
+  const libraryUrl = getRendererUrl('library');
+  logger?.info('Loading library URL', { libraryUrl });
+  libraryWindow.loadURL(libraryUrl);
+
+  libraryWindow.on('ready-to-show', () => {
+    libraryWindow?.show();
+  });
+
+  libraryWindow.on('closed', () => {
+    libraryWindow = null;
+  });
+
+  libraryWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  libraryWindow.webContents.on('will-navigate', (event, url) => {
+    if (!libraryWindow) return;
+    if (url !== libraryWindow.webContents.getURL()) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+};
+
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
   loadSettings();
   logger = createLogBridge(() => mainWindow);
   llmService = new LLMService({ logger });
   createWindow();
+  createLibraryWindow();
   applyHotkeySettings();
   applyTraySettings();
   registerPassThroughShortcut();
@@ -533,8 +590,11 @@ app.whenReady().then(() => {
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow) {
       createWindow();
+    }
+    if (!libraryWindow) {
+      createLibraryWindow();
     }
   });
 });
