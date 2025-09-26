@@ -1,5 +1,15 @@
-require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
+require('dotenv').config();
+
+// Fallback for setups that keep the OpenAI key in API_KEY.env
+if (!process.env.OPENAI_API_KEY) {
+  const apiKeyEnvPath = path.resolve(__dirname, '..', 'API_KEY.env');
+  if (fs.existsSync(apiKeyEnvPath)) {
+    require('dotenv').config({ path: apiKeyEnvPath });
+  }
+}
+
 const { app, BrowserWindow, ipcMain, nativeTheme, shell, screen, globalShortcut } = require('electron');
 const { createLogBridge } = require('./logger');
 const { createHotkeyManager } = require('./hotkeys');
@@ -404,6 +414,85 @@ app.whenReady().then(() => {
 
   ipcMain.handle('agent:askRoot', handleLLMRequest);
   ipcMain.handle('agent:askChild', handleLLMRequest);
+
+  const normalizeKeyword = (value) => {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return '';
+    }
+    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) {
+      return '';
+    }
+    const keyword = tokens[0];
+    return keyword.slice(0, 48);
+  };
+
+  ipcMain.handle('agent:extractKeyword', async (_event, payload = {}) => {
+    const question = typeof payload.question === 'string' ? payload.question.trim() : '';
+    if (!question) {
+      return {
+        success: false,
+        error: {
+          code: 'invalid_question',
+          message: 'Question text is required to extract a keyword.',
+        },
+      };
+    }
+
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: 'Extract the single most important keyword from the user question. Respond with exactly one word, without any additional text.',
+        },
+        {
+          role: 'user',
+          content: question,
+        },
+      ];
+
+      const result = await llmService.ask({
+        messages,
+        model: payload.model,
+        temperature: typeof payload.temperature === 'number' ? payload.temperature : 0,
+        maxTokens: payload.maxTokens ?? 8,
+      });
+
+      const keyword = normalizeKeyword(result?.answer);
+      if (!keyword) {
+        return {
+          success: false,
+          error: {
+            code: 'empty_keyword',
+            message: 'AI did not return a usable keyword.',
+          },
+        };
+      }
+
+      return {
+        success: true,
+        keyword,
+        usage: result?.usage || null,
+      };
+    } catch (error) {
+      const code = error?.code || 'keyword_extraction_failed';
+      const message = error?.message || 'Failed to extract keyword from question.';
+      if (logger && typeof logger.warn === 'function') {
+        logger.warn('agent_keyword_extraction_failed', { code, message });
+      }
+      return {
+        success: false,
+        error: {
+          code,
+          message,
+        },
+      };
+    }
+  });
 
   ipcMain.handle('settings:get', () => ({ success: true, settings: { ...settings } }));
 

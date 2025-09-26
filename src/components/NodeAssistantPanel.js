@@ -495,7 +495,7 @@ const NodeAssistantPanel = ({
         });
 
         if (shouldCreateChild && onSecondQuestion) {
-          onSecondQuestion(node.id, question, answerText, metadata);
+          await onSecondQuestion(node.id, question, answerText, metadata);
         }
       } catch (error) {
         const messageText = error?.message || '요청 처리 중 오류가 발생했습니다.';

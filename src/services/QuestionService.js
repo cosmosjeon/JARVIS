@@ -37,11 +37,15 @@ class QuestionService {
      * @param {Array} nodes - 노드 배열
      * @returns {Object} - 새 노드 데이터
      */
-    createSecondQuestionNode(parentNodeId, question, answer, nodes = []) {
+    createSecondQuestionNode(parentNodeId, question, answer, nodes = [], options = {}) {
         const timestamp = Date.now();
         const randomId = Math.random().toString(36).substr(2, 9);
 
-        const firstWord = (question || '')
+        const overrideKeyword = typeof options.keyword === 'string'
+            ? options.keyword.trim()
+            : '';
+
+        const fallbackKeyword = (question || '')
             .toString()
             .trim()
             .split(/\s+/)
@@ -49,7 +53,7 @@ class QuestionService {
 
         return {
             id: `node_${timestamp}_${randomId}`,
-            keyword: firstWord,
+            keyword: overrideKeyword || fallbackKeyword,
             fullText: `질문: ${question}\n\n답변: ${answer}`,
             level: this.getNodeLevel(parentNodeId, nodes) + 1,
             size: 12,
