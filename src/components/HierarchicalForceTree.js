@@ -958,12 +958,19 @@ const HierarchicalForceTree = () => {
       className="relative flex h-full w-full overflow-hidden bg-transparent"
       style={{
         // 투명 창에서 이전 프레임 잔상 방지: 독립 합성 레이어 확보
-        willChange: 'transform, opacity',
+        willChange: 'transform, opacity, background',
         transform: 'translateZ(0)',
         WebkitTransform: 'translateZ(0)',
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
+        // 인터렉티브 모드에서 미묘한 색상 추가 (투명도 유지)
+        background: isPassThrough 
+          ? 'transparent' 
+          : 'linear-gradient(135deg, rgba(30, 41, 59, 0.15), rgba(15, 23, 42, 0.25))',
+        backdropFilter: isPassThrough ? 'none' : 'blur(8px)',
+        WebkitBackdropFilter: isPassThrough ? 'none' : 'blur(8px)',
+        transition: 'background 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease',
       }}
     >
       <div
@@ -986,16 +993,23 @@ const HierarchicalForceTree = () => {
             width: 260,
             height: 68,
             borderRadius: 20,
-            border: '1px solid rgba(148, 163, 184, 0.35)',
-            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.35), rgba(15, 23, 42, 0.45))',
-            boxShadow: '0 18px 42px rgba(15, 23, 42, 0.32)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            border: isPassThrough 
+              ? '1px solid rgba(148, 163, 184, 0.15)' 
+              : '1px solid rgba(148, 163, 184, 0.35)',
+            background: isPassThrough 
+              ? 'transparent' 
+              : 'linear-gradient(135deg, rgba(30, 41, 59, 0.35), rgba(15, 23, 42, 0.45))',
+            boxShadow: isPassThrough 
+              ? 'none' 
+              : '0 18px 42px rgba(15, 23, 42, 0.32)',
+            backdropFilter: isPassThrough ? 'none' : 'blur(16px)',
+            WebkitBackdropFilter: isPassThrough ? 'none' : 'blur(16px)',
             WebkitAppRegion: 'drag',
             pointerEvents: 'auto',
             cursor: 'grab',
             padding: '12px 18px',
             zIndex: 40,
+            transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease',
           }}
           data-interactive-zone="true"
           onPointerDown={(event) => {
@@ -1046,9 +1060,12 @@ const HierarchicalForceTree = () => {
         height={dimensions.height}
         data-interactive-zone="true"
         style={{
-          background: 'rgba(0,0,0,0.001)',
+          background: isPassThrough 
+            ? 'rgba(0,0,0,0.001)' 
+            : 'linear-gradient(135deg, rgba(30, 41, 59, 0.08), rgba(15, 23, 42, 0.12))',
           // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
           pointerEvents: 'auto',
+          transition: 'background 0.3s ease',
         }}
       >
         {/* Arrow marker definition */}
