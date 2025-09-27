@@ -173,7 +173,6 @@ const HierarchicalForceTree = () => {
   const [overlayElement, setOverlayElement] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
   const isIgnoringMouseRef = useRef(false);
-  const [isPassThrough, setIsPassThrough] = useState(false);
   const [showBootstrapChat, setShowBootstrapChat] = useState(false);
   const treeSyncDebounceRef = useRef(null);
 
@@ -215,59 +214,9 @@ const HierarchicalForceTree = () => {
     }
   }, []);
 
-  useEffect(() => {
-    setWindowMousePassthrough(isPassThrough);
-    return () => setWindowMousePassthrough(false);
-  }, [isPassThrough, setWindowMousePassthrough]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
 
-    window.dispatchEvent(new CustomEvent('jarvis-interactive-mode:changed', {
-      detail: { enabled: !isPassThrough },
-    }));
 
-    return undefined;
-  }, [isPassThrough]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    const handleToggle = () => setIsPassThrough((prev) => !prev);
-    const handleSet = (event) => {
-      if (typeof event.detail?.enabled === 'boolean') {
-        setIsPassThrough(!event.detail.enabled);
-      }
-    };
-
-    window.addEventListener('jarvis-interactive-mode:toggle', handleToggle);
-    window.addEventListener('jarvis-interactive-mode:set', handleSet);
-
-    return () => {
-      window.removeEventListener('jarvis-interactive-mode:toggle', handleToggle);
-      window.removeEventListener('jarvis-interactive-mode:set', handleSet);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.jarvisAPI?.onPassThroughToggle !== 'function') {
-      return undefined;
-    }
-
-    const unsubscribe = window.jarvisAPI.onPassThroughToggle(() => {
-      setIsPassThrough((prev) => !prev);
-    });
-
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, []);
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -757,10 +706,10 @@ const HierarchicalForceTree = () => {
     conversationStoreRef.current.set(nodeId, normalized);
   }, []);
 
-  // 노드가 없어도 드래그 핸들을 항상 표시하기 위한 고정 위치
+  // 부트스트랩 채팅창 위치 (화면 상단 중앙)
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
-    const screenY = 20; // 화면 상단에서 20px 떨어진 고정 위치 (창에 딱 붙게)
+    const screenY = 20; // 화면 상단에서 20px 떨어진 고정 위치
     return { x: screenX, y: screenY };
   }, [dimensions.width]);
 
@@ -1295,9 +1244,6 @@ const HierarchicalForceTree = () => {
 
     svgSelection.on('pointerdown.background', handleBackgroundPointerDown);
     svgSelection.on('wheel.treepan', (event) => {
-      if (isPassThrough) {
-        return;
-      }
       if (isPinchZoomWheel(event)) {
         return;
       }
@@ -1442,31 +1388,16 @@ const HierarchicalForceTree = () => {
   };
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
-  const exitPassThroughAnd = (callback) => (event) => {
-    if (isPassThrough) {
-      setWindowMousePassthrough(false);
-      setIsPassThrough(false);
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      if (event && typeof event.stopPropagation === 'function') {
-        event.stopPropagation();
-      }
-    }
-    if (typeof callback === 'function') {
-      callback(event);
-    }
-  };
 
   const handleDrag = (nodeId) => {
     return d3.drag()
-      .on('start', exitPassThroughAnd((event) => {
+      .on('start', (event) => {
         // 드래그 시작 시 애니메이션 일시 정지
         if (animationRef.current) {
           animationRef.current.stop();
         }
-      }))
-      .on('drag', exitPassThroughAnd((event) => {
+      })
+      .on('drag', (event) => {
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
           // 현재 줌/팬이 적용된 컨테이너 좌표계에서 포인터 좌표를 계산
@@ -1476,7 +1407,7 @@ const HierarchicalForceTree = () => {
           node.y = pointer[1];
           setNodes([...nodes]);
         }
-      }))
+      })
       .on('end', (event) => {
         // 드래그 종료 시 tree layout으로 다시 정렬
         const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
@@ -1502,7 +1433,7 @@ const HierarchicalForceTree = () => {
     nodes.forEach(node => {
       const selection = svg.selectAll(`[data-node-id="${node.id}"]`);
 
-      if (expandedNodeId || isPassThrough) {
+      if (expandedNodeId) {
         selection.on('.drag', null);
         selection.style('cursor', 'default');
       } else {
@@ -1510,7 +1441,7 @@ const HierarchicalForceTree = () => {
         selection.style('cursor', 'grab');
       }
     });
-  }, [nodes, expandedNodeId, isPassThrough]);
+  }, [nodes, expandedNodeId]);
 
   useEffect(() => {
     if (!expandedNodeId) return;
@@ -1555,24 +1486,11 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        // 인터렉티브 모드에서 미묘한 색상 추가 (투명도 유지)
-        background: isPassThrough
-          ? 'transparent'
-          : 'linear-gradient(135deg, rgba(30, 41, 59, 0.15), rgba(15, 23, 42, 0.25))',
-        backdropFilter: isPassThrough ? 'none' : 'blur(8px)',
-        WebkitBackdropFilter: isPassThrough ? 'none' : 'blur(8px)',
-        transition: 'background 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease',
+        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.15), rgba(15, 23, 42, 0.25))',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
       }}
     >
-      <div
-        className="pointer-events-none absolute right-4 top-4 text-xs font-medium tracking-wide"
-        style={{
-          color: isPassThrough ? 'rgba(226,232,240,0.7)' : 'rgba(34,197,94,0.9)',
-          textShadow: isPassThrough ? '0 0 8px rgba(15,23,42,0.55)' : '0 0 10px rgba(34,197,94,0.65)',
-        }}
-      >
-        {isPassThrough ? '패스스루 모드 (⌘+2)' : '인터랙션 모드 (⌘+2)'}
-      </div>
       {initializingTree && (
         <div className="absolute inset-0 z-[1200] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-slate-200">
@@ -1592,61 +1510,6 @@ const HierarchicalForceTree = () => {
           자동 저장 중...
         </div>
       ) : null}
-      {rootDragHandlePosition && (
-        <div
-          className="pointer-events-auto"
-          style={{
-            position: 'absolute',
-            left: `${rootDragHandlePosition.x}px`,
-            top: `${rootDragHandlePosition.y}px`,
-            transform: 'translate(-50%, -50%)',
-            width: 130,
-            height: 34,
-            borderRadius: 20,
-            border: isPassThrough
-              ? '1px solid rgba(148, 163, 184, 0.15)'
-              : '1px solid rgba(148, 163, 184, 0.35)',
-            background: isPassThrough
-              ? 'transparent'
-              : 'linear-gradient(135deg, rgba(30, 41, 59, 0.35), rgba(15, 23, 42, 0.45))',
-            boxShadow: isPassThrough
-              ? 'none'
-              : '0 18px 42px rgba(15, 23, 42, 0.32)',
-            backdropFilter: isPassThrough ? 'none' : 'blur(16px)',
-            WebkitBackdropFilter: isPassThrough ? 'none' : 'blur(16px)',
-            WebkitAppRegion: 'drag',
-            pointerEvents: 'auto',
-            cursor: 'grab',
-            padding: '2px 8px',
-            zIndex: 40,
-            transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-          data-interactive-zone="true"
-          onPointerDown={(event) => {
-            if (isPassThrough) {
-              event.preventDefault();
-              event.stopPropagation();
-              setWindowMousePassthrough(false);
-              setIsPassThrough(false);
-            }
-          }}
-          aria-hidden="true"
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              height: '100%',
-              pointerEvents: 'none',
-            }}
-          >
-          </div>
-        </div>
-      )}
       {showBootstrapChat && rootDragHandlePosition && overlayElement && (
         <div
           className="pointer-events-none absolute"
@@ -1684,12 +1547,10 @@ const HierarchicalForceTree = () => {
         height={dimensions.height}
         data-interactive-zone="true"
         style={{
-          background: isPassThrough
-            ? 'rgba(0,0,0,0.001)'
-            : 'linear-gradient(135deg, rgba(30, 41, 59, 0.08), rgba(15, 23, 42, 0.12))',
+          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.08), rgba(15, 23, 42, 0.12))',
           // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
           pointerEvents: 'auto',
-          transition: 'background 0.3s ease',
+          WebkitAppRegion: 'drag',
         }}
       >
         {/* Arrow marker definition */}
@@ -1714,7 +1575,7 @@ const HierarchicalForceTree = () => {
           transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
           style={{ opacity: isResizing ? 0.999 : 1 }}
         >
-          <g className="links" style={{ pointerEvents: 'none' }}>
+          <g className="links" style={{ pointerEvents: 'none', WebkitAppRegion: 'no-drag' }}>
             <AnimatePresence>
               {links
                 // TreeLayoutService에서 이미 정렬된 링크 사용
@@ -1779,7 +1640,7 @@ const HierarchicalForceTree = () => {
           </g>
 
           {/* Nodes */}
-          <g className="nodes">
+          <g className="nodes" style={{ WebkitAppRegion: 'no-drag' }}>
             {nodes.map((node, index) => {
               // Tree layout에서는 depth를 사용
               const nodeDepth = node.depth || 0;
