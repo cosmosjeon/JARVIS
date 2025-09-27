@@ -3,6 +3,7 @@ import { Loader2, FolderTree as FolderIcon } from "lucide-react";
 
 import { Button } from "components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "components/ui/resizable";
+import Logo from "assets/admin-widget/logo.svg";
 
 import TreeCanvas from "./TreeCanvas";
 import LibraryQAPanel from "./LibraryQAPanel";
@@ -347,19 +348,27 @@ const LibraryApp = () => {
     <div className="flex h-screen bg-slate-950 text-slate-100">
       <aside className="flex w-64 flex-col border-r border-slate-900/60 bg-slate-950/80">
         <div className="border-b border-slate-900/60 px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-base font-semibold">저장된 트리</h1>
-              <p className="mt-1 text-xs text-slate-400">라이브러리에서 열 트리를 선택하세요.</p>
+          <div className="space-y-3">
+            {/* 로고와 제목 */}
+            <div className="flex items-center gap-3">
+              <img src={Logo} alt="VORAN" className="h-8 w-8 opacity-80" />
+              <div>
+                <h1 className="text-base font-semibold">저장된 트리</h1>
+                <p className="text-xs text-slate-400">라이브러리에서 열 트리를 선택하세요.</p>
+              </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowVoranBoxManager(true)}
-              className="h-8 px-2 text-xs text-slate-400 hover:text-slate-200"
-            >
-              VORAN BOX
-            </Button>
+
+            {/* VORAN BOX 버튼 */}
+            <div className="flex justify-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowVoranBoxManager(true)}
+                className="w-full h-9 px-4 text-sm font-medium text-slate-200 hover:text-slate-100 bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 hover:border-slate-600/60 rounded-lg transition-all duration-200"
+              >
+                VORAN BOX
+              </Button>
+            </div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -479,6 +488,7 @@ const LibraryApp = () => {
               size="sm"
               onClick={refreshLibrary}
               disabled={loading}
+              className="bg-slate-800/50 border-slate-600/50 hover:bg-slate-700/50 hover:border-slate-500/50"
             >
               {loading ? "새로고침 중" : "새로고침"}
             </Button>
@@ -509,6 +519,7 @@ const LibraryApp = () => {
                   setError(err);
                 }
               }}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               새 트리 만들기
             </Button>
@@ -520,6 +531,7 @@ const LibraryApp = () => {
                   signOut();
                 }
               }}
+              className="text-slate-300 hover:text-slate-100 hover:bg-slate-800/50"
             >
               로그아웃
             </Button>
