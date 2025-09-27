@@ -55,7 +55,16 @@ const HierarchicalForceTree = () => {
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
   const pendingTreeIdRef = useRef(null);
-  const treeLibrarySyncRef = useRef(new Map());
+  const zoomBehaviourRef = useRef(null);
+  const pendingFocusNodeIdRef = useRef(null);
+  const expandTimeoutRef = useRef(null);
+  const outsidePointerRef = useRef({
+    active: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    moved: false,
+  });
 
   const sessionInfo = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -735,6 +744,19 @@ const HierarchicalForceTree = () => {
     conversationStoreRef.current.set(nodeId, normalized);
   }, []);
 
+  const clearPendingExpansion = useCallback(() => {
+    pendingFocusNodeIdRef.current = null;
+    if (expandTimeoutRef.current) {
+      clearTimeout(expandTimeoutRef.current);
+      expandTimeoutRef.current = null;
+    }
+  }, []);
+
+  const collapseAssistantPanel = useCallback(() => {
+    clearPendingExpansion();
+    setExpandedNodeId(null);
+  }, [clearPendingExpansion]);
+
   // 부트스트랩 채팅창 위치 (화면 상단 중앙)
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
@@ -825,7 +847,7 @@ const HierarchicalForceTree = () => {
   const handleCloseNode = (nodeId) => {
     // 특정 노드를 닫기
     if (expandedNodeId === nodeId) {
-      setExpandedNodeId(null);
+      collapseAssistantPanel();
     }
   };
 
@@ -1128,7 +1150,7 @@ const HierarchicalForceTree = () => {
       setSelectedNodeId(null);
     }
     if (expandedNodeId && toRemove.has(expandedNodeId)) {
-      setExpandedNodeId(null);
+      collapseAssistantPanel();
     }
   };
 
@@ -1163,6 +1185,16 @@ const HierarchicalForceTree = () => {
       if (typeof evt.buttons === 'number') {
         const mask = evt.buttons;
         return (mask & 4) === 4 || (mask & 2) === 2;
+      }
+      return false;
+    };
+
+    const isPrimaryButtonDrag = (evt) => {
+      if (typeof evt.buttons === 'number') {
+        return (evt.buttons & 1) === 1;
+      }
+      if (typeof evt.button === 'number') {
+        return evt.button === 0;
       }
       return false;
     };
@@ -1216,8 +1248,48 @@ const HierarchicalForceTree = () => {
       .scaleExtent([0.3, 4])
       .filter((event) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target && target.closest('foreignObject')) return false;
-        if (target && target.closest('[data-node-id]')) return false;
+        const isForeignObject = target && target.closest('foreignObject');
+        if (isForeignObject) return false;
+
+        const panHandleElement = target && target.closest('[data-pan-handle="true"]');
+        const panBlocked = target && target.closest('[data-block-pan="true"]');
+        const withinNode = target && target.closest('[data-node-id]');
+
+        if (panHandleElement && !panBlocked) {
+          if (event.type === 'wheel') {
+            return isPinchZoomWheel(event);
+          }
+          if (allowTouchGesture(event)) {
+            return true;
+          }
+          if (event.type === 'pointerdown' || event.type === 'mousedown') {
+            return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
+          }
+          if (event.type === 'pointermove' || event.type === 'mousemove') {
+            return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
+          }
+          if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') {
+            return true;
+          }
+        }
+
+        if (withinNode) {
+          if (event.type === 'wheel') {
+            if (isPinchZoomWheel(event)) return true;
+            return false;
+          }
+          if (allowTouchGesture(event)) {
+            return true;
+          }
+          if (event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'mousedown' || event.type === 'mousemove') {
+            return isSecondaryButtonDrag(event);
+          }
+          if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') {
+            return true;
+          }
+          return false;
+        }
+
         if (event.type === 'wheel') {
           if (isPinchZoomWheel(event)) return true;
           if (isTrackpadScrollWheel(event)) return false;
@@ -1251,27 +1323,9 @@ const HierarchicalForceTree = () => {
       .call(zoomBehaviour)
       .on('dblclick.zoom', null);
 
-    const handleBackgroundPointerDown = (event) => {
-      if (!expandedNodeId) return;
-      const svgElement = svgSelection.node();
-      if (!svgElement) return;
-      const pointer = svgElement.createSVGPoint();
-      pointer.x = event.clientX;
-      pointer.y = event.clientY;
-      const screenPoint = pointer.matrixTransform(svgElement.getScreenCTM()?.inverse?.() ?? svgElement.getScreenCTM());
-      if (!screenPoint) {
-        setExpandedNodeId(null);
-        return;
-      }
-      const [x, y] = [screenPoint.x, screenPoint.y];
-      const target = event.target;
-      if (target instanceof Element && target.closest('[data-node-id]')) {
-        return;
-      }
-      setExpandedNodeId(null);
-    };
+    zoomBehaviourRef.current = zoomBehaviour;
 
-    svgSelection.on('pointerdown.background', handleBackgroundPointerDown);
+    svgSelection.on('pointerdown.background', null);
     svgSelection.on('wheel.treepan', (event) => {
       if (isPinchZoomWheel(event)) {
         return;
@@ -1296,9 +1350,11 @@ const HierarchicalForceTree = () => {
     });
 
     return () => {
-      svgSelection.on('pointerdown.background', null);
       svgSelection.on('.zoom', null);
       svgSelection.on('.treepan', null);
+      if (zoomBehaviourRef.current === zoomBehaviour) {
+        zoomBehaviourRef.current = null;
+      }
     };
   }, []);
 
@@ -1349,7 +1405,7 @@ const HierarchicalForceTree = () => {
     setData({ ...data, nodes: newNodes, links: newLinks });
     toRemove.forEach((id) => conversationStoreRef.current.delete(id));
     if (selectedNodeId && toRemove.has(selectedNodeId)) setSelectedNodeId(null);
-    if (expandedNodeId && toRemove.has(expandedNodeId)) setExpandedNodeId(null);
+    if (expandedNodeId && toRemove.has(expandedNodeId)) collapseAssistantPanel();
 
     hasCleanedQ2Ref.current = true;
   }, [data, selectedNodeId, expandedNodeId]);
@@ -1400,21 +1456,114 @@ const HierarchicalForceTree = () => {
     };
   }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
 
-  // Handle node click for assistant focus
-  const handleNodeClickForAssistant = (payload) => {
-    if (!payload) return;
+  const focusNodeToCenter = useCallback((node, options = {}) => {
+    if (!node || !svgRef.current) {
+      return Promise.resolve();
+    }
 
-    if (payload.type === 'dismiss') {
-      setExpandedNodeId(null);
+    const svgElement = svgRef.current;
+    const rect = typeof svgElement.getBoundingClientRect === 'function'
+      ? svgElement.getBoundingClientRect()
+      : null;
+
+    const fallbackWidth = typeof dimensions?.width === 'number' ? dimensions.width : 0;
+    const fallbackHeight = typeof dimensions?.height === 'number' ? dimensions.height : 0;
+
+    const width = rect?.width || fallbackWidth;
+    const height = rect?.height || fallbackHeight;
+
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return Promise.resolve();
+    }
+
+    const { duration = 620, scale: requestedScale } = options;
+    const nodeX = Number.isFinite(node.x) ? node.x : 0;
+    const nodeY = Number.isFinite(node.y) ? node.y : 0;
+    const currentScale = Number.isFinite(viewTransform.k) ? viewTransform.k : 1;
+    const preferredScale = typeof requestedScale === 'number' ? requestedScale : Math.max(currentScale, 1);
+    const targetScale = Math.min(Math.max(preferredScale, 0.3), 4);
+
+    const translateX = (width / 2) - (nodeX * targetScale);
+    const translateY = (height / 2) - (nodeY * targetScale);
+    const nextTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+
+    const svgSelection = d3.select(svgElement);
+    const zoomBehaviour = zoomBehaviourRef.current;
+
+    if (!zoomBehaviour) {
+      setViewTransform({ x: translateX, y: translateY, k: targetScale });
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const transition = svgSelection
+        .transition('focus-node')
+        .duration(duration)
+        .ease(d3.easeCubicInOut)
+        .call(zoomBehaviour.transform, nextTransform);
+
+      transition.on('end', resolve);
+      transition.on('interrupt', resolve);
+    });
+  }, [dimensions, viewTransform.k]);
+
+  // Handle node click for assistant focus
+  const handleNodeClickForAssistant = useCallback((payload) => {
+    if (!payload) {
       return;
     }
 
-    const node = payload;
-    if (!node || !node.id) return;
+    if (payload.type === 'dismiss') {
+      collapseAssistantPanel();
+      return;
+    }
 
-    setExpandedNodeId(node.id);
-    setSelectedNodeId(node.id);
-  };
+    const targetId = payload.id;
+    if (!targetId) {
+      return;
+    }
+
+    const layoutNode = nodes.find((candidate) => candidate.id === targetId) || payload;
+
+    pendingFocusNodeIdRef.current = targetId;
+    setSelectedNodeId(targetId);
+
+    setExpandedNodeId((current) => {
+      if (current && current !== targetId) {
+        return null;
+      }
+      return current;
+    });
+
+    Promise.resolve(focusNodeToCenter(layoutNode, { duration: 620 }))
+      .catch(() => undefined)
+      .then(() => {
+        if (pendingFocusNodeIdRef.current !== targetId) {
+          return;
+        }
+
+        if (expandTimeoutRef.current) {
+          clearTimeout(expandTimeoutRef.current);
+          expandTimeoutRef.current = null;
+        }
+
+        if (typeof window === 'undefined') {
+          setExpandedNodeId(targetId);
+          pendingFocusNodeIdRef.current = null;
+          return;
+        }
+
+        expandTimeoutRef.current = window.setTimeout(() => {
+          if (pendingFocusNodeIdRef.current === targetId) {
+            setExpandedNodeId(targetId);
+          }
+          expandTimeoutRef.current = null;
+          if (pendingFocusNodeIdRef.current === targetId) {
+            pendingFocusNodeIdRef.current = null;
+          }
+        }, 140);
+      });
+  }, [nodes, focusNodeToCenter]);
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
@@ -1484,20 +1633,84 @@ const HierarchicalForceTree = () => {
   }, [expandedNodeId, nodes]);
 
   useEffect(() => {
-    if (!expandedNodeId) return undefined;
-    if (typeof document === 'undefined') return undefined;
+    if (!expandedNodeId) {
+      outsidePointerRef.current = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        moved: false,
+      };
+      return undefined;
+    }
 
-    const handleDocumentPointerDown = (event) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest('[data-node-id]')) {
-        return;
-      }
-      setExpandedNodeId(null);
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const pointerState = outsidePointerRef.current;
+
+    const resetState = () => {
+      pointerState.active = false;
+      pointerState.pointerId = null;
+      pointerState.startX = 0;
+      pointerState.startY = 0;
+      pointerState.moved = false;
     };
 
-    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
-    return () => document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
-  }, [expandedNodeId]);
+    const handlePointerDown = (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-node-id]')) {
+        resetState();
+        return;
+      }
+
+      pointerState.active = true;
+      pointerState.pointerId = typeof event.pointerId === 'number' ? event.pointerId : null;
+      pointerState.startX = typeof event.clientX === 'number' ? event.clientX : 0;
+      pointerState.startY = typeof event.clientY === 'number' ? event.clientY : 0;
+      pointerState.moved = false;
+    };
+
+    const handlePointerMove = (event) => {
+      if (!pointerState.active) return;
+      if (pointerState.pointerId !== null && event.pointerId !== pointerState.pointerId) return;
+
+      const deltaX = Math.abs((typeof event.clientX === 'number' ? event.clientX : 0) - pointerState.startX);
+      const deltaY = Math.abs((typeof event.clientY === 'number' ? event.clientY : 0) - pointerState.startY);
+      if (deltaX > 6 || deltaY > 6) {
+        pointerState.moved = true;
+      }
+    };
+
+    const finalizePointer = (event) => {
+      if (!pointerState.active) return;
+      if (pointerState.pointerId !== null && event.pointerId !== pointerState.pointerId) {
+        resetState();
+        return;
+      }
+
+      const shouldClose = pointerState.moved === false;
+      resetState();
+
+      if (shouldClose) {
+        collapseAssistantPanel();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('pointermove', handlePointerMove, true);
+    document.addEventListener('pointerup', finalizePointer, true);
+    document.addEventListener('pointercancel', finalizePointer, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('pointermove', handlePointerMove, true);
+      document.removeEventListener('pointerup', finalizePointer, true);
+      document.removeEventListener('pointercancel', finalizePointer, true);
+      resetState();
+    };
+  }, [expandedNodeId, collapseAssistantPanel]);
 
   // 컴포넌트 언마운트 시 애니메이션 정리
   useEffect(() => {
@@ -1506,8 +1719,16 @@ const HierarchicalForceTree = () => {
         animationRef.current.stop();
       }
       treeAnimationService.current.cleanup();
+      clearPendingExpansion();
+      outsidePointerRef.current = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        moved: false,
+      };
     };
-  }, []);
+  }, [clearPendingExpansion]);
 
   return (
     <div
