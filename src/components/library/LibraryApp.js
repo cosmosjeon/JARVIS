@@ -202,7 +202,7 @@ const LibraryApp = () => {
       };
 
       const allNodesToDelete = [nodeId, ...getAllChildNodes(nodeId, selectedTree.treeData?.nodes || [])];
-      
+
       // 데이터베이스에서 노드들 삭제
       await deleteNodes({
         nodeIds: allNodesToDelete,
@@ -218,7 +218,7 @@ const LibraryApp = () => {
               treeData: {
                 ...tree.treeData,
                 nodes: (tree.treeData?.nodes || []).filter(node => !allNodesToDelete.includes(node.id)),
-                links: (tree.treeData?.links || []).filter(link => 
+                links: (tree.treeData?.links || []).filter(link =>
                   !allNodesToDelete.includes(link.source) && !allNodesToDelete.includes(link.target)
                 )
               }
@@ -353,9 +353,9 @@ const LibraryApp = () => {
         ) : error ? (
           <EmptyState message={error?.message || "트리를 불러오지 못했습니다."} />
         ) : selectedTree ? (
-          <div className="flex h-full">
+          <div className="flex h-full max-h-screen overflow-hidden">
             {/* 트리 뷰어 */}
-            <div className="flex-1">
+            <div className="flex-1 min-h-0">
               <TreeCanvas
                 selectedMemo={selectedTree}
                 onNodeSelect={handleNodeSelect}
@@ -364,7 +364,7 @@ const LibraryApp = () => {
             </div>
 
             {/* 질문 답변 패널 */}
-            <div className="w-80 border-l border-slate-900/60 bg-slate-950/40">
+            <div className="w-80 border-l border-slate-900/60 bg-slate-950/40 h-full max-h-screen overflow-hidden flex-shrink-0">
               <LibraryQAPanel
                 selectedNode={selectedNode}
                 selectedTree={selectedTree}

@@ -309,8 +309,8 @@ const LibraryQAPanel = ({
   const isApiAvailable = typeof window !== 'undefined' && window.jarvisAPI;
 
   return (
-    <Card className="flex h-full flex-col bg-card/80">
-      <CardHeader className="pb-3">
+    <Card className="flex h-full flex-col bg-card/80 overflow-hidden">
+      <CardHeader className="pb-3 flex-shrink-0">
         <CardTitle className="text-base flex items-center gap-2">
           <Bot className="h-4 w-4" />
           질문 답변
@@ -326,10 +326,10 @@ const LibraryQAPanel = ({
         </div>
       </CardHeader>
 
-      <CardContent className="flex flex-1 flex-col space-y-3">
+      <CardContent className="flex flex-1 flex-col space-y-3 min-h-0 overflow-hidden">
         {/* 메시지 영역 */}
-        <ScrollArea className="flex-1 pr-2">
-          <div className="space-y-3">
+        <ScrollArea className="flex-1 pr-2 min-h-0 max-h-full">
+          <div className="space-y-3 h-full">
             {messages.length === 0 ? (
               <div className="text-center text-sm text-muted-foreground py-8">
                 질문을 입력해보세요.
@@ -381,18 +381,19 @@ const LibraryQAPanel = ({
         )}
 
         {/* 질문 입력 */}
-        {!isApiAvailable ? (
-          <div className="text-center text-sm text-red-400 bg-red-50 dark:bg-red-950/20 p-3 rounded">
-            JARVIS API를 사용할 수 없습니다. Electron 환경에서 실행해주세요.
-          </div>
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSendMessage();
-            }}
-            className="flex items-end gap-2"
-          >
+        <div className="flex-shrink-0">
+          {!isApiAvailable ? (
+            <div className="text-center text-sm text-red-400 bg-red-50 dark:bg-red-950/20 p-3 rounded">
+              JARVIS API를 사용할 수 없습니다. Electron 환경에서 실행해주세요.
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              className="flex items-end gap-2"
+            >
             <textarea
               value={composerValue}
               onChange={(e) => setComposerValue(e.target.value)}
@@ -416,8 +417,9 @@ const LibraryQAPanel = ({
                 <Send className="h-4 w-4" />
               )}
             </Button>
-          </form>
-        )}
+            </form>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
