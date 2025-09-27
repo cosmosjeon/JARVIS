@@ -304,9 +304,10 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
         if (target && target.closest('[data-node-id]')) return false;
         // 더블클릭 이벤트는 비활성화
         if (event.type === 'dblclick') return false;
-        // 휠 이벤트는 Ctrl 키를 누른 상태에서만 허용
-        if (event.type === 'wheel') return event.ctrlKey;
-        return true;
+        // 휠 클릭(마우스 휠 버튼)은 Ctrl 키 없이도 허용
+        if (event.type === 'mousedown' && event.button === 1) return true;
+        // 다른 모든 이벤트는 Ctrl 키를 누른 상태에서만 허용
+        return event.ctrlKey;
       })
       .on('zoom', (event) => {
         setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
