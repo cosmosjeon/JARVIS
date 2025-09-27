@@ -4,8 +4,8 @@ import QuestionService from '../services/QuestionService';
 import { useSettings } from '../hooks/SettingsContext';
 
 export const PANEL_SIZES = {
-  compact: { width: 360, height: 180 },
-  expanded: { width: 600, height: 640 },
+  compact: { width: 1600, height: 900 },
+  expanded: { width: 1920, height: 1080 },
 };
 
 const TYPING_INTERVAL_MS = 18;
@@ -673,10 +673,36 @@ const NodeAssistantPanel = ({
       }}
       data-interactive-zone="true"
     >
-        <div
-          ref={highlightRootRef}
-          className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0"
-        >
+      <div
+        className="flex flex-wrap items-start justify-between gap-3 pb-2"
+        data-pan-handle="true"
+        style={{
+          cursor: 'grab',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-semibold text-slate-50">
+            {summary.label || node.keyword || node.id}
+          </p>
+          <p className="text-xs text-slate-200/70">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
+        </div>
+        <div className="flex items-center gap-2" data-block-pan="true">
+          <button
+            type="button"
+            onClick={onCloseNode}
+            className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={highlightRootRef}
+        className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0"
+      >
           <div className="flex h-full flex-col gap-3">
             {messages.map((message) => {
               const isAssistant = message.role === 'assistant';
@@ -707,6 +733,21 @@ const NodeAssistantPanel = ({
           </div>
         </div>
 
+        {/* 다중 질문 버튼 */}
+        <div className="flex justify-start -mb-2" data-block-pan="true">
+          <button
+            type="button"
+            onClick={handleHighlightToggle}
+            className={`glass-surface px-3 py-1 rounded-xl border border-white/15 text-xs font-medium transition-all duration-200 ${
+              isHighlightMode
+                ? 'bg-emerald-500/40 text-emerald-100 border-emerald-400/50'
+                : 'text-slate-100 hover:bg-white/20'
+            }`}
+          >
+            다중 질문
+          </button>
+        </div>
+
         <form
           className="glass-surface flex items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
           onSubmit={(event) => {
@@ -715,16 +756,6 @@ const NodeAssistantPanel = ({
           }}
           style={{ pointerEvents: 'auto', zIndex: 1002 }}
         >
-          <button
-            type="button"
-            aria-label="하이라이트 모드"
-            aria-pressed={isHighlightMode}
-            onClick={handleHighlightToggle}
-            className={`glass-chip flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-200/60 ${isHighlightMode ? 'bg-emerald-500/40 text-emerald-100' : 'bg-white/10 text-slate-100 hover:bg-white/20'
-              }`}
-          >
-            🖍
-          </button>
           <textarea
             ref={composerRef}
             value={composerValue}

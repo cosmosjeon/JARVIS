@@ -27,18 +27,32 @@ export const useSmartPositioning = (nodePosition, panelSize, viewTransform, cont
     const screenX = viewTransform.x + nodeX * viewTransform.k;
     const screenY = viewTransform.y + nodeY * viewTransform.k;
 
-    // Panel dimensions with some padding
-    const panelWidth = Math.min(panelSize.width, containerWidth * 0.8);
-    const panelHeight = Math.min(panelSize.height, containerHeight * 0.7);
-    
+    const desiredWidth = Math.min(
+      panelSize.width,
+      Math.min(Math.max(containerWidth - 48, containerWidth * 0.92), Math.max(containerWidth - 4, 0))
+    );
+    const desiredHeight = Math.min(
+      panelSize.height,
+      Math.min(Math.max(containerHeight - 64, containerHeight * 0.9), Math.max(containerHeight - 4, 0))
+    );
+
+    const panelWidth = Number.isFinite(desiredWidth) && desiredWidth > 0 ? desiredWidth : Math.max(containerWidth - 48, 240);
+    const panelHeight = Number.isFinite(desiredHeight) && desiredHeight > 0 ? desiredHeight : Math.max(containerHeight - 64, 200);
+
     // Calculate initial position (centered on node)
     let x = screenX - panelWidth / 2;
     let y = screenY - panelHeight / 2;
 
     // Adjust horizontal position to stay within bounds
-    const minX = 10; // Padding from left edge
-    const maxX = containerWidth - panelWidth - 10; // Padding from right edge
-    
+    let minX = 24; // Base padding from left edge
+    let maxX = containerWidth - panelWidth - 24; // Base padding from right edge
+
+    if (maxX < minX) {
+      const centeredMargin = Math.max((containerWidth - panelWidth) / 2, 0);
+      minX = Math.max(10, centeredMargin);
+      maxX = Math.max(containerWidth - panelWidth - minX, minX);
+    }
+
     if (x < minX) {
       x = minX;
     } else if (x > maxX) {
@@ -46,9 +60,15 @@ export const useSmartPositioning = (nodePosition, panelSize, viewTransform, cont
     }
 
     // Adjust vertical position to stay within bounds
-    const minY = 10; // Padding from top edge
-    const maxY = containerHeight - panelHeight - 10; // Padding from bottom edge
-    
+    let minY = 24; // Base padding from top edge
+    let maxY = containerHeight - panelHeight - 24; // Base padding from bottom edge
+
+    if (maxY < minY) {
+      const centeredVertical = Math.max((containerHeight - panelHeight) / 2, 0);
+      minY = Math.max(10, centeredVertical);
+      maxY = Math.max(containerHeight - panelHeight - minY, minY);
+    }
+
     if (y < minY) {
       y = minY;
     } else if (y > maxY) {
@@ -56,8 +76,8 @@ export const useSmartPositioning = (nodePosition, panelSize, viewTransform, cont
     }
 
     // If panel is too large for container, reduce size
-    const finalWidth = Math.min(panelWidth, containerWidth - 20);
-    const finalHeight = Math.min(panelHeight, containerHeight - 20);
+    const finalWidth = Math.min(panelWidth, Math.max(containerWidth - 20, 0));
+    const finalHeight = Math.min(panelHeight, Math.max(containerHeight - 20, 0));
 
     return {
       x: Math.round(x),

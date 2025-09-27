@@ -78,6 +78,58 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
     });
   };
 
+  // 특정 노드를 중앙으로 이동하는 함수
+  const focusOnNode = useCallback((targetNode) => {
+    if (!targetNode || !svgRef.current || !containerRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+
+    // 노드 위치
+    const nodeX = targetNode.x || 0;
+    const nodeY = targetNode.y || 0;
+
+    // 화면 중앙에 노드가 오도록 계산
+    const centerX = containerWidth / 2;
+    const centerY = containerHeight / 2;
+
+    // 적당한 줌 레벨 (1.5배 확대)
+    const targetScale = 1.5;
+
+    // 새로운 transform 계산
+    const translateX = centerX - (nodeX * targetScale);
+    const translateY = centerY - (nodeY * targetScale);
+
+    const newTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+
+    if (svgRef.current) {
+      const svgSelection = d3.select(svgRef.current);
+
+      const newZoomBehavior = d3.zoom()
+        .scaleExtent([0.3, 4])
+        .wheelDelta((event) => event.deltaY * -0.0003)
+        .filter((event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (target && target.closest('foreignObject')) return false;
+          if (target && target.closest('[data-node-id]')) return false;
+          if (event.type === 'dblclick') return false;
+          const isModifierPressed = event.ctrlKey || event.metaKey;
+          if (event.type === 'wheel') return isModifierPressed;
+          return isModifierPressed;
+        })
+        .on('zoom', (event) => {
+          setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
+        });
+
+      // 부드러운 애니메이션으로 이동
+      svgSelection
+        .transition()
+        .duration(500)
+        .call(newZoomBehavior.transform, newTransform);
+    }
+  }, []);
+
   // 전체 뷰로 이동하는 함수
   const fitToView = useCallback(() => {
     if (!layoutNodes.length || !svgRef.current || !containerRef.current) return;
@@ -430,7 +482,12 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
                 position={{ x: node.x || 0, y: node.y || 0 }}
                 color={colorScaleRef.current(node.depth || 0)}
                 onDrag={null}
-                onNodeClick={onNodeSelect ? () => onNodeSelect(node) : null}
+                onNodeClick={onNodeSelect ? () => {
+                  // 먼저 노드를 중앙으로 이동
+                  focusOnNode(node);
+                  // 약간의 지연 후 채팅창 열기
+                  setTimeout(() => onNodeSelect(node), 300);
+                } : null}
                 isExpanded={false}
                 onSecondQuestion={undefined}
                 onPlaceholderCreate={undefined}
