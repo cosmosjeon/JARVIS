@@ -35,6 +35,7 @@ const TreeNode = ({
   onToggleCollapse,
   viewTransform = { x: 0, y: 0, k: 1 },
   overlayElement = null,
+  onCloseNode = () => { },
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -350,6 +351,7 @@ const TreeNode = ({
               onRequestAnswer={onRequestAnswer}
               onAnswerComplete={onAnswerComplete}
               onAnswerError={onAnswerError}
+              onCloseNode={onCloseNode}
             />
           </div>
         </foreignObject>

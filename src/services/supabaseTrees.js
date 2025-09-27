@@ -272,30 +272,8 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
     throw error;
   }
 
-  const nodeIds = nodes.map((node) => node.id);
-  if (nodeIds.length) {
-    const { error: deleteError } = await supabase
-      .from('nodes')
-      .update({ deleted_at: Date.now() })
-      .not('id', 'in', `(${nodeIds.map((id) => `'${id}'`).join(',')})`)
-      .eq('tree_id', treeId)
-      .is('deleted_at', null);
-
-    if (deleteError && deleteError.code !== 'PGRST116') {
-      // ignore if nothing to update
-      throw deleteError;
-    }
-  } else {
-    const { error: deleteAllError } = await supabase
-      .from('nodes')
-      .update({ deleted_at: Date.now() })
-      .eq('tree_id', treeId)
-      .is('deleted_at', null);
-
-    if (deleteAllError && deleteAllError.code !== 'PGRST116') {
-      throw deleteAllError;
-    }
-  }
+  // 노드 삭제 로직 제거 - 트리 생성 시 기존 노드들을 삭제하지 않음
+  // 동기화가 필요한 경우 별도의 함수로 처리해야 함
 };
 
 export const upsertTreeMetadata = async ({ treeId, title, userId }) => {

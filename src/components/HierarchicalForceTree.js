@@ -550,56 +550,7 @@ const HierarchicalForceTree = () => {
     return fallbackKeyword;
   }, []);
 
-  // 2번째 질문 처리 함수
-  const handleSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
-    const trimmedQuestion = typeof question === 'string' ? question.trim() : '';
-    const latestData = dataRef.current;
-    const parentNode = latestData.nodes.find((n) => n.id === parentNodeId);
-    if (!parentNode) {
-      return;
-    }
-
-    const fallbackAnswer = `${parentNode.keyword || parentNode.id} 관련 질문 "${trimmedQuestion}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
-    const answer = typeof answerFromLLM === 'string' && answerFromLLM.trim()
-      ? answerFromLLM.trim()
-      : fallbackAnswer;
-
-    const keyword = await extractImportantKeyword(trimmedQuestion || question);
-
-    const newNodeData = questionService.current.createSecondQuestionNode(
-      parentNodeId,
-      trimmedQuestion || question,
-      answer,
-      latestData.nodes,
-      { keyword }
-    );
-
-    const timestamp = Date.now();
-    const initialConversation = [
-      { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata }
-    ];
-
-    setConversationForNode(newNodeData.id, initialConversation);
-
-    setData((prev) => ({
-      ...prev,
-      nodes: [...prev.nodes, newNodeData],
-      links: [...prev.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
-    }));
-
-    questionService.current.setQuestionCount(parentNodeId, 1);
-
-    setExpandedNodeId(newNodeData.id);
-    setSelectedNodeId(newNodeData.id);
-
-    setTimeout(() => {
-      const input = document.querySelector('textarea[placeholder="Ask anything..."]');
-      if (input) {
-        input.focus();
-      }
-    }, 50);
-  }, [extractImportantKeyword]);
+  // 2번째 질문 처리 함수 (handleRequestAnswer 정의 후로 이동)
 
   const persistTreeData = useCallback(async () => {
     if (!user || initializingTree) {
@@ -893,6 +844,13 @@ const HierarchicalForceTree = () => {
 
   };
 
+  const handleCloseNode = (nodeId) => {
+    // 특정 노드를 닫기
+    if (expandedNodeId === nodeId) {
+      setExpandedNodeId(null);
+    }
+  };
+
   const buildContextMessages = useCallback((nodeId) => {
     if (!nodeId) return [];
 
@@ -967,6 +925,91 @@ const HierarchicalForceTree = () => {
     },
     [buildContextMessages, invokeAgent],
   );
+
+  // 2번째 질문 처리 함수
+  const handleSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
+    const trimmedQuestion = typeof question === 'string' ? question.trim() : '';
+    const latestData = dataRef.current;
+    const parentNode = latestData.nodes.find((n) => n.id === parentNodeId);
+    if (!parentNode) {
+      return;
+    }
+
+    const keyword = await extractImportantKeyword(trimmedQuestion || question);
+
+    // 새 노드 생성 (빈 답변으로 시작)
+    const newNodeData = questionService.current.createSecondQuestionNode(
+      parentNodeId,
+      trimmedQuestion || question,
+      '', // 빈 답변으로 시작
+      latestData.nodes,
+      { keyword }
+    );
+
+    const timestamp = Date.now();
+    const initialConversation = [
+      { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending' }
+    ];
+
+    setConversationForNode(newNodeData.id, initialConversation);
+
+    setData((prev) => ({
+      ...prev,
+      nodes: [...prev.nodes, newNodeData],
+      links: [...prev.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
+    }));
+
+    questionService.current.setQuestionCount(parentNodeId, 1);
+
+    // 즉시 새 노드 열기
+    setExpandedNodeId(newNodeData.id);
+    setSelectedNodeId(newNodeData.id);
+
+    // 새 노드에서 AI 답변 요청
+    try {
+      const result = await handleRequestAnswer({
+        node: newNodeData,
+        question: trimmedQuestion,
+        isRootNode: false, // 자식 노드이므로 false
+      });
+
+      const answerText = result?.answer ?? '';
+      const answerMetadata = result || {};
+
+      // AI 답변으로 대화 업데이트
+      const updatedConversation = [
+        { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: answerText, status: 'complete', metadata: answerMetadata }
+      ];
+
+      setConversationForNode(newNodeData.id, updatedConversation);
+
+      // 강제로 컴포넌트 리렌더링을 위해 상태 업데이트
+      setData(prev => ({ ...prev }));
+    } catch (error) {
+      console.error('AI 답변 요청 실패:', error);
+      // AI 답변 실패 시 fallback 답변 사용
+      const fallbackAnswer = `${parentNode.keyword || parentNode.id} 관련 질문 "${trimmedQuestion}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
+
+      const fallbackConversation = [
+        { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: fallbackAnswer, status: 'complete' }
+      ];
+
+      setConversationForNode(newNodeData.id, fallbackConversation);
+
+      // 강제로 컴포넌트 리렌더링을 위해 상태 업데이트
+      setData(prev => ({ ...prev }));
+    }
+
+    setTimeout(() => {
+      const input = document.querySelector('textarea[placeholder="Ask anything..."]');
+      if (input) {
+        input.focus();
+      }
+    }, 50);
+  }, [extractImportantKeyword, handleRequestAnswer]);
 
   const handlePlaceholderCreate = (parentNodeId, keywords) => {
     if (!Array.isArray(keywords) || keywords.length === 0) return;
@@ -1808,6 +1851,7 @@ const HierarchicalForceTree = () => {
                     onToggleCollapse={toggleCollapse}
                     viewTransform={viewTransform}
                     overlayElement={overlayElement}
+                    onCloseNode={() => handleCloseNode(node.id)}
                   />
                 </motion.g>
               );
