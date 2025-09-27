@@ -55,6 +55,16 @@ const HierarchicalForceTree = () => {
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
   const pendingTreeIdRef = useRef(null);
+  const zoomBehaviourRef = useRef(null);
+  const pendingFocusNodeIdRef = useRef(null);
+  const expandTimeoutRef = useRef(null);
+  const outsidePointerRef = useRef({
+    active: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    moved: false,
+  });
 
   const sessionInfo = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -180,6 +190,7 @@ const HierarchicalForceTree = () => {
     setOverlayElement(overlayContainerRef.current);
   }, []);
 
+
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
@@ -284,6 +295,10 @@ const HierarchicalForceTree = () => {
           nodes: mappedNodes,
           links: Array.isArray(targetTree.treeData?.links) ? targetTree.treeData.links : [],
         });
+        treeLibrarySyncRef.current.set(targetTree.id, {
+          lastCount: mappedNodes.length,
+          refreshed: mappedNodes.length > 0,
+        });
         setActiveTreeId(targetTree.id);
         writeSessionTreeId(targetTree.id);
         if (typeof window !== 'undefined') {
@@ -298,6 +313,9 @@ const HierarchicalForceTree = () => {
         setActiveTreeId(null);
         setData({ nodes: [], links: [] });
         writeSessionTreeId(null);
+        if (resolvedTreeId) {
+          treeLibrarySyncRef.current.delete(resolvedTreeId);
+        }
       }
     } catch (error) {
       setTreeSyncError(error);
@@ -597,6 +615,26 @@ const HierarchicalForceTree = () => {
           nodes: normalizedNodes,
           userId: user.id,
         });
+
+        const stateMap = treeLibrarySyncRef.current;
+        const existingState = stateMap.get(resolvedTreeId) || { lastCount: 0, refreshed: false };
+        const previousCount = existingState.lastCount || 0;
+        const alreadyRefreshed = existingState.refreshed === true;
+        const nextCount = normalizedNodes.length;
+
+        if (!alreadyRefreshed && previousCount === 0 && nextCount > 0 && typeof window !== 'undefined') {
+          try {
+            window.jarvisAPI?.requestLibraryRefresh?.();
+          } catch (error) {
+            // IPC failures are non-fatal for sync notifications
+          }
+          stateMap.set(resolvedTreeId, { lastCount: nextCount, refreshed: true });
+        } else {
+          stateMap.set(resolvedTreeId, {
+            lastCount: nextCount,
+            refreshed: alreadyRefreshed || nextCount > 0,
+          });
+        }
       }
     } catch (error) {
       setTreeSyncError(error);
@@ -706,6 +744,19 @@ const HierarchicalForceTree = () => {
     conversationStoreRef.current.set(nodeId, normalized);
   }, []);
 
+  const clearPendingExpansion = useCallback(() => {
+    pendingFocusNodeIdRef.current = null;
+    if (expandTimeoutRef.current) {
+      clearTimeout(expandTimeoutRef.current);
+      expandTimeoutRef.current = null;
+    }
+  }, []);
+
+  const collapseAssistantPanel = useCallback(() => {
+    clearPendingExpansion();
+    setExpandedNodeId(null);
+  }, [clearPendingExpansion]);
+
   // 부트스트랩 채팅창 위치 (화면 상단 중앙)
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
@@ -796,7 +847,7 @@ const HierarchicalForceTree = () => {
   const handleCloseNode = (nodeId) => {
     // 특정 노드를 닫기
     if (expandedNodeId === nodeId) {
-      setExpandedNodeId(null);
+      collapseAssistantPanel();
     }
   };
 
@@ -1099,7 +1150,7 @@ const HierarchicalForceTree = () => {
       setSelectedNodeId(null);
     }
     if (expandedNodeId && toRemove.has(expandedNodeId)) {
-      setExpandedNodeId(null);
+      collapseAssistantPanel();
     }
   };
 
@@ -1134,6 +1185,16 @@ const HierarchicalForceTree = () => {
       if (typeof evt.buttons === 'number') {
         const mask = evt.buttons;
         return (mask & 4) === 4 || (mask & 2) === 2;
+      }
+      return false;
+    };
+
+    const isPrimaryButtonDrag = (evt) => {
+      if (typeof evt.buttons === 'number') {
+        return (evt.buttons & 1) === 1;
+      }
+      if (typeof evt.button === 'number') {
+        return evt.button === 0;
       }
       return false;
     };
@@ -1187,8 +1248,48 @@ const HierarchicalForceTree = () => {
       .scaleExtent([0.3, 4])
       .filter((event) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target && target.closest('foreignObject')) return false;
-        if (target && target.closest('[data-node-id]')) return false;
+        const isForeignObject = target && target.closest('foreignObject');
+        if (isForeignObject) return false;
+
+        const panHandleElement = target && target.closest('[data-pan-handle="true"]');
+        const panBlocked = target && target.closest('[data-block-pan="true"]');
+        const withinNode = target && target.closest('[data-node-id]');
+
+        if (panHandleElement && !panBlocked) {
+          if (event.type === 'wheel') {
+            return isPinchZoomWheel(event);
+          }
+          if (allowTouchGesture(event)) {
+            return true;
+          }
+          if (event.type === 'pointerdown' || event.type === 'mousedown') {
+            return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
+          }
+          if (event.type === 'pointermove' || event.type === 'mousemove') {
+            return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
+          }
+          if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') {
+            return true;
+          }
+        }
+
+        if (withinNode) {
+          if (event.type === 'wheel') {
+            if (isPinchZoomWheel(event)) return true;
+            return false;
+          }
+          if (allowTouchGesture(event)) {
+            return true;
+          }
+          if (event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'mousedown' || event.type === 'mousemove') {
+            return isSecondaryButtonDrag(event);
+          }
+          if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') {
+            return true;
+          }
+          return false;
+        }
+
         if (event.type === 'wheel') {
           if (isPinchZoomWheel(event)) return true;
           if (isTrackpadScrollWheel(event)) return false;
@@ -1222,27 +1323,9 @@ const HierarchicalForceTree = () => {
       .call(zoomBehaviour)
       .on('dblclick.zoom', null);
 
-    const handleBackgroundPointerDown = (event) => {
-      if (!expandedNodeId) return;
-      const svgElement = svgSelection.node();
-      if (!svgElement) return;
-      const pointer = svgElement.createSVGPoint();
-      pointer.x = event.clientX;
-      pointer.y = event.clientY;
-      const screenPoint = pointer.matrixTransform(svgElement.getScreenCTM()?.inverse?.() ?? svgElement.getScreenCTM());
-      if (!screenPoint) {
-        setExpandedNodeId(null);
-        return;
-      }
-      const [x, y] = [screenPoint.x, screenPoint.y];
-      const target = event.target;
-      if (target instanceof Element && target.closest('[data-node-id]')) {
-        return;
-      }
-      setExpandedNodeId(null);
-    };
+    zoomBehaviourRef.current = zoomBehaviour;
 
-    svgSelection.on('pointerdown.background', handleBackgroundPointerDown);
+    svgSelection.on('pointerdown.background', null);
     svgSelection.on('wheel.treepan', (event) => {
       if (isPinchZoomWheel(event)) {
         return;
@@ -1267,9 +1350,11 @@ const HierarchicalForceTree = () => {
     });
 
     return () => {
-      svgSelection.on('pointerdown.background', null);
       svgSelection.on('.zoom', null);
       svgSelection.on('.treepan', null);
+      if (zoomBehaviourRef.current === zoomBehaviour) {
+        zoomBehaviourRef.current = null;
+      }
     };
   }, []);
 
@@ -1320,7 +1405,7 @@ const HierarchicalForceTree = () => {
     setData({ ...data, nodes: newNodes, links: newLinks });
     toRemove.forEach((id) => conversationStoreRef.current.delete(id));
     if (selectedNodeId && toRemove.has(selectedNodeId)) setSelectedNodeId(null);
-    if (expandedNodeId && toRemove.has(expandedNodeId)) setExpandedNodeId(null);
+    if (expandedNodeId && toRemove.has(expandedNodeId)) collapseAssistantPanel();
 
     hasCleanedQ2Ref.current = true;
   }, [data, selectedNodeId, expandedNodeId]);
@@ -1371,26 +1456,123 @@ const HierarchicalForceTree = () => {
     };
   }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
 
-  // Handle node click for assistant focus
-  const handleNodeClickForAssistant = (payload) => {
-    if (!payload) return;
+  const focusNodeToCenter = useCallback((node, options = {}) => {
+    if (!node || !svgRef.current) {
+      return Promise.resolve();
+    }
 
-    if (payload.type === 'dismiss') {
-      setExpandedNodeId(null);
+    const svgElement = svgRef.current;
+    const rect = typeof svgElement.getBoundingClientRect === 'function'
+      ? svgElement.getBoundingClientRect()
+      : null;
+
+    const fallbackWidth = typeof dimensions?.width === 'number' ? dimensions.width : 0;
+    const fallbackHeight = typeof dimensions?.height === 'number' ? dimensions.height : 0;
+
+    const width = rect?.width || fallbackWidth;
+    const height = rect?.height || fallbackHeight;
+
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return Promise.resolve();
+    }
+
+    const { duration = 620, scale: requestedScale } = options;
+    const nodeX = Number.isFinite(node.x) ? node.x : 0;
+    const nodeY = Number.isFinite(node.y) ? node.y : 0;
+    const currentScale = Number.isFinite(viewTransform.k) ? viewTransform.k : 1;
+    const preferredScale = typeof requestedScale === 'number' ? requestedScale : Math.max(currentScale, 1);
+    const targetScale = Math.min(Math.max(preferredScale, 0.3), 4);
+
+    const translateX = (width / 2) - (nodeX * targetScale);
+    const translateY = (height / 2) - (nodeY * targetScale);
+    const nextTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+
+    const svgSelection = d3.select(svgElement);
+    const zoomBehaviour = zoomBehaviourRef.current;
+
+    if (!zoomBehaviour) {
+      setViewTransform({ x: translateX, y: translateY, k: targetScale });
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const transition = svgSelection
+        .transition('focus-node')
+        .duration(duration)
+        .ease(d3.easeCubicInOut)
+        .call(zoomBehaviour.transform, nextTransform);
+
+      transition.on('end', resolve);
+      transition.on('interrupt', resolve);
+    });
+  }, [dimensions, viewTransform.k]);
+
+  // Handle node click for assistant focus
+  const handleNodeClickForAssistant = useCallback((payload) => {
+    if (!payload) {
       return;
     }
 
-    const node = payload;
-    if (!node || !node.id) return;
+    if (payload.type === 'dismiss') {
+      collapseAssistantPanel();
+      return;
+    }
 
-    setExpandedNodeId(node.id);
-    setSelectedNodeId(node.id);
-  };
+    const targetId = payload.id;
+    if (!targetId) {
+      return;
+    }
+
+    const layoutNode = nodes.find((candidate) => candidate.id === targetId) || payload;
+
+    pendingFocusNodeIdRef.current = targetId;
+    setSelectedNodeId(targetId);
+
+    setExpandedNodeId((current) => {
+      if (current && current !== targetId) {
+        return null;
+      }
+      return current;
+    });
+
+    Promise.resolve(focusNodeToCenter(layoutNode, { duration: 620 }))
+      .catch(() => undefined)
+      .then(() => {
+        if (pendingFocusNodeIdRef.current !== targetId) {
+          return;
+        }
+
+        if (expandTimeoutRef.current) {
+          clearTimeout(expandTimeoutRef.current);
+          expandTimeoutRef.current = null;
+        }
+
+        if (typeof window === 'undefined') {
+          setExpandedNodeId(targetId);
+          pendingFocusNodeIdRef.current = null;
+          return;
+        }
+
+        expandTimeoutRef.current = window.setTimeout(() => {
+          if (pendingFocusNodeIdRef.current === targetId) {
+            setExpandedNodeId(targetId);
+          }
+          expandTimeoutRef.current = null;
+          if (pendingFocusNodeIdRef.current === targetId) {
+            pendingFocusNodeIdRef.current = null;
+          }
+        }, 140);
+      });
+  }, [nodes, focusNodeToCenter]);
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
   const handleDrag = (nodeId) => {
     return d3.drag()
+      .filter((event) => {
+        // 노드 드래그: Ctrl/Cmd 키를 누른 상태에서만 드래그 허용
+        return event.ctrlKey || event.metaKey;
+      })
       .on('start', (event) => {
         // 드래그 시작 시 애니메이션 일시 정지
         if (animationRef.current) {
@@ -1446,24 +1628,89 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     if (!expandedNodeId) return;
     const svg = d3.select(svgRef.current);
+    // 확장된 노드를 최상위로 이동
     svg.selectAll(`[data-node-id="${expandedNodeId}"]`).raise();
   }, [expandedNodeId, nodes]);
 
   useEffect(() => {
-    if (!expandedNodeId) return undefined;
-    if (typeof document === 'undefined') return undefined;
+    if (!expandedNodeId) {
+      outsidePointerRef.current = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        moved: false,
+      };
+      return undefined;
+    }
 
-    const handleDocumentPointerDown = (event) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest('[data-node-id]')) {
-        return;
-      }
-      setExpandedNodeId(null);
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const pointerState = outsidePointerRef.current;
+
+    const resetState = () => {
+      pointerState.active = false;
+      pointerState.pointerId = null;
+      pointerState.startX = 0;
+      pointerState.startY = 0;
+      pointerState.moved = false;
     };
 
-    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
-    return () => document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
-  }, [expandedNodeId]);
+    const handlePointerDown = (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-node-id]')) {
+        resetState();
+        return;
+      }
+
+      pointerState.active = true;
+      pointerState.pointerId = typeof event.pointerId === 'number' ? event.pointerId : null;
+      pointerState.startX = typeof event.clientX === 'number' ? event.clientX : 0;
+      pointerState.startY = typeof event.clientY === 'number' ? event.clientY : 0;
+      pointerState.moved = false;
+    };
+
+    const handlePointerMove = (event) => {
+      if (!pointerState.active) return;
+      if (pointerState.pointerId !== null && event.pointerId !== pointerState.pointerId) return;
+
+      const deltaX = Math.abs((typeof event.clientX === 'number' ? event.clientX : 0) - pointerState.startX);
+      const deltaY = Math.abs((typeof event.clientY === 'number' ? event.clientY : 0) - pointerState.startY);
+      if (deltaX > 6 || deltaY > 6) {
+        pointerState.moved = true;
+      }
+    };
+
+    const finalizePointer = (event) => {
+      if (!pointerState.active) return;
+      if (pointerState.pointerId !== null && event.pointerId !== pointerState.pointerId) {
+        resetState();
+        return;
+      }
+
+      const shouldClose = pointerState.moved === false;
+      resetState();
+
+      if (shouldClose) {
+        collapseAssistantPanel();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('pointermove', handlePointerMove, true);
+    document.addEventListener('pointerup', finalizePointer, true);
+    document.addEventListener('pointercancel', finalizePointer, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('pointermove', handlePointerMove, true);
+      document.removeEventListener('pointerup', finalizePointer, true);
+      document.removeEventListener('pointercancel', finalizePointer, true);
+      resetState();
+    };
+  }, [expandedNodeId, collapseAssistantPanel]);
 
   // 컴포넌트 언마운트 시 애니메이션 정리
   useEffect(() => {
@@ -1472,12 +1719,20 @@ const HierarchicalForceTree = () => {
         animationRef.current.stop();
       }
       treeAnimationService.current.cleanup();
+      clearPendingExpansion();
+      outsidePointerRef.current = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        moved: false,
+      };
     };
-  }, []);
+  }, [clearPendingExpansion]);
 
   return (
     <div
-      className="relative flex h-full w-full overflow-hidden bg-transparent"
+      className="relative flex overflow-hidden bg-transparent"
       style={{
         // 투명 창에서 이전 프레임 잔상 방지: 독립 합성 레이어 확보
         willChange: 'transform, opacity, background',
@@ -1486,9 +1741,19 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.15), rgba(15, 23, 42, 0.25))',
+        background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
+        // 창틀 여유 공간까지 완전히 채우기
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        margin: 0,
+        padding: 0,
       }}
     >
       {initializingTree && (
@@ -1505,6 +1770,117 @@ const HierarchicalForceTree = () => {
           <p className="opacity-80">{treeSyncError.message || 'Supabase와 동기화할 수 없습니다.'}</p>
         </div>
       ) : null}
+      {/* 창 드래그 핸들 - 중앙 최상단 */}
+      <div 
+        className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
+        style={{ WebkitAppRegion: 'drag' }}
+      >
+        <div className="flex h-8 w-40 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
+          {/* 왼쪽: 드래그 점들 */}
+          <div className="flex space-x-1">
+            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+          </div>
+          
+          {/* 오른쪽: 닫기 버튼 */}
+          <button
+            className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
+            style={{ WebkitAppRegion: 'no-drag' }}
+            onClick={() => {
+              if (process.env.NODE_ENV === 'development') {
+                // 개발 중 동작 여부 확인용
+                // eslint-disable-next-line no-console
+                console.log('[Jarvis] Drag handle close requested');
+              }
+
+              const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
+
+              const hideWindow = () => {
+                if (process.env.NODE_ENV === 'development') {
+                  // eslint-disable-next-line no-console
+                  console.log('[Jarvis] hideWindow fallback triggered');
+                }
+                try {
+                  if (api && typeof api.toggleWindow === 'function') {
+                    api.toggleWindow();
+                    return;
+                  }
+                } catch (toggleError) {
+                  // Ignore toggle errors and fall through to window.close fallback.
+                }
+
+                if (typeof window !== 'undefined' && typeof window.close === 'function') {
+                  window.close();
+                }
+              };
+
+              try {
+                const closeFn = api?.windowControls?.close;
+                if (typeof closeFn === 'function') {
+                  const maybeResult = closeFn();
+                  if (process.env.NODE_ENV === 'development') {
+                    const tag = '[Jarvis] windowControls.close result';
+                    if (maybeResult && typeof maybeResult.then === 'function') {
+                      maybeResult.then((response) => {
+                        // eslint-disable-next-line no-console
+                        console.log(tag, response);
+                      }).catch((err) => {
+                        // eslint-disable-next-line no-console
+                        console.log(`${tag} (rejected)`, err);
+                      });
+                    } else {
+                      // eslint-disable-next-line no-console
+                      console.log(tag, maybeResult);
+                    }
+                  }
+
+                  if (maybeResult && typeof maybeResult.then === 'function') {
+                    maybeResult
+                      .then((response) => {
+                        if (process.env.NODE_ENV === 'development') {
+                          // eslint-disable-next-line no-console
+                          console.log('[Jarvis] close response (async)', response, response?.error);
+                        }
+                        if (!response?.success) {
+                          hideWindow();
+                        }
+                      })
+                      .catch(() => hideWindow());
+                    return;
+                  }
+
+                  if (!maybeResult?.success) {
+                    hideWindow();
+                  }
+                  return;
+                }
+              } catch (error) {
+                hideWindow();
+                return;
+              }
+
+              hideWindow();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <svg 
+              className="h-3 w-3 text-white group-hover:text-black" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M6 18L18 6M6 6l12 12" 
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
       {isTreeSyncing && !initializingTree ? (
         <div className="pointer-events-none absolute bottom-6 right-6 z-[1200] rounded-full bg-slate-900/80 px-3 py-1 text-[11px] font-medium text-slate-100 shadow-lg">
           자동 저장 중...
@@ -1543,14 +1919,25 @@ const HierarchicalForceTree = () => {
       )}
       <svg
         ref={svgRef}
-        width={dimensions.width}
-        height={dimensions.height}
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+        preserveAspectRatio="none"
         data-interactive-zone="true"
         style={{
-          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.08), rgba(15, 23, 42, 0.12))',
+          background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
           // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
           pointerEvents: 'auto',
-          WebkitAppRegion: 'drag',
+          // SVG가 창틀 여유 공간까지 완전히 채우도록 설정
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          padding: 0,
         }}
       >
         {/* Arrow marker definition */}
@@ -1564,18 +1951,19 @@ const HierarchicalForceTree = () => {
             markerHeight={6}
             orient="auto"
           >
-            <path d="M0,-5L10,0L0,5" fill="rgba(148,163,184,0.55)" />
+            <path d="M0,-5L10,0L0,5" fill="rgba(0,0,0,0.55)" />
           </marker>
         </defs>
 
         {/* Links */}
+
         <g
           ref={contentGroupRef}
           key={`${dimensions.width}x${dimensions.height}`}
           transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
           style={{ opacity: isResizing ? 0.999 : 1 }}
         >
-          <g className="links" style={{ pointerEvents: 'none', WebkitAppRegion: 'no-drag' }}>
+          <g className="links" style={{ pointerEvents: 'none' }}>
             <AnimatePresence>
               {links
                 // TreeLayoutService에서 이미 정렬된 링크 사용
@@ -1639,8 +2027,15 @@ const HierarchicalForceTree = () => {
             </AnimatePresence>
           </g>
 
-          {/* Nodes */}
-          <g className="nodes" style={{ WebkitAppRegion: 'no-drag' }}>
+          {/* Nodes - 최상위 레이어 */}
+          <g 
+            className="nodes" 
+            style={{ 
+              pointerEvents: 'auto', 
+              zIndex: 1000,
+              isolation: 'isolate' // 새로운 stacking context 생성
+            }}
+          >
             {nodes.map((node, index) => {
               // Tree layout에서는 depth를 사용
               const nodeDepth = node.depth || 0;
@@ -1657,7 +2052,11 @@ const HierarchicalForceTree = () => {
                     stiffness: 300,
                     damping: 25
                   }}
-                  style={{ pointerEvents: 'auto' }}
+                  style={{ 
+                    pointerEvents: 'auto', 
+                    zIndex: expandedNodeId === node.id ? 9999 : 1001 + index, // 확장된 노드는 최상위
+                    position: 'relative'
+                  }}
                   data-interactive-zone="true"
                 >
                   <TreeNode

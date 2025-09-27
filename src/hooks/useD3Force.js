@@ -24,21 +24,21 @@ export const useD3Force = (nodes, links, width, height) => {
         d3
           .forceLink(links)
           .id(d => d.id)
-          .distance(80)
+          .distance(30)
       )
-      .force('charge', d3.forceManyBody().strength(-400))
+      .force('charge', d3.forceManyBody().strength(-800))
       .force('center', d3.forceCenter(width / 2, height / 2))
       .force(
         'collision',
-        d3.forceCollide().radius(d => (d.size || 8) + 5)
+        d3.forceCollide().radius(d => (d.size || 8) + 15)
       )
-      .force('x', d3.forceX(width / 2).strength(0.1))
+      .force('x', d3.forceX(width / 2).strength(0.3))
       .force(
         'y',
         d3
           .forceY(d => {
             const level = levels.get(d.id) || 0;
-            return 100 + (level * (height - 200)) / maxLevel;
+            return 220 + (level * (height - 350)) / maxLevel;
           })
           .strength(0.8)
       );

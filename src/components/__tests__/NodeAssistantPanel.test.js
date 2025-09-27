@@ -180,4 +180,49 @@ describe('NodeAssistantPanel', () => {
 
     expect(onPlaceholderCreate).toHaveBeenCalledWith(node.id, ['Alpha', 'Beta']);
   });
+
+  it('첫 번째 질문 이후에도 하이라이트로 플레이스홀더를 만들 수 있다', async () => {
+    jest.useFakeTimers();
+
+    const node = treeData.nodes[0];
+    const onPlaceholderCreate = jest.fn();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    render(
+      <NodeAssistantPanel
+        node={node}
+        color="#1d4ed8"
+        onPlaceholderCreate={onPlaceholderCreate}
+        nodeSummary={createTreeNodeSummary(node)}
+        isRootNode={isTreeRootNode(node)}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('Ask anything...');
+
+    await user.type(input, '첫 질문입니다{enter}');
+
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+    });
+
+    const toggleButton = screen.getByRole('button', { name: '하이라이트 모드' });
+    await user.click(toggleButton);
+
+    const { default: MockHighlighter } = await import('web-highlighter');
+    const instance = MockHighlighter.__getLastInstance();
+
+    instance.emit(MockHighlighter.event.CREATE, {
+      sources: [
+        { id: 'gamma', text: 'Gamma' },
+        { id: 'delta', text: 'Delta' },
+      ],
+    });
+
+    await user.keyboard('{Enter}');
+
+    expect(onPlaceholderCreate).toHaveBeenCalledWith(node.id, ['Gamma', 'Delta']);
+
+    jest.useRealTimers();
+  });
 });

@@ -130,8 +130,8 @@ const TreeNode = ({
   const currentWidth = displayMode === 'chat' ? chatSize.width : displayMode === 'hover' ? hoverWidth : baseWidth;
   const currentHeight = displayMode === 'chat' ? chatSize.height : displayMode === 'hover' ? hoverHeight : baseHeight;
   const rectFill = displayMode === 'chat'
-    ? 'rgba(15, 23, 42, 0.85)' // 더 진한 색상으로 변경
-    : 'rgba(148, 163, 184, 0.22)';
+    ? 'rgba(0, 0, 0, 0.85)' // 더 진한 색상으로 변경
+    : 'rgba(0, 0, 0, 0.22)';
   const rectStroke = displayMode === 'chat'
     ? 'rgba(255, 255, 255, 0.6)' // 더 진한 테두리로 변경
     : 'rgba(255, 255, 255, 0.18)';
@@ -210,10 +210,10 @@ const TreeNode = ({
 
     return createPortal(
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
+        initial={{ opacity: 0, scale: 0.1 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.8 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
+        exit={{ opacity: 0, scale: 0.1 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
         style={{
           position: 'absolute',
           left: `${smartPosition.x}px`,
@@ -265,10 +265,24 @@ const TreeNode = ({
     <>
       <g
         transform={`translate(${nodePosition.x || 0}, ${nodePosition.y || 0})`}
-        style={{ cursor: isExpanded ? 'default' : 'pointer', pointerEvents: 'auto' }}
+        style={{ 
+          cursor: isExpanded ? 'default' : 'pointer', 
+          pointerEvents: 'auto',
+          zIndex: isExpanded ? 9999 : 1002, // 확장된 노드는 최상위
+          isolation: 'isolate' // 새로운 stacking context 생성
+        }}
         data-interactive-zone="true"
+        data-node-id={node.id}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (isExpanded) {
+            return;
+          }
+          onNodeClick && onNodeClick(node);
+        }}
       >
       {/* Hide background rectangle when node is expanded (chat mode) */}
       {displayMode !== 'chat' && (
@@ -337,10 +351,11 @@ const TreeNode = ({
               pointerEvents: 'auto',
             }}
             onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
               if (isExpanded) {
                 return;
               }
-              e.stopPropagation();
               onNodeClick && onNodeClick(node);
             }}
             animate={{
@@ -454,7 +469,7 @@ const TreeNode = ({
       {/* Subtree collapse/expand toggle */}
       {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
         <g
-          transform={`translate(0, ${currentHeight / 2 + 14})`}
+          transform={`translate(0, ${currentHeight / 2 + 35})`}
           onClick={handleTogglePointer}
           onMouseDown={handleTogglePointer}
           onPointerDown={handleTogglePointer}
@@ -471,7 +486,7 @@ const TreeNode = ({
             height={20}
             rx={4}
             ry={4}
-            fill="rgba(148, 163, 184, 0.3)"
+            fill="rgba(0, 0, 0, 0.3)"
             stroke="rgba(255,255,255,0.6)"
             strokeWidth={1}
             data-node-toggle="true"
