@@ -265,10 +265,24 @@ const TreeNode = ({
     <>
       <g
         transform={`translate(${nodePosition.x || 0}, ${nodePosition.y || 0})`}
-        style={{ cursor: isExpanded ? 'default' : 'pointer', pointerEvents: 'auto' }}
+        style={{ 
+          cursor: isExpanded ? 'default' : 'pointer', 
+          pointerEvents: 'auto',
+          zIndex: isExpanded ? 9999 : 1002, // 확장된 노드는 최상위
+          isolation: 'isolate' // 새로운 stacking context 생성
+        }}
         data-interactive-zone="true"
+        data-node-id={node.id}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (isExpanded) {
+            return;
+          }
+          onNodeClick && onNodeClick(node);
+        }}
       >
       {/* Hide background rectangle when node is expanded (chat mode) */}
       {displayMode !== 'chat' && (
@@ -337,10 +351,11 @@ const TreeNode = ({
               pointerEvents: 'auto',
             }}
             onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
               if (isExpanded) {
                 return;
               }
-              e.stopPropagation();
               onNodeClick && onNodeClick(node);
             }}
             animate={{
