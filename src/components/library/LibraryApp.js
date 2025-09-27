@@ -5,7 +5,7 @@ import { Button } from "components/ui/button";
 
 import TreeCanvas from "./TreeCanvas";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
-import { fetchTreesWithNodes, deleteTree } from "services/supabaseTrees";
+import { fetchTreesWithNodes, upsertTreeMetadata, deleteTree } from "services/supabaseTrees";
 
 const EmptyState = ({ message }) => (
   <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
@@ -45,11 +45,23 @@ const LibraryApp = () => {
         updatedAt: tree.updatedAt,
       }));
 
-      setTrees(mapped);
-      setSelectedId((previousId) => {
-        if (!mapped.length) return null;
-        const exists = mapped.some((item) => item.id === previousId);
-        return exists ? previousId : mapped[0].id;
+      setTrees((previous) => {
+        const merged = new Map();
+        previous.forEach((entry) => {
+          merged.set(entry.id, entry);
+        });
+        mapped.forEach((entry) => {
+          merged.set(entry.id, entry);
+        });
+        const nextList = Array.from(merged.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+        setSelectedId((previousId) => {
+          if (!nextList.length) return null;
+          const exists = nextList.some((item) => item.id === previousId);
+          return exists ? previousId : nextList[0].id;
+        });
+
+        return nextList;
       });
     } catch (err) {
       setError(err);
@@ -151,6 +163,72 @@ const LibraryApp = () => {
               disabled={loading}
             >
               {loading ? "새로고침 중" : "새로고침"}
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              disabled={!user || loading}
+              onClick={async () => {
+                if (!user || typeof window === "undefined") {
+                  return;
+                }
+
+                const newTreeId = (() => {
+                  try {
+                    if (window.crypto?.randomUUID) {
+                      return `tree_${window.crypto.randomUUID()}`;
+                    }
+                  } catch (error) {
+                    // ignore and fallback
+                  }
+                  return `tree_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+                })();
+
+                try {
+                  await upsertTreeMetadata({
+                    treeId: newTreeId,
+                    title: "새 지식 트리",
+                    userId: user.id,
+                  });
+
+                  setTrees((previous) => {
+                    const merged = new Map(previous.map((entry) => [entry.id, entry]));
+                    const now = Date.now();
+                    merged.set(newTreeId, {
+                      id: newTreeId,
+                      title: "새 지식 트리",
+                      treeData: { nodes: [], links: [] },
+                      createdAt: now,
+                      updatedAt: now,
+                    });
+                    const nextList = Array.from(merged.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                    setSelectedId(newTreeId);
+                    return nextList;
+                  });
+
+                  const payload = {
+                    treeId: newTreeId,
+                    reusePrimary: false,
+                    fresh: true,
+                  };
+
+                  if (window.jarvisAPI?.openWidget) {
+                    await window.jarvisAPI.openWidget(payload);
+                  } else if (window.jarvisAPI?.toggleWindow) {
+                    window.jarvisAPI.toggleWindow();
+                  } else {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("mode", "widget");
+                    url.searchParams.set("treeId", newTreeId);
+                    url.searchParams.set("fresh", "1");
+                    window.open(url.toString(), "_blank");
+                  }
+                } catch (err) {
+                  setError(err);
+                }
+              }}
+            >
+              새 트리 만들기
             </Button>
             <Button
               variant="secondary"

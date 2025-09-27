@@ -675,7 +675,7 @@ app.whenReady().then(() => {
   loadSettings();
   logger = createLogBridge(() => mainWindow);
   llmService = new LLMService({ logger });
-  createWindow({ fresh: true });
+  createWindow({ fresh: false });
   createLibraryWindow();
   ensureAuthCallbackServer().catch((error) => {
     logger?.error('auth_callback_server_start_failed', { message: error?.message });
@@ -1034,7 +1034,7 @@ app.whenReady().then(() => {
 
     const newWindow = createAdditionalWidgetWindow({
       treeId: requestedTreeId || null,
-      fresh: true,
+      fresh: forceFresh,
     });
 
     return {
@@ -1119,7 +1119,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (!mainWindow) {
-      createWindow({ fresh: true });
+      createWindow({ fresh: false });
     }
     if (!libraryWindow) {
       createLibraryWindow();

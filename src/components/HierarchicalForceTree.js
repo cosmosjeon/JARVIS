@@ -379,7 +379,9 @@ const HierarchicalForceTree = () => {
 
       try {
         const existingTrees = await fetchTreesWithNodes(user.id);
-        if (Array.isArray(existingTrees) && existingTrees.length > 0) {
+        const shouldCreateNewTree = sessionInfo.fresh || !Array.isArray(existingTrees) || existingTrees.length === 0;
+
+        if (!shouldCreateNewTree && Array.isArray(existingTrees) && existingTrees.length > 0) {
           const [mostRecent] = existingTrees;
           writeSessionTreeId(mostRecent.id);
           if (typeof window !== 'undefined') {

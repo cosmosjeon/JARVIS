@@ -201,7 +201,7 @@ export const fetchTreesWithNodes = async (userId) => {
     query.eq('user_id', userId);
   }
 
-  const { data: treeRows, error: treeError } = await query;
+  const { data: treeRows, error: treeError } = await query.range(0, 199);
 
   if (treeError) {
     throw treeError;
@@ -223,7 +223,7 @@ export const fetchTreesWithNodes = async (userId) => {
     nodeQuery.eq('user_id', userId);
   }
 
-  const { data: nodeRows, error: nodeError } = await nodeQuery;
+  const { data: nodeRows, error: nodeError } = await nodeQuery.range(0, 9999);
 
   if (nodeError) {
     throw nodeError;
