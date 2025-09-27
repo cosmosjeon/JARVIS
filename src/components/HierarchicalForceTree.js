@@ -44,10 +44,7 @@ const HierarchicalForceTree = () => {
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [data, setData] = useState(treeData);
-  const [activeTreeId, setActiveTreeId] = useState(null);
-  const [initializingTree, setInitializingTree] = useState(true);
-  const [treeSyncError, setTreeSyncError] = useState(null);
-  const [isTreeSyncing, setIsTreeSyncing] = useState(false);
+  const dataRef = useRef(treeData);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
@@ -177,6 +174,10 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
   }, []);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   const setWindowMousePassthrough = useCallback((shouldIgnore = true) => {
     if (typeof window === 'undefined') return;
@@ -465,7 +466,7 @@ const HierarchicalForceTree = () => {
     };
 
     setData(newData);
-    conversationStoreRef.current.set(newNode.id, []);
+    setConversationForNode(newNode.id, []);
   };
 
   // 노드 레벨 계산
@@ -474,52 +475,105 @@ const HierarchicalForceTree = () => {
     return node ? node.level : 0;
   };
 
+  const extractImportantKeyword = useCallback(async (questionText) => {
+    const trimmed = typeof questionText === 'string' ? questionText.trim() : '';
+    const fallbackToken = trimmed.split(/\s+/).find(Boolean) || 'Q';
+    const fallbackKeyword = fallbackToken.slice(0, 48);
+
+    if (!trimmed) {
+      return fallbackKeyword;
+    }
+
+    if (typeof window === 'undefined') {
+      return fallbackKeyword;
+    }
+
+    const api = window.jarvisAPI;
+    if (!api?.extractKeyword) {
+      return fallbackKeyword;
+    }
+
+    try {
+      const result = await api.extractKeyword({ question: trimmed });
+      const candidate = typeof result?.keyword === 'string' ? result.keyword.trim() : '';
+      if (result?.success && candidate) {
+        const token = candidate.split(/\s+/).find(Boolean);
+        if (token) {
+          return token.slice(0, 48);
+        }
+      }
+
+      const fallbackCandidate = candidate || (typeof result?.answer === 'string' ? result.answer : '');
+      const fallbackWord = typeof fallbackCandidate === 'string'
+        ? fallbackCandidate.trim().split(/\s+/).find(Boolean)
+        : null;
+      if (fallbackWord) {
+        return fallbackWord.slice(0, 48);
+      }
+    } catch (error) {
+      try {
+        api?.log?.('warn', 'keyword_extraction_failed', { message: error?.message || 'unknown error' });
+      } catch (loggingError) {
+        if (process.env.NODE_ENV === 'development') {
+          // eslint-disable-next-line no-console
+          console.warn('Keyword extraction logging failed', loggingError);
+        }
+      }
+    }
+
+    return fallbackKeyword;
+  }, []);
+
   // 2번째 질문 처리 함수
-  const handleSecondQuestion = (parentNodeId, question, answerFromLLM, metadata = {}) => {
-    // 부모 노드 정보 가져오기
-    const parentNode = data.nodes.find(n => n.id === parentNodeId);
+  const handleSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
+    const trimmedQuestion = typeof question === 'string' ? question.trim() : '';
+    const latestData = dataRef.current;
+    const parentNode = latestData.nodes.find((n) => n.id === parentNodeId);
     if (!parentNode) {
       return;
     }
 
-    const fallbackAnswer = `${parentNode.keyword || parentNode.id} 관련 질문 "${question}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
+    const fallbackAnswer = `${parentNode.keyword || parentNode.id} 관련 질문 "${trimmedQuestion}"에 대한 답변입니다. 이는 ${parentNode.fullText || '관련된 내용'}과 연관되어 있습니다.`;
     const answer = typeof answerFromLLM === 'string' && answerFromLLM.trim()
       ? answerFromLLM.trim()
       : fallbackAnswer;
 
-    // QuestionService를 통해 새 노드 데이터 생성 (실제 답변 포함)
-    const newNodeData = questionService.current.createSecondQuestionNode(parentNodeId, question, answer, data.nodes);
+    const keyword = await extractImportantKeyword(trimmedQuestion || question);
+
+    const newNodeData = questionService.current.createSecondQuestionNode(
+      parentNodeId,
+      trimmedQuestion || question,
+      answer,
+      latestData.nodes,
+      { keyword }
+    );
 
     const timestamp = Date.now();
     const initialConversation = [
-      { id: `${timestamp}-user`, role: 'user', text: question },
+      { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
       { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata }
     ];
-    const sanitizedConversation = sanitizeConversationMessages(initialConversation);
-    conversationStoreRef.current.set(newNodeData.id, sanitizedConversation);
 
-    // 새 노드를 데이터에 추가
-    const newData = {
-      ...data,
-      nodes: [...data.nodes, { ...newNodeData, createdAt: timestamp, updatedAt: timestamp, conversation: sanitizedConversation }],
-      links: [...data.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
-    };
+    setConversationForNode(newNodeData.id, initialConversation);
 
-    setData(newData);
+    setData((prev) => ({
+      ...prev,
+      nodes: [...prev.nodes, newNodeData],
+      links: [...prev.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
+    }));
+
     questionService.current.setQuestionCount(parentNodeId, 1);
 
-    // 새 노드로 즉시 이동
     setExpandedNodeId(newNodeData.id);
     setSelectedNodeId(newNodeData.id);
 
-    // 입력 필드에 포커스 주기 (약간의 지연)
     setTimeout(() => {
       const input = document.querySelector('textarea[placeholder="Ask anything..."]');
       if (input) {
         input.focus();
       }
-    }, 50); // 노드가 렌더링된 후 포커스
-  };
+    }, 50);
+  }, [extractImportantKeyword]);
 
   const persistTreeData = useCallback(async () => {
     if (!user || initializingTree) {
@@ -707,6 +761,13 @@ const HierarchicalForceTree = () => {
     return stored ? stored.map((message) => ({ ...message })) : [];
   };
 
+  const setConversationForNode = useCallback((nodeId, messages) => {
+    const normalized = Array.isArray(messages)
+      ? messages.map((message) => ({ ...message }))
+      : [];
+    conversationStoreRef.current.set(nodeId, normalized);
+  }, []);
+
   // 노드가 없어도 드래그 핸들을 항상 표시하기 위한 고정 위치
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
@@ -726,6 +787,11 @@ const HierarchicalForceTree = () => {
     const userQuestion = text.trim();
     const timestamp = Date.now();
 
+    setConversationForNode('__bootstrap__', [
+      { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
+    ]);
+
     try {
       const response = await handleRequestAnswer({
         node: { id: '__bootstrap__' },
@@ -735,7 +801,7 @@ const HierarchicalForceTree = () => {
 
       const rootId = `root_${Date.now().toString(36)}`;
       const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
-      const keyword = userQuestion.split(/\s+/).slice(0, 3).join(' ');
+      const keyword = await extractImportantKeyword(userQuestion);
 
       const rawConversation = [
         { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
@@ -760,13 +826,23 @@ const HierarchicalForceTree = () => {
 
       setData({ nodes: [rootNode], links: [] });
 
-      conversationStoreRef.current.set(rootId, sanitizedConversation);
+
+      setConversationForNode(rootId, [
+        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
+      ]);
+      conversationStoreRef.current.delete('__bootstrap__');
+
 
       questionService.current.setQuestionCount(rootId, 1);
       setExpandedNodeId(rootId);
       setSelectedNodeId(rootId);
       setShowBootstrapChat(false);
     } catch (error) {
+      setConversationForNode('__bootstrap__', [
+        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: '⚠️ 루트 노드 생성 중 오류가 발생했습니다.', status: 'error', timestamp: Date.now() },
+      ]);
       const message = error?.message || '루트 노드 생성 중 오류가 발생했습니다.';
       window.jarvisAPI?.log?.('error', 'bootstrap_failed', { message });
       throw error;
@@ -774,19 +850,9 @@ const HierarchicalForceTree = () => {
   };
 
   const handleConversationChange = (nodeId, messages) => {
-    if (!nodeId) {
-      return;
-    }
 
-    const sanitized = sanitizeConversationMessages(messages);
-    conversationStoreRef.current.set(nodeId, sanitized);
+    setConversationForNode(nodeId, messages);
 
-    setData((prev) => ({
-      ...prev,
-      nodes: prev.nodes.map((node) => (node.id === nodeId
-        ? { ...node, conversation: sanitized }
-        : node)),
-    }));
   };
 
   const buildContextMessages = useCallback((nodeId) => {
@@ -904,18 +970,27 @@ const HierarchicalForceTree = () => {
 
     setData(newData);
     placeholderNodes.forEach((node) => {
-      conversationStoreRef.current.set(node.id, []);
+      setConversationForNode(node.id, []);
     });
 
     setSelectedNodeId(parentNodeId);
     setExpandedNodeId(parentNodeId);
   };
 
-  const handleAnswerComplete = useCallback((nodeId, payload = {}) => {
+  const handleAnswerComplete = useCallback(async (nodeId, payload = {}) => {
     if (!nodeId) return;
 
     const question = typeof payload.question === 'string' ? payload.question.trim() : '';
     const answer = typeof payload.answer === 'string' ? payload.answer.trim() : '';
+    const nodeSnapshot = dataRef.current.nodes.find((n) => n.id === nodeId);
+
+    let keywordOverride = null;
+    if (nodeSnapshot && nodeSnapshot.status === 'placeholder' && question) {
+      keywordOverride = await extractImportantKeyword(question);
+    }
+
+    const fallbackToken = question ? question.split(/\s+/).find(Boolean) : '';
+    const resolvedAnswer = answer || nodeSnapshot?.answer || '';
 
     setData((prev) => {
       const nextNodes = prev.nodes.map((node) => {
@@ -924,15 +999,15 @@ const HierarchicalForceTree = () => {
         }
 
         const nextKeyword = node.status === 'placeholder' && question
-          ? question.split(/\s+/).slice(0, 3).join(' ')
+          ? (keywordOverride || fallbackToken || node.keyword)
           : node.keyword;
 
         return {
           ...node,
-          keyword: nextKeyword || node.keyword,
-          fullText: answer || node.fullText || '',
+          keyword: (nextKeyword || node.keyword || '').slice(0, 48),
+          fullText: resolvedAnswer || node.fullText || '',
           question: question || node.question || '',
-          answer: answer || node.answer || '',
+          answer: resolvedAnswer || node.answer || '',
           status: 'answered',
           updatedAt: Date.now(),
         };
@@ -943,7 +1018,7 @@ const HierarchicalForceTree = () => {
         nodes: nextNodes,
       };
     });
-  }, []);
+  }, [extractImportantKeyword]);
 
   const handleAnswerError = useCallback((nodeId, payload = {}) => {
     if (!nodeId) return;
@@ -1006,7 +1081,7 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     data.nodes.forEach((node) => {
       if (!conversationStoreRef.current.has(node.id)) {
-        conversationStoreRef.current.set(node.id, []);
+        setConversationForNode(node.id, []);
       }
     });
   }, [data.nodes]);
@@ -1561,14 +1636,14 @@ const HierarchicalForceTree = () => {
         >
           <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
             <NodeAssistantPanel
-              node={{ id: 'bootstrap', keyword: '', fullText: '' }}
+              node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
               color={d3.schemeCategory10[0]}
               onSizeChange={() => { }}
               onSecondQuestion={() => { }}
               onPlaceholderCreate={() => { }}
               questionService={questionService.current}
-              initialConversation={[]}
-              onConversationChange={() => { }}
+              initialConversation={getInitialConversationForNode('__bootstrap__')}
+              onConversationChange={(messages) => handleConversationChange('__bootstrap__', messages)}
               nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
               isRootNode={true}
               bootstrapMode={true}
