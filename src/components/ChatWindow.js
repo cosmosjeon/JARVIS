@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import MarkdownMessage from './common/MarkdownMessage';
 
 // anchorPosition: { x, y } 가 전달되면 해당 좌표 기준으로 고정 위치에 렌더링
 // onSubmit 이 전달되면 첫 전송 시 상위에서 처리하도록 콜백 호출
@@ -121,29 +122,40 @@ const ChatWindow = ({ isOpen, onClose, nodeData, anchorPosition, onSubmit }) => 
 
           {/* Messages */}
           <div className="glass-scrollbar relative flex-1 space-y-4 overflow-y-auto p-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
+            {messages.map((message) => {
+              const isUser = message.sender === 'user';
+              const isSystem = message.sender === 'system';
+
+              return (
                 <div
-                  className={`max-w-xs rounded-2xl px-4 py-2 lg:max-w-md ${
-                    message.sender === 'user'
-                      ? 'glass-chip text-slate-100'
-                      : message.sender === 'system'
-                      ? 'glass-surface text-slate-100'
-                      : 'glass-surface text-slate-100'
-                  }`}
+                  key={message.id}
+                  className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
                 >
-                  <p className="text-sm">{message.text}</p>
-                  <p className={`mt-1 text-xs ${
-                    message.sender === 'user' ? 'text-slate-200/80' : 'text-slate-300/70'
-                  }`}>
-                    {message.timestamp}
-                  </p>
+                  {isUser ? (
+                    <div className="max-w-[240px] rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm">
+                      <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+                      <p className="mt-3 text-right text-xs text-slate-200/80">
+                        {message.timestamp}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="w-full space-y-3 text-sm leading-relaxed text-slate-100">
+                      <MarkdownMessage
+                        text={message.text}
+                        className="w-full text-sm leading-relaxed text-slate-100"
+                      />
+                      <p
+                        className={`text-right text-xs ${
+                          isSystem ? 'text-slate-200/70' : 'text-slate-300/70'
+                        }`}
+                      >
+                        {message.timestamp}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
 

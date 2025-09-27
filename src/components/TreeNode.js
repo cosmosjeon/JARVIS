@@ -5,13 +5,24 @@ import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 import { createTreeNodeSummary, isTreeRootNode } from '../services/TreeSummaryService';
 import { useSmartPositioning } from '../hooks/useSmartPositioning';
 
-const selectPanelSize = (conversation) => {
+const selectPanelSize = (conversation, scaleFactor = 1) => {
+  const scaledSizes = {
+    compact: {
+      width: PANEL_SIZES.compact.width * scaleFactor,
+      height: PANEL_SIZES.compact.height * scaleFactor
+    },
+    expanded: {
+      width: PANEL_SIZES.expanded.width * scaleFactor,
+      height: PANEL_SIZES.expanded.height * scaleFactor
+    }
+  };
+
   if (!Array.isArray(conversation)) {
-    return PANEL_SIZES.compact;
+    return scaledSizes.compact;
   }
 
   const hasAssistantReply = conversation.some((message) => message.role === 'assistant');
-  return hasAssistantReply ? PANEL_SIZES.expanded : PANEL_SIZES.compact;
+  return hasAssistantReply ? scaledSizes.expanded : scaledSizes.compact;
 };
 
 const TreeNode = ({
@@ -37,6 +48,7 @@ const TreeNode = ({
   overlayElement = null,
   onCloseNode = () => { },
   onPanZoomGesture,
+  nodeScaleFactor = 1,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -110,19 +122,77 @@ const TreeNode = ({
     return limitWords(currentNode.id || '', 4);
   };
 
-  // Calculate dimensions to fit text properly
-  const keywordLength = (node.keyword || node.id).length;
-  const baseWidth = Math.max(54, keywordLength * 9 + 20);
-  const baseHeight = 30;
+  // Calculate dimensions to fit text properly - apply nodeScaleFactor consistently
+  const keywordText = node.keyword || node.id;
   const hoverText = summarizeForHover(node);
-  const charUnit = 9;
-  const sidePadding = 24;
-  const computedHoverWidth = Math.max(54, hoverText.length * charUnit + sidePadding);
+
+  // 텍스트 너비를 정확하게 계산하는 함수
+  const calculateTextWidth = (text, fontSize) => {
+    let totalWidth = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      // 한글, 중문, 일문 등은 폰트 크기와 동일한 너비
+      // 영문, 숫자, 기호는 폰트 크기의 약 50-60%
+      if (/[\u3131-\u3163\uAC00-\uD7AF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF]/.test(char)) {
+        totalWidth += fontSize; // 한글, 중문, 일문
+      } else {
+        totalWidth += fontSize * 0.6; // 영문, 숫자, 기호
+      }
+    }
+    return totalWidth;
+  };
+
+  // 폰트 크기와 문자 간격을 고려한 정확한 계산
+  const fontSize = 14 * nodeScaleFactor;
+  const basePadding = 20 * nodeScaleFactor; // 기본 패딩
+  const hoverPadding = 24 * nodeScaleFactor; // 호버 상태 패딩
+  const minWidth = 54 * nodeScaleFactor; // 최소 너비
+
+  // 텍스트가 너무 길면 잘라내는 함수
+  const truncateText = (text, maxWidth, fontSize) => {
+    if (calculateTextWidth(text, fontSize) <= maxWidth) {
+      return text;
+    }
+
+    // 최대 너비에서 "..." 3글자 분량을 뺀 공간에 맞춰 텍스트 자르기
+    const ellipsisWidth = calculateTextWidth("...", fontSize);
+    const availableWidth = maxWidth - ellipsisWidth;
+
+    let truncated = '';
+    for (let i = 0; i < text.length; i++) {
+      const testText = truncated + text[i];
+      if (calculateTextWidth(testText, fontSize) > availableWidth) {
+        break;
+      }
+      truncated = testText;
+    }
+    return truncated + "...";
+  };
+
+  // 기본 노드 크기 계산 (최대 너비 제한)
+  const maxBaseWidth = 200 * nodeScaleFactor; // 최대 기본 너비
+  const maxHoverWidth = 300 * nodeScaleFactor; // 최대 호버 너비
+
+  const keywordTextWidth = calculateTextWidth(keywordText, fontSize);
+  const hoverTextWidth = calculateTextWidth(hoverText, fontSize);
+
+  const idealBaseWidth = Math.max(minWidth, keywordTextWidth + basePadding);
+  const idealHoverWidth = Math.max(minWidth, hoverTextWidth + hoverPadding);
+
+  const baseWidth = Math.min(idealBaseWidth, maxBaseWidth);
+  const baseHeight = 30 * nodeScaleFactor;
+  const computedHoverWidth = Math.min(idealHoverWidth, maxHoverWidth);
   const hoverWidth = Math.max(Math.ceil(baseWidth * 1.35), computedHoverWidth);
   // Only expand horizontally on hover; keep height unchanged
   const hoverHeight = baseHeight;
-  const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation));
-  const borderRadius = 8; // Subtle rounded corners
+
+  // 텍스트 크기에 맞춰 실제 표시할 텍스트 계산
+  const maxKeywordWidth = baseWidth - basePadding;
+  const maxHoverTextWidth = hoverWidth - hoverPadding;
+  const displayKeywordText = truncateText(keywordText, maxKeywordWidth, fontSize);
+  const displayHoverText = truncateText(hoverText, maxHoverTextWidth, fontSize);
+  const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation, nodeScaleFactor));
+  const borderRadius = 8 * nodeScaleFactor; // Subtle rounded corners scaled by window size
 
   // Determine current display mode
   const displayMode = isExpanded ? 'chat' : (isHovered ? 'hover' : 'normal');
@@ -138,8 +208,8 @@ const TreeNode = ({
     : 'rgba(255, 255, 255, 0.18)';
   const rectStrokeWidth = displayMode === 'chat' ? 2 : 1;
 
-  // Hover delete icon sizing (scaled to 80%)
-  const deleteIconScale = 0.8;
+  // Hover delete icon sizing (scaled to 80% and by nodeScaleFactor)
+  const deleteIconScale = 0.8 * nodeScaleFactor;
   const deleteIconRadius = 10 * deleteIconScale;
   const deleteIconFontSize = 12 * deleteIconScale;
   const deleteIconStrokeWidth = 1.5 * deleteIconScale;
@@ -176,9 +246,9 @@ const TreeNode = ({
   }, [isExpanded, onNodeClick]);
 
   useEffect(() => {
-    const preferredSize = selectPanelSize(initialConversation);
+    const preferredSize = selectPanelSize(initialConversation, nodeScaleFactor);
     setChatSize((current) => (current === preferredSize ? current : preferredSize));
-  }, [initialConversation, isExpanded]);
+  }, [initialConversation, isExpanded, nodeScaleFactor]);
 
   const handlePanelSizeChange = useCallback((size) => {
     setChatSize(size);
@@ -197,6 +267,15 @@ const TreeNode = ({
   }, [viewTransform]);
 
   const shouldUsePortal = displayMode === 'chat' && overlayElement;
+
+  const handleAssistantPanelClose = useCallback(() => {
+    if (typeof onCloseNode === 'function') {
+      onCloseNode();
+    }
+    if (typeof onNodeClick === 'function') {
+      onNodeClick({ type: 'dismiss' });
+    }
+  }, [onCloseNode, onNodeClick]);
 
   // Use smart positioning for the panel
   const { position: smartPosition, adjustedSize, isPositioned } = useSmartPositioning(
@@ -263,8 +342,9 @@ const TreeNode = ({
             onRequestAnswer={onRequestAnswer}
             onAnswerComplete={onAnswerComplete}
             onAnswerError={onAnswerError}
-            onCloseNode={onCloseNode}
+            onCloseNode={handleAssistantPanelClose}
             onPanZoomGesture={onPanZoomGesture}
+            nodeScaleFactor={nodeScaleFactor}
           />
         </div>
       </motion.div>,
@@ -427,8 +507,9 @@ const TreeNode = ({
               onRequestAnswer={onRequestAnswer}
             onAnswerComplete={onAnswerComplete}
             onAnswerError={onAnswerError}
-            onCloseNode={onCloseNode}
+            onCloseNode={handleAssistantPanelClose}
             onPanZoomGesture={onPanZoomGesture}
+            nodeScaleFactor={nodeScaleFactor}
           />
           </div>
         </foreignObject>
@@ -437,15 +518,15 @@ const TreeNode = ({
         <motion.text
           textAnchor="middle"
           dominantBaseline="central"
-          fontSize={displayMode === 'hover' ? 14 : 14}
+          fontSize={fontSize}
           fontFamily="Arial, sans-serif"
           fontWeight="bold"
           fill="#666666"
           style={{ pointerEvents: 'none' }}
           transition={{ duration: 0.15 }}
-          y={20}
+          y={20 * nodeScaleFactor}
         >
-          {displayMode === 'hover' ? hoverText : (node.keyword || node.id)}
+          {displayMode === 'hover' ? displayHoverText : displayKeywordText}
         </motion.text>
       )}
 
@@ -481,7 +562,7 @@ const TreeNode = ({
       {/* Subtree collapse/expand toggle */}
       {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
         <g
-          transform={`translate(0, ${currentHeight / 2 + 35})`}
+          transform={`translate(0, ${currentHeight / 2 + 35 * nodeScaleFactor})`}
           onClick={handleTogglePointer}
           onMouseDown={handleTogglePointer}
           onPointerDown={handleTogglePointer}
@@ -492,34 +573,34 @@ const TreeNode = ({
           data-node-toggle="true"
         >
           <rect
-            x={-10}
-            y={-10}
-            width={20}
-            height={20}
-            rx={4}
-            ry={4}
+            x={-10 * nodeScaleFactor}
+            y={-10 * nodeScaleFactor}
+            width={20 * nodeScaleFactor}
+            height={20 * nodeScaleFactor}
+            rx={4 * nodeScaleFactor}
+            ry={4 * nodeScaleFactor}
             fill="rgba(0, 0, 0, 0.3)"
             stroke="rgba(255,255,255,0.6)"
-            strokeWidth={1}
+            strokeWidth={1 * nodeScaleFactor}
             data-node-toggle="true"
           />
           {/* Icon: collapsed => vertical chevron (˅), expanded => vertical chevron (˄) */}
           {isCollapsed ? (
             <path
-              d="M -4 -1 L 0 3 L 4 -1"
+              d={`M ${-4 * nodeScaleFactor} ${-1 * nodeScaleFactor} L 0 ${3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${-1 * nodeScaleFactor}`}
               fill="none"
               stroke="rgba(255,255,255,0.95)"
-              strokeWidth={2}
+              strokeWidth={2 * nodeScaleFactor}
               strokeLinecap="round"
               strokeLinejoin="round"
               data-node-toggle="true"
             />
           ) : (
             <path
-              d="M -4 1 L 0 -3 L 4 1"
+              d={`M ${-4 * nodeScaleFactor} ${1 * nodeScaleFactor} L 0 ${-3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${1 * nodeScaleFactor}`}
               fill="none"
               stroke="rgba(255,255,255,0.95)"
-              strokeWidth={2}
+              strokeWidth={2 * nodeScaleFactor}
               strokeLinecap="round"
               strokeLinejoin="round"
               data-node-toggle="true"

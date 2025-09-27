@@ -2,11 +2,24 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Highlighter from 'web-highlighter';
 import QuestionService from '../services/QuestionService';
 import { useSettings } from '../hooks/SettingsContext';
+import MarkdownMessage from './common/MarkdownMessage';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
   expanded: { width: 1920, height: 1080 },
 };
+
+// 노드 스케일 팩터를 적용한 패널 크기 계산
+const getScaledPanelSizes = (scaleFactor = 1) => ({
+  compact: {
+    width: PANEL_SIZES.compact.width * scaleFactor,
+    height: PANEL_SIZES.compact.height * scaleFactor
+  },
+  expanded: {
+    width: PANEL_SIZES.expanded.width * scaleFactor,
+    height: PANEL_SIZES.expanded.height * scaleFactor
+  },
+});
 
 const TYPING_INTERVAL_MS = 18;
 
@@ -19,206 +32,6 @@ const buildAnswerText = (summary, question) => {
   const detail = `${summary.intro}`;
   const body = [detail, bulletText].filter(Boolean).join('\n\n');
   return `${intro}\n\n${body}`.trim();
-};
-
-const parseMarkdownBlocks = (text) => {
-  const lines = text.split(/\r?\n/);
-  const blocks = [];
-  let currentList = null;
-  let currentCodeBlock = null;
-
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-
-    // 코드 블록 처리
-    if (trimmed.startsWith('```')) {
-      if (currentCodeBlock) {
-        // 코드 블록 종료
-        blocks.push(currentCodeBlock);
-        currentCodeBlock = null;
-      } else {
-        // 코드 블록 시작
-        const language = trimmed.slice(3).trim();
-        currentCodeBlock = { type: 'code', language, content: [] };
-      }
-      currentList = null;
-      return;
-    }
-
-    if (currentCodeBlock) {
-      currentCodeBlock.content.push(line);
-      return;
-    }
-
-    if (!trimmed) {
-      currentList = null;
-      return;
-    }
-
-    // 헤딩 처리
-    if (/^#{1,6}\s+/.test(trimmed)) {
-      const level = trimmed.match(/^(#{1,6})/)[1].length;
-      const content = trimmed.replace(/^#{1,6}\s+/, '');
-      blocks.push({ type: 'heading', level, content });
-      currentList = null;
-      return;
-    }
-
-    // 리스트 처리
-    if (/^[-*+]\s+/.test(trimmed)) {
-      if (!currentList) {
-        currentList = { type: 'list', items: [] };
-        blocks.push(currentList);
-      }
-      currentList.items.push(trimmed.replace(/^[-*+]\s+/, '').trim());
-      return;
-    }
-
-    // 번호 리스트 처리
-    if (/^\d+\.\s+/.test(trimmed)) {
-      if (!currentList || currentList.ordered !== true) {
-        currentList = { type: 'list', ordered: true, items: [] };
-        blocks.push(currentList);
-      }
-      currentList.items.push(trimmed.replace(/^\d+\.\s+/, '').trim());
-      return;
-    }
-
-    currentList = null;
-    blocks.push({ type: 'paragraph', content: trimmed });
-  });
-
-  // 미완성 코드 블록 처리
-  if (currentCodeBlock) {
-    blocks.push(currentCodeBlock);
-  }
-
-  return blocks;
-};
-
-// 인라인 마크다운 처리 함수
-const parseInlineMarkdown = (text) => {
-  const parts = [];
-  let remaining = text;
-  let key = 0;
-
-  while (remaining.length > 0) {
-    // 코드 인라인 처리 (`code`)
-    const codeMatch = remaining.match(/^`([^`]+)`/);
-    if (codeMatch) {
-      parts.push(
-        <code key={key++} className="bg-slate-700/50 text-emerald-300 px-1 py-0.5 rounded text-xs font-mono">
-          {codeMatch[1]}
-        </code>
-      );
-      remaining = remaining.slice(codeMatch[0].length);
-      continue;
-    }
-
-    // 볼드 처리 (**bold**)
-    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
-    if (boldMatch) {
-      parts.push(
-        <strong key={key++} className="font-bold text-slate-50">
-          {boldMatch[1]}
-        </strong>
-      );
-      remaining = remaining.slice(boldMatch[0].length);
-      continue;
-    }
-
-    // 이탤릭 처리 (*italic*)
-    const italicMatch = remaining.match(/^\*([^*]+)\*/);
-    if (italicMatch) {
-      parts.push(
-        <em key={key++} className="italic text-slate-200">
-          {italicMatch[1]}
-        </em>
-      );
-      remaining = remaining.slice(italicMatch[0].length);
-      continue;
-    }
-
-    // 일반 텍스트
-    const nextSpecial = remaining.search(/[`*]/);
-    if (nextSpecial === -1) {
-      parts.push(remaining);
-      break;
-    } else {
-      parts.push(remaining.slice(0, nextSpecial));
-      remaining = remaining.slice(nextSpecial);
-    }
-  }
-
-  return parts;
-};
-
-const MarkdownMessage = ({ text }) => {
-  const blocks = useMemo(() => parseMarkdownBlocks(text), [text]);
-
-  if (!blocks.length) {
-    return null;
-  }
-
-  return (
-    <div className="markdown-body space-y-3">
-      {blocks.map((block, blockIndex) => {
-        if (block.type === 'heading') {
-          const HeadingTag = `h${Math.min(block.level, 6)}`;
-          const headingClasses = {
-            1: 'text-xl font-bold text-slate-50 mb-2',
-            2: 'text-lg font-bold text-slate-100 mb-2',
-            3: 'text-base font-semibold text-slate-100 mb-1',
-            4: 'text-sm font-semibold text-slate-200 mb-1',
-            5: 'text-sm font-medium text-slate-200',
-            6: 'text-xs font-medium text-slate-300',
-          };
-
-          return (
-            <HeadingTag key={`md-heading-${blockIndex}`} className={headingClasses[block.level]}>
-              {parseInlineMarkdown(block.content)}
-            </HeadingTag>
-          );
-        }
-
-        if (block.type === 'code') {
-          return (
-            <div key={`md-code-${blockIndex}`} className="bg-slate-800/60 rounded-lg p-3 my-2">
-              {block.language && (
-                <div className="text-xs text-slate-400 mb-2 font-mono">{block.language}</div>
-              )}
-              <pre className="text-sm text-slate-200 font-mono whitespace-pre-wrap overflow-x-auto">
-                <code>{block.content.join('\n')}</code>
-              </pre>
-            </div>
-          );
-        }
-
-        if (block.type === 'list') {
-          const ListTag = block.ordered ? 'ol' : 'ul';
-          const listClasses = block.ordered
-            ? 'list-decimal list-inside space-y-1 text-slate-200'
-            : 'list-disc list-inside space-y-1 text-slate-200';
-
-          return (
-            <ListTag key={`md-list-${blockIndex}`} className={listClasses}>
-              {block.items.map((item, itemIndex) => (
-                <li key={`md-list-item-${blockIndex}-${itemIndex}`} className="leading-relaxed">
-                  {parseInlineMarkdown(item)}
-                </li>
-              ))}
-            </ListTag>
-          );
-        }
-
-        return (
-          <p key={`md-paragraph-${blockIndex}`} className="text-slate-200 leading-relaxed">
-            {parseInlineMarkdown(block.content)}
-          </p>
-        );
-      })}
-    </div>
-  );
 };
 
 const NodeAssistantPanel = ({
@@ -239,6 +52,7 @@ const NodeAssistantPanel = ({
   onAnswerError,
   onCloseNode = () => { },
   onPanZoomGesture,
+  nodeScaleFactor = 1,
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -806,7 +620,7 @@ const NodeAssistantPanel = ({
   return (
     <div
       ref={panelRef}
-      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur-md"
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl border border-white/30 bg-white/25 p-6 backdrop-blur-3xl"
       style={{
         fontFamily: 'Arial, sans-serif',
         position: 'relative',
@@ -845,7 +659,11 @@ const NodeAssistantPanel = ({
         <div className="flex items-center gap-2" data-block-pan="true">
           <button
             type="button"
-            onClick={onCloseNode}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onCloseNode();
+            }}
             className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
           >
             닫기
@@ -857,30 +675,29 @@ const NodeAssistantPanel = ({
         ref={highlightRootRef}
         className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
       >
-          <div className="flex h-full flex-col gap-3">
+          <div className="flex h-full flex-col gap-6">
             {messages.map((message) => {
               const isAssistant = message.role === 'assistant';
 
               return (
                 <div
                   key={message.id}
-                  className={`${isAssistant ? 'w-full' : 'flex justify-end'}`}
+                  className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   data-testid={isAssistant ? 'assistant-message' : 'user-message'}
                   data-status={message.status || 'complete'}
                 >
-                  <div
-                    className={
-                      isAssistant
-                        ? 'w-full break-words px-4 py-4 text-sm leading-relaxed text-slate-50'
-                        : 'max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm'
-                    }
-                  >
-                    {isAssistant ? (
-                      <MarkdownMessage text={message.text} />
-                    ) : (
+                  {isAssistant ? (
+                    <div className="w-full">
+                      <MarkdownMessage
+                        text={message.text}
+                        className="w-full text-base leading-7 text-slate-100"
+                      />
+                    </div>
+                  ) : (
+                    <div className="max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm">
                       <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
