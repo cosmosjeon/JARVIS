@@ -18,7 +18,6 @@ const LibraryApp = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [syncingTreeId, setSyncingTreeId] = useState(null);
-  const focusRefreshTimestampRef = useRef(0);
   const { user, signOut } = useSupabaseAuth();
 
   const handleMemoSelect = (memo) => {
@@ -38,7 +37,6 @@ const LibraryApp = () => {
   const refreshLibrary = useCallback(async () => {
     if (!user) return;
 
-    focusRefreshTimestampRef.current = Date.now();
     setLoading(true);
     setError(null);
     try {
@@ -57,37 +55,27 @@ const LibraryApp = () => {
         memos: mappedMemos,
       });
 
-      if (mappedMemos.length === 0) {
-        setSelectedMemo(null);
-      } else if (!mappedMemos.some((memo) => memo.id === selectedMemo?.id)) {
-        setSelectedMemo(mappedMemos[0]);
-      } else {
-        const current = mappedMemos.find((memo) => memo.id === selectedMemo?.id);
-        setSelectedMemo(current ?? mappedMemos[0]);
-      }
+      setSelectedMemo((previous) => {
+        if (mappedMemos.length === 0) {
+          return null;
+        }
+
+        if (!previous) {
+          return mappedMemos[0];
+        }
+
+        const existing = mappedMemos.find((memo) => memo.id === previous.id);
+        return existing ?? mappedMemos[0];
+      });
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, [user, baseFolders, selectedMemo?.id]);
+  }, [user, baseFolders]);
 
   useEffect(() => {
     refreshLibrary();
-  }, [refreshLibrary]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const handleFocus = () => {
-      const now = Date.now();
-      if (now - focusRefreshTimestampRef.current < 1500) {
-        return;
-      }
-      focusRefreshTimestampRef.current = now;
-      refreshLibrary();
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
   }, [refreshLibrary]);
 
   const persistMemo = useCallback(async (memo) => {
