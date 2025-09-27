@@ -25,21 +25,62 @@ const parseMarkdownBlocks = (text) => {
   const lines = text.split(/\r?\n/);
   const blocks = [];
   let currentList = null;
+  let currentCodeBlock = null;
 
   lines.forEach((line) => {
     const trimmed = line.trim();
+
+    // 코드 블록 처리
+    if (trimmed.startsWith('```')) {
+      if (currentCodeBlock) {
+        // 코드 블록 종료
+        blocks.push(currentCodeBlock);
+        currentCodeBlock = null;
+      } else {
+        // 코드 블록 시작
+        const language = trimmed.slice(3).trim();
+        currentCodeBlock = { type: 'code', language, content: [] };
+      }
+      currentList = null;
+      return;
+    }
+
+    if (currentCodeBlock) {
+      currentCodeBlock.content.push(line);
+      return;
+    }
 
     if (!trimmed) {
       currentList = null;
       return;
     }
 
-    if (/^[-*]\s+/.test(trimmed)) {
+    // 헤딩 처리
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      const level = trimmed.match(/^(#{1,6})/)[1].length;
+      const content = trimmed.replace(/^#{1,6}\s+/, '');
+      blocks.push({ type: 'heading', level, content });
+      currentList = null;
+      return;
+    }
+
+    // 리스트 처리
+    if (/^[-*+]\s+/.test(trimmed)) {
       if (!currentList) {
         currentList = { type: 'list', items: [] };
         blocks.push(currentList);
       }
-      currentList.items.push(trimmed.replace(/^[-*]\s+/, '').trim());
+      currentList.items.push(trimmed.replace(/^[-*+]\s+/, '').trim());
+      return;
+    }
+
+    // 번호 리스트 처리
+    if (/^\d+\.\s+/.test(trimmed)) {
+      if (!currentList || currentList.ordered !== true) {
+        currentList = { type: 'list', ordered: true, items: [] };
+        blocks.push(currentList);
+      }
+      currentList.items.push(trimmed.replace(/^\d+\.\s+/, '').trim());
       return;
     }
 
@@ -47,7 +88,69 @@ const parseMarkdownBlocks = (text) => {
     blocks.push({ type: 'paragraph', content: trimmed });
   });
 
+  // 미완성 코드 블록 처리
+  if (currentCodeBlock) {
+    blocks.push(currentCodeBlock);
+  }
+
   return blocks;
+};
+
+// 인라인 마크다운 처리 함수
+const parseInlineMarkdown = (text) => {
+  const parts = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // 코드 인라인 처리 (`code`)
+    const codeMatch = remaining.match(/^`([^`]+)`/);
+    if (codeMatch) {
+      parts.push(
+        <code key={key++} className="bg-slate-700/50 text-emerald-300 px-1 py-0.5 rounded text-xs font-mono">
+          {codeMatch[1]}
+        </code>
+      );
+      remaining = remaining.slice(codeMatch[0].length);
+      continue;
+    }
+
+    // 볼드 처리 (**bold**)
+    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+    if (boldMatch) {
+      parts.push(
+        <strong key={key++} className="font-bold text-slate-50">
+          {boldMatch[1]}
+        </strong>
+      );
+      remaining = remaining.slice(boldMatch[0].length);
+      continue;
+    }
+
+    // 이탤릭 처리 (*italic*)
+    const italicMatch = remaining.match(/^\*([^*]+)\*/);
+    if (italicMatch) {
+      parts.push(
+        <em key={key++} className="italic text-slate-200">
+          {italicMatch[1]}
+        </em>
+      );
+      remaining = remaining.slice(italicMatch[0].length);
+      continue;
+    }
+
+    // 일반 텍스트
+    const nextSpecial = remaining.search(/[`*]/);
+    if (nextSpecial === -1) {
+      parts.push(remaining);
+      break;
+    } else {
+      parts.push(remaining.slice(0, nextSpecial));
+      remaining = remaining.slice(nextSpecial);
+    }
+  }
+
+  return parts;
 };
 
 const MarkdownMessage = ({ text }) => {
@@ -58,21 +161,59 @@ const MarkdownMessage = ({ text }) => {
   }
 
   return (
-    <div className="markdown-body">
+    <div className="markdown-body space-y-3">
       {blocks.map((block, blockIndex) => {
-        if (block.type === 'list') {
+        if (block.type === 'heading') {
+          const HeadingTag = `h${Math.min(block.level, 6)}`;
+          const headingClasses = {
+            1: 'text-xl font-bold text-slate-50 mb-2',
+            2: 'text-lg font-bold text-slate-100 mb-2',
+            3: 'text-base font-semibold text-slate-100 mb-1',
+            4: 'text-sm font-semibold text-slate-200 mb-1',
+            5: 'text-sm font-medium text-slate-200',
+            6: 'text-xs font-medium text-slate-300',
+          };
+
           return (
-            <ul key={`md-list-${blockIndex}`}>
+            <HeadingTag key={`md-heading-${blockIndex}`} className={headingClasses[block.level]}>
+              {parseInlineMarkdown(block.content)}
+            </HeadingTag>
+          );
+        }
+
+        if (block.type === 'code') {
+          return (
+            <div key={`md-code-${blockIndex}`} className="bg-slate-800/60 rounded-lg p-3 my-2">
+              {block.language && (
+                <div className="text-xs text-slate-400 mb-2 font-mono">{block.language}</div>
+              )}
+              <pre className="text-sm text-slate-200 font-mono whitespace-pre-wrap overflow-x-auto">
+                <code>{block.content.join('\n')}</code>
+              </pre>
+            </div>
+          );
+        }
+
+        if (block.type === 'list') {
+          const ListTag = block.ordered ? 'ol' : 'ul';
+          const listClasses = block.ordered
+            ? 'list-decimal list-inside space-y-1 text-slate-200'
+            : 'list-disc list-inside space-y-1 text-slate-200';
+
+          return (
+            <ListTag key={`md-list-${blockIndex}`} className={listClasses}>
               {block.items.map((item, itemIndex) => (
-                <li key={`md-list-item-${blockIndex}-${itemIndex}`}>{item}</li>
+                <li key={`md-list-item-${blockIndex}-${itemIndex}`} className="leading-relaxed">
+                  {parseInlineMarkdown(item)}
+                </li>
               ))}
-            </ul>
+            </ListTag>
           );
         }
 
         return (
-          <p key={`md-paragraph-${blockIndex}`}>
-            {block.content}
+          <p key={`md-paragraph-${blockIndex}`} className="text-slate-200 leading-relaxed">
+            {parseInlineMarkdown(block.content)}
           </p>
         );
       })}
@@ -97,6 +238,7 @@ const NodeAssistantPanel = ({
   onAnswerComplete,
   onAnswerError,
   onCloseNode = () => { },
+  onPanZoomGesture,
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -673,6 +815,11 @@ const NodeAssistantPanel = ({
         WebkitAppRegion: 'no-drag',
       }}
       data-interactive-zone="true"
+      onWheelCapture={(event) => {
+        if ((event.ctrlKey || event.metaKey) && typeof onPanZoomGesture === 'function') {
+          onPanZoomGesture(event);
+        }
+      }}
     >
 
       <div
@@ -682,6 +829,11 @@ const NodeAssistantPanel = ({
           cursor: 'grab',
           userSelect: 'none',
           WebkitUserSelect: 'none',
+        }}
+        onWheelCapture={(event) => {
+          if (typeof onPanZoomGesture === 'function') {
+            onPanZoomGesture(event);
+          }
         }}
       >
         <div className="min-w-0 flex-1">

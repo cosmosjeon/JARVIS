@@ -36,6 +36,7 @@ const TreeNode = ({
   viewTransform = { x: 0, y: 0, k: 1 },
   overlayElement = null,
   onCloseNode = () => { },
+  onPanZoomGesture,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -254,6 +255,8 @@ const TreeNode = ({
             onRequestAnswer={onRequestAnswer}
             onAnswerComplete={onAnswerComplete}
             onAnswerError={onAnswerError}
+            onCloseNode={onCloseNode}
+            onPanZoomGesture={onPanZoomGesture}
           />
         </div>
       </motion.div>,
@@ -414,10 +417,11 @@ const TreeNode = ({
               nodeSummary={memoizedSummary}
               isRootNode={memoizedIsRoot}
               onRequestAnswer={onRequestAnswer}
-              onAnswerComplete={onAnswerComplete}
-              onAnswerError={onAnswerError}
-              onCloseNode={onCloseNode}
-            />
+            onAnswerComplete={onAnswerComplete}
+            onAnswerError={onAnswerError}
+            onCloseNode={onCloseNode}
+            onPanZoomGesture={onPanZoomGesture}
+          />
           </div>
         </foreignObject>
         )
