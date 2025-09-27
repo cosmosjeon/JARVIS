@@ -45,23 +45,11 @@ const LibraryApp = () => {
         updatedAt: tree.updatedAt,
       }));
 
-      setTrees((previous) => {
-        const merged = new Map();
-        previous.forEach((entry) => {
-          merged.set(entry.id, entry);
-        });
-        mapped.forEach((entry) => {
-          merged.set(entry.id, entry);
-        });
-        const nextList = Array.from(merged.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-        setSelectedId((previousId) => {
-          if (!nextList.length) return null;
-          const exists = nextList.some((item) => item.id === previousId);
-          return exists ? previousId : nextList[0].id;
-        });
-
-        return nextList;
+      setTrees(mapped);
+      setSelectedId((previousId) => {
+        if (!mapped.length) return null;
+        const exists = mapped.some((item) => item.id === previousId);
+        return exists ? previousId : mapped[0].id;
       });
     } catch (err) {
       setError(err);
