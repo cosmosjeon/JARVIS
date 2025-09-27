@@ -49,8 +49,8 @@ const LibraryApp = () => {
       setTrees(mapped);
       setSelectedId((previousId) => {
         if (!mapped.length) return null;
-        const exists = mapped.some((item) => item.id === previousId);
-        return exists ? previousId : mapped[0].id;
+        const exists = previousId && mapped.some((item) => item.id === previousId);
+        return exists ? previousId : null;
       });
     } catch (err) {
       setError(err);
@@ -80,6 +80,24 @@ const LibraryApp = () => {
       }
     };
   }, [refreshLibrary]);
+
+  const handleTreeOpen = useCallback(async (treeId) => {
+    if (!treeId) {
+      return;
+    }
+
+    try {
+      await openWidgetForTree({ treeId, fresh: false });
+    } catch (err) {
+      setError(err);
+      if (typeof window !== "undefined") {
+        window.jarvisAPI?.log?.("error", "library_open_tree_failed", {
+          treeId,
+          message: err?.message,
+        });
+      }
+    }
+  }, [setError]);
 
   const handleTreeDelete = useCallback(async (treeId) => {
     if (!user || !treeId) {
@@ -129,6 +147,7 @@ const LibraryApp = () => {
                     key={tree.id}
                     type="button"
                     onClick={() => setSelectedId(tree.id)}
+                    onDoubleClick={() => { void handleTreeOpen(tree.id); }}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       handleTreeDelete(tree.id);
