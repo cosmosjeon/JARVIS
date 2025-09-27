@@ -24,6 +24,17 @@ import {
 
 const WINDOW_CHROME_HEIGHT = 48;
 
+const DOM_DELTA_PIXEL = 0;
+const DOM_DELTA_LINE = 1;
+const DOM_DELTA_PAGE = 2;
+
+const normalizeWheelDelta = (value, mode) => {
+  if (!Number.isFinite(value)) return 0;
+  if (mode === DOM_DELTA_LINE) return value * 16;
+  if (mode === DOM_DELTA_PAGE) return value * 120;
+  return value;
+};
+
 const getViewportDimensions = () => {
   if (typeof window === 'undefined') {
     return { width: 1024, height: 720 - WINDOW_CHROME_HEIGHT };
@@ -758,6 +769,59 @@ const HierarchicalForceTree = () => {
     setExpandedNodeId(null);
   }, [clearPendingExpansion]);
 
+  const forwardPanZoomGesture = useCallback((event) => {
+    const svgElement = svgRef.current;
+    const zoomBehaviour = zoomBehaviourRef.current;
+    if (!svgElement || !zoomBehaviour || !event) {
+      return false;
+    }
+
+    const mode = typeof event.deltaMode === 'number' ? event.deltaMode : DOM_DELTA_PIXEL;
+    const selection = d3.select(svgElement);
+
+    const isPinch = event.ctrlKey || event.metaKey;
+
+    if (isPinch) {
+      const normalizedDeltaY = normalizeWheelDelta(event.deltaY || 0, mode);
+      if (!Number.isFinite(normalizedDeltaY) || normalizedDeltaY === 0) {
+        return false;
+      }
+
+      const rect = svgElement.getBoundingClientRect();
+      const clientX = typeof event.clientX === 'number' ? event.clientX : rect.left + rect.width / 2;
+      const clientY = typeof event.clientY === 'number' ? event.clientY : rect.top + rect.height / 2;
+      const pointerX = clientX - rect.left;
+      const pointerY = clientY - rect.top;
+
+      // Match the sensitivity used by the default wheel delta
+      const scaleFactor = Math.pow(2, -normalizedDeltaY / 600);
+      if (!Number.isFinite(scaleFactor) || scaleFactor === 0) {
+        return false;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      selection.interrupt('focus-node');
+      zoomBehaviour.scaleBy(selection, scaleFactor, [pointerX, pointerY]);
+      return true;
+    }
+
+    const normalizedDeltaX = normalizeWheelDelta(event.deltaX || 0, mode);
+    const normalizedDeltaY = normalizeWheelDelta(event.deltaY || 0, mode);
+    if (normalizedDeltaX === 0 && normalizedDeltaY === 0) {
+      return false;
+    }
+
+    const currentTransform = d3.zoomTransform(svgElement);
+    const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
+
+    event.preventDefault();
+    event.stopPropagation();
+    selection.interrupt('focus-node');
+    zoomBehaviour.translateBy(selection, -normalizedDeltaX / scale, -normalizedDeltaY / scale);
+    return true;
+  }, []);
+
   // 부트스트랩 채팅창 위치 (화면 상단 중앙)
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
@@ -1177,10 +1241,6 @@ const HierarchicalForceTree = () => {
       return undefined;
     }
 
-    const DOM_DELTA_PIXEL = 0;
-    const DOM_DELTA_LINE = 1;
-    const DOM_DELTA_PAGE = 2;
-
     const isSecondaryButtonDrag = (evt) => {
       if (typeof evt.button === 'number' && (evt.button === 1 || evt.button === 2)) return true;
       if (typeof evt.buttons === 'number') {
@@ -1239,12 +1299,6 @@ const HierarchicalForceTree = () => {
       return magnitude <= 200;
     };
 
-    const normalizeWheelDelta = (value, mode) => {
-      if (!Number.isFinite(value)) return 0;
-      if (mode === DOM_DELTA_LINE) return value * 16;
-      if (mode === DOM_DELTA_PAGE) return value * 120;
-      return value;
-    };
     const zoomBehaviour = zoomFactory()
       .scaleExtent([0.3, 4])
       .filter((event) => {
@@ -1661,6 +1715,10 @@ const HierarchicalForceTree = () => {
 
     const handlePointerDown = (event) => {
       const target = event.target;
+      if (target instanceof Element && target.closest('[data-interactive-zone="true"]')) {
+        resetState();
+        return;
+      }
       if (target instanceof Element && target.closest('[data-node-id]')) {
         resetState();
         return;
@@ -1914,6 +1972,7 @@ const HierarchicalForceTree = () => {
               isRootNode={true}
               bootstrapMode={true}
               onBootstrapFirstSend={handleBootstrapSubmit}
+              onPanZoomGesture={forwardPanZoomGesture}
             />
           </div>
         </div>
@@ -2082,6 +2141,7 @@ const HierarchicalForceTree = () => {
                     viewTransform={viewTransform}
                     overlayElement={overlayElement}
                     onCloseNode={() => handleCloseNode(node.id)}
+                    onPanZoomGesture={forwardPanZoomGesture}
                   />
                 </motion.g>
               );

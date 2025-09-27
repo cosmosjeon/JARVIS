@@ -36,6 +36,7 @@ const TreeNode = ({
   viewTransform = { x: 0, y: 0, k: 1 },
   overlayElement = null,
   onCloseNode = () => { },
+  onPanZoomGesture,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -214,12 +215,16 @@ const TreeNode = ({
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.1 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
+        className="flex h-full w-full"
         style={{
           position: 'absolute',
           left: `${smartPosition.x}px`,
           top: `${smartPosition.y}px`,
           width: `${adjustedSize.width}px`,
           height: `${adjustedSize.height}px`,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
           pointerEvents: 'auto',
           zIndex: 1010,
           willChange: 'transform',
@@ -228,9 +233,13 @@ const TreeNode = ({
         data-node-id={node.id}
       >
         <div
+          className="flex h-full w-full"
           style={{
             width: '100%',
             height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
             pointerEvents: 'auto',
             position: 'relative',
             zIndex: 1000,
@@ -254,6 +263,8 @@ const TreeNode = ({
             onRequestAnswer={onRequestAnswer}
             onAnswerComplete={onAnswerComplete}
             onAnswerError={onAnswerError}
+            onCloseNode={onCloseNode}
+            onPanZoomGesture={onPanZoomGesture}
           />
         </div>
       </motion.div>,
@@ -414,10 +425,11 @@ const TreeNode = ({
               nodeSummary={memoizedSummary}
               isRootNode={memoizedIsRoot}
               onRequestAnswer={onRequestAnswer}
-              onAnswerComplete={onAnswerComplete}
-              onAnswerError={onAnswerError}
-              onCloseNode={onCloseNode}
-            />
+            onAnswerComplete={onAnswerComplete}
+            onAnswerError={onAnswerError}
+            onCloseNode={onCloseNode}
+            onPanZoomGesture={onPanZoomGesture}
+          />
           </div>
         </foreignObject>
         )
