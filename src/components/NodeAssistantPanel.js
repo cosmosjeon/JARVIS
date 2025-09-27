@@ -464,6 +464,8 @@ const NodeAssistantPanel = ({
       clearTypingTimers();
 
       const resolvedIsRootNode = isRootNodeProp;
+      const normalizedQuestion = typeof question === 'string' ? question.trim() : '';
+      const questionText = normalizedQuestion || (typeof question === 'string' ? question : '');
 
       let shouldCreateChild = false;
       if (!skipSecondQuestionCheck) {

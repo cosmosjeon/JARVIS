@@ -288,18 +288,39 @@ const LibraryTreeVisualization = ({ treeData, isEditMode, onTreeUpdate, onNodeSe
               {layoutLinks.map((link) => {
                 const path = `M ${link.source.x} ${link.source.y} L ${link.target.x} ${link.target.y - NODE_HEIGHT / 2}`;
                 return (
-                  <motion.path
-                    key={`${link.source.id}-${link.target.id}`}
-                    d={path}
-                    stroke="rgba(148, 163, 184, 0.45)"
-                    strokeWidth={2}
-                    fill="none"
-                    markerEnd="url(#library-arrow)"
-                    initial={{ pathLength: 0, opacity: 0 }}
-                    animate={{ pathLength: 1, opacity: 1 }}
-                    exit={{ pathLength: 0, opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                  />
+                  <g key={`${link.source.id}-${link.target.id}`}>
+                    {/* Neumorphism shadow for line */}
+                    <motion.path
+                      d={path}
+                      stroke="#bebebe"
+                      strokeOpacity={0.3}
+                      strokeWidth={4}
+                      fill="none"
+                      style={{
+                        filter: 'blur(2px)',
+                      }}
+                      initial={{ pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1 }}
+                      exit={{ pathLength: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                    />
+                    {/* Main neumorphism line */}
+                    <motion.path
+                      d={path}
+                      stroke="#e0e0e0"
+                      strokeOpacity={0.8}
+                      strokeWidth={2}
+                      fill="none"
+                      markerEnd="url(#library-arrow)"
+                      style={{
+                        filter: 'drop-shadow(1px 1px 2px #bebebe) drop-shadow(-1px -1px 2px #ffffff)',
+                      }}
+                      initial={{ pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1 }}
+                      exit={{ pathLength: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </g>
                 );
               })}
             </AnimatePresence>
