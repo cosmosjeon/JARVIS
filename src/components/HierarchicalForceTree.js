@@ -180,6 +180,7 @@ const HierarchicalForceTree = () => {
     setOverlayElement(overlayContainerRef.current);
   }, []);
 
+
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
@@ -1391,6 +1392,10 @@ const HierarchicalForceTree = () => {
 
   const handleDrag = (nodeId) => {
     return d3.drag()
+      .filter((event) => {
+        // 노드 드래그: Ctrl/Cmd 키를 누른 상태에서만 드래그 허용
+        return event.ctrlKey || event.metaKey;
+      })
       .on('start', (event) => {
         // 드래그 시작 시 애니메이션 일시 정지
         if (animationRef.current) {
@@ -1446,6 +1451,7 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     if (!expandedNodeId) return;
     const svg = d3.select(svgRef.current);
+    // 확장된 노드를 최상위로 이동
     svg.selectAll(`[data-node-id="${expandedNodeId}"]`).raise();
   }, [expandedNodeId, nodes]);
 
@@ -1477,7 +1483,7 @@ const HierarchicalForceTree = () => {
 
   return (
     <div
-      className="relative flex h-full w-full overflow-hidden bg-transparent"
+      className="relative flex overflow-hidden bg-transparent"
       style={{
         // 투명 창에서 이전 프레임 잔상 방지: 독립 합성 레이어 확보
         willChange: 'transform, opacity, background',
@@ -1486,9 +1492,19 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.15), rgba(15, 23, 42, 0.25))',
+        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.12), rgba(15, 23, 42, 0.18))',
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
+        // 창틀 여유 공간까지 완전히 채우기
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        margin: 0,
+        padding: 0,
       }}
     >
       {initializingTree && (
@@ -1505,6 +1521,45 @@ const HierarchicalForceTree = () => {
           <p className="opacity-80">{treeSyncError.message || 'Supabase와 동기화할 수 없습니다.'}</p>
         </div>
       ) : null}
+      {/* 창 드래그 핸들 - 중앙 최상단 */}
+      <div 
+        className="absolute top-4 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
+        style={{ WebkitAppRegion: 'drag' }}
+      >
+        <div className="flex h-8 w-40 items-center justify-between rounded-full bg-slate-900/60 backdrop-blur-sm border border-slate-700/50 shadow-lg hover:bg-slate-800/60 transition-colors px-3">
+          {/* 왼쪽: 드래그 점들 */}
+          <div className="flex space-x-1">
+            <div className="h-1 w-1 rounded-full bg-slate-400"></div>
+            <div className="h-1 w-1 rounded-full bg-slate-400"></div>
+            <div className="h-1 w-1 rounded-full bg-slate-400"></div>
+          </div>
+          
+          {/* 오른쪽: 닫기 버튼 */}
+          <button
+            className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-700/60 hover:bg-red-600/80 transition-colors"
+            style={{ WebkitAppRegion: 'no-drag' }}
+            onClick={() => {
+              window.jarvisAPI?.closeWidget?.();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <svg 
+              className="h-3 w-3 text-slate-300 hover:text-white" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M6 18L18 6M6 6l12 12" 
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
       {isTreeSyncing && !initializingTree ? (
         <div className="pointer-events-none absolute bottom-6 right-6 z-[1200] rounded-full bg-slate-900/80 px-3 py-1 text-[11px] font-medium text-slate-100 shadow-lg">
           자동 저장 중...
@@ -1543,14 +1598,25 @@ const HierarchicalForceTree = () => {
       )}
       <svg
         ref={svgRef}
-        width={dimensions.width}
-        height={dimensions.height}
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+        preserveAspectRatio="none"
         data-interactive-zone="true"
         style={{
-          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.08), rgba(15, 23, 42, 0.12))',
+          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.12), rgba(15, 23, 42, 0.18))',
           // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
           pointerEvents: 'auto',
-          WebkitAppRegion: 'drag',
+          // SVG가 창틀 여유 공간까지 완전히 채우도록 설정
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          padding: 0,
         }}
       >
         {/* Arrow marker definition */}
@@ -1569,13 +1635,14 @@ const HierarchicalForceTree = () => {
         </defs>
 
         {/* Links */}
+
         <g
           ref={contentGroupRef}
           key={`${dimensions.width}x${dimensions.height}`}
           transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
           style={{ opacity: isResizing ? 0.999 : 1 }}
         >
-          <g className="links" style={{ pointerEvents: 'none', WebkitAppRegion: 'no-drag' }}>
+          <g className="links" style={{ pointerEvents: 'none' }}>
             <AnimatePresence>
               {links
                 // TreeLayoutService에서 이미 정렬된 링크 사용
@@ -1639,8 +1706,15 @@ const HierarchicalForceTree = () => {
             </AnimatePresence>
           </g>
 
-          {/* Nodes */}
-          <g className="nodes" style={{ WebkitAppRegion: 'no-drag' }}>
+          {/* Nodes - 최상위 레이어 */}
+          <g 
+            className="nodes" 
+            style={{ 
+              pointerEvents: 'auto', 
+              zIndex: 1000,
+              isolation: 'isolate' // 새로운 stacking context 생성
+            }}
+          >
             {nodes.map((node, index) => {
               // Tree layout에서는 depth를 사용
               const nodeDepth = node.depth || 0;
@@ -1657,7 +1731,11 @@ const HierarchicalForceTree = () => {
                     stiffness: 300,
                     damping: 25
                   }}
-                  style={{ pointerEvents: 'auto' }}
+                  style={{ 
+                    pointerEvents: 'auto', 
+                    zIndex: expandedNodeId === node.id ? 9999 : 1001 + index, // 확장된 노드는 최상위
+                    position: 'relative'
+                  }}
                   data-interactive-zone="true"
                 >
                   <TreeNode
