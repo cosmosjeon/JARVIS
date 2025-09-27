@@ -66,6 +66,7 @@ const HierarchicalForceTree = () => {
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
   const pendingTreeIdRef = useRef(null);
+  const treeLibrarySyncRef = useRef(new Map());
   const zoomBehaviourRef = useRef(null);
   const pendingFocusNodeIdRef = useRef(null);
   const expandTimeoutRef = useRef(null);
