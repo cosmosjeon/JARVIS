@@ -54,6 +54,8 @@ const HierarchicalForceTree = () => {
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
+  const pendingTreeIdRef = useRef(null);
+
   const sessionInfo = useMemo(() => {
     if (typeof window === 'undefined') {
       return {
@@ -375,8 +377,26 @@ const HierarchicalForceTree = () => {
         return;
       }
 
-      const freshTreeId = createClientGeneratedId('tree');
       try {
+        const existingTrees = await fetchTreesWithNodes(user.id);
+        if (Array.isArray(existingTrees) && existingTrees.length > 0) {
+          const [mostRecent] = existingTrees;
+          writeSessionTreeId(mostRecent.id);
+          if (typeof window !== 'undefined') {
+            try {
+              window.localStorage.setItem('jarvis.activeTreeId', mostRecent.id);
+            } catch (error) {
+              // ignore storage errors
+            }
+          }
+
+          requestedTreeIdRef.current = mostRecent.id;
+          hasResolvedInitialTreeRef.current = true;
+          await loadActiveTree({ treeId: mostRecent.id });
+          return;
+        }
+
+        const freshTreeId = createClientGeneratedId('tree');
         await upsertTreeMetadata({
           treeId: freshTreeId,
           title: '새 지식 트리',
@@ -638,13 +658,22 @@ const HierarchicalForceTree = () => {
         || rootNode?.questionData?.question
         || '새 지식 트리';
 
+      let workingTreeId = activeTreeId || pendingTreeIdRef.current;
+      if (!workingTreeId) {
+        const timestamp = Date.now();
+        const randomPart = Math.random().toString(16).slice(2, 10);
+        workingTreeId = `tree_${timestamp}_${randomPart}`;
+        pendingTreeIdRef.current = workingTreeId;
+      }
+
       const treeRecord = await upsertTreeMetadata({
-        treeId: activeTreeId,
+        treeId: workingTreeId,
         title,
         userId: user.id,
       });
 
-      const resolvedTreeId = treeRecord?.id || activeTreeId;
+      const resolvedTreeId = treeRecord?.id || workingTreeId;
+      pendingTreeIdRef.current = resolvedTreeId;
       if (resolvedTreeId) {
         writeSessionTreeId(resolvedTreeId);
         requestedTreeIdRef.current = resolvedTreeId;
@@ -669,6 +698,9 @@ const HierarchicalForceTree = () => {
       }
     } catch (error) {
       setTreeSyncError(error);
+      if (!activeTreeId) {
+        pendingTreeIdRef.current = null;
+      }
     } finally {
       setIsTreeSyncing(false);
     }

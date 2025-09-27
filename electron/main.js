@@ -1,4 +1,14 @@
 const path = require('path');
+
+// Load environment variables early so downstream modules can read them (e.g. LLM service)
+try {
+  // Attempt to load project root .env; errors are ignored so packaged builds can proceed
+  require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+} catch (error) {
+  // eslint-disable-next-line no-console
+  console.warn('[electron] Failed to load .env file:', error?.message);
+}
+
 const { randomUUID } = require('crypto');
 const { app, BrowserWindow, ipcMain, nativeTheme, shell, screen, globalShortcut } = require('electron');
 const { createLogBridge } = require('./logger');
