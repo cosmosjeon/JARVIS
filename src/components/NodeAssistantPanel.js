@@ -664,10 +664,9 @@ const NodeAssistantPanel = ({
   return (
     <div
       ref={panelRef}
-      className="glass-shell relative flex h-full w-full flex-col rounded-[28px] p-6"
+      className="relative flex flex-1 flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-6 min-h-0 backdrop-blur-md"
       style={{
         fontFamily: 'Arial, sans-serif',
-        borderColor: 'rgba(255,255,255,0.25)',
         position: 'relative',
         zIndex: 1001,
         pointerEvents: 'auto',
@@ -675,8 +674,6 @@ const NodeAssistantPanel = ({
       }}
       data-interactive-zone="true"
     >
-      <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-white/10 opacity-40 mix-blend-screen" />
-      <div className="relative flex flex-1 flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 min-h-0 backdrop-blur-md">
         <div
           ref={highlightRootRef}
           className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0"
@@ -766,7 +763,6 @@ const NodeAssistantPanel = ({
             ↗
           </button>
         </form>
-      </div>
     </div>
   );
 };

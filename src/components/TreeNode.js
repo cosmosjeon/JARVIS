@@ -130,8 +130,8 @@ const TreeNode = ({
   const currentWidth = displayMode === 'chat' ? chatSize.width : displayMode === 'hover' ? hoverWidth : baseWidth;
   const currentHeight = displayMode === 'chat' ? chatSize.height : displayMode === 'hover' ? hoverHeight : baseHeight;
   const rectFill = displayMode === 'chat'
-    ? 'rgba(15, 23, 42, 0.85)' // 더 진한 색상으로 변경
-    : 'rgba(148, 163, 184, 0.22)';
+    ? 'rgba(0, 0, 0, 0.85)' // 더 진한 색상으로 변경
+    : 'rgba(0, 0, 0, 0.22)';
   const rectStroke = displayMode === 'chat'
     ? 'rgba(255, 255, 255, 0.6)' // 더 진한 테두리로 변경
     : 'rgba(255, 255, 255, 0.18)';
@@ -469,7 +469,7 @@ const TreeNode = ({
       {/* Subtree collapse/expand toggle */}
       {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
         <g
-          transform={`translate(0, ${currentHeight / 2 + 14})`}
+          transform={`translate(0, ${currentHeight / 2 + 35})`}
           onClick={handleTogglePointer}
           onMouseDown={handleTogglePointer}
           onPointerDown={handleTogglePointer}
@@ -486,7 +486,7 @@ const TreeNode = ({
             height={20}
             rx={4}
             ry={4}
-            fill="rgba(148, 163, 184, 0.3)"
+            fill="rgba(0, 0, 0, 0.3)"
             stroke="rgba(255,255,255,0.6)"
             strokeWidth={1}
             data-node-toggle="true"

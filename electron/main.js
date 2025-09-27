@@ -215,6 +215,41 @@ let authServerReadyPromise = null;
 const additionalWidgetWindows = new Set();
 const widgetSessionByWindowId = new Map();
 
+const resolveBrowserWindowFromSender = (sender) => {
+  if (!sender) {
+    return null;
+  }
+
+  const directWindow = BrowserWindow.fromWebContents(sender);
+  if (directWindow) {
+    return directWindow;
+  }
+
+  if (typeof sender.getOwnerBrowserWindow === 'function') {
+    const ownerWindow = sender.getOwnerBrowserWindow();
+    if (ownerWindow) {
+      return ownerWindow;
+    }
+  }
+
+  if (sender.hostWebContents) {
+    const hostWindow = resolveBrowserWindowFromSender(sender.hostWebContents);
+    if (hostWindow) {
+      return hostWindow;
+    }
+  }
+
+  const senderId = typeof sender.id === 'number' ? sender.id : null;
+  if (senderId !== null) {
+    const fallbackWindow = BrowserWindow.getAllWindows().find((win) => win.webContents.id === senderId);
+    if (fallbackWindow) {
+      return fallbackWindow;
+    }
+  }
+
+  return null;
+};
+
 const WINDOW_CHROME_HEIGHT = 48; // 커스텀 타이틀바 높이와 맞춤
 
 const windowConfig = {
@@ -1203,26 +1238,32 @@ app.whenReady().then(() => {
     };
   });
 
-  ipcMain.handle('window:control', (_event, action) => {
-    if (!mainWindow) {
-      return { success: false, error: { code: 'no_window', message: 'Main window not available' } };
+  ipcMain.handle('window:control', (event, action) => {
+    // 현재 요청을 보낸 창 찾기
+    const currentWindow = resolveBrowserWindowFromSender(event.sender);
+    if (!currentWindow) {
+      return { success: false, error: { code: 'no_window', message: 'Current window not available' } };
     }
 
     switch (action) {
       case 'minimize':
-        mainWindow.minimize();
-        broadcastWindowState();
+        currentWindow.minimize();
+        if (currentWindow === mainWindow) {
+          broadcastWindowState();
+        }
         break;
       case 'maximize':
-        if (mainWindow.isMaximized()) {
-          mainWindow.unmaximize();
+        if (currentWindow.isMaximized()) {
+          currentWindow.unmaximize();
         } else {
-          mainWindow.maximize();
+          currentWindow.maximize();
         }
-        broadcastWindowState();
+        if (currentWindow === mainWindow) {
+          broadcastWindowState();
+        }
         break;
       case 'close':
-        mainWindow.close();
+        currentWindow.close();
         break;
       default:
         return { success: false, error: { code: 'invalid_action', message: 'Unsupported window control action' } };
@@ -1231,7 +1272,7 @@ app.whenReady().then(() => {
     return {
       success: true,
       action,
-      maximized: mainWindow.isMaximized(),
+      maximized: currentWindow.isMaximized(),
     };
   });
 

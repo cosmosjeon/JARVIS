@@ -278,7 +278,7 @@ const LibraryTreeVisualization = ({ treeData, isEditMode, onTreeUpdate, onNodeSe
             markerHeight={6}
             orient="auto"
           >
-            <path d="M0,-5L10,0L0,5" fill="rgba(148, 163, 184, 0.6)" />
+            <path d="M0,-5L10,0L0,5" fill="rgba(0, 0, 0, 0.6)" />
           </marker>
         </defs>
 

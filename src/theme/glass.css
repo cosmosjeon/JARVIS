@@ -1,14 +1,14 @@
 :root {
-  --glass-bg: rgba(15, 23, 42, 0.65);
-  --glass-gradient: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.55));
-  --glass-border: rgba(15, 23, 42, 0.5);
+  --glass-bg: rgba(0, 0, 0, 0.65);
+  --glass-gradient: linear-gradient(135deg, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.55));
+  --glass-border: rgba(0, 0, 0, 0.5);
   --glass-highlight: rgba(255, 255, 255, 0.32);
   --glass-blur: 20px;
-  --glass-shadow: 0 22px 48px rgba(15, 23, 42, 0.45);
+  --glass-shadow: 0 22px 48px rgba(0, 0, 0, 0.45);
   --glass-text-primary: rgba(248, 250, 252, 0.92);
   --glass-text-secondary: rgba(226, 232, 240, 0.72);
-  --glass-surface: rgba(15, 23, 42, 0.55);
-  --glass-outline: rgba(148, 163, 184, 0.35);
+  --glass-surface: rgba(0, 0, 0, 0.55);
+  --glass-outline: rgba(0, 0, 0, 0.35);
   --glass-inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
@@ -22,15 +22,15 @@
 }
 
 .glass-surface {
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(calc(var(--glass-blur) * 0.7));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.7));
-  border: 1px solid rgba(15, 23, 42, 0.45);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
 }
 
 .glass-line {
-  background: rgba(148, 163, 184, 0.25);
+  background: rgba(0, 0, 0, 0.25);
   border-color: rgba(255, 255, 255, 0.12);
 }
 
@@ -47,8 +47,8 @@
 }
 
 .glass-chip {
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(15, 23, 42, 0.55);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
 }
@@ -58,10 +58,10 @@
 }
 
 .glass-scrollbar::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.2);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .glass-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.45);
+  background: rgba(0, 0, 0, 0.45);
   border-radius: 999px;
 }

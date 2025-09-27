@@ -1520,7 +1520,7 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.12), rgba(15, 23, 42, 0.18))',
+        background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         // 창틀 여유 공간까지 완전히 채우기
@@ -1551,28 +1551,100 @@ const HierarchicalForceTree = () => {
       ) : null}
       {/* 창 드래그 핸들 - 중앙 최상단 */}
       <div 
-        className="absolute top-4 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
+        className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
-        <div className="flex h-8 w-40 items-center justify-between rounded-full bg-slate-900/60 backdrop-blur-sm border border-slate-700/50 shadow-lg hover:bg-slate-800/60 transition-colors px-3">
+        <div className="flex h-8 w-40 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
           {/* 왼쪽: 드래그 점들 */}
           <div className="flex space-x-1">
-            <div className="h-1 w-1 rounded-full bg-slate-400"></div>
-            <div className="h-1 w-1 rounded-full bg-slate-400"></div>
-            <div className="h-1 w-1 rounded-full bg-slate-400"></div>
+            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+            <div className="h-1 w-1 rounded-full bg-white/60"></div>
           </div>
           
           {/* 오른쪽: 닫기 버튼 */}
           <button
-            className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-700/60 hover:bg-red-600/80 transition-colors"
+            className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
             style={{ WebkitAppRegion: 'no-drag' }}
             onClick={() => {
-              window.jarvisAPI?.closeWidget?.();
+              if (process.env.NODE_ENV === 'development') {
+                // 개발 중 동작 여부 확인용
+                // eslint-disable-next-line no-console
+                console.log('[Jarvis] Drag handle close requested');
+              }
+
+              const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
+
+              const hideWindow = () => {
+                if (process.env.NODE_ENV === 'development') {
+                  // eslint-disable-next-line no-console
+                  console.log('[Jarvis] hideWindow fallback triggered');
+                }
+                try {
+                  if (api && typeof api.toggleWindow === 'function') {
+                    api.toggleWindow();
+                    return;
+                  }
+                } catch (toggleError) {
+                  // Ignore toggle errors and fall through to window.close fallback.
+                }
+
+                if (typeof window !== 'undefined' && typeof window.close === 'function') {
+                  window.close();
+                }
+              };
+
+              try {
+                const closeFn = api?.windowControls?.close;
+                if (typeof closeFn === 'function') {
+                  const maybeResult = closeFn();
+                  if (process.env.NODE_ENV === 'development') {
+                    const tag = '[Jarvis] windowControls.close result';
+                    if (maybeResult && typeof maybeResult.then === 'function') {
+                      maybeResult.then((response) => {
+                        // eslint-disable-next-line no-console
+                        console.log(tag, response);
+                      }).catch((err) => {
+                        // eslint-disable-next-line no-console
+                        console.log(`${tag} (rejected)`, err);
+                      });
+                    } else {
+                      // eslint-disable-next-line no-console
+                      console.log(tag, maybeResult);
+                    }
+                  }
+
+                  if (maybeResult && typeof maybeResult.then === 'function') {
+                    maybeResult
+                      .then((response) => {
+                        if (process.env.NODE_ENV === 'development') {
+                          // eslint-disable-next-line no-console
+                          console.log('[Jarvis] close response (async)', response, response?.error);
+                        }
+                        if (!response?.success) {
+                          hideWindow();
+                        }
+                      })
+                      .catch(() => hideWindow());
+                    return;
+                  }
+
+                  if (!maybeResult?.success) {
+                    hideWindow();
+                  }
+                  return;
+                }
+              } catch (error) {
+                hideWindow();
+                return;
+              }
+
+              hideWindow();
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <svg 
-              className="h-3 w-3 text-slate-300 hover:text-white" 
+              className="h-3 w-3 text-white group-hover:text-black" 
               fill="none" 
               stroke="currentColor" 
               viewBox="0 0 24 24"
@@ -1632,7 +1704,7 @@ const HierarchicalForceTree = () => {
         preserveAspectRatio="none"
         data-interactive-zone="true"
         style={{
-          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.12), rgba(15, 23, 42, 0.18))',
+          background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
           // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
           pointerEvents: 'auto',
           // SVG가 창틀 여유 공간까지 완전히 채우도록 설정
@@ -1658,7 +1730,7 @@ const HierarchicalForceTree = () => {
             markerHeight={6}
             orient="auto"
           >
-            <path d="M0,-5L10,0L0,5" fill="rgba(148,163,184,0.55)" />
+            <path d="M0,-5L10,0L0,5" fill="rgba(0,0,0,0.55)" />
           </marker>
         </defs>
 
