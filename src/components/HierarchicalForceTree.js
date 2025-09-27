@@ -760,7 +760,7 @@ const HierarchicalForceTree = () => {
   // 노드가 없어도 드래그 핸들을 항상 표시하기 위한 고정 위치
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
-    const screenY = 32; // 화면 상단에서 32px 떨어진 고정 위치
+    const screenY = 80; // 화면 상단에서 80px 떨어진 고정 위치 (잘림 방지)
     return { x: screenX, y: screenY };
   }, [dimensions.width]);
 
@@ -1599,9 +1599,9 @@ const HierarchicalForceTree = () => {
             position: 'absolute',
             left: `${rootDragHandlePosition.x}px`,
             top: `${rootDragHandlePosition.y}px`,
-            transform: 'translate(-50%, -100%)',
-            width: 260,
-            height: 68,
+            transform: 'translate(-50%, -50%)',
+            width: 130,
+            height: 34,
             borderRadius: 20,
             border: isPassThrough
               ? '1px solid rgba(148, 163, 184, 0.15)'
@@ -1617,7 +1617,7 @@ const HierarchicalForceTree = () => {
             WebkitAppRegion: 'drag',
             pointerEvents: 'auto',
             cursor: 'grab',
-            padding: '12px 16px',
+            padding: '6px 8px',
             zIndex: 40,
             transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease',
             display: 'flex',
@@ -1638,67 +1638,12 @@ const HierarchicalForceTree = () => {
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
+              justifyContent: 'center',
               width: '100%',
               height: '100%',
               pointerEvents: 'none',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                pointerEvents: 'none',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: 'rgba(226, 232, 240, 0.92)',
-                  letterSpacing: 0.4,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Jarvis Widget
-              </span>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: 'rgba(148, 163, 184, 0.85)',
-                }}
-              >
-                드래그하여 이동
-              </span>
-            </div>
-            <button
-              type="button"
-              style={{
-                pointerEvents: 'auto',
-                WebkitAppRegion: 'no-drag',
-                width: 28,
-                height: 28,
-                borderRadius: '9999px',
-                border: '1px solid rgba(148, 163, 184, 0.35)',
-                background: 'rgba(15, 23, 42, 0.6)',
-                color: 'rgba(226, 232, 240, 0.92)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'background 0.25s ease, color 0.25s ease, border 0.25s ease',
-              }}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                window.jarvisAPI?.windowControls?.close?.();
-              }}
-              aria-label="위젯 닫기"
-            >
-              ×
-            </button>
           </div>
         </div>
       )}
@@ -1708,7 +1653,7 @@ const HierarchicalForceTree = () => {
           style={{
             left: `${rootDragHandlePosition.x}px`,
             top: `${rootDragHandlePosition.y}px`,
-            transform: 'translate(-50%, 8px)',
+            transform: 'translate(-50%, 48px)',
             width: 600,
             height: 640,
             zIndex: 1000,

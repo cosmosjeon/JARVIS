@@ -121,7 +121,7 @@ const TreeNode = ({
   // Only expand horizontally on hover; keep height unchanged
   const hoverHeight = baseHeight;
   const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation));
-  const borderRadius = 8; // Fixed border radius
+  const borderRadius = 50; // Neumorphism border radius
 
   // Determine current display mode
   const displayMode = isExpanded ? 'chat' : (isHovered ? 'hover' : 'normal');
@@ -272,41 +272,91 @@ const TreeNode = ({
       >
       {/* Hide background rectangle when node is expanded (chat mode) */}
       {displayMode !== 'chat' && (
-        <motion.rect
-          width={currentWidth}
-          height={currentHeight}
-          rx={borderRadius}
-          ry={borderRadius}
-          fill={rectFill}
-          stroke={rectStroke}
-          strokeWidth={rectStrokeWidth}
-          style={{
-            cursor: 'pointer',
-            mixBlendMode: 'normal', // 투명 창에서 블렌드 모드 고정
-            filter: 'none', // 투명 배경 잔상 방지를 위해 그림자 제거
-            // 상위 컨테이너가 pointer-events: none인 상태에서 노드 영역만 다시 활성화
-            pointerEvents: 'auto',
-          }}
-          onClick={(e) => {
-            if (isExpanded) {
-              return;
-            }
-            e.stopPropagation();
-            onNodeClick && onNodeClick(node);
-          }}
-          animate={{
-            x: -currentWidth / 2,
-            y: -currentHeight / 2,
-            width: currentWidth,
-            height: currentHeight,
-          }}
-          transition={{
-            type: 'spring',
-            stiffness: 260,
-            damping: 24,
-            duration: 0.25,
-          }}
-        />
+        <g>
+          {/* Neumorphism shadow effects - scaled for small nodes */}
+          {/* Dark shadow (bottom right) */}
+          <motion.rect
+            width={currentWidth}
+            height={currentHeight}
+            rx={borderRadius}
+            ry={borderRadius}
+            fill="#bebebe"
+            style={{
+              filter: 'blur(3px)',
+              opacity: 0.6,
+            }}
+            animate={{
+              x: -currentWidth / 2 + 3,
+              y: -currentHeight / 2 + 3,
+              width: currentWidth,
+              height: currentHeight,
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 260,
+              damping: 24,
+              duration: 0.25,
+            }}
+          />
+          
+          {/* Light shadow (top left) */}
+          <motion.rect
+            width={currentWidth}
+            height={currentHeight}
+            rx={borderRadius}
+            ry={borderRadius}
+            fill="#ffffff"
+            style={{
+              filter: 'blur(3px)',
+              opacity: 0.8,
+            }}
+            animate={{
+              x: -currentWidth / 2 - 3,
+              y: -currentHeight / 2 - 3,
+              width: currentWidth,
+              height: currentHeight,
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 260,
+              damping: 24,
+              duration: 0.25,
+            }}
+          />
+          
+          {/* Main neumorphism card */}
+          <motion.rect
+            width={currentWidth}
+            height={currentHeight}
+            rx={borderRadius}
+            ry={borderRadius}
+            fill="#e0e0e0"
+            style={{
+              cursor: 'pointer',
+              mixBlendMode: 'normal',
+              pointerEvents: 'auto',
+            }}
+            onClick={(e) => {
+              if (isExpanded) {
+                return;
+              }
+              e.stopPropagation();
+              onNodeClick && onNodeClick(node);
+            }}
+            animate={{
+              x: -currentWidth / 2,
+              y: -currentHeight / 2,
+              width: currentWidth,
+              height: currentHeight,
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 260,
+              damping: 24,
+              duration: 0.25,
+            }}
+          />
+        </g>
       )}
 
       {displayMode === 'chat' ? (
@@ -360,10 +410,10 @@ const TreeNode = ({
         <motion.text
           textAnchor="middle"
           dominantBaseline="central"
-          fontSize={displayMode === 'hover' ? 12 : 12}
+          fontSize={displayMode === 'hover' ? 14 : 14}
           fontFamily="Arial, sans-serif"
           fontWeight="bold"
-          fill="#000"
+          fill="#666666"
           style={{ pointerEvents: 'none' }}
           transition={{ duration: 0.15 }}
         >
