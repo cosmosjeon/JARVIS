@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from '../data/treeData';
@@ -7,6 +13,14 @@ import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
 import NodeAssistantPanel from './NodeAssistantPanel';
+import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
+import {
+  fetchTreesWithNodes,
+  upsertTreeMetadata,
+  upsertTreeNodes,
+  sanitizeConversationMessages,
+  buildFallbackConversation,
+} from '../services/supabaseTrees';
 
 const WINDOW_CHROME_HEIGHT = 48;
 
@@ -21,6 +35,7 @@ const getViewportDimensions = () => {
 };
 
 const HierarchicalForceTree = () => {
+  const { user } = useSupabaseAuth();
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState(getViewportDimensions());
   const [nodes, setNodes] = useState([]);
@@ -29,11 +44,124 @@ const HierarchicalForceTree = () => {
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [data, setData] = useState(treeData);
+  const [activeTreeId, setActiveTreeId] = useState(null);
+  const [initializingTree, setInitializingTree] = useState(true);
+  const [treeSyncError, setTreeSyncError] = useState(null);
+  const [isTreeSyncing, setIsTreeSyncing] = useState(false);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
+  const sessionInfo = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return {
+        sessionId: null,
+        initialTreeId: null,
+        fresh: false,
+      };
+    }
+
+    const currentUrl = new URL(window.location.href);
+    let sessionId = currentUrl.searchParams.get('session');
+    let mutated = false;
+    if (!sessionId) {
+      sessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 8)}`;
+      currentUrl.searchParams.set('session', sessionId);
+      mutated = true;
+    }
+
+    const initialTreeId = currentUrl.searchParams.get('treeId');
+    const freshFlag = currentUrl.searchParams.get('fresh') === '1';
+
+    if (mutated) {
+      window.history.replaceState({}, '', currentUrl.toString());
+    }
+
+    return {
+      sessionId,
+      initialTreeId: initialTreeId || null,
+      fresh: freshFlag,
+    };
+  }, []);
+
+  const sessionStorageKey = useMemo(() => (
+    sessionInfo.sessionId ? `jarvis.widget.session.${sessionInfo.sessionId}.activeTreeId` : null
+  ), [sessionInfo.sessionId]);
+
+  const requestedTreeIdRef = useRef(sessionInfo.initialTreeId);
+  const readSessionTreeId = useCallback(() => {
+    if (!sessionStorageKey || typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      const storedValue = window.sessionStorage.getItem(sessionStorageKey);
+      return storedValue || null;
+    } catch (error) {
+      return null;
+    }
+  }, [sessionStorageKey]);
+
+  const writeSessionTreeId = useCallback((treeId) => {
+    if (!sessionStorageKey || typeof window === 'undefined') {
+      return;
+    }
+    try {
+      if (!treeId) {
+        window.sessionStorage.removeItem(sessionStorageKey);
+      } else {
+        window.sessionStorage.setItem(sessionStorageKey, treeId);
+      }
+    } catch (error) {
+      // ignore storage errors
+    }
+  }, [sessionStorageKey]);
+
+  useEffect(() => {
+    if (!sessionStorageKey || typeof window === 'undefined') {
+      return;
+    }
+    if (sessionInfo.fresh) {
+      try {
+        window.sessionStorage.removeItem(sessionStorageKey);
+      } catch (error) {
+        // ignore storage errors
+      }
+    }
+  }, [sessionInfo.fresh, sessionStorageKey]);
+
+const hasResolvedInitialTreeRef = useRef(false);
+
+const createClientGeneratedId = useCallback((prefix = 'tree') => {
+  try {
+    const uuid = crypto?.randomUUID?.();
+    if (uuid) {
+      return `${prefix}_${uuid}`;
+    }
+  } catch (error) {
+    // ignore and fallback below
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+}, []);
+
+  const hydrateConversationStore = useCallback((incomingNodes = []) => {
+    conversationStoreRef.current.clear();
+    incomingNodes.forEach((node) => {
+      if (!node || !node.id) {
+        return;
+      }
+
+      const baseConversation = sanitizeConversationMessages(node.conversation);
+      const fallbackConversation = baseConversation.length
+        ? baseConversation
+        : buildFallbackConversation(
+            node.question || node.questionData?.question,
+            node.answer || node.questionData?.answer || node.fullText,
+          );
+
+      conversationStoreRef.current.set(node.id, fallbackConversation);
+    });
+  }, []);
   const linkKeysRef = useRef(new Set());
   const hasCleanedQ2Ref = useRef(false);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
@@ -44,6 +172,7 @@ const HierarchicalForceTree = () => {
   const isIgnoringMouseRef = useRef(false);
   const [isPassThrough, setIsPassThrough] = useState(false);
   const [showBootstrapChat, setShowBootstrapChat] = useState(false);
+  const treeSyncDebounceRef = useRef(null);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -137,11 +266,178 @@ const HierarchicalForceTree = () => {
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
 
   // 현재 데이터에서 루트 노드 ID 계산 (부모 링크의 타겟이 아닌 노드)
-  const getRootNodeId = () => {
-    const targetIds = new Set(data.links.map(l => (l.target.id || l.target)));
-    const rootNode = data.nodes.find(n => !targetIds.has(n.id));
+  const getRootNodeId = useCallback(() => {
+    const targetIds = new Set(data.links.map((l) => (
+      typeof l.target === 'object' && l.target !== null ? l.target.id : l.target
+    )));
+    const rootNode = data.nodes.find((n) => !targetIds.has(n.id));
     return rootNode ? rootNode.id : null;
-  };
+  }, [data.links, data.nodes]);
+
+  const normalizeLinkEndpoint = useCallback((endpoint) => (
+    typeof endpoint === 'object' && endpoint !== null ? endpoint.id : endpoint
+  ), []);
+
+  const loadActiveTree = useCallback(async ({ treeId: explicitTreeId } = {}) => {
+    if (!user) {
+      setActiveTreeId(null);
+      hydrateConversationStore([]);
+      setData(treeData);
+      setInitializingTree(false);
+      return;
+    }
+
+    setInitializingTree(true);
+    setTreeSyncError(null);
+
+    const resolvedTreeId = typeof explicitTreeId === 'string' && explicitTreeId.trim()
+      ? explicitTreeId.trim()
+      : (requestedTreeIdRef.current || readSessionTreeId());
+
+    if (!resolvedTreeId) {
+      hydrateConversationStore([]);
+      setActiveTreeId(null);
+      setData({ nodes: [], links: [] });
+      writeSessionTreeId(null);
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.removeItem('jarvis.activeTreeId');
+        } catch (error) {
+          // ignore storage errors
+        }
+      }
+      setInitializingTree(false);
+      requestedTreeIdRef.current = null;
+      return;
+    }
+
+    try {
+      const trees = await fetchTreesWithNodes(user.id);
+      const targetTree = trees.find((tree) => tree.id === resolvedTreeId);
+
+      if (targetTree) {
+        const mappedNodes = Array.isArray(targetTree.treeData?.nodes)
+          ? targetTree.treeData.nodes.map((node) => ({
+              ...node,
+              conversation: sanitizeConversationMessages(node.conversation),
+            }))
+          : [];
+
+        hydrateConversationStore(mappedNodes);
+        setData({
+          nodes: mappedNodes,
+          links: Array.isArray(targetTree.treeData?.links) ? targetTree.treeData.links : [],
+        });
+        setActiveTreeId(targetTree.id);
+        writeSessionTreeId(targetTree.id);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem('jarvis.activeTreeId', targetTree.id);
+          } catch (error) {
+            // ignore storage errors
+          }
+        }
+      } else {
+        hydrateConversationStore([]);
+        setActiveTreeId(null);
+        setData({ nodes: [], links: [] });
+        writeSessionTreeId(null);
+      }
+    } catch (error) {
+      setTreeSyncError(error);
+    } finally {
+      requestedTreeIdRef.current = null;
+      setInitializingTree(false);
+    }
+  }, [user, hydrateConversationStore, readSessionTreeId, writeSessionTreeId]);
+
+  useEffect(() => {
+    if (!user || hasResolvedInitialTreeRef.current) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const resolveInitialTree = async () => {
+      if (hasResolvedInitialTreeRef.current || cancelled) {
+        return;
+      }
+
+      const initialTreeId = sessionInfo.initialTreeId || readSessionTreeId();
+      if (initialTreeId) {
+        hasResolvedInitialTreeRef.current = true;
+        await loadActiveTree({ treeId: initialTreeId });
+        return;
+      }
+
+      const freshTreeId = createClientGeneratedId('tree');
+      try {
+        await upsertTreeMetadata({
+          treeId: freshTreeId,
+          title: '새 지식 트리',
+          userId: user.id,
+        });
+
+        writeSessionTreeId(freshTreeId);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem('jarvis.activeTreeId', freshTreeId);
+          } catch (error) {
+            // ignore storage errors
+          }
+        }
+
+        requestedTreeIdRef.current = freshTreeId;
+        hasResolvedInitialTreeRef.current = true;
+        await loadActiveTree({ treeId: freshTreeId });
+      } catch (error) {
+        setTreeSyncError(error);
+        setInitializingTree(false);
+        hasResolvedInitialTreeRef.current = true;
+      }
+    };
+
+    resolveInitialTree();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createClientGeneratedId, loadActiveTree, readSessionTreeId, sessionInfo.initialTreeId, user, writeSessionTreeId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const handleFocus = () => {
+      if (!user) return;
+      const sessionTree = readSessionTreeId();
+      const normalized = sessionTree || null;
+      if (normalized !== activeTreeId) {
+        loadActiveTree({ treeId: normalized || undefined });
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [activeTreeId, loadActiveTree, readSessionTreeId, user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.jarvisAPI?.onWidgetSetActiveTree !== 'function') {
+      return undefined;
+    }
+
+    const unsubscribe = window.jarvisAPI.onWidgetSetActiveTree((payload) => {
+      if (payload && typeof payload.treeId === 'string') {
+        requestedTreeIdRef.current = payload.treeId;
+        loadActiveTree({ treeId: payload.treeId });
+      }
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [loadActiveTree]);
 
   // 노드 추가 함수
   const addNode = (parentId, nodeData) => {
@@ -149,12 +445,16 @@ const HierarchicalForceTree = () => {
     const isValidParent = data.nodes.some(n => n.id === parentId);
     const resolvedParentId = isValidParent ? parentId : getRootNodeId();
 
+    const now = Date.now();
     const newNode = {
-      id: `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `node_${now}_${Math.random().toString(36).substr(2, 9)}`,
       keyword: nodeData.keyword,
       fullText: nodeData.fullText,
       level: getNodeLevel(resolvedParentId) + 1,
       size: nodeData.size || 10,
+      createdAt: now,
+      updatedAt: now,
+      conversation: [],
     };
 
     // 새 노드를 데이터에 추가
@@ -195,12 +495,13 @@ const HierarchicalForceTree = () => {
       { id: `${timestamp}-user`, role: 'user', text: question },
       { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata }
     ];
-    conversationStoreRef.current.set(newNodeData.id, initialConversation);
+    const sanitizedConversation = sanitizeConversationMessages(initialConversation);
+    conversationStoreRef.current.set(newNodeData.id, sanitizedConversation);
 
     // 새 노드를 데이터에 추가
     const newData = {
       ...data,
-      nodes: [...data.nodes, newNodeData],
+      nodes: [...data.nodes, { ...newNodeData, createdAt: timestamp, updatedAt: timestamp, conversation: sanitizedConversation }],
       links: [...data.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
     };
 
@@ -219,6 +520,125 @@ const HierarchicalForceTree = () => {
       }
     }, 50); // 노드가 렌더링된 후 포커스
   };
+
+  const persistTreeData = useCallback(async () => {
+    if (!user || initializingTree) {
+      return;
+    }
+
+    if (!data?.nodes?.length) {
+      return;
+    }
+
+    setIsTreeSyncing(true);
+    setTreeSyncError(null);
+
+    try {
+      const parentByChild = new Map();
+      data.links.forEach((link) => {
+        const sourceId = normalizeLinkEndpoint(link.source);
+        const targetId = normalizeLinkEndpoint(link.target);
+        if (sourceId && targetId) {
+          parentByChild.set(targetId, sourceId);
+        }
+      });
+
+      const normalizedNodes = data.nodes.map((node) => {
+        const parentId = parentByChild.get(node.id) || null;
+        const createdAt = node.createdAt || Date.now();
+        const baseQuestion = typeof node.question === 'string' && node.question.trim()
+          ? node.question.trim()
+          : (node.questionData?.question || null);
+        const baseAnswer = typeof node.answer === 'string' && node.answer.trim()
+          ? node.answer.trim()
+          : node.questionData?.answer || node.fullText || null;
+        const normalizedConversation = sanitizeConversationMessages(
+          conversationStoreRef.current.get(node.id)
+        );
+        const conversation = normalizedConversation.length
+          ? normalizedConversation
+          : buildFallbackConversation(baseQuestion, baseAnswer);
+
+        return {
+          id: node.id,
+          keyword: node.keyword || null,
+          fullText: node.fullText || '',
+          question: baseQuestion,
+          answer: baseAnswer,
+          status: node.status || 'answered',
+          createdAt,
+          updatedAt: Date.now(),
+          parentId,
+          conversation,
+          questionData: node.questionData,
+        };
+      });
+
+      const rootNodeId = getRootNodeId();
+      const rootNode = data.nodes.find((node) => node.id === rootNodeId) || data.nodes[0];
+      const title = rootNode?.keyword
+        || rootNode?.questionData?.question
+        || '새 지식 트리';
+
+      const treeRecord = await upsertTreeMetadata({
+        treeId: activeTreeId,
+        title,
+        userId: user.id,
+      });
+
+      const resolvedTreeId = treeRecord?.id || activeTreeId;
+      if (resolvedTreeId) {
+        writeSessionTreeId(resolvedTreeId);
+        requestedTreeIdRef.current = resolvedTreeId;
+      }
+      if (!activeTreeId && resolvedTreeId) {
+        setActiveTreeId(resolvedTreeId);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem('jarvis.activeTreeId', resolvedTreeId);
+          } catch (error) {
+            // ignore storage errors
+          }
+        }
+      }
+
+      if (resolvedTreeId) {
+        await upsertTreeNodes({
+          treeId: resolvedTreeId,
+          nodes: normalizedNodes,
+          userId: user.id,
+        });
+      }
+    } catch (error) {
+      setTreeSyncError(error);
+    } finally {
+      setIsTreeSyncing(false);
+    }
+  }, [user, initializingTree, data, normalizeLinkEndpoint, getRootNodeId, activeTreeId, writeSessionTreeId]);
+
+  useEffect(() => {
+    if (!user || initializingTree) {
+      return undefined;
+    }
+
+    if (!data?.nodes?.length) {
+      return undefined;
+    }
+
+    if (treeSyncDebounceRef.current) {
+      clearTimeout(treeSyncDebounceRef.current);
+    }
+
+    treeSyncDebounceRef.current = setTimeout(() => {
+      persistTreeData();
+    }, 800);
+
+    return () => {
+      if (treeSyncDebounceRef.current) {
+        clearTimeout(treeSyncDebounceRef.current);
+      }
+    };
+  }, [data, user, initializingTree, persistTreeData]);
 
   // 부모 -> 자식 맵 계산 (원본 데이터 기준)
   const childrenByParent = React.useMemo(() => {
@@ -317,6 +737,13 @@ const HierarchicalForceTree = () => {
       const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
       const keyword = userQuestion.split(/\s+/).slice(0, 3).join(' ');
 
+      const rawConversation = [
+        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
+      ];
+
+      const sanitizedConversation = sanitizeConversationMessages(rawConversation);
+
       const rootNode = {
         id: rootId,
         keyword: keyword || userQuestion,
@@ -328,14 +755,12 @@ const HierarchicalForceTree = () => {
         answer,
         createdAt: timestamp,
         updatedAt: timestamp,
+        conversation: sanitizedConversation,
       };
 
       setData({ nodes: [rootNode], links: [] });
 
-      conversationStoreRef.current.set(rootId, [
-        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
-      ]);
+      conversationStoreRef.current.set(rootId, sanitizedConversation);
 
       questionService.current.setQuestionCount(rootId, 1);
       setExpandedNodeId(rootId);
@@ -349,10 +774,19 @@ const HierarchicalForceTree = () => {
   };
 
   const handleConversationChange = (nodeId, messages) => {
-    conversationStoreRef.current.set(
-      nodeId,
-      Array.isArray(messages) ? messages.map((message) => ({ ...message })) : []
-    );
+    if (!nodeId) {
+      return;
+    }
+
+    const sanitized = sanitizeConversationMessages(messages);
+    conversationStoreRef.current.set(nodeId, sanitized);
+
+    setData((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) => (node.id === nodeId
+        ? { ...node, conversation: sanitized }
+        : node)),
+    }));
   };
 
   const buildContextMessages = useCallback((nodeId) => {
@@ -448,6 +882,7 @@ const HierarchicalForceTree = () => {
         level: parentLevel + 1,
         size: 12,
         status: 'placeholder',
+        conversation: [],
         placeholder: {
           parentNodeId,
           createdAt: timestamp,
@@ -982,6 +1417,25 @@ const HierarchicalForceTree = () => {
       >
         {isPassThrough ? '패스스루 모드 (⌘+2)' : '인터랙션 모드 (⌘+2)'}
       </div>
+      {initializingTree && (
+        <div className="absolute inset-0 z-[1200] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 text-slate-200">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-500 border-t-transparent" />
+            <p className="text-sm">트리를 불러오는 중입니다...</p>
+          </div>
+        </div>
+      )}
+      {treeSyncError ? (
+        <div className="absolute bottom-6 left-1/2 z-[1200] w-[320px] -translate-x-1/2 rounded-lg border border-red-400/60 bg-red-900/60 px-4 py-3 text-xs text-red-100 shadow-lg">
+          <p className="font-medium">동기화 오류</p>
+          <p className="opacity-80">{treeSyncError.message || 'Supabase와 동기화할 수 없습니다.'}</p>
+        </div>
+      ) : null}
+      {isTreeSyncing && !initializingTree ? (
+        <div className="pointer-events-none absolute bottom-6 right-6 z-[1200] rounded-full bg-slate-900/80 px-3 py-1 text-[11px] font-medium text-slate-100 shadow-lg">
+          자동 저장 중...
+        </div>
+      ) : null}
       {rootDragHandlePosition && (
         <div
           className="pointer-events-auto"
@@ -993,23 +1447,25 @@ const HierarchicalForceTree = () => {
             width: 260,
             height: 68,
             borderRadius: 20,
-            border: isPassThrough 
-              ? '1px solid rgba(148, 163, 184, 0.15)' 
+            border: isPassThrough
+              ? '1px solid rgba(148, 163, 184, 0.15)'
               : '1px solid rgba(148, 163, 184, 0.35)',
-            background: isPassThrough 
-              ? 'transparent' 
+            background: isPassThrough
+              ? 'transparent'
               : 'linear-gradient(135deg, rgba(30, 41, 59, 0.35), rgba(15, 23, 42, 0.45))',
-            boxShadow: isPassThrough 
-              ? 'none' 
+            boxShadow: isPassThrough
+              ? 'none'
               : '0 18px 42px rgba(15, 23, 42, 0.32)',
             backdropFilter: isPassThrough ? 'none' : 'blur(16px)',
             WebkitBackdropFilter: isPassThrough ? 'none' : 'blur(16px)',
             WebkitAppRegion: 'drag',
             pointerEvents: 'auto',
             cursor: 'grab',
-            padding: '12px 18px',
+            padding: '12px 16px',
             zIndex: 40,
             transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease',
+            display: 'flex',
+            alignItems: 'center',
           }}
           data-interactive-zone="true"
           onPointerDown={(event) => {
@@ -1021,7 +1477,74 @@ const HierarchicalForceTree = () => {
             }
           }}
           aria-hidden="true"
-        />
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                pointerEvents: 'none',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'rgba(226, 232, 240, 0.92)',
+                  letterSpacing: 0.4,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Jarvis Widget
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: 'rgba(148, 163, 184, 0.85)',
+                }}
+              >
+                드래그하여 이동
+              </span>
+            </div>
+            <button
+              type="button"
+              style={{
+                pointerEvents: 'auto',
+                WebkitAppRegion: 'no-drag',
+                width: 28,
+                height: 28,
+                borderRadius: '9999px',
+                border: '1px solid rgba(148, 163, 184, 0.35)',
+                background: 'rgba(15, 23, 42, 0.6)',
+                color: 'rgba(226, 232, 240, 0.92)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'background 0.25s ease, color 0.25s ease, border 0.25s ease',
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                window.jarvisAPI?.windowControls?.close?.();
+              }}
+              aria-label="위젯 닫기"
+            >
+              ×
+            </button>
+          </div>
+        </div>
       )}
       {showBootstrapChat && rootDragHandlePosition && overlayElement && (
         <div
