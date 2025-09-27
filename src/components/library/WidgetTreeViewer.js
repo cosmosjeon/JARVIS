@@ -41,7 +41,7 @@ const normalizeTreeData = (treeData) => {
   return { nodes, links };
 };
 
-const WidgetTreeViewer = ({ treeData }) => {
+const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const overlayRef = useRef(null);
@@ -69,7 +69,7 @@ const WidgetTreeViewer = ({ treeData }) => {
 
   useEffect(() => {
     if (!containerRef.current) {
-      return () => {};
+      return () => { };
     }
 
     const element = containerRef.current;
@@ -108,7 +108,7 @@ const WidgetTreeViewer = ({ treeData }) => {
     if (!normalizedData.nodes.length) {
       setLayoutNodes([]);
       setLayoutLinks([]);
-      return () => {};
+      return () => { };
     }
 
     if (animationRef.current) {
@@ -207,17 +207,17 @@ const WidgetTreeViewer = ({ treeData }) => {
                 position={{ x: node.x || 0, y: node.y || 0 }}
                 color={colorScaleRef.current(node.depth || 0)}
                 onDrag={null}
-                onNodeClick={null}
+                onNodeClick={onNodeSelect ? () => onNodeSelect(node) : null}
                 isExpanded={false}
                 onSecondQuestion={undefined}
                 onPlaceholderCreate={undefined}
                 questionService={questionServiceRef.current}
                 initialConversation={Array.isArray(node.conversation) ? node.conversation : []}
-                onConversationChange={() => {}}
-                onRequestAnswer={() => {}}
-                onAnswerComplete={() => {}}
-                onAnswerError={() => {}}
-                onRemoveNode={undefined}
+                onConversationChange={() => { }}
+                onRequestAnswer={() => { }}
+                onAnswerComplete={() => { }}
+                onAnswerError={() => { }}
+                onRemoveNode={onRemoveNode}
                 hasChildren={childMap.has(node.id) && childMap.get(node.id).size > 0}
                 isCollapsed={false}
                 onToggleCollapse={undefined}
