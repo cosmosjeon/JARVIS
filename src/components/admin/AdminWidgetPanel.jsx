@@ -73,12 +73,12 @@ const AdminWidgetPanel = () => {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent">
       <div className="flex flex-col items-center gap-2" style={{ WebkitAppRegion: 'drag' }}>
-        <div className="flex h-16 min-w-[320px] max-w-[420px] items-center justify-between rounded-full bg-gradient-to-br from-[#111827] via-[#1f2937] to-[#0f172a] px-2 py-2 shadow-2xl ring-1 ring-slate-800/70 backdrop-blur-md">
+        <div className="flex h-11 min-w-[224px] max-w-[294px] items-center justify-between rounded-full bg-gradient-to-br from-[#111827] via-[#1f2937] to-[#0f172a] px-1.5 py-1.5 shadow-2xl ring-1 ring-slate-800/70 backdrop-blur-md">
           <button
             type="button"
             onClick={handleCreateWidget}
             disabled={creating}
-            className={`flex h-full flex-1 items-center justify-center rounded-full px-8 text-base font-semibold tracking-[0.18em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+            className={`flex h-full flex-1 items-center justify-center rounded-full px-5 text-sm font-semibold tracking-[0.18em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
               creating
                 ? 'bg-sky-600/60 text-slate-200'
                 : 'bg-[#1f8ab5] text-white hover:bg-[#2ba5d3] active:bg-[#1978a0]'
@@ -91,11 +91,11 @@ const AdminWidgetPanel = () => {
           <button
             type="button"
             onClick={handleShowLibrary}
-            className="group ml-3 flex h-full min-w-[120px] flex-none items-center justify-center gap-2 rounded-full bg-[#2d2f36] px-4 text-left text-xs font-semibold tracking-[0.35em] text-slate-200 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
+            className="group ml-2 flex h-full min-w-[84px] flex-none items-center justify-center gap-1.5 rounded-full bg-[#2d2f36] px-3 text-left text-xs font-semibold tracking-[0.35em] text-slate-200 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
             style={{ WebkitAppRegion: 'no-drag' }}
           >
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-900 shadow-inner">
-              <img src={adminWidgetLogo} alt="Voran" className="h-6 w-6" draggable={false} />
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-900 shadow-inner">
+              <img src={adminWidgetLogo} alt="Voran" className="h-4 w-4" draggable={false} />
             </span>
             <span className="uppercase opacity-80 group-hover:opacity-100">Voran</span>
           </button>
