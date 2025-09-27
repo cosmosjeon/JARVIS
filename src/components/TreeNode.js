@@ -198,6 +198,15 @@ const TreeNode = ({
 
   const shouldUsePortal = displayMode === 'chat' && overlayElement;
 
+  const handleAssistantPanelClose = useCallback(() => {
+    if (typeof onCloseNode === 'function') {
+      onCloseNode();
+    }
+    if (typeof onNodeClick === 'function') {
+      onNodeClick({ type: 'dismiss' });
+    }
+  }, [onCloseNode, onNodeClick]);
+
   // Use smart positioning for the panel
   const { position: smartPosition, adjustedSize, isPositioned } = useSmartPositioning(
     nodePosition,
@@ -263,7 +272,7 @@ const TreeNode = ({
             onRequestAnswer={onRequestAnswer}
             onAnswerComplete={onAnswerComplete}
             onAnswerError={onAnswerError}
-            onCloseNode={onCloseNode}
+            onCloseNode={handleAssistantPanelClose}
             onPanZoomGesture={onPanZoomGesture}
           />
         </div>
@@ -427,7 +436,7 @@ const TreeNode = ({
               onRequestAnswer={onRequestAnswer}
             onAnswerComplete={onAnswerComplete}
             onAnswerError={onAnswerError}
-            onCloseNode={onCloseNode}
+            onCloseNode={handleAssistantPanelClose}
             onPanZoomGesture={onPanZoomGesture}
           />
           </div>
