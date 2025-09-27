@@ -276,6 +276,8 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
   // 동기화가 필요한 경우 별도의 함수로 처리해야 함
 };
 
+// 링크는 parent_id로 관리되므로 별도 테이블 불필요
+
 export const upsertTreeMetadata = async ({ treeId, title, userId }) => {
   const supabase = ensureSupabase();
   const now = Date.now();
@@ -325,6 +327,25 @@ export const deleteTree = async (treeId) => {
     .from('trees')
     .update({ deleted_at: timestamp, updated_at: timestamp })
     .eq('id', treeId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const deleteNodes = async ({ nodeIds, userId }) => {
+  const supabase = ensureSupabase();
+
+  if (!nodeIds || !nodeIds.length) {
+    return;
+  }
+
+  const timestamp = Date.now();
+  const { error } = await supabase
+    .from('nodes')
+    .update({ deleted_at: timestamp, updated_at: timestamp })
+    .in('id', nodeIds)
+    .eq('user_id', userId);
 
   if (error) {
     throw error;

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { AnimatePresence, motion } from "framer-motion";
 import TreeNode from "components/TreeNode";
@@ -41,7 +41,7 @@ const normalizeTreeData = (treeData) => {
   return { nodes, links };
 };
 
-const WidgetTreeViewer = ({ treeData }) => {
+const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const overlayRef = useRef(null);
@@ -51,10 +51,105 @@ const WidgetTreeViewer = ({ treeData }) => {
   const linkKeysRef = useRef(new Set());
   const currentNodesRef = useRef([]);
   const colorScaleRef = useRef(null);
-
+  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
   const [dimensions, setDimensions] = useState(DEFAULT_DIMENSIONS);
   const [layoutNodes, setLayoutNodes] = useState([]);
   const [layoutLinks, setLayoutLinks] = useState([]);
+
+  // 접힘 토글 함수
+  const toggleCollapse = (nodeId) => {
+    setCollapsedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  };
+
+  // 전체 뷰로 이동하는 함수
+  const fitToView = useCallback(() => {
+    if (!layoutNodes.length || !svgRef.current || !containerRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    // 노드들의 경계 계산
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+    layoutNodes.forEach(node => {
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x);
+      minY = Math.min(minY, node.y);
+      maxY = Math.max(maxY, node.y);
+    });
+
+    // 노드 크기 고려 (대략적인 반지름 30px)
+    const padding = 60;
+    minX -= padding;
+    maxX += padding;
+    minY -= padding;
+    maxY += padding;
+
+    const nodeWidth = maxX - minX;
+    const nodeHeight = maxY - minY;
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+
+    // 스케일 계산 (여백 포함)
+    const scaleX = containerWidth / nodeWidth;
+    const scaleY = containerHeight / nodeHeight;
+    const scale = Math.min(scaleX, scaleY, 1); // 최대 1배까지만 확대
+
+    // 중앙 정렬을 위한 변위 계산
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const translateX = (containerWidth / 2) - (centerX * scale);
+    const translateY = (containerHeight / 2) - (centerY * scale);
+
+    // 새로운 transform 생성
+    const newTransform = d3.zoomIdentity.translate(translateX, translateY).scale(scale);
+
+    // 부드러운 애니메이션으로 이동
+    if (svgRef.current) {
+      const svgSelection = d3.select(svgRef.current);
+
+      // 현재 transform 가져오기
+      const currentTransform = d3.zoomTransform(svgRef.current);
+
+      // 새로운 zoom behavior 생성하여 부드러운 애니메이션 실행
+      const newZoomBehavior = d3.zoom()
+        .scaleExtent([0.3, 4])
+        .filter((event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (target && target.closest('foreignObject')) return false;
+          if (target && target.closest('[data-node-id]')) return false;
+          if (event.type === 'dblclick') return false;
+          return true;
+        })
+        .on('zoom', (event) => {
+          setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
+        });
+
+      // 부드러운 애니메이션으로 transform 적용
+      svgSelection
+        .transition()
+        .duration(750)
+        .call(newZoomBehavior.transform, newTransform)
+        .on('end', () => {
+          // 애니메이션 완료 후 더블클릭 이벤트 다시 등록
+          svgSelection.on('dblclick', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.target === svgRef.current || event.target.tagName === 'g') {
+              fitToView();
+            }
+          });
+        });
+    }
+  }, [layoutNodes]);
 
   // Lazy instantiate services
   if (!animationServiceRef.current) {
@@ -69,7 +164,7 @@ const WidgetTreeViewer = ({ treeData }) => {
 
   useEffect(() => {
     if (!containerRef.current) {
-      return () => {};
+      return () => { };
     }
 
     const element = containerRef.current;
@@ -100,15 +195,54 @@ const WidgetTreeViewer = ({ treeData }) => {
     return map;
   }, [normalizedData]);
 
+  // 접힌 노드들을 고려한 필터링된 데이터
+  const filteredData = useMemo(() => {
+    if (!normalizedData.nodes.length) {
+      return { nodes: [], links: [] };
+    }
+
+    // 루트 노드 찾기 (부모가 없는 노드)
+    const rootNodes = normalizedData.nodes.filter(node => !node.parentId);
+    if (rootNodes.length === 0) {
+      return { nodes: [], links: [] };
+    }
+
+    const visible = new Set();
+    const stack = [...rootNodes.map(node => node.id)];
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (visible.has(current)) continue;
+      visible.add(current);
+
+      // 접힌 노드라면 하위 노드들을 스택에 추가하지 않음
+      if (collapsedNodeIds.has(current)) continue;
+
+      const children = childMap.get(current) || [];
+      for (const child of children) {
+        stack.push(child);
+      }
+    }
+
+    const filteredNodes = normalizedData.nodes.filter(node => visible.has(node.id));
+    const filteredLinks = normalizedData.links.filter(link => {
+      const sourceId = link.source;
+      const targetId = link.target;
+      return visible.has(sourceId) && visible.has(targetId) && !collapsedNodeIds.has(sourceId);
+    });
+
+    return { nodes: filteredNodes, links: filteredLinks };
+  }, [normalizedData, collapsedNodeIds, childMap]);
+
   useEffect(() => {
     currentNodesRef.current = layoutNodes;
   }, [layoutNodes]);
 
   useEffect(() => {
-    if (!normalizedData.nodes.length) {
+    if (!filteredData.nodes.length) {
       setLayoutNodes([]);
       setLayoutLinks([]);
-      return () => {};
+      return () => { };
     }
 
     if (animationRef.current) {
@@ -117,8 +251,8 @@ const WidgetTreeViewer = ({ treeData }) => {
 
     const animation = animationServiceRef.current.calculateTreeLayoutWithAnimation(
       currentNodesRef.current,
-      normalizedData.nodes,
-      normalizedData.links,
+      filteredData.nodes,
+      filteredData.links,
       dimensions,
       (nextNodes, nextLinks) => {
         setLayoutNodes(nextNodes);
@@ -135,7 +269,7 @@ const WidgetTreeViewer = ({ treeData }) => {
         animation.stop();
       }
     };
-  }, [normalizedData, dimensions]);
+  }, [filteredData, dimensions]);
 
   useEffect(() => () => {
     if (animationRef.current) {
@@ -144,8 +278,56 @@ const WidgetTreeViewer = ({ treeData }) => {
     animationServiceRef.current?.cleanup?.();
   }, []);
 
+  // D3 zoom behavior 설정
+  useEffect(() => {
+    if (!svgRef.current) return undefined;
+
+    const svgSelection = d3.select(svgRef.current);
+    const zoomBehavior = d3.zoom()
+      .scaleExtent([0.3, 4])
+      .filter((event) => {
+        // 노드나 foreignObject 내부에서는 zoom 비활성화
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && target.closest('foreignObject')) return false;
+        if (target && target.closest('[data-node-id]')) return false;
+        // 더블클릭 이벤트는 비활성화
+        if (event.type === 'dblclick') return false;
+        return true;
+      })
+      .on('zoom', (event) => {
+        setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
+      });
+
+    // 더블클릭 이벤트 등록
+    svgSelection.on('dblclick', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      // 빈공간(배경)을 더블클릭한 경우에만 전체 뷰로 이동
+      if (event.target === svgRef.current || event.target.tagName === 'g') {
+        fitToView();
+      }
+    });
+
+    // zoom behavior 적용
+    svgSelection
+      .style('touch-action', 'none')
+      .call(zoomBehavior);
+
+    return () => {
+      svgSelection.on('.zoom', null);
+      svgSelection.on('dblclick', null);
+    };
+  }, [fitToView]);
+
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden">
+      {/* 더블클릭 안내 메시지 */}
+      <div className="absolute top-4 right-4 z-10 pointer-events-none">
+        <div className="bg-white text-gray-800 text-sm px-3 py-1 rounded-full shadow-lg">
+          더블클릭으로 한눈에 보기
+        </div>
+      </div>
+
       <svg ref={svgRef} className="h-full w-full">
         <defs>
           <marker
@@ -161,7 +343,7 @@ const WidgetTreeViewer = ({ treeData }) => {
           </marker>
         </defs>
 
-        <g>
+        <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
           <AnimatePresence>
             {layoutLinks.map((link, index) => {
               const sourceNode = layoutNodes.find((node) => node.id === link.source);
@@ -231,21 +413,21 @@ const WidgetTreeViewer = ({ treeData }) => {
                 position={{ x: node.x || 0, y: node.y || 0 }}
                 color={colorScaleRef.current(node.depth || 0)}
                 onDrag={null}
-                onNodeClick={null}
+                onNodeClick={onNodeSelect ? () => onNodeSelect(node) : null}
                 isExpanded={false}
                 onSecondQuestion={undefined}
                 onPlaceholderCreate={undefined}
                 questionService={questionServiceRef.current}
                 initialConversation={Array.isArray(node.conversation) ? node.conversation : []}
-                onConversationChange={() => {}}
-                onRequestAnswer={() => {}}
-                onAnswerComplete={() => {}}
-                onAnswerError={() => {}}
-                onRemoveNode={undefined}
+                onConversationChange={() => { }}
+                onRequestAnswer={() => { }}
+                onAnswerComplete={() => { }}
+                onAnswerError={() => { }}
+                onRemoveNode={onRemoveNode}
                 hasChildren={childMap.has(node.id) && childMap.get(node.id).size > 0}
-                isCollapsed={false}
-                onToggleCollapse={undefined}
-                viewTransform={{ x: 0, y: 0, k: 1 }}
+                isCollapsed={collapsedNodeIds.has(node.id)}
+                onToggleCollapse={toggleCollapse}
+                viewTransform={viewTransform}
                 overlayElement={overlayRef.current}
               />
             </motion.g>

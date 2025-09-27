@@ -206,7 +206,7 @@ let adminPanelWindow;
 let logger;
 let hotkeyManager;
 let tray;
-let broadcastWindowState = () => {};
+let broadcastWindowState = () => { };
 let llmService;
 let authServer = null;
 let authServerPort = null;
