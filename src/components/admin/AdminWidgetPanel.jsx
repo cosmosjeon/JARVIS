@@ -1,19 +1,41 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Folder, GripVertical } from 'lucide-react';
 import { useSupabaseAuth } from 'hooks/useSupabaseAuth';
 import { createTreeForUser, openWidgetForTree } from 'services/treeCreation';
+import { fetchTreesWithNodes } from 'services/supabaseTrees';
 import adminWidgetLogo from 'assets/admin-widget/logo.svg';
 
 const AdminWidgetPanel = () => {
   const { user, loading } = useSupabaseAuth();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
+  const [recentTrees, setRecentTrees] = useState([]);
+  const [loadingTrees, setLoadingTrees] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
       window.jarvisAPI?.closeAdminPanel?.();
     }
   }, [loading, user]);
+
+  // 최신 트리들 로드
+  useEffect(() => {
+    const loadRecentTrees = async () => {
+      if (!user) return;
+      
+      setLoadingTrees(true);
+      try {
+        const trees = await fetchTreesWithNodes(user.id);
+        setRecentTrees(trees.slice(0, 2)); // 최신 2개만 표시
+      } catch (err) {
+        console.error('Failed to load recent trees:', err);
+      } finally {
+        setLoadingTrees(false);
+      }
+    };
+
+    loadRecentTrees();
+  }, [user]);
 
   const statusText = useMemo(() => {
     if (loading) {
@@ -55,6 +77,28 @@ const AdminWidgetPanel = () => {
     }
   }, []);
 
+  // Voran 로고 클릭 - React Hierarchical Force Tree로 이동
+  const handleVoranClick = useCallback(async () => {
+    try {
+      // React Hierarchical Force Tree로 이동하는 로직
+      // 현재는 라이브러리를 열어서 트리 뷰어로 이동
+      await window.jarvisAPI?.showLibrary?.();
+    } catch (err) {
+      setError(err);
+      window.jarvisAPI?.log?.('warn', 'admin_panel_voran_click_failed', { message: err?.message });
+    }
+  }, []);
+
+  // 폴더 아이콘 클릭 - 해당 트리 열기
+  const handleFolderClick = useCallback(async (tree) => {
+    try {
+      await openWidgetForTree({ treeId: tree.id, fresh: false });
+    } catch (err) {
+      setError(err);
+      window.jarvisAPI?.log?.('warn', 'admin_panel_folder_click_failed', { message: err?.message });
+    }
+  }, []);
+
   if (loading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-transparent">
@@ -73,31 +117,61 @@ const AdminWidgetPanel = () => {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent">
       <div className="flex flex-col items-center gap-2" style={{ WebkitAppRegion: 'drag' }}>
-        <div className="flex h-11 min-w-[179px] max-w-[235px] items-center justify-between rounded-full bg-gradient-to-br from-[#111827] via-[#1f2937] to-[#0f172a] px-1.5 py-1.5 shadow-2xl ring-1 ring-slate-800/70 backdrop-blur-md">
+        <div className="flex h-12 items-center gap-2 rounded-full bg-gradient-to-br from-[#111827] via-[#1f2937] to-[#0f172a] px-3 py-2 shadow-2xl ring-1 ring-slate-800/70 backdrop-blur-md">
+          {/* Voran 로고 */}
+          <button
+            type="button"
+            onClick={handleVoranClick}
+            className="flex h-8 w-8 items-center justify-center transition hover:bg-slate-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
+            style={{ WebkitAppRegion: 'no-drag' }}
+          >
+            <img src={adminWidgetLogo} alt="Voran" className="h-6 w-6" draggable={false} />
+          </button>
+
+          {/* NEW 버튼 */}
           <button
             type="button"
             onClick={handleCreateWidget}
             disabled={creating}
-            className={`flex h-full flex-1 items-center justify-center rounded-full px-3 text-xs font-semibold tracking-[0.15em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+            className={`flex h-8 items-center justify-center rounded-full px-4 text-xs font-semibold tracking-[0.1em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
               creating
                 ? 'bg-sky-600/60 text-slate-200'
                 : 'bg-[#1f8ab5] text-white hover:bg-[#2ba5d3] active:bg-[#1978a0]'
             }`}
             style={{ WebkitAppRegion: 'no-drag' }}
           >
-            NEW WIDGET
+            NEW
           </button>
 
+          {/* 폴더 아이콘들 */}
+          {recentTrees.map((tree, index) => (
+            <button
+              key={tree.id}
+              type="button"
+              onClick={() => handleFolderClick(tree)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-cyan-400 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70"
+              style={{ WebkitAppRegion: 'no-drag' }}
+              title={tree.title}
+            >
+              <Folder className="h-4 w-4" />
+            </button>
+          ))}
+
+          {/* 빈 폴더 아이콘 (트리가 2개 미만일 때) */}
+          {recentTrees.length < 2 && (
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-slate-500">
+              <Folder className="h-4 w-4" />
+            </div>
+          )}
+
+          {/* 드래그 핸들 */}
           <button
             type="button"
-            onClick={handleShowLibrary}
-            className="group ml-1.5 flex h-full min-w-[67px] flex-none items-center justify-center gap-1 rounded-full bg-[#2d2f36] px-2 text-left text-xs font-semibold tracking-[0.3em] text-slate-200 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
-            style={{ WebkitAppRegion: 'no-drag' }}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-slate-400 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
+            style={{ WebkitAppRegion: 'drag' }}
+            title="위젯 이동"
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-900 shadow-inner">
-              <img src={adminWidgetLogo} alt="Voran" className="h-3.5 w-3.5" draggable={false} />
-            </span>
-            <span className="uppercase opacity-80 group-hover:opacity-100">Voran</span>
+            <GripVertical className="h-4 w-4" />
           </button>
         </div>
         {statusText && (
