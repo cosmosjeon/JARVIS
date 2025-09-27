@@ -442,6 +442,8 @@ const NodeAssistantPanel = ({
       clearTypingTimers();
 
       const resolvedIsRootNode = isRootNodeProp;
+      const normalizedQuestion = typeof question === 'string' ? question.trim() : '';
+      const questionText = normalizedQuestion || (typeof question === 'string' ? question : '');
 
       let shouldCreateChild = false;
       if (!skipSecondQuestionCheck) {
@@ -454,11 +456,13 @@ const NodeAssistantPanel = ({
       const userId = `${timestamp}-user`;
       const assistantId = `${timestamp}-assistant`;
 
-      setMessages((prev) => [
-        ...prev,
-        { id: userId, role: 'user', text: question },
-        { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
-      ]);
+      if (!shouldCreateChild) {
+        setMessages((prev) => [
+          ...prev,
+          { id: userId, role: 'user', text: questionText },
+          { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
+        ]);
+      }
 
       try {
         let answerText = overrideAnswerText ?? '';
@@ -468,50 +472,57 @@ const NodeAssistantPanel = ({
           if (typeof onRequestAnswer === 'function') {
             const result = await onRequestAnswer({
               node,
-              question,
+              question: questionText,
               isRootNode: resolvedIsRootNode,
               shouldCreateChild,
             });
             answerText = result?.answer ?? '';
             metadata = result || {};
           } else {
-            answerText = buildAnswerText(summary, question);
+            answerText = buildAnswerText(summary, questionText);
           }
         }
 
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantId
-              ? { ...message, text: '', status: 'typing' }
-              : message,
-          ),
-        );
+        if (!shouldCreateChild) {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? { ...message, text: '', status: 'typing' }
+                : message,
+            ),
+          );
 
-        animateAssistantResponse(assistantId, answerText, {
-          question,
-          metadata,
-          shouldCreateChild,
-          isRootNode: resolvedIsRootNode,
-        });
-
-        if (shouldCreateChild && onSecondQuestion) {
-          await onSecondQuestion(node.id, question, answerText, metadata);
+          animateAssistantResponse(assistantId, answerText, {
+            question: questionText,
+            metadata,
+            shouldCreateChild,
+            isRootNode: resolvedIsRootNode,
+          });
+        } else if (shouldCreateChild && onSecondQuestion) {
+          await onSecondQuestion(node.id, questionText, answerText, metadata);
         }
       } catch (error) {
         const messageText = error?.message || '요청 처리 중 오류가 발생했습니다.';
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantId
-              ? { ...message, text: `⚠️ ${messageText}`, status: 'error' }
-              : message,
-          ),
-        );
+        if (shouldCreateChild) {
+          setMessages((prev) => [
+            ...prev,
+            { id: assistantId, role: 'assistant', text: `⚠️ ${messageText}`, status: 'error' },
+          ]);
+        } else {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? { ...message, text: `⚠️ ${messageText}`, status: 'error' }
+                : message,
+            ),
+          );
+        }
         if (resolvedIsRootNode && !skipSecondQuestionCheck) {
           const current = questionServiceRef.current.getQuestionCount(node.id);
           questionServiceRef.current.setQuestionCount(node.id, Math.max(current - 1, 0));
         }
         onAnswerError?.(node.id, {
-          question,
+          question: questionText,
           error,
           shouldCreateChild,
           isRootNode: resolvedIsRootNode,
