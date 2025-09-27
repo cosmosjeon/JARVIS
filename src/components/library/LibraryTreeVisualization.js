@@ -200,10 +200,10 @@ const LibraryTreeVisualization = ({ treeData, isEditMode, onTreeUpdate, onNodeSe
     const updatedNodes = nodes.map((node) =>
       node.id === selectedNodeId
         ? {
-            ...node,
-            keyword: draftKeyword,
-            fullText: draftFullText,
-          }
+          ...node,
+          keyword: draftKeyword,
+          fullText: draftFullText,
+        }
         : node
     );
     onTreeUpdate({ nodes: updatedNodes, links });
