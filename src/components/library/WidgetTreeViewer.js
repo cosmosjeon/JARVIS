@@ -122,11 +122,14 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
       // 새로운 zoom behavior 생성하여 부드러운 애니메이션 실행
       const newZoomBehavior = d3.zoom()
         .scaleExtent([0.3, 4])
+        .wheelDelta((event) => event.deltaY * -0.0003) // 민감도 더 낮춤 (기본값의 1/2000)
         .filter((event) => {
           const target = event.target instanceof Element ? event.target : null;
           if (target && target.closest('foreignObject')) return false;
           if (target && target.closest('[data-node-id]')) return false;
           if (event.type === 'dblclick') return false;
+          // 휠 이벤트는 Ctrl 키를 누른 상태에서만 허용
+          if (event.type === 'wheel') return event.ctrlKey;
           return true;
         })
         .on('zoom', (event) => {
@@ -285,6 +288,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
     const svgSelection = d3.select(svgRef.current);
     const zoomBehavior = d3.zoom()
       .scaleExtent([0.3, 4])
+      .wheelDelta((event) => event.deltaY * -0.003) // 민감도 더 낮춤 (기본값의 1/2000)
       .filter((event) => {
         // 노드나 foreignObject 내부에서는 zoom 비활성화
         const target = event.target instanceof Element ? event.target : null;
@@ -292,6 +296,8 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
         if (target && target.closest('[data-node-id]')) return false;
         // 더블클릭 이벤트는 비활성화
         if (event.type === 'dblclick') return false;
+        // 휠 이벤트는 Ctrl 키를 누른 상태에서만 허용
+        if (event.type === 'wheel') return event.ctrlKey;
         return true;
       })
       .on('zoom', (event) => {
