@@ -286,40 +286,9 @@ const ensureWindowFocus = () => {
   mainWindow.focus();
 };
 
-const handleHotkeyTrigger = () => {
-  if (!mainWindow) {
-    logger?.warn('Hotkey triggered but main window is not available');
-    return;
-  }
+// handleHotkeyTrigger 함수 제거됨 - Alt+` 키 비활성화
 
-  logger?.info('Primary hotkey triggered');
-
-  if (mainWindow.isVisible() && mainWindow.isFocused()) {
-    mainWindow.hide();
-    logger?.info('Main window hidden via hotkey');
-    return;
-  }
-
-  ensureWindowFocus();
-  logger?.info('Main window shown via hotkey');
-};
-
-const handleAltBacktickToggle = () => {
-  if (!mainWindow) {
-    logger?.warn('Alt+` triggered but main window is not available');
-    return;
-  }
-
-  logger?.info('Alt+` triggered - toggling window visibility');
-
-  if (mainWindow.isVisible()) {
-    mainWindow.hide();
-    logger?.info('Main window hidden via Alt+`');
-  } else {
-    ensureWindowFocus();
-    logger?.info('Main window shown via Alt+`');
-  }
-};
+// handleAltBacktickToggle 함수 제거됨 - Alt+` 키 비활성화
 
 const registerPrimaryHotkey = () => {
   if (!hotkeyManager) {
@@ -327,27 +296,9 @@ const registerPrimaryHotkey = () => {
   }
   hotkeyManager.unregisterAll?.();
 
-  // Windows에서 더블 Ctrl 사용 시 Ctrl 키만 등록
-  let accelerator, options = {};
-
-  if (process.platform === 'win32' && settings.doubleCtrlEnabled) {
-    accelerator = 'Alt+`';
-    options.enableDoubleCtrl = false; // Alt+`를 한 번만 누르면 감지
-  } else {
-    accelerator = typeof settings.accelerator === 'string' && settings.accelerator.trim()
-      ? settings.accelerator.trim()
-      : DEFAULT_ACCELERATOR;
-  }
-
-  // Alt+` 키인 경우 Alt+` 토글 핸들러 사용
-  const handler = (accelerator === 'Alt+`') ? handleAltBacktickToggle : handleHotkeyTrigger;
-  const success = hotkeyManager.registerToggle({ accelerator, handler, options });
-  if (success) {
-    logger?.info('Primary hotkey registered', { accelerator, doubleCtrl: options.enableDoubleCtrl || false });
-  } else {
-    logger?.warn('Primary hotkey registration failed', { accelerator, doubleCtrl: options.enableDoubleCtrl || false });
-  }
-  return success;
+  // Alt+` 키 비활성화 - 더 이상 등록하지 않음
+  logger?.info('Primary hotkey registration disabled - Alt+` key removed');
+  return true;
 };
 
 const loadSettings = () => {
@@ -381,9 +332,108 @@ const registerPassThroughShortcut = () => {
   }
 };
 
+const handleAllWidgetsToggle = () => {
+  logger?.info('Alt+1 hotkey triggered - handleAllWidgetsToggle called');
+
+  const allWindows = [];
+
+  // 메인 윈도우가 존재하는 경우에만 추가 (기본 위젯 비활성화로 인해 없을 수 있음)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    allWindows.push(mainWindow);
+    logger?.info('Main window added to toggle list', {
+      id: mainWindow.id,
+      visible: mainWindow.isVisible()
+    });
+  }
+
+  // 추가 위젯 윈도우들 추가
+  additionalWidgetWindows.forEach((win) => {
+    if (!win.isDestroyed()) {
+      allWindows.push(win);
+      logger?.info('Additional widget window added to toggle list', {
+        id: win.id,
+        visible: win.isVisible()
+      });
+    }
+  });
+
+  logger?.info('Widget toggle debug info', {
+    mainWindowExists: !!(mainWindow && !mainWindow.isDestroyed()),
+    additionalWidgetsCount: additionalWidgetWindows.size,
+    totalWindows: allWindows.length
+  });
+
+  if (allWindows.length === 0) {
+    logger?.warn('No widget windows available to toggle - create a widget first');
+    return;
+  }
+
+  // 모든 윈도우가 보이는지 확인
+  const allVisible = allWindows.every(win => win.isVisible());
+
+  logger?.info('Window visibility check', {
+    allVisible,
+    windowStates: allWindows.map(win => ({ id: win.id, visible: win.isVisible() }))
+  });
+
+  if (allVisible) {
+    // 모든 윈도우가 보이면 숨기기
+    allWindows.forEach(win => {
+      win.hide();
+      logger?.info('Window hidden', { id: win.id });
+    });
+    logger?.info('All widget windows hidden via hotkey', { count: allWindows.length });
+  } else {
+    // 일부 또는 모든 윈도우가 숨겨져 있으면 모두 보이기
+    allWindows.forEach(win => {
+      if (!win.isVisible()) {
+        win.show();
+        logger?.info('Window shown', { id: win.id });
+      }
+      if (win.isMinimized()) {
+        win.restore();
+        logger?.info('Window restored', { id: win.id });
+      }
+    });
+    logger?.info('All widget windows shown via hotkey', { count: allWindows.length });
+  }
+};
+
+const registerWidgetToggleHotkey = () => {
+  if (!hotkeyManager) {
+    hotkeyManager = createHotkeyManager(logger);
+    logger?.info('Hotkey manager created for widget toggle');
+  }
+
+  logger?.info('Attempting to register Alt+1 hotkey for widget toggle');
+
+  // 모든 위젯 토글용 Alt+1 키 등록
+  const success = hotkeyManager.registerToggle({
+    accelerator: 'Alt+1',
+    handler: handleAllWidgetsToggle
+  });
+
+  if (success) {
+    logger?.info('Widget toggle hotkey registered successfully', {
+      accelerator: 'Alt+1',
+      platform: process.platform,
+      hotkeyManagerStatus: hotkeyManager.status
+    });
+  } else {
+    logger?.error('Widget toggle hotkey registration failed', {
+      accelerator: 'Alt+1',
+      platform: process.platform,
+      hotkeyManagerStatus: hotkeyManager.status
+    });
+  }
+
+  return success;
+};
+
 const applyHotkeySettings = () => {
   if (!logger) return;
   registerPrimaryHotkey();
+  registerWidgetToggleHotkey();
 };
 
 const applyTraySettings = () => {
@@ -821,7 +871,7 @@ app.whenReady().then(() => {
   loadSettings();
   logger = createLogBridge(() => mainWindow);
   llmService = new LLMService({ logger });
-  createWindow({ fresh: false });
+  // createWindow({ fresh: false }); // 기본 위젯 생성 비활성화
   createLibraryWindow();
   ensureAuthCallbackServer().catch((error) => {
     logger?.error('auth_callback_server_start_failed', { message: error?.message });
@@ -1228,6 +1278,12 @@ app.whenReady().then(() => {
     const newWindow = createAdditionalWidgetWindow({
       treeId: requestedTreeId || null,
       fresh: forceFresh,
+    });
+
+    logger?.info('New widget window created', {
+      windowId: newWindow.id,
+      treeId: requestedTreeId,
+      additionalWidgetsCount: additionalWidgetWindows.size
     });
 
     return {

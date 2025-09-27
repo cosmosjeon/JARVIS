@@ -351,3 +351,114 @@ export const deleteNodes = async ({ nodeIds, userId }) => {
     throw error;
   }
 };
+
+// Folder management functions
+export const fetchFolders = async (userId) => {
+  const supabase = ensureSupabase();
+
+  const { data, error } = await supabase
+    .from('folders')
+    .select('*')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+};
+
+export const createFolder = async ({ name, parentId, userId }) => {
+  const supabase = ensureSupabase();
+  const now = Date.now();
+
+  console.log('createFolder 호출:', { name, parentId, userId });
+
+  const insertData = {
+    name,
+    user_id: userId,
+    created_at: now,
+    updated_at: now
+  };
+
+  // parentId가 있을 때만 추가
+  if (parentId) {
+    insertData.parent_id = parentId;
+  }
+
+  console.log('insertData:', insertData);
+
+  const { data, error } = await supabase
+    .from('folders')
+    .insert(insertData)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('createFolder 오류:', error);
+    throw error;
+  }
+
+  console.log('createFolder 성공:', data);
+  return data;
+};
+
+export const updateFolder = async ({ folderId, name, userId }) => {
+  const supabase = ensureSupabase();
+  const now = Date.now();
+
+  const { data, error } = await supabase
+    .from('folders')
+    .update({
+      name,
+      updated_at: now
+    })
+    .eq('id', folderId)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+};
+
+export const deleteFolder = async ({ folderId, userId }) => {
+  const supabase = ensureSupabase();
+  const now = Date.now();
+
+  const { error } = await supabase
+    .from('folders')
+    .update({
+      deleted_at: now,
+      updated_at: now
+    })
+    .eq('id', folderId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const moveTreeToFolder = async ({ treeId, folderId, userId }) => {
+  const supabase = ensureSupabase();
+  const now = Date.now();
+
+  const { error } = await supabase
+    .from('trees')
+    .update({
+      folder_id: folderId,
+      updated_at: now
+    })
+    .eq('id', treeId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw error;
+  }
+};

@@ -6,8 +6,18 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "components
 
 import TreeCanvas from "./TreeCanvas";
 import LibraryQAPanel from "./LibraryQAPanel";
+import VoranBoxManager from "./VoranBoxManager";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
-import { fetchTreesWithNodes, deleteTree, deleteNodes } from "services/supabaseTrees";
+import {
+  fetchTreesWithNodes,
+  deleteTree,
+  deleteNodes,
+  fetchFolders,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+  moveTreeToFolder
+} from "services/supabaseTrees";
 import { createTreeForUser, openWidgetForTree } from "services/treeCreation";
 
 const EmptyState = ({ message }) => (
@@ -19,10 +29,14 @@ const EmptyState = ({ message }) => (
 const LibraryApp = () => {
   const { user, signOut } = useSupabaseAuth();
   const [trees, setTrees] = useState([]);
+  const [folders, setFolders] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [foldersLoading, setFoldersLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
+  const [showVoranBoxManager, setShowVoranBoxManager] = useState(false);
 
   const selectedTree = useMemo(
     () => trees.find((tree) => tree.id === selectedId) ?? null,
@@ -32,37 +46,53 @@ const LibraryApp = () => {
   const refreshLibrary = useCallback(async () => {
     if (!user) {
       setTrees([]);
+      setFolders([]);
       setSelectedId(null);
+      setSelectedFolderId(null);
       setLoading(false);
+      setFoldersLoading(false);
       return;
     }
 
     setLoading(true);
+    setFoldersLoading(true);
     setError(null);
+
     try {
-      const fetchedTrees = await fetchTreesWithNodes(user.id);
-      const mapped = fetchedTrees.map((tree) => ({
+      // 트리와 폴더를 병렬로 가져오기
+      const [fetchedTrees, fetchedFolders] = await Promise.all([
+        fetchTreesWithNodes(user.id),
+        fetchFolders(user.id)
+      ]);
+
+      const mappedTrees = fetchedTrees.map((tree) => ({
         id: tree.id,
         title: tree.title || "제목 없는 트리",
         treeData: tree.treeData,
         createdAt: tree.createdAt,
         updatedAt: tree.updatedAt,
+        folderId: tree.folderId || null,
       }));
 
-      setTrees(mapped);
+      setTrees(mappedTrees);
+      setFolders(fetchedFolders);
+
       setSelectedId((previousId) => {
-        if (!mapped.length) return null;
-        const exists = previousId && mapped.some((item) => item.id === previousId);
+        if (!mappedTrees.length) return null;
+        const exists = previousId && mappedTrees.some((item) => item.id === previousId);
         return exists ? previousId : null;
       });
     } catch (err) {
       setError(err);
       setTrees([]);
+      setFolders([]);
       setSelectedId(null);
+      setSelectedFolderId(null);
     } finally {
       setLoading(false);
+      setFoldersLoading(false);
     }
-  }, [user?.id]); // user 객체 전체 대신 user.id만 의존성으로 사용
+  }, [user?.id]);
 
   useEffect(() => {
     refreshLibrary();
@@ -239,42 +269,194 @@ const LibraryApp = () => {
     }
   }, [selectedTree, user, selectedNode]);
 
+  // 폴더 관리 핸들러들
+  const handleFolderCreate = useCallback(async ({ name, parentId }) => {
+    if (!user) {
+      console.log('폴더 생성 실패: 사용자가 로그인되지 않음');
+      return;
+    }
+
+    console.log('폴더 생성 시도:', { name, parentId, userId: user.id });
+
+    try {
+      const newFolder = await createFolder({ name, parentId, userId: user.id });
+      console.log('폴더 생성 성공:', newFolder);
+      setFolders(prev => [...prev, newFolder]);
+    } catch (err) {
+      console.error('폴더 생성 오류:', err);
+      setError(err);
+      alert(`폴더 생성 중 오류가 발생했습니다: ${err.message}`);
+    }
+  }, [user]);
+
+  const handleFolderSelect = useCallback((folderId) => {
+    setSelectedFolderId(folderId);
+    // 폴더 선택 시 트리는 자동 선택하지 않음
+    setSelectedId(null);
+  }, []);
+
+  const handleTreeMoveToFolder = useCallback(async (tree) => {
+    if (!user) return;
+
+    try {
+      // Check if tree has targetFolderId (from drag and drop)
+      const targetFolderId = tree.targetFolderId;
+
+      if (targetFolderId === null) {
+        // Move to VORAN BOX (remove from folder)
+        await moveTreeToFolder({ treeId: tree.id, folderId: null, userId: user.id });
+        setTrees(prev =>
+          prev.map(t =>
+            t.id === tree.id ? { ...t, folderId: null } : t
+          )
+        );
+      } else if (targetFolderId) {
+        // Move to specific folder
+        await moveTreeToFolder({ treeId: tree.id, folderId: targetFolderId, userId: user.id });
+        setTrees(prev =>
+          prev.map(t =>
+            t.id === tree.id ? { ...t, folderId: targetFolderId } : t
+          )
+        );
+      } else {
+        // Fallback: move to first folder (original behavior)
+        const firstFolder = folders[0];
+        if (firstFolder) {
+          await moveTreeToFolder({ treeId: tree.id, folderId: firstFolder.id, userId: user.id });
+          setTrees(prev =>
+            prev.map(t =>
+              t.id === tree.id ? { ...t, folderId: firstFolder.id } : t
+            )
+          );
+        }
+      }
+    } catch (err) {
+      setError(err);
+    }
+  }, [user, folders]);
+
+  // 필터된 트리 목록 (선택된 폴더에 따라)
+  const filteredTrees = useMemo(() => {
+    if (selectedFolderId) {
+      return trees.filter(tree => tree.folderId === selectedFolderId);
+    }
+    return trees; // 모든 트리 표시 (폴더별로 구분되어 있음)
+  }, [trees, selectedFolderId]);
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100">
       <aside className="flex w-64 flex-col border-r border-slate-900/60 bg-slate-950/80">
         <div className="border-b border-slate-900/60 px-4 py-4">
-          <h1 className="text-base font-semibold">저장된 트리</h1>
-          <p className="mt-1 text-xs text-slate-400">라이브러리에서 열 트리를 선택하세요.</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-base font-semibold">저장된 트리</h1>
+              <p className="mt-1 text-xs text-slate-400">라이브러리에서 열 트리를 선택하세요.</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowVoranBoxManager(true)}
+              className="h-8 px-2 text-xs text-slate-400 hover:text-slate-200"
+            >
+              VORAN BOX
+            </Button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <EmptyState message="트리를 불러오는 중입니다." />
-          ) : trees.length === 0 ? (
-            <EmptyState message="아직 저장된 트리가 없습니다." />
+          ) : (trees.length === 0 && folders.length === 0) ? (
+            <EmptyState message="아직 저장된 트리나 폴더가 없습니다." />
           ) : (
             <nav className="flex flex-col gap-1 px-2 py-3">
-              {trees.map((tree) => {
-                const isActive = tree.id === selectedId;
+              {/* 폴더들 표시 */}
+              {folders.map((folder) => {
+                const folderTrees = trees.filter(tree => tree.folderId === folder.id);
+                const isFolderSelected = selectedFolderId === folder.id;
+                const hasSelectedTreeInFolder = folderTrees.some(tree => tree.id === selectedId);
+
                 return (
-                  <button
-                    key={tree.id}
-                    type="button"
-                    onClick={() => setSelectedId(tree.id)}
-                    onDoubleClick={() => { void handleTreeOpen(tree.id); }}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      handleTreeDelete(tree.id);
-                    }}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${isActive
-                      ? "bg-slate-800 text-slate-50"
-                      : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
-                      }`}
-                  >
-                    <FolderIcon className="h-4 w-4" />
-                    <span className="flex-1 truncate">{tree.title}</span>
-                  </button>
+                  <div key={folder.id} className="space-y-1">
+                    {/* 폴더 헤더 */}
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setSelectedFolderId(folder.id)}
+                      className={`w-full flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${isFolderSelected || hasSelectedTreeInFolder
+                        ? "bg-slate-800 text-slate-50"
+                        : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
+                        }`}
+                    >
+                      <FolderIcon className="h-4 w-4" />
+                      <span className="flex-1 truncate">{folder.name}</span>
+                      <span className="text-xs text-slate-400 bg-slate-700 px-1.5 py-0.5 rounded-full">
+                        {folderTrees.length}
+                      </span>
+                    </button>
+
+                    {/* 폴더 내 트리들 */}
+                    {(isFolderSelected || hasSelectedTreeInFolder) && folderTrees.length > 0 && (
+                      <div className="ml-6 space-y-1">
+                        {folderTrees.map((tree) => {
+                          const isActive = tree.id === selectedId;
+                          return (
+                            <button
+                              key={tree.id}
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => setSelectedId(tree.id)}
+                              onDoubleClick={() => { void handleTreeOpen(tree.id); }}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                handleTreeDelete(tree.id);
+                              }}
+                              className={`w-full flex items-center gap-3 rounded-md px-3 py-1.5 text-left text-sm transition ${isActive
+                                ? "bg-slate-700 text-slate-50"
+                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                                }`}
+                            >
+                              <div className="w-2 h-2 rounded-full bg-slate-500" />
+                              <span className="flex-1 truncate">{tree.title}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
+
+              {/* VORAN BOX에 있는 트리들 (폴더에 속하지 않은 트리들) */}
+              {trees.filter(tree => !tree.folderId).length > 0 && (
+                <div className="space-y-1">
+                  <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                    VORAN BOX
+                  </div>
+                  {trees.filter(tree => !tree.folderId).map((tree) => {
+                    const isActive = tree.id === selectedId;
+                    return (
+                      <button
+                        key={tree.id}
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setSelectedId(tree.id)}
+                        onDoubleClick={() => { void handleTreeOpen(tree.id); }}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          handleTreeDelete(tree.id);
+                        }}
+                        className={`w-full flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${isActive
+                          ? "bg-slate-800 text-slate-50"
+                          : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
+                          }`}
+                      >
+                        <FolderIcon className="h-4 w-4" />
+                        <span className="flex-1 truncate">{tree.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </nav>
           )}
         </div>
@@ -377,10 +559,44 @@ const LibraryApp = () => {
               />
             </ResizablePanel>
           </ResizablePanelGroup>
+        ) : selectedFolderId ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl mb-4">📁</div>
+              <h3 className="text-lg font-semibold text-slate-200 mb-2">
+                {folders.find(f => f.id === selectedFolderId)?.name || "폴더"}
+              </h3>
+              <p className="text-sm text-slate-400 mb-4">
+                이 폴더에 트리를 추가하거나 트리를 선택해주세요
+              </p>
+              <p className="text-xs text-slate-500">
+                VORAN BOX에서 트리를 이 폴더로 이동할 수 있습니다
+              </p>
+            </div>
+          </div>
         ) : (
-          <EmptyState message="트리를 선택해주세요." />
+          <EmptyState message="트리나 폴더를 선택해주세요." />
         )}
       </main>
+
+      {/* VORAN BOX Manager 모달 */}
+      <VoranBoxManager
+        isVisible={showVoranBoxManager}
+        onClose={() => setShowVoranBoxManager(false)}
+        trees={trees}
+        folders={folders}
+        onTreeSelect={(tree) => {
+          setSelectedId(tree.id);
+          setShowVoranBoxManager(false);
+        }}
+        onTreeMoveToFolder={handleTreeMoveToFolder}
+        onTreeOpen={handleTreeOpen}
+        onFolderCreate={handleFolderCreate}
+        onFolderSelect={handleFolderSelect}
+        selectedTreeId={selectedId}
+        selectedFolderId={selectedFolderId}
+        loading={loading || foldersLoading}
+      />
     </div>
   );
 };

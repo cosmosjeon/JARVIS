@@ -101,11 +101,11 @@ const MarkdownMessage = ({ text }) => {
       // 인라인 코드 처리
       let processedLine = line;
       processedLine = processedLine.replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-slate-200 px-1 py-0.5 rounded text-sm">$1</code>');
-      
+
       // 굵은 글씨 처리
       processedLine = processedLine.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-slate-100">$1</strong>');
       processedLine = processedLine.replace(/__([^_]+)__/g, '<strong class="font-bold text-slate-100">$1</strong>');
-      
+
       // 기울임 글씨 처리
       processedLine = processedLine.replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
       processedLine = processedLine.replace(/_([^_]+)_/g, '<em class="italic">$1</em>');
@@ -512,30 +512,30 @@ const LibraryQAPanel = ({
               }}
               className="flex items-end gap-2"
             >
-            <textarea
-              ref={textareaRef}
-              value={composerValue}
-              onChange={(e) => setComposerValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={handleComposerFocus}
-              onBlur={handleComposerBlur}
-              placeholder="질문을 입력하세요... (Enter로 전송)"
-              className="flex min-h-[40px] max-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-              disabled={isProcessing}
-              rows={2}
-            />
-            <Button
-              type="submit"
-              size="sm"
-              disabled={!composerValue.trim() || isProcessing}
-              className="h-10 w-10 p-0"
-            >
-              {isProcessing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
+              <textarea
+                ref={textareaRef}
+                value={composerValue}
+                onChange={(e) => setComposerValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onFocus={handleComposerFocus}
+                onBlur={handleComposerBlur}
+                placeholder="질문을 입력하세요... (Enter로 전송)"
+                className="flex min-h-[40px] max-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+                disabled={isProcessing}
+                rows={2}
+              />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!composerValue.trim() || isProcessing}
+                className="h-10 w-10 p-0"
+              >
+                {isProcessing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
             </form>
           )}
         </div>
