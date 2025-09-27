@@ -231,53 +231,6 @@ const LibraryApp = () => {
               새 트리 만들기
             </Button>
             <Button
-              variant="secondary"
-              size="sm"
-              disabled={!user || loading}
-              onClick={async () => {
-                if (!user || typeof window === "undefined") {
-                  return;
-                }
-
-                const payload = {
-                  treeId: selectedId || undefined,
-                  reusePrimary: false,
-                  fresh: !selectedId,
-                };
-
-                try {
-                  if (window.jarvisAPI?.openWidget) {
-                    await window.jarvisAPI.openWidget(payload);
-                    return;
-                  }
-
-                  if (window.jarvisAPI?.toggleWindow) {
-                    window.jarvisAPI.toggleWindow();
-                    return;
-                  }
-
-                  const url = new URL(window.location.href);
-                  url.searchParams.set("mode", "widget");
-                  if (selectedId) {
-                    url.searchParams.set("treeId", selectedId);
-                  } else {
-                    url.searchParams.delete("treeId");
-                  }
-                  window.open(url.toString(), "_blank");
-                } catch (err) {
-                  const fallbackUrl = new URL(window.location.href);
-                  if (selectedId) {
-                    fallbackUrl.searchParams.set("treeId", selectedId);
-                  } else {
-                    fallbackUrl.searchParams.delete("treeId");
-                  }
-                  window.open(fallbackUrl.toString(), "_blank");
-                }
-              }}
-            >
-              위젯 열기
-            </Button>
-            <Button
               variant="ghost"
               size="sm"
               onClick={() => {

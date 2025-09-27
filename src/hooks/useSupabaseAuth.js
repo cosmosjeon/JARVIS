@@ -236,11 +236,32 @@ export const SupabaseProvider = ({ children }) => {
     async signOut() {
       const client = ensureSupabase();
       setLoading(true);
-      const { error: signOutError } = await client.auth.signOut();
-      if (signOutError) {
+      setError(null);
+
+      try {
+        await client.auth.signOut({ scope: 'global' });
+      } catch (signOutError) {
         setError(signOutError);
       }
+
+      setSession(null);
       setLoading(false);
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.removeItem('jarvis-supabase-auth');
+          window.localStorage.removeItem('jarvis.activeTreeId');
+        } catch (error) {
+          // ignore storage cleanup errors
+        }
+
+        try {
+          window.sessionStorage.clear();
+        } catch (error) {
+          // ignore session storage cleanup errors
+        }
+
+      }
     },
     async refreshSession() {
       const client = ensureSupabase();
