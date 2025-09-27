@@ -3,6 +3,7 @@ import './App.css';
 import './theme/glass.css';
 import HierarchicalForceTree from './components/HierarchicalForceTree';
 import LibraryApp from './components/library/LibraryApp';
+import AdminWidgetPanel from './components/admin/AdminWidgetPanel';
 import { ThemeProvider } from './components/library/ThemeProvider';
 import { SettingsProvider } from './hooks/SettingsContext';
 import { SupabaseProvider } from './hooks/useSupabaseAuth';
@@ -25,9 +26,11 @@ function App() {
   useEffect(() => {
     if (pathname.startsWith('/auth/callback')) {
       document.body.classList.remove('widget-mode');
+      document.body.classList.remove('admin-panel-mode');
       return;
     }
-    document.body.classList.toggle('widget-mode', mode !== 'library');
+    document.body.classList.toggle('widget-mode', mode !== 'library' && mode !== 'admin-panel');
+    document.body.classList.toggle('admin-panel-mode', mode === 'admin-panel');
   }, [mode, pathname]);
 
   if (pathname.startsWith('/auth/callback')) {
@@ -41,6 +44,8 @@ function App() {
           <SupabaseAuthGate mode={mode}>
             {mode === 'library' ? (
               <LibraryApp />
+            ) : mode === 'admin-panel' ? (
+              <AdminWidgetPanel />
             ) : (
               <div className="App">
                 <div className="App-content">

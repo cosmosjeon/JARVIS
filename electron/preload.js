@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   updateWindowConfig: (config) => ipcRenderer.invoke('window:updateConfig', config),
   toggleWindow: () => ipcRenderer.invoke('window:toggleVisibility'),
   openWidget: (options) => ipcRenderer.invoke('window:openWidget', options || {}),
+  openAdminPanel: () => ipcRenderer.invoke('admin-panel:ensure'),
+  closeAdminPanel: () => ipcRenderer.invoke('admin-panel:close'),
+  showLibrary: () => ipcRenderer.invoke('library:show'),
+  requestLibraryRefresh: () => ipcRenderer.invoke('library:request-refresh'),
   windowControls: {
     minimize: () => ipcRenderer.invoke('window:control', 'minimize'),
     maximize: () => ipcRenderer.invoke('window:control', 'maximize'),
@@ -61,6 +65,14 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('tray:command', listener);
     return () => ipcRenderer.removeListener('tray:command', listener);
+  },
+  onLibraryRefresh: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+    const listener = () => handler();
+    ipcRenderer.on('library:refresh', listener);
+    return () => ipcRenderer.removeListener('library:refresh', listener);
   },
   onSettings: (handler) => {
     if (typeof handler !== 'function') {
