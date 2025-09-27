@@ -49,6 +49,7 @@ const LibraryQAPanel = ({
   const questionServiceRef = useRef(new QuestionService());
   const typingTimers = useRef([]);
   const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
 
   // 선택된 노드가 변경될 때 메시지 초기화
   useEffect(() => {
@@ -73,6 +74,22 @@ const LibraryQAPanel = ({
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  // 노드가 선택되거나 변경되면 입력창에 포커스
+  useEffect(() => {
+    if (selectedNode && textareaRef.current) {
+      // 약간의 지연을 두어 DOM이 업데이트된 후 포커스
+      const timer = setTimeout(() => {
+        if (textareaRef.current && !isProcessing && !isComposing) {
+          textareaRef.current.focus();
+          // 커서를 텍스트 끝으로 이동
+          const length = textareaRef.current.value.length;
+          textareaRef.current.setSelectionRange(length, length);
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedNode, isProcessing, isComposing]);
 
   // 타이핑 애니메이션을 위한 타이머 정리
   const clearTypingTimers = useCallback(() => {
@@ -395,13 +412,14 @@ const LibraryQAPanel = ({
               className="flex items-end gap-2"
             >
             <textarea
+              ref={textareaRef}
               value={composerValue}
               onChange={(e) => setComposerValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onFocus={handleComposerFocus}
               onBlur={handleComposerBlur}
               placeholder="질문을 입력하세요... (Enter로 전송)"
-              className="flex min-h-[40px] max-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+              className="flex min-h-[40px] max-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 resize-none"
               disabled={isProcessing}
               rows={2}
             />

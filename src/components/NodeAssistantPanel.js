@@ -160,6 +160,22 @@ const NodeAssistantPanel = ({
     return () => window.clearTimeout(timeoutId);
   }, [placeholderNotice]);
 
+  // 노드가 선택되거나 변경되면 입력창에 포커스
+  useEffect(() => {
+    if (node && composerRef.current) {
+      // 약간의 지연을 두어 DOM이 업데이트된 후 포커스
+      const timer = setTimeout(() => {
+        if (composerRef.current && !isComposing) {
+          composerRef.current.focus();
+          // 커서를 텍스트 끝으로 이동
+          const length = composerRef.current.value.length;
+          composerRef.current.setSelectionRange(length, length);
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [node, isComposing]);
+
   const getHighlightTexts = useCallback(() => {
     const uniqueTexts = new Set();
     highlightSourceMapRef.current.forEach((text) => {
