@@ -45,10 +45,30 @@ const getViewportDimensions = () => {
   };
 };
 
+// 창 크기에 따른 노드 스케일 팩터 계산
+const calculateNodeScaleFactor = (dimensions) => {
+  // 기준 크기 (1024x672)
+  const BASE_WIDTH = 1024;
+  const BASE_HEIGHT = 720 - WINDOW_CHROME_HEIGHT;
+
+  // 현재 창 크기
+  const currentWidth = dimensions.width || BASE_WIDTH;
+  const currentHeight = dimensions.height || BASE_HEIGHT;
+
+  // 너비와 높이 스케일을 각각 계산하고 더 작은 값 사용 (비율 유지)
+  const widthScale = currentWidth / BASE_WIDTH;
+  const heightScale = currentHeight / BASE_HEIGHT;
+  const scaleFactor = Math.min(widthScale, heightScale);
+
+  // 최소 0.4배, 최대 2.0배로 제한
+  return Math.max(0.4, Math.min(2.0, scaleFactor));
+};
+
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState(getViewportDimensions());
+  const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
@@ -1468,7 +1488,9 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     const handleResize = () => {
       setIsResizing(true);
-      setDimensions(getViewportDimensions());
+      const newDimensions = getViewportDimensions();
+      setDimensions(newDimensions);
+      setNodeScaleFactor(calculateNodeScaleFactor(newDimensions));
       if (handleResize._t) clearTimeout(handleResize._t);
       handleResize._t = setTimeout(() => setIsResizing(false), 140);
     };
@@ -1973,6 +1995,7 @@ const HierarchicalForceTree = () => {
               bootstrapMode={true}
               onBootstrapFirstSend={handleBootstrapSubmit}
               onPanZoomGesture={forwardPanZoomGesture}
+              nodeScaleFactor={nodeScaleFactor}
             />
           </div>
         </div>
@@ -2142,6 +2165,7 @@ const HierarchicalForceTree = () => {
                     overlayElement={overlayElement}
                     onCloseNode={() => handleCloseNode(node.id)}
                     onPanZoomGesture={forwardPanZoomGesture}
+                    nodeScaleFactor={nodeScaleFactor}
                   />
                 </motion.g>
               );

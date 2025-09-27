@@ -9,6 +9,18 @@ export const PANEL_SIZES = {
   expanded: { width: 1920, height: 1080 },
 };
 
+// 노드 스케일 팩터를 적용한 패널 크기 계산
+const getScaledPanelSizes = (scaleFactor = 1) => ({
+  compact: {
+    width: PANEL_SIZES.compact.width * scaleFactor,
+    height: PANEL_SIZES.compact.height * scaleFactor
+  },
+  expanded: {
+    width: PANEL_SIZES.expanded.width * scaleFactor,
+    height: PANEL_SIZES.expanded.height * scaleFactor
+  },
+});
+
 const TYPING_INTERVAL_MS = 18;
 
 const buildAnswerText = (summary, question) => {
@@ -40,6 +52,7 @@ const NodeAssistantPanel = ({
   onAnswerError,
   onCloseNode = () => { },
   onPanZoomGesture,
+  nodeScaleFactor = 1,
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리

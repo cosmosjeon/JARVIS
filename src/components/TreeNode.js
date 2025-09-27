@@ -5,13 +5,24 @@ import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 import { createTreeNodeSummary, isTreeRootNode } from '../services/TreeSummaryService';
 import { useSmartPositioning } from '../hooks/useSmartPositioning';
 
-const selectPanelSize = (conversation) => {
+const selectPanelSize = (conversation, scaleFactor = 1) => {
+  const scaledSizes = {
+    compact: {
+      width: PANEL_SIZES.compact.width * scaleFactor,
+      height: PANEL_SIZES.compact.height * scaleFactor
+    },
+    expanded: {
+      width: PANEL_SIZES.expanded.width * scaleFactor,
+      height: PANEL_SIZES.expanded.height * scaleFactor
+    }
+  };
+
   if (!Array.isArray(conversation)) {
-    return PANEL_SIZES.compact;
+    return scaledSizes.compact;
   }
 
   const hasAssistantReply = conversation.some((message) => message.role === 'assistant');
-  return hasAssistantReply ? PANEL_SIZES.expanded : PANEL_SIZES.compact;
+  return hasAssistantReply ? scaledSizes.expanded : scaledSizes.compact;
 };
 
 const TreeNode = ({
@@ -37,6 +48,7 @@ const TreeNode = ({
   overlayElement = null,
   onCloseNode = () => { },
   onPanZoomGesture,
+  nodeScaleFactor = 1,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -110,19 +122,19 @@ const TreeNode = ({
     return limitWords(currentNode.id || '', 4);
   };
 
-  // Calculate dimensions to fit text properly
+  // Calculate dimensions to fit text properly - apply nodeScaleFactor
   const keywordLength = (node.keyword || node.id).length;
-  const baseWidth = Math.max(54, keywordLength * 9 + 20);
-  const baseHeight = 30;
+  const baseWidth = Math.max(54, keywordLength * 9 + 20) * nodeScaleFactor;
+  const baseHeight = 30 * nodeScaleFactor;
   const hoverText = summarizeForHover(node);
-  const charUnit = 9;
-  const sidePadding = 24;
-  const computedHoverWidth = Math.max(54, hoverText.length * charUnit + sidePadding);
+  const charUnit = 9 * nodeScaleFactor;
+  const sidePadding = 24 * nodeScaleFactor;
+  const computedHoverWidth = Math.max(54 * nodeScaleFactor, hoverText.length * charUnit + sidePadding);
   const hoverWidth = Math.max(Math.ceil(baseWidth * 1.35), computedHoverWidth);
   // Only expand horizontally on hover; keep height unchanged
   const hoverHeight = baseHeight;
-  const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation));
-  const borderRadius = 8; // Subtle rounded corners
+  const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation, nodeScaleFactor));
+  const borderRadius = 8 * nodeScaleFactor; // Subtle rounded corners scaled by window size
 
   // Determine current display mode
   const displayMode = isExpanded ? 'chat' : (isHovered ? 'hover' : 'normal');
@@ -138,8 +150,8 @@ const TreeNode = ({
     : 'rgba(255, 255, 255, 0.18)';
   const rectStrokeWidth = displayMode === 'chat' ? 2 : 1;
 
-  // Hover delete icon sizing (scaled to 80%)
-  const deleteIconScale = 0.8;
+  // Hover delete icon sizing (scaled to 80% and by nodeScaleFactor)
+  const deleteIconScale = 0.8 * nodeScaleFactor;
   const deleteIconRadius = 10 * deleteIconScale;
   const deleteIconFontSize = 12 * deleteIconScale;
   const deleteIconStrokeWidth = 1.5 * deleteIconScale;
@@ -176,9 +188,9 @@ const TreeNode = ({
   }, [isExpanded, onNodeClick]);
 
   useEffect(() => {
-    const preferredSize = selectPanelSize(initialConversation);
+    const preferredSize = selectPanelSize(initialConversation, nodeScaleFactor);
     setChatSize((current) => (current === preferredSize ? current : preferredSize));
-  }, [initialConversation, isExpanded]);
+  }, [initialConversation, isExpanded, nodeScaleFactor]);
 
   const handlePanelSizeChange = useCallback((size) => {
     setChatSize(size);
@@ -274,6 +286,7 @@ const TreeNode = ({
             onAnswerError={onAnswerError}
             onCloseNode={handleAssistantPanelClose}
             onPanZoomGesture={onPanZoomGesture}
+            nodeScaleFactor={nodeScaleFactor}
           />
         </div>
       </motion.div>,
@@ -438,6 +451,7 @@ const TreeNode = ({
             onAnswerError={onAnswerError}
             onCloseNode={handleAssistantPanelClose}
             onPanZoomGesture={onPanZoomGesture}
+            nodeScaleFactor={nodeScaleFactor}
           />
           </div>
         </foreignObject>
@@ -446,13 +460,13 @@ const TreeNode = ({
         <motion.text
           textAnchor="middle"
           dominantBaseline="central"
-          fontSize={displayMode === 'hover' ? 14 : 14}
+          fontSize={(displayMode === 'hover' ? 14 : 14) * nodeScaleFactor}
           fontFamily="Arial, sans-serif"
           fontWeight="bold"
           fill="#666666"
           style={{ pointerEvents: 'none' }}
           transition={{ duration: 0.15 }}
-          y={20}
+          y={20 * nodeScaleFactor}
         >
           {displayMode === 'hover' ? hoverText : (node.keyword || node.id)}
         </motion.text>
@@ -490,7 +504,7 @@ const TreeNode = ({
       {/* Subtree collapse/expand toggle */}
       {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
         <g
-          transform={`translate(0, ${currentHeight / 2 + 35})`}
+          transform={`translate(0, ${currentHeight / 2 + 35 * nodeScaleFactor})`}
           onClick={handleTogglePointer}
           onMouseDown={handleTogglePointer}
           onPointerDown={handleTogglePointer}
@@ -501,34 +515,34 @@ const TreeNode = ({
           data-node-toggle="true"
         >
           <rect
-            x={-10}
-            y={-10}
-            width={20}
-            height={20}
-            rx={4}
-            ry={4}
+            x={-10 * nodeScaleFactor}
+            y={-10 * nodeScaleFactor}
+            width={20 * nodeScaleFactor}
+            height={20 * nodeScaleFactor}
+            rx={4 * nodeScaleFactor}
+            ry={4 * nodeScaleFactor}
             fill="rgba(0, 0, 0, 0.3)"
             stroke="rgba(255,255,255,0.6)"
-            strokeWidth={1}
+            strokeWidth={1 * nodeScaleFactor}
             data-node-toggle="true"
           />
           {/* Icon: collapsed => vertical chevron (˅), expanded => vertical chevron (˄) */}
           {isCollapsed ? (
             <path
-              d="M -4 -1 L 0 3 L 4 -1"
+              d={`M ${-4 * nodeScaleFactor} ${-1 * nodeScaleFactor} L 0 ${3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${-1 * nodeScaleFactor}`}
               fill="none"
               stroke="rgba(255,255,255,0.95)"
-              strokeWidth={2}
+              strokeWidth={2 * nodeScaleFactor}
               strokeLinecap="round"
               strokeLinejoin="round"
               data-node-toggle="true"
             />
           ) : (
             <path
-              d="M -4 1 L 0 -3 L 4 1"
+              d={`M ${-4 * nodeScaleFactor} ${1 * nodeScaleFactor} L 0 ${-3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${1 * nodeScaleFactor}`}
               fill="none"
               stroke="rgba(255,255,255,0.95)"
-              strokeWidth={2}
+              strokeWidth={2 * nodeScaleFactor}
               strokeLinecap="round"
               strokeLinejoin="round"
               data-node-toggle="true"
