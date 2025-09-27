@@ -22,33 +22,42 @@ const Sidebar = ({
     memo.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const canCreateMemo = typeof onMemoCreate === "function";
+  const canCreateFolder = typeof onFolderCreate === "function";
+
   return (
     <div className="flex h-full flex-col border-r bg-card">
       <div className="space-y-3 border-b p-4">
-        <div className="flex gap-2">
-          <Button
-            className="flex-1"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setCreateType("memo");
-              setShowCreateDialog(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            새 메모
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setCreateType("folder");
-              setShowCreateDialog(true);
-            }}
-          >
-            <Folder className="h-4 w-4" />
-          </Button>
-        </div>
+        {(canCreateMemo || canCreateFolder) && (
+          <div className="flex gap-2">
+            {canCreateMemo ? (
+              <Button
+                className="flex-1"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCreateType("memo");
+                  setShowCreateDialog(true);
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                새 메모
+              </Button>
+            ) : null}
+            {canCreateFolder ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCreateType("folder");
+                  setShowCreateDialog(true);
+                }}
+              >
+                <Folder className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+        )}
 
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -72,14 +81,16 @@ const Sidebar = ({
         </div>
       </ScrollArea>
 
-      <CreateDialog
-        open={showCreateDialog}
-        onOpenChange={setShowCreateDialog}
-        type={createType}
-        folders={data.folders}
-        onFolderCreate={onFolderCreate}
-        onMemoCreate={onMemoCreate}
-      />
+      {(canCreateMemo || canCreateFolder) && (
+        <CreateDialog
+          open={showCreateDialog}
+          onOpenChange={setShowCreateDialog}
+          type={createType}
+          folders={data.folders}
+          onFolderCreate={onFolderCreate}
+          onMemoCreate={onMemoCreate}
+        />
+      )}
     </div>
   );
 };

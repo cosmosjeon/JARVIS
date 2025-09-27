@@ -1,15 +1,5 @@
 const path = require('path');
-const fs = require('fs');
-require('dotenv').config();
-
-// Fallback for setups that keep the OpenAI key in API_KEY.env
-if (!process.env.OPENAI_API_KEY) {
-  const apiKeyEnvPath = path.resolve(__dirname, '..', 'API_KEY.env');
-  if (fs.existsSync(apiKeyEnvPath)) {
-    require('dotenv').config({ path: apiKeyEnvPath });
-  }
-}
-
+const { randomUUID } = require('crypto');
 const { app, BrowserWindow, ipcMain, nativeTheme, shell, screen, globalShortcut } = require('electron');
 const { createLogBridge } = require('./logger');
 const { createHotkeyManager } = require('./hotkeys');
@@ -18,10 +8,187 @@ const logs = require('./logs');
 const settingsStore = require('./settings');
 const { createTray } = require('./tray');
 const { LLMService } = require('./services/llm-service');
+const http = require('http');
+
+const DEFAULT_AUTH_CALLBACK_PORT = 54545;
 
 const isDev = !app.isPackaged;
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
+const pendingOAuthCallbacks = [];
+
+const sendOAuthCallbackToRenderers = (url) => {
+  if (!url) {
+    return;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      const host = parsed.host;
+      if (
+        !host.includes('gkdiarpitajgbfpvkazc.supabase.co') &&
+        !host.startsWith('localhost') &&
+        !host.startsWith('127.0.0.1')
+      ) {
+        return;
+      }
+    }
+  } catch (error) {
+    // ignore malformed URLs
+  }
+
+  const targets = [];
+  if (libraryWindow && !libraryWindow.isDestroyed()) {
+    targets.push(libraryWindow);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    targets.push(mainWindow);
+  }
+
+  if (targets.length === 0) {
+    pendingOAuthCallbacks.push(url);
+    return;
+  }
+
+  targets.forEach((target) => target.webContents.send('auth:oauth-callback', url));
+
+  const focusTarget = libraryWindow && !libraryWindow.isDestroyed()
+    ? libraryWindow
+    : (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+
+  if (focusTarget) {
+    focusTarget.show();
+    focusTarget.focus();
+  }
+};
+
+const handleOAuthDeepLink = (url) => {
+  if (!url || typeof url !== 'string') {
+    return;
+  }
+  sendOAuthCallbackToRenderers(url);
+};
+
+const ensureAuthCallbackServer = () => {
+  if (authServerReadyPromise) {
+    return authServerReadyPromise;
+  }
+
+  authServerReadyPromise = new Promise((resolve, reject) => {
+    const desiredPort = parseInt(process.env.SUPABASE_CALLBACK_PORT || '', 10);
+
+    authServer = http.createServer((req, res) => {
+      try {
+        if (!req.url) {
+          res.writeHead(400, { 'Content-Type': 'text/plain' });
+          res.end('Invalid request');
+          return;
+        }
+
+        const effectivePort = authServerPort || desiredPort || DEFAULT_AUTH_CALLBACK_PORT;
+        const requestUrl = new URL(req.url, `http://127.0.0.1:${effectivePort}`);
+
+        if (requestUrl.pathname !== '/auth/callback') {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not found');
+          return;
+        }
+
+        logger?.info('Auth callback received', { url: requestUrl.toString() });
+        sendOAuthCallbackToRenderers(requestUrl.toString());
+
+        const html = `<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>로그인이 완료되었습니다</title>
+    <meta name="robots" content="noindex" />
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; }
+      main { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+      .card { background: rgba(15,23,42,0.72); padding: 32px 28px; border-radius: 16px; max-width: 360px; text-align: center; box-shadow: 0 24px 60px rgba(15,23,42,0.35); border: 1px solid rgba(148,163,184,0.18); }
+      h1 { font-size: 20px; font-weight: 600; margin: 0 0 12px; }
+      p { font-size: 14px; line-height: 1.6; color: rgba(226,232,240,0.78); margin: 0 0 20px; }
+      button { width: 100%; padding: 12px 16px; border-radius: 12px; border: none; font-weight: 600; font-size: 15px; cursor: pointer; background: linear-gradient(135deg, #38bdf8, #6366f1); color: #0f172a; }
+      small { display: block; margin-top: 12px; font-size: 12px; color: rgba(148,163,184,0.75); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="card">
+        <h1>로그인이 완료되었습니다</h1>
+        <p>JARVIS 앱으로 돌아가는 중입니다. 브라우저 창은 닫아도 됩니다.</p>
+        <button onclick="finish()">앱으로 돌아가기</button>
+        <small>창이 닫히지 않으면 버튼을 다시 눌러주세요.</small>
+      </div>
+    </main>
+    <script>
+      function finish() {
+        window.close();
+        setTimeout(function () { window.close(); }, 1500);
+      }
+      setTimeout(finish, 500);
+    </script>
+  </body>
+</html>`;
+
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store, max-age=0',
+        });
+        res.end(html);
+      } catch (error) {
+        logger?.error('auth_callback_handler_error', { message: error?.message });
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal error');
+      }
+    });
+
+    authServer.on('error', (error) => {
+      logger?.error('auth_callback_server_error', { message: error?.message });
+      reject(error);
+    });
+
+    const listenPort = Number.isInteger(desiredPort) && desiredPort > 0 ? desiredPort : DEFAULT_AUTH_CALLBACK_PORT;
+
+    authServer.listen(listenPort, '127.0.0.1', () => {
+      authServerPort = authServer.address().port;
+      logger?.info('Auth callback server listening', { authServerPort });
+      resolve(authServerPort);
+    });
+  });
+
+  return authServerReadyPromise;
+};
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+app.on('second-instance', (_event, argv) => {
+  const deepLinkArg = argv.find((arg) => typeof arg === 'string' && arg.startsWith('jarvis://'));
+  if (deepLinkArg) {
+    handleOAuthDeepLink(deepLinkArg);
+  }
+
+  if (libraryWindow && !libraryWindow.isDestroyed()) {
+    if (libraryWindow.isMinimized()) {
+      libraryWindow.restore();
+    }
+    libraryWindow.show();
+    libraryWindow.focus();
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
+    ensureWindowFocus();
+  }
+});
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleOAuthDeepLink(url);
+});
 
 let mainWindow;
 let libraryWindow;
@@ -30,6 +197,12 @@ let hotkeyManager;
 let tray;
 let broadcastWindowState = () => {};
 let llmService;
+let authServer = null;
+let authServerPort = null;
+let authServerReadyPromise = null;
+
+const additionalWidgetWindows = new Set();
+const widgetSessionByWindowId = new Map();
 
 const WINDOW_CHROME_HEIGHT = 48; // 커스텀 타이틀바 높이와 맞춤
 
@@ -38,6 +211,16 @@ const windowConfig = {
   transparent: true,      // 완전 투명 창 사용
   alwaysOnTop: true,      // 항상 위에 표시
   skipTaskbar: true,      // 작업표시줄에 안 보이게
+};
+
+const applyWindowConfigTo = (targetWindow) => {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  targetWindow.setAlwaysOnTop(windowConfig.alwaysOnTop, 'floating', 1);
+  targetWindow.setSkipTaskbar(windowConfig.skipTaskbar);
+  targetWindow.setMenuBarVisibility(!windowConfig.frameless);
 };
 
 const DEFAULT_ACCELERATOR = settingsStore.defaultAccelerator;
@@ -181,21 +364,46 @@ const applyTraySettings = () => {
 };
 
 const broadcastSettings = () => {
-  if (!mainWindow) return;
-  mainWindow.webContents.send('settings:changed', { ...settings });
+  const payload = { ...settings };
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('settings:changed', payload);
+  }
+
+  additionalWidgetWindows.forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('settings:changed', payload);
+    }
+  });
 };
 
-const getRendererUrl = (mode = 'widget') => {
+const generateSessionId = () => {
+  try {
+    return randomUUID();
+  } catch (error) {
+    return `session_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+  }
+};
+
+const getRendererUrl = (mode = 'widget', params = {}) => {
   const baseUrl = isDev
     ? process.env.ELECTRON_START_URL || 'http://localhost:3000'
     : `file://${path.join(__dirname, '..', 'build', 'index.html')}`;
-  if (mode === 'widget') {
-    return baseUrl.includes('?') ? `${baseUrl}&mode=widget` : `${baseUrl}?mode=widget`;
-  }
-  return baseUrl.includes('?') ? `${baseUrl}&mode=${mode}` : `${baseUrl}?mode=${mode}`;
+
+  const url = new URL(baseUrl);
+  url.searchParams.set('mode', mode);
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+    url.searchParams.set(key, value);
+  });
+
+  return url.toString();
 };
 
-const createWindow = () => {
+const createWindow = ({ treeId = null, sessionId = generateSessionId(), fresh = false } = {}) => {
   const isMac = process.platform === 'darwin';
 
   mainWindow = new BrowserWindow({
@@ -211,8 +419,8 @@ const createWindow = () => {
     backgroundColor: '#00000000',             // 완전 투명 배경
 
     // 창 동작 설정
-    alwaysOnTop: true,          // 항상 위에 표시
-    skipTaskbar: true,          // 작업표시줄에 안 보이게
+    alwaysOnTop: windowConfig.alwaysOnTop,          // 항상 위에 표시
+    skipTaskbar: windowConfig.skipTaskbar,          // 작업표시줄에 안 보이게
     hasShadow: true,            // 창 그림자 표시
     resizable: true,            // 크기 조절 가능
     movable: true,              // 이동 가능
@@ -239,6 +447,8 @@ const createWindow = () => {
     },
   });
 
+  applyWindowConfigTo(mainWindow);
+
   mainWindow.setBackgroundColor('#00000000');
 
   broadcastWindowState = () => {
@@ -259,16 +469,18 @@ const createWindow = () => {
     mainWindow.setMenuBarVisibility(false);
 
     // macOS에서 트래픽 라이트 버튼 완전히 숨기기
-    if (process.platform === 'darwin') {
+    if (process.platform === 'darwin' && windowConfig.frameless) {
       mainWindow.setWindowButtonVisibility?.(false);
     }
 
-    mainWindow?.show();
-    logger?.info('Main window ready');
+    logger?.info('Main window ready (kept hidden until explicitly toggled)');
   });
 
   mainWindow.on('closed', () => {
     logger?.info('Main window closed');
+    if (mainWindow) {
+      widgetSessionByWindowId.delete(mainWindow.id);
+    }
     mainWindow = null;
   });
 
@@ -280,7 +492,11 @@ const createWindow = () => {
     }
   });
 
-  const startUrl = getRendererUrl('widget');
+  const startUrl = getRendererUrl('widget', {
+    session: sessionId,
+    fresh: fresh ? '1' : undefined,
+    treeId: treeId || undefined,
+  });
 
   logger?.info('Loading URL', { startUrl });
   mainWindow.loadURL(startUrl);
@@ -288,7 +504,92 @@ const createWindow = () => {
   mainWindow.webContents.on('did-finish-load', () => {
     broadcastSettings();
     broadcastWindowState();
+    if (treeId) {
+      mainWindow.webContents.send('widget:set-active-tree', { treeId });
+    }
   });
+
+  widgetSessionByWindowId.set(mainWindow.id, sessionId);
+};
+
+const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessionId(), fresh = true } = {}) => {
+  const isMac = process.platform === 'darwin';
+
+  const widgetWindow = new BrowserWindow({
+    width: 1024,
+    height: 720,
+    minWidth: 520,
+    minHeight: 360,
+    frame: false,
+    transparent: windowConfig.transparent,
+    backgroundColor: '#00000000',
+    alwaysOnTop: windowConfig.alwaysOnTop,
+    skipTaskbar: windowConfig.skipTaskbar,
+    hasShadow: true,
+    resizable: true,
+    movable: true,
+    show: false,
+    fullscreenable: false,
+    maximizable: false,
+    minimizable: false,
+    titleBarStyle: isMac ? 'customButtonsOnHover' : 'default',
+    ...(isMac ? {
+      trafficLightPosition: { x: -1000, y: -1000 },
+    } : {}),
+    autoHideMenuBar: true,
+    title: 'JARVIS Widget',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      devTools: isDev,
+      spellcheck: false,
+    },
+  });
+
+  applyWindowConfigTo(widgetWindow);
+  widgetWindow.setBackgroundColor('#00000000');
+  widgetWindow.setMenuBarVisibility(false);
+  if (isMac && windowConfig.frameless) {
+    widgetWindow.setWindowButtonVisibility?.(false);
+  }
+
+  widgetWindow.on('ready-to-show', () => {
+    widgetWindow.show();
+    widgetWindow.focus();
+  });
+
+  widgetWindow.on('closed', () => {
+    additionalWidgetWindows.delete(widgetWindow);
+    widgetSessionByWindowId.delete(widgetWindow.id);
+  });
+
+  widgetWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  widgetWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== widgetWindow.webContents.getURL()) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  const startUrl = getRendererUrl('widget', {
+    session: sessionId,
+    fresh: fresh ? '1' : undefined,
+    treeId: treeId || undefined,
+  });
+  widgetWindow.loadURL(startUrl);
+
+  widgetWindow.webContents.on('did-finish-load', () => {
+    widgetWindow.webContents.send('settings:changed', { ...settings });
+    if (treeId) {
+      widgetWindow.webContents.send('widget:set-active-tree', { treeId });
+    }
+  });
+
+  additionalWidgetWindows.add(widgetWindow);
+  widgetSessionByWindowId.set(widgetWindow.id, sessionId);
+  return widgetWindow;
 };
 
 const createLibraryWindow = () => {
@@ -339,16 +640,93 @@ const createLibraryWindow = () => {
 };
 
 app.whenReady().then(() => {
+  const registerDeepLinkScheme = () => {
+    if (process.platform === 'win32') {
+      if (process.defaultApp) {
+        app.setAsDefaultProtocolClient('jarvis', process.execPath, [path.resolve(process.argv[1] || '.')]);
+      } else {
+        app.setAsDefaultProtocolClient('jarvis');
+      }
+      return;
+    }
+
+    if (process.defaultApp) {
+      const executable = process.execPath;
+      const resource = process.argv[1] ? path.resolve(process.argv[1]) : path.join(__dirname, 'main.js');
+      app.setAsDefaultProtocolClient('jarvis', executable, ['--', resource]);
+    } else {
+      app.setAsDefaultProtocolClient('jarvis');
+    }
+  };
+
+  registerDeepLinkScheme();
+
   nativeTheme.themeSource = 'dark';
   loadSettings();
   logger = createLogBridge(() => mainWindow);
   llmService = new LLMService({ logger });
-  createWindow();
+  createWindow({ fresh: true });
   createLibraryWindow();
+  ensureAuthCallbackServer().catch((error) => {
+    logger?.error('auth_callback_server_start_failed', { message: error?.message });
+  });
+
+  const initialDeepLinkArg = process.argv.find((arg) => typeof arg === 'string' && arg.startsWith('jarvis://'));
+  if (initialDeepLinkArg) {
+    pendingOAuthCallbacks.push(initialDeepLinkArg);
+  }
+
+  if (pendingOAuthCallbacks.length > 0) {
+    const pending = [...pendingOAuthCallbacks];
+    pendingOAuthCallbacks.length = 0;
+    pending.forEach((url) => sendOAuthCallbackToRenderers(url));
+  }
   applyHotkeySettings();
   applyTraySettings();
   registerPassThroughShortcut();
   broadcastSettings();
+  ipcMain.handle('auth:launch-oauth', async (_event, payload = {}) => {
+    const targetUrl = typeof payload?.url === 'string' ? payload.url : null;
+    if (!targetUrl) {
+      return { success: false, error: { code: 'invalid_url', message: 'OAuth URL required' } };
+    }
+
+    try {
+      await shell.openExternal(targetUrl);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'open_external_failed',
+          message: error?.message || 'Failed to open OAuth URL in browser',
+        },
+      };
+    }
+  });
+  ipcMain.handle('auth:get-callback-url', async (_event, payload = {}) => {
+    try {
+      const port = await ensureAuthCallbackServer();
+      const params = new URLSearchParams();
+      if (payload?.mode) {
+        params.set('mode', payload.mode);
+      }
+      const query = params.toString();
+      return {
+        success: true,
+        url: `http://127.0.0.1:${port}/auth/callback${query ? `?${query}` : ''}`,
+      };
+    } catch (error) {
+      logger?.error('auth_callback_url_failed', { message: error?.message });
+      return {
+        success: false,
+        error: {
+          code: 'callback_not_ready',
+          message: error?.message || 'Failed to prepare auth callback server',
+        },
+      };
+    }
+  });
   ipcMain.handle('system:ping', () => 'pong');
   ipcMain.handle('logger:write', (_event, payload) => {
     const { level = 'info', message = '', meta = {} } = payload || {};
@@ -612,6 +990,51 @@ app.whenReady().then(() => {
     };
   });
 
+  ipcMain.handle('window:openWidget', (_event, payload = {}) => {
+    const requestedTreeId = typeof payload?.treeId === 'string' && payload.treeId.trim()
+      ? payload.treeId.trim()
+      : null;
+    const reusePrimary = Boolean(payload?.reusePrimary);
+    const forceFresh = Boolean(payload?.fresh ?? !reusePrimary);
+
+    if (reusePrimary) {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        createWindow({ treeId: requestedTreeId || null, fresh: forceFresh });
+      }
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (!mainWindow.isVisible()) {
+          ensureWindowFocus();
+        } else {
+          mainWindow.focus();
+        }
+
+        if (requestedTreeId) {
+          mainWindow.webContents.send('widget:set-active-tree', { treeId: requestedTreeId });
+        }
+
+        return {
+          success: true,
+          windowId: mainWindow.id,
+          reusedPrimary: true,
+          sessionId: widgetSessionByWindowId.get(mainWindow.id) || null,
+        };
+      }
+    }
+
+    const newWindow = createAdditionalWidgetWindow({
+      treeId: requestedTreeId || null,
+      fresh: true,
+    });
+
+    return {
+      success: true,
+      windowId: newWindow.id,
+      reusedPrimary: false,
+      sessionId: widgetSessionByWindowId.get(newWindow.id) || null,
+    };
+  });
+
   ipcMain.handle('window:control', (_event, action) => {
     if (!mainWindow) {
       return { success: false, error: { code: 'no_window', message: 'Main window not available' } };
@@ -667,12 +1090,18 @@ app.whenReady().then(() => {
       skipTaskbar: Boolean(config.skipTaskbar),
     });
 
-    if (!mainWindow) return windowConfig;
+    const targets = [];
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      targets.push(mainWindow);
+    }
 
-    mainWindow.setAlwaysOnTop(windowConfig.alwaysOnTop, 'floating', 1);
-    mainWindow.setSkipTaskbar(windowConfig.skipTaskbar);
+    additionalWidgetWindows.forEach((win) => {
+      if (!win.isDestroyed()) {
+        targets.push(win);
+      }
+    });
 
-    mainWindow.setMenuBarVisibility(!windowConfig.frameless);
+    targets.forEach((win) => applyWindowConfigTo(win));
 
     logger?.info('Window config updated', windowConfig);
     return windowConfig;
@@ -680,7 +1109,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (!mainWindow) {
-      createWindow();
+      createWindow({ fresh: true });
     }
     if (!libraryWindow) {
       createLibraryWindow();
@@ -697,6 +1126,14 @@ app.on('will-quit', () => {
   globalShortcut.unregister('CommandOrControl+2');
   hotkeyManager?.dispose?.();
   tray?.dispose?.();
+  if (authServer) {
+    try {
+      authServer.close();
+      logger?.info('Auth callback server closed');
+    } catch (error) {
+      logger?.warn('auth_callback_server_close_failed', { message: error?.message });
+    }
+  }
 });
 
 app.on('window-all-closed', () => {

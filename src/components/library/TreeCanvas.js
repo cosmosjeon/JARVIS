@@ -1,13 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
 import { Calendar, Edit3, FileText } from "lucide-react";
 
 import LibraryTreeVisualization from "./LibraryTreeVisualization";
+import LibraryConversationPanel from "./LibraryConversationPanel";
 
 const TreeCanvas = ({ selectedMemo, onMemoUpdate }) => {
   const [isEditMode, setIsEditMode] = useState(false);
+  const [activeNode, setActiveNode] = useState(null);
 
   const nodeCount = useMemo(() => selectedMemo?.treeData?.nodes?.length ?? 0, [selectedMemo]);
 
@@ -35,6 +37,50 @@ const TreeCanvas = ({ selectedMemo, onMemoUpdate }) => {
       </div>
     );
   }
+
+  useEffect(() => {
+    setIsEditMode(false);
+    setActiveNode(null);
+  }, [selectedMemo?.id]);
+
+  const handleNodeSelect = useCallback((node) => {
+    if (!node) {
+      setActiveNode(null);
+      return;
+    }
+
+    const cloned = {
+      ...node,
+      conversation: Array.isArray(node.conversation)
+        ? node.conversation.map((message) => ({ ...message }))
+        : [],
+    };
+    setActiveNode(cloned);
+  }, []);
+
+  const handleTreeUpdate = useCallback((updatedTreeData) => {
+    if (typeof onMemoUpdate === "function" && selectedMemo) {
+      onMemoUpdate({
+        ...selectedMemo,
+        treeData: updatedTreeData,
+        updatedAt: Date.now(),
+      });
+    }
+
+    if (activeNode) {
+      const nextNode = updatedTreeData.nodes.find((node) => node.id === activeNode.id);
+      if (nextNode) {
+        setActiveNode({
+          ...nextNode,
+          conversation: Array.isArray(nextNode.conversation)
+            ? nextNode.conversation.map((message) => ({ ...message }))
+            : [],
+        });
+      } else {
+        setActiveNode(null);
+      }
+    }
+  }, [activeNode, onMemoUpdate, selectedMemo]);
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -70,32 +116,36 @@ const TreeCanvas = ({ selectedMemo, onMemoUpdate }) => {
         </div>
       </div>
 
-      <div className="relative flex-1">
-        {nodeCount > 0 ? (
-          <LibraryTreeVisualization
-            treeData={selectedMemo.treeData}
-            isEditMode={isEditMode}
-            onTreeUpdate={(updatedTreeData) => {
-              onMemoUpdate({
-                ...selectedMemo,
-                treeData: updatedTreeData,
-                updatedAt: Date.now(),
-              });
-            }}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <Card className="w-96">
-              <CardHeader>
-                <CardTitle className="text-center">빈 메모</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-center">
-                <p className="text-muted-foreground">이 메모는 아직 내용이 없습니다.</p>
-                <Button onClick={() => setIsEditMode(true)}>편집 시작하기</Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="relative flex-1 border-r border-muted/40 bg-muted/5">
+          {nodeCount > 0 ? (
+            <LibraryTreeVisualization
+              key={selectedMemo.id}
+              treeData={selectedMemo.treeData}
+              isEditMode={isEditMode}
+              onTreeUpdate={handleTreeUpdate}
+              onNodeSelect={handleNodeSelect}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <Card className="w-96">
+                <CardHeader>
+                  <CardTitle className="text-center">빈 메모</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-center">
+                  <p className="text-muted-foreground">이 메모는 아직 내용이 없습니다.</p>
+                  <Button onClick={() => setIsEditMode(true)}>편집 시작하기</Button>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
+        <div className="hidden w-[360px] border-l border-muted/40 bg-card/60 lg:block">
+          <LibraryConversationPanel node={activeNode} />
+        </div>
+      </div>
+      <div className="border-t border-muted/40 bg-card/60 lg:hidden">
+        <LibraryConversationPanel node={activeNode} />
       </div>
     </div>
   );

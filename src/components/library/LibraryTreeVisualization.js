@@ -11,7 +11,7 @@ const NODE_HORIZONTAL_SPACING = 200;
 const NODE_WIDTH = 140;
 const NODE_HEIGHT = 48;
 
-const LibraryTreeVisualization = ({ treeData, isEditMode, onTreeUpdate }) => {
+const LibraryTreeVisualization = ({ treeData, isEditMode, onTreeUpdate, onNodeSelect }) => {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
@@ -36,6 +36,25 @@ const LibraryTreeVisualization = ({ treeData, isEditMode, onTreeUpdate }) => {
     () => layoutNodes.find((node) => node.id === selectedNodeId),
     [layoutNodes, selectedNodeId]
   );
+
+  useEffect(() => {
+    if (typeof onNodeSelect !== "function") {
+      return;
+    }
+    if (!selectedNodeId) {
+      onNodeSelect(null);
+      return;
+    }
+    const nextNode = nodes.find((node) => node.id === selectedNodeId) || null;
+    onNodeSelect(nextNode ? { ...nextNode } : null);
+  }, [nodes, onNodeSelect, selectedNodeId]);
+
+  useEffect(() => {
+    if (selectedNodeId || !rootId) {
+      return;
+    }
+    setSelectedNodeId(rootId);
+  }, [rootId, selectedNodeId]);
 
   const updateDraftFromNode = useCallback((node) => {
     if (!node) {

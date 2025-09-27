@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   ping: () => ipcRenderer.invoke('system:ping'),
   updateWindowConfig: (config) => ipcRenderer.invoke('window:updateConfig', config),
   toggleWindow: () => ipcRenderer.invoke('window:toggleVisibility'),
+  openWidget: (options) => ipcRenderer.invoke('window:openWidget', options || {}),
   windowControls: {
     minimize: () => ipcRenderer.invoke('window:control', 'minimize'),
     maximize: () => ipcRenderer.invoke('window:control', 'maximize'),
@@ -77,4 +78,22 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
     ipcRenderer.on('pass-through:toggle', listener);
     return () => ipcRenderer.removeListener('pass-through:toggle', listener);
   },
+  onWidgetSetActiveTree: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('widget:set-active-tree', listener);
+    return () => ipcRenderer.removeListener('widget:set-active-tree', listener);
+  },
+  onOAuthCallback: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('auth:oauth-callback', listener);
+    return () => ipcRenderer.removeListener('auth:oauth-callback', listener);
+  },
+  getOAuthRedirect: (options) => ipcRenderer.invoke('auth:get-callback-url', options),
+  launchOAuth: (url) => ipcRenderer.invoke('auth:launch-oauth', { url }),
 });
