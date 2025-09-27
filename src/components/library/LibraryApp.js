@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -18,6 +18,7 @@ const LibraryApp = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [syncingTreeId, setSyncingTreeId] = useState(null);
+  const focusRefreshTimestampRef = useRef(0);
   const { user, signOut } = useSupabaseAuth();
 
   const handleMemoSelect = (memo) => {
@@ -37,6 +38,7 @@ const LibraryApp = () => {
   const refreshLibrary = useCallback(async () => {
     if (!user) return;
 
+    focusRefreshTimestampRef.current = Date.now();
     setLoading(true);
     setError(null);
     try {
@@ -77,6 +79,11 @@ const LibraryApp = () => {
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const handleFocus = () => {
+      const now = Date.now();
+      if (now - focusRefreshTimestampRef.current < 1500) {
+        return;
+      }
+      focusRefreshTimestampRef.current = now;
       refreshLibrary();
     };
     window.addEventListener("focus", handleFocus);
@@ -288,3 +295,4 @@ const LibraryApp = () => {
 };
 
 export default LibraryApp;
+
