@@ -9,7 +9,7 @@ import Sidebar from "./Sidebar";
 import TreeCanvas from "./TreeCanvas";
 import { Button } from "components/ui/button";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
-import { fetchTreesWithNodes, upsertTreeMetadata, upsertTreeNodes } from "services/supabaseTrees";
+import { fetchTreesWithNodes, upsertTreeMetadata, upsertTreeNodes, deleteTree } from "services/supabaseTrees";
 import { Card, CardContent } from "components/ui/card";
 
 const LibraryApp = () => {
@@ -119,6 +119,33 @@ const LibraryApp = () => {
     }
   }, [refreshLibrary, user]);
 
+  const handleMemoDelete = useCallback(async (memo) => {
+    if (!user || !memo?.id) return;
+
+    setError(null);
+    setLoading(true);
+
+    try {
+      await deleteTree(memo.id);
+
+      setLibraryData((prev) => ({
+        ...prev,
+        memos: prev.memos.filter((item) => item.id !== memo.id),
+      }));
+
+      if (selectedMemo?.id === memo.id) {
+        setSelectedMemo(null);
+      }
+
+      await refreshLibrary();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+      setSyncingTreeId((prev) => (prev === memo.id ? null : prev));
+    }
+  }, [refreshLibrary, selectedMemo?.id, user]);
+
   const handleOpenWidget = useCallback(async () => {
     if (typeof window === "undefined" || !user) return;
 
@@ -214,6 +241,7 @@ const LibraryApp = () => {
             data={libraryData}
             selectedMemo={selectedMemo}
             onMemoSelect={handleMemoSelect}
+            onMemoDelete={handleMemoDelete}
           />
         </ResizablePanel>
 

@@ -130,19 +130,19 @@ const HierarchicalForceTree = () => {
     }
   }, [sessionInfo.fresh, sessionStorageKey]);
 
-const hasResolvedInitialTreeRef = useRef(false);
+  const hasResolvedInitialTreeRef = useRef(false);
 
-const createClientGeneratedId = useCallback((prefix = 'tree') => {
-  try {
-    const uuid = crypto?.randomUUID?.();
-    if (uuid) {
-      return `${prefix}_${uuid}`;
+  const createClientGeneratedId = useCallback((prefix = 'tree') => {
+    try {
+      const uuid = crypto?.randomUUID?.();
+      if (uuid) {
+        return `${prefix}_${uuid}`;
+      }
+    } catch (error) {
+      // ignore and fallback below
     }
-  } catch (error) {
-    // ignore and fallback below
-  }
-  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
-}, []);
+    return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+  }, []);
 
   const hydrateConversationStore = useCallback((incomingNodes = []) => {
     conversationStoreRef.current.clear();
@@ -155,9 +155,9 @@ const createClientGeneratedId = useCallback((prefix = 'tree') => {
       const fallbackConversation = baseConversation.length
         ? baseConversation
         : buildFallbackConversation(
-            node.question || node.questionData?.question,
-            node.answer || node.questionData?.answer || node.fullText,
-          );
+          node.question || node.questionData?.question,
+          node.answer || node.questionData?.answer || node.fullText,
+        );
 
       conversationStoreRef.current.set(node.id, fallbackConversation);
     });
@@ -318,9 +318,9 @@ const createClientGeneratedId = useCallback((prefix = 'tree') => {
       if (targetTree) {
         const mappedNodes = Array.isArray(targetTree.treeData?.nodes)
           ? targetTree.treeData.nodes.map((node) => ({
-              ...node,
-              conversation: sanitizeConversationMessages(node.conversation),
-            }))
+            ...node,
+            conversation: sanitizeConversationMessages(node.conversation),
+          }))
           : [];
 
         hydrateConversationStore(mappedNodes);
@@ -1400,8 +1400,8 @@ const createClientGeneratedId = useCallback((prefix = 'tree') => {
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
         // 인터렉티브 모드에서 미묘한 색상 추가 (투명도 유지)
-        background: isPassThrough 
-          ? 'transparent' 
+        background: isPassThrough
+          ? 'transparent'
           : 'linear-gradient(135deg, rgba(30, 41, 59, 0.15), rgba(15, 23, 42, 0.25))',
         backdropFilter: isPassThrough ? 'none' : 'blur(8px)',
         WebkitBackdropFilter: isPassThrough ? 'none' : 'blur(8px)',
@@ -1563,12 +1563,12 @@ const createClientGeneratedId = useCallback((prefix = 'tree') => {
             <NodeAssistantPanel
               node={{ id: 'bootstrap', keyword: '', fullText: '' }}
               color={d3.schemeCategory10[0]}
-              onSizeChange={() => {}}
-              onSecondQuestion={() => {}}
-              onPlaceholderCreate={() => {}}
+              onSizeChange={() => { }}
+              onSecondQuestion={() => { }}
+              onPlaceholderCreate={() => { }}
               questionService={questionService.current}
               initialConversation={[]}
-              onConversationChange={() => {}}
+              onConversationChange={() => { }}
               nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
               isRootNode={true}
               bootstrapMode={true}
@@ -1583,8 +1583,8 @@ const createClientGeneratedId = useCallback((prefix = 'tree') => {
         height={dimensions.height}
         data-interactive-zone="true"
         style={{
-          background: isPassThrough 
-            ? 'rgba(0,0,0,0.001)' 
+          background: isPassThrough
+            ? 'rgba(0,0,0,0.001)'
             : 'linear-gradient(135deg, rgba(30, 41, 59, 0.08), rgba(15, 23, 42, 0.12))',
           // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
           pointerEvents: 'auto',

@@ -13,6 +13,7 @@ const Sidebar = ({
   onMemoSelect,
   onFolderCreate,
   onMemoCreate,
+  onMemoDelete,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -77,6 +78,7 @@ const Sidebar = ({
             memos={filteredMemos}
             selectedMemo={selectedMemo}
             onMemoSelect={onMemoSelect}
+            onMemoDelete={onMemoDelete}
           />
         </div>
       </ScrollArea>

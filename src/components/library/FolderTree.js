@@ -20,7 +20,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 
-const FolderItem = ({ folder, folders, memos, level = 0, selectedMemo, onMemoSelect }) => {
+const FolderItem = ({ folder, folders, memos, level = 0, selectedMemo, onMemoSelect, onMemoDelete }) => {
   const [isExpanded, setIsExpanded] = useState(folder.expanded ?? false);
   const children = getFolderChildren(folders, folder.id);
   const folderMemos = getMemosByFolder(memos, folder.id);
@@ -86,6 +86,7 @@ const FolderItem = ({ folder, folders, memos, level = 0, selectedMemo, onMemoSel
               level={level + 1}
               selectedMemo={selectedMemo}
               onMemoSelect={onMemoSelect}
+              onMemoDelete={onMemoDelete}
             />
           ))}
 
@@ -96,6 +97,7 @@ const FolderItem = ({ folder, folders, memos, level = 0, selectedMemo, onMemoSel
               level={level + 1}
               isSelected={selectedMemo?.id === memo.id}
               onSelect={() => onMemoSelect(memo)}
+              onDelete={onMemoDelete}
             />
           ))}
         </div>
@@ -104,7 +106,7 @@ const FolderItem = ({ folder, folders, memos, level = 0, selectedMemo, onMemoSel
   );
 };
 
-const MemoItem = ({ memo, level, isSelected, onSelect }) => {
+const MemoItem = ({ memo, level, isSelected, onSelect, onDelete }) => {
   const nodeCount = memo.treeData?.nodes?.length ?? 0;
 
   return (
@@ -130,13 +132,27 @@ const MemoItem = ({ memo, level, isSelected, onSelect }) => {
       <ContextMenuContent>
         <ContextMenuItem>이름 변경</ContextMenuItem>
         <ContextMenuItem>복제</ContextMenuItem>
-        <ContextMenuItem className="text-destructive">삭제</ContextMenuItem>
+        <ContextMenuItem
+          className="text-destructive"
+          onSelect={(event) => {
+            event.preventDefault();
+            if (typeof onDelete === 'function') {
+              const confirmed = typeof window !== 'undefined'
+                ? window.confirm('이 메모를 삭제할까요?')
+                : true;
+              if (!confirmed) {
+                return;
+              }
+              onDelete(memo);
+            }
+          }}
+        >삭제</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );
 };
 
-const FolderTree = ({ folders, memos, selectedMemo, onMemoSelect }) => {
+const FolderTree = ({ folders, memos, selectedMemo, onMemoSelect, onMemoDelete }) => {
   const rootFolders = getRootFolders(folders);
 
   return (
@@ -149,6 +165,7 @@ const FolderTree = ({ folders, memos, selectedMemo, onMemoSelect }) => {
           memos={memos}
           selectedMemo={selectedMemo}
           onMemoSelect={onMemoSelect}
+          onMemoDelete={onMemoDelete}
         />
       ))}
     </div>
