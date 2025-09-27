@@ -11,6 +11,7 @@ import {
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
 import { cn } from "lib/utils";
+import Logo from "assets/admin-widget/logo.svg";
 
 const VoranBoxManager = ({
     isVisible,
@@ -355,12 +356,8 @@ const VoranBoxManager = ({
                     }
                 }
             } else if (e.key === "Escape") {
-                // 네비게이션 모드 취소
-                setNavigationMode(false);
-                setCurrentFolderIndex(0);
-                if (onFolderSelect) {
-                    onFolderSelect(null);
-                }
+                // 오버레이 닫기
+                handleClose();
             }
         }
     }, [showCreateFolder, handleFolderCreate, navigationMode, localSelectedTreeId, folders, currentFolderIndex, onTreeMoveToFolder, onFolderSelect, trees]);
@@ -492,13 +489,13 @@ const VoranBoxManager = ({
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             handleTreeMoveToFolder(tree);
                                                         }}
                                                     >
-                                                        <MoreHorizontal className="h-2.5 w-2.5" />
+                                                        <MoreHorizontal className="h-3 w-3" />
                                                     </Button>
                                                 </motion.div>
                                             </div>
@@ -723,13 +720,13 @@ const VoranBoxManager = ({
                                                                         <Button
                                                                             variant="ghost"
                                                                             size="sm"
-                                                                            className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                            className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
                                                                                 handleTreeMoveToFolder(tree);
                                                                             }}
                                                                         >
-                                                                            <MoreHorizontal className="h-2.5 w-2.5" />
+                                                                            <MoreHorizontal className="h-3 w-3" />
                                                                         </Button>
                                                                     </motion.div>
                                                                 </div>
@@ -748,10 +745,54 @@ const VoranBoxManager = ({
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full text-center">
-                                    <TreeIcon className="h-8 w-8 text-slate-600 mb-2" />
-                                    <p className="text-sm text-slate-400">폴더를 선택하세요</p>
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <img src={Logo} alt="VORAN" className="h-12 w-12 opacity-80" />
+                                        <div className="text-left">
+                                            <h3 className="text-lg font-semibold text-slate-200 mb-1">라이브러리</h3>
+                                            <p className="text-sm text-slate-400">라이브러리에서 열 트리를 선택하세요.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-2 text-xs text-slate-500">
+                                        <p>• 폴더를 클릭하여 트리를 확인하세요</p>
+                                        <p>• 키보드로 빠르게 탐색할 수 있습니다</p>
+                                    </div>
                                 </div>
                             )}
+                        </div>
+
+                        {/* 조작키 안내 */}
+                        <div className="border-t border-slate-700/50 px-4 py-2 bg-slate-800/30">
+                            <div className="text-xs text-slate-400 space-y-1">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex items-center gap-1">
+                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">←</kbd>
+                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">→</kbd>
+                                        <span className="text-slate-500">폴더 이동</span>
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↑</kbd>
+                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↓</kbd>
+                                        <span className="text-slate-500">트리 선택</span>
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Tab</kbd>
+                                        <span className="text-slate-500">폴더 순환</span>
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <span className="flex items-center gap-1">
+                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Enter</kbd>
+                                        <span className="text-slate-500">트리 저장</span>
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Esc</kbd>
+                                        <span className="text-slate-500">닫기</span>
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                        <span className="text-slate-500">드래그로 이동</span>
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </motion.div>
