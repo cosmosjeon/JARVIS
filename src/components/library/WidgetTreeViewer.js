@@ -509,7 +509,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
         </g>
       </svg>
 
-      <div ref={overlayRef} className="pointer-events-none absolute inset-0" />
+      <div ref={overlayRef} className="pointer-events-none absolute inset-0 overflow-hidden" />
     </div>
   );
 };

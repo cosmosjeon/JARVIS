@@ -806,7 +806,7 @@ const NodeAssistantPanel = ({
   return (
     <div
       ref={panelRef}
-      className="relative flex flex-1 flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-6 min-h-0 backdrop-blur-md"
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur-md"
       style={{
         fontFamily: 'Arial, sans-serif',
         position: 'relative',
@@ -823,7 +823,7 @@ const NodeAssistantPanel = ({
     >
 
       <div
-        className="flex flex-wrap items-start justify-between gap-3 pb-2"
+        className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
         data-pan-handle="true"
         style={{
           cursor: 'grab',
@@ -855,7 +855,7 @@ const NodeAssistantPanel = ({
 
       <div
         ref={highlightRootRef}
-        className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0"
+        className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
       >
           <div className="flex h-full flex-col gap-3">
             {messages.map((message) => {
@@ -864,14 +864,14 @@ const NodeAssistantPanel = ({
               return (
                 <div
                   key={message.id}
-                  className={`flex ${isAssistant ? 'justify-center' : 'justify-end'}`}
+                  className={`${isAssistant ? 'w-full' : 'flex justify-end'}`}
                   data-testid={isAssistant ? 'assistant-message' : 'user-message'}
                   data-status={message.status || 'complete'}
                 >
                   <div
                     className={
                       isAssistant
-                        ? 'glass-surface w-full max-w-[520px] break-words rounded-3xl border border-white/10 px-6 py-4 text-sm leading-relaxed text-slate-50 shadow-2xl'
+                        ? 'w-full break-words px-4 py-4 text-sm leading-relaxed text-slate-50'
                         : 'max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm'
                     }
                   >
@@ -888,7 +888,7 @@ const NodeAssistantPanel = ({
         </div>
 
         {/* 다중 질문 버튼 */}
-        <div className="flex justify-start -mb-2" data-block-pan="true">
+        <div className="flex -mb-2 flex-shrink-0 justify-start" data-block-pan="true">
           <button
             type="button"
             onClick={handleHighlightToggle}
@@ -903,7 +903,7 @@ const NodeAssistantPanel = ({
         </div>
 
         <form
-          className="glass-surface flex items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
+          className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
           onSubmit={(event) => {
             event.preventDefault();
             handleSend().catch(() => { });
