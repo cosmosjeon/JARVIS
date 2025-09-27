@@ -287,7 +287,7 @@ const TreeNode = ({
             }}
             animate={{
               x: -currentWidth / 2 + 3,
-              y: -currentHeight / 2 + 3,
+              y: -currentHeight / 2 + 23,
               width: currentWidth,
               height: currentHeight,
             }}
@@ -312,7 +312,7 @@ const TreeNode = ({
             }}
             animate={{
               x: -currentWidth / 2 - 3,
-              y: -currentHeight / 2 - 3,
+              y: -currentHeight / 2 + 17,
               width: currentWidth,
               height: currentHeight,
             }}
@@ -345,7 +345,7 @@ const TreeNode = ({
             }}
             animate={{
               x: -currentWidth / 2,
-              y: -currentHeight / 2,
+              y: -currentHeight / 2 + 20,
               width: currentWidth,
               height: currentHeight,
             }}
@@ -416,6 +416,7 @@ const TreeNode = ({
           fill="#666666"
           style={{ pointerEvents: 'none' }}
           transition={{ duration: 0.15 }}
+          y={20}
         >
           {displayMode === 'hover' ? hoverText : (node.keyword || node.id)}
         </motion.text>
