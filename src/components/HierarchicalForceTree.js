@@ -44,6 +44,10 @@ const HierarchicalForceTree = () => {
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [data, setData] = useState(treeData);
+  const [activeTreeId, setActiveTreeId] = useState(null);
+  const [initializingTree, setInitializingTree] = useState(false);
+  const [treeSyncError, setTreeSyncError] = useState(null);
+  const [isTreeSyncing, setIsTreeSyncing] = useState(false);
   const dataRef = useRef(treeData);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
