@@ -169,27 +169,51 @@ const WidgetTreeViewer = ({ treeData }) => {
               if (!sourceNode || !targetNode) return null;
 
               const sourceX = sourceNode.x;
-              const sourceY = sourceNode.y + 14 + 10;
+              const sourceY = sourceNode.y + 14 + 20;
               const pathString = `M ${sourceX} ${sourceY} L ${targetNode.x} ${targetNode.y}`;
 
               return (
-                <motion.path
-                  key={link.key || `${link.source}->${link.target}`}
-                  d={pathString}
-                  stroke="rgba(148, 163, 184, 0.55)"
-                  strokeOpacity={0.8}
-                  strokeWidth={Math.sqrt(link.value || 1) * 1.5}
-                  fill="none"
-                  markerEnd="url(#library-widget-arrow)"
-                  initial={{ pathLength: 0, opacity: 0 }}
-                  animate={{ pathLength: 1, opacity: 1 }}
-                  exit={{ pathLength: 0, opacity: 0 }}
-                  transition={{
-                    duration: 0.45,
-                    ease: "easeInOut",
-                    delay: index * 0.04,
-                  }}
-                />
+                <g key={link.key || `${link.source}->${link.target}`}>
+                  {/* Neumorphism shadow for line */}
+                  <motion.path
+                    d={pathString}
+                    stroke="#bebebe"
+                    strokeOpacity={0.4}
+                    strokeWidth={Math.sqrt(link.value || 1) * 1.5 + 2}
+                    fill="none"
+                    style={{
+                      filter: 'blur(2px)',
+                    }}
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                    exit={{ pathLength: 0, opacity: 0 }}
+                    transition={{
+                      duration: 0.45,
+                      ease: "easeInOut",
+                      delay: index * 0.04,
+                    }}
+                  />
+                  {/* Main neumorphism line */}
+                  <motion.path
+                    d={pathString}
+                    stroke="#e0e0e0"
+                    strokeOpacity={0.9}
+                    strokeWidth={Math.sqrt(link.value || 1) * 1.5}
+                    fill="none"
+                    markerEnd="url(#library-widget-arrow)"
+                    style={{
+                      filter: 'drop-shadow(1px 1px 2px #bebebe) drop-shadow(-1px -1px 2px #ffffff)',
+                    }}
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                    exit={{ pathLength: 0, opacity: 0 }}
+                    transition={{
+                      duration: 0.45,
+                      ease: "easeInOut",
+                      delay: index * 0.04,
+                    }}
+                  />
+                </g>
               );
             })}
           </AnimatePresence>

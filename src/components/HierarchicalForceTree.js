@@ -760,7 +760,7 @@ const HierarchicalForceTree = () => {
   // 노드가 없어도 드래그 핸들을 항상 표시하기 위한 고정 위치
   const rootDragHandlePosition = React.useMemo(() => {
     const screenX = dimensions.width / 2;
-    const screenY = 80; // 화면 상단에서 80px 떨어진 고정 위치 (잘림 방지)
+    const screenY = 20; // 화면 상단에서 20px 떨어진 고정 위치 (창에 딱 붙게)
     return { x: screenX, y: screenY };
   }, [dimensions.width]);
 
@@ -1617,7 +1617,7 @@ const HierarchicalForceTree = () => {
             WebkitAppRegion: 'drag',
             pointerEvents: 'auto',
             cursor: 'grab',
-            padding: '6px 8px',
+            padding: '2px 8px',
             zIndex: 40,
             transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease',
             display: 'flex',
@@ -1724,31 +1724,55 @@ const HierarchicalForceTree = () => {
 
                   if (!sourceNode || !targetNode) return null;
 
-                  // Calculate source position from toggle icon bottom edge
-                  const sourceX = sourceNode.x;
-                  const sourceY = sourceNode.y + 14 + 10; // Toggle icon is 14px below node center + 10px (half of 20px icon height)
+                    // Calculate source position from toggle icon bottom edge
+                    const sourceX = sourceNode.x;
+                    const sourceY = sourceNode.y + 14 + 20; // Toggle icon is 14px below node center + 20px (full icon height)
 
                   const shouldAnimate = link.isNew;
                   const pathString = `M ${sourceX} ${sourceY} L ${targetNode.x} ${targetNode.y}`;
 
                   return (
-                    <motion.path
-                      key={`${String(link.source)}->${String(link.target)}`}
-                      d={pathString}
-                      stroke="rgba(148, 163, 184, 0.55)"
-                      strokeOpacity={0.8}
-                      strokeWidth={Math.sqrt(link.value || 1) * 1.5}
-                      fill="none"
-                      markerEnd="url(#arrowhead)"
-                      initial={{ pathLength: 0, opacity: 0 }}
-                      animate={{ pathLength: 1, opacity: 1 }}
-                      exit={{ pathLength: 0, opacity: 0 }}
-                      transition={{
-                        duration: 0.45,
-                        ease: "easeInOut",
-                        delay: index * 0.06
-                      }}
-                    />
+                    <g key={`${String(link.source)}->${String(link.target)}`}>
+                      {/* Neumorphism shadow for line */}
+                      <motion.path
+                        d={pathString}
+                        stroke="#bebebe"
+                        strokeOpacity={0.4}
+                        strokeWidth={Math.sqrt(link.value || 1) * 1.5 + 2}
+                        fill="none"
+                        style={{
+                          filter: 'blur(2px)',
+                        }}
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{ pathLength: 1, opacity: 1 }}
+                        exit={{ pathLength: 0, opacity: 0 }}
+                        transition={{
+                          duration: 0.45,
+                          ease: "easeInOut",
+                          delay: index * 0.06
+                        }}
+                      />
+                      {/* Main neumorphism line */}
+                      <motion.path
+                        d={pathString}
+                        stroke="#e0e0e0"
+                        strokeOpacity={0.9}
+                        strokeWidth={Math.sqrt(link.value || 1) * 1.5}
+                        fill="none"
+                        markerEnd="url(#arrowhead)"
+                        style={{
+                          filter: 'drop-shadow(1px 1px 2px #bebebe) drop-shadow(-1px -1px 2px #ffffff)',
+                        }}
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{ pathLength: 1, opacity: 1 }}
+                        exit={{ pathLength: 0, opacity: 0 }}
+                        transition={{
+                          duration: 0.45,
+                          ease: "easeInOut",
+                          delay: index * 0.06
+                        }}
+                      />
+                    </g>
                   );
                 })}
             </AnimatePresence>

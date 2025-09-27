@@ -121,7 +121,7 @@ const TreeNode = ({
   // Only expand horizontally on hover; keep height unchanged
   const hoverHeight = baseHeight;
   const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation));
-  const borderRadius = 50; // Neumorphism border radius
+  const borderRadius = 8; // Subtle rounded corners
 
   // Determine current display mode
   const displayMode = isExpanded ? 'chat' : (isHovered ? 'hover' : 'normal');
