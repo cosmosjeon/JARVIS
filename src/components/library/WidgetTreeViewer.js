@@ -16,6 +16,23 @@ const normalizeTreeData = (treeData) => {
   const rawNodes = Array.isArray(treeData.nodes) ? treeData.nodes : [];
   const rawLinks = Array.isArray(treeData.links) ? treeData.links : [];
 
+  // 먼저 링크를 정규화
+  const links = rawLinks.map((link) => {
+    const source = typeof link.source === "object" ? link.source?.id : link.source;
+    const target = typeof link.target === "object" ? link.target?.id : link.target;
+    return {
+      source,
+      target,
+      value: link.value ?? 1,
+    };
+  }).filter((link) => link.source && link.target);
+
+  // 부모-자식 관계를 맵으로 생성
+  const parentMap = new Map();
+  links.forEach(link => {
+    parentMap.set(link.target, link.source);
+  });
+
   const nodes = rawNodes.map((node) => ({
     id: node.id,
     keyword: node.keyword || node.question || node.answer || node.id,
@@ -26,17 +43,8 @@ const normalizeTreeData = (treeData) => {
     level: node.level ?? 0,
     conversation: node.conversation || [],
     questionData: node.questionData,
+    parentId: parentMap.get(node.id) || null, // 부모 ID 추가
   })).filter((node) => typeof node.id === "string" && node.id.trim().length > 0);
-
-  const links = rawLinks.map((link) => {
-    const source = typeof link.source === "object" ? link.source?.id : link.source;
-    const target = typeof link.target === "object" ? link.target?.id : link.target;
-    return {
-      source,
-      target,
-      value: link.value ?? 1,
-    };
-  }).filter((link) => link.source && link.target);
 
   return { nodes, links };
 };
