@@ -409,34 +409,25 @@ const VoranBoxManager = ({
                             )}
                         </AnimatePresence>
 
-                        {/* 폴더 목록 */}
-                        <div className="flex-1 overflow-y-auto px-4 py-3">
-                            {folders.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-8 text-center">
-                                    <Folder className="h-8 w-8 text-slate-600 mb-2" />
-                                    <p className="text-sm text-slate-400">폴더가 없습니다</p>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        + 버튼을 눌러 새 폴더를 만드세요
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="space-y-1">
-                                    {folders.map((folder, index) => {
+                        {/* 폴더 목록 (상단 1행) */}
+                        <div className="px-4 py-3">
+                            <div className="flex gap-2 overflow-x-auto">
+                                {folders.length === 0 ? (
+                                    <div className="flex items-center justify-center py-4 text-center">
+                                        <p className="text-sm text-slate-400">폴더가 없습니다</p>
+                                    </div>
+                                ) : (
+                                    folders.map((folder, index) => {
                                         const isNavigationSelected = navigationMode && index === currentFolderIndex;
                                         const isDragTarget = dragOverTarget?.type === "folder" && dragOverTarget?.id === folder.id;
 
                                         return (
-                                            <motion.div
+                                            <button
                                                 key={folder.id}
-                                                animate={isNavigationSelected ? {
-                                                    scale: 1.02,
-                                                    backgroundColor: "rgba(59, 130, 246, 0.1)"
-                                                } : {}}
-                                                transition={{ duration: 0.2 }}
                                                 className={cn(
-                                                    "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all",
+                                                    "flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
                                                     "hover:bg-slate-800/50",
-                                                    selectedFolderId === folder.id && "bg-slate-700/50",
+                                                    selectedFolderId === folder.id && "bg-blue-600/20 border border-blue-500/50",
                                                     isNavigationSelected && "bg-blue-900/20 border border-blue-500/50 ring-2 ring-blue-500/30",
                                                     isDragTarget && "bg-blue-900/20 border border-blue-500/50"
                                                 )}
@@ -445,30 +436,16 @@ const VoranBoxManager = ({
                                                 onDragLeave={handleDragLeave}
                                                 onDrop={(e) => handleDrop(e, "folder", folder.id)}
                                             >
-                                                <Folder className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                                                <div className="flex-1 min-w-0">
-                                                    <span className="text-slate-200 truncate">{folder.name}</span>
-                                                    {isNavigationSelected && (
-                                                        <div className="text-xs text-blue-400 font-medium mt-1">
-                                                            선택됨 - 엔터로 저장
-                                                        </div>
-                                                    )}
-                                                    {isDragTarget && (
-                                                        <div className="text-xs text-blue-400 font-medium mt-1">
-                                                            여기에 트리를 놓으면 이 폴더로 이동합니다
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {folderTreeCounts[folder.id] > 0 && (
-                                                    <span className="text-xs text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded-full">
-                                                        {folderTreeCounts[folder.id]}
-                                                    </span>
-                                                )}
-                                            </motion.div>
+                                                <Folder className="h-4 w-4 text-slate-400" />
+                                                <span className="text-slate-200">{folder.name}</span>
+                                                <span className="text-xs text-slate-400 bg-slate-700 px-1.5 py-0.5 rounded-full">
+                                                    {folderTreeCounts[folder.id] || 0}
+                                                </span>
+                                            </button>
                                         );
-                                    })}
-                                </div>
-                            )}
+                                    })
+                                )}
+                            </div>
                         </div>
                     </div>
                 </motion.div>
