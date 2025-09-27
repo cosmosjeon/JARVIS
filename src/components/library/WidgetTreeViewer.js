@@ -356,7 +356,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
             markerHeight={6}
             orient="auto"
           >
-            <path d="M0,-5L10,0L0,5" fill="rgba(148, 163, 184, 0.6)" />
+            <path d="M0,-5L10,0L0,5" fill="rgba(0, 0, 0, 0.6)" />
           </marker>
         </defs>
 
@@ -368,7 +368,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
               if (!sourceNode || !targetNode) return null;
 
               const sourceX = sourceNode.x;
-              const sourceY = sourceNode.y + 14 + 20;
+              const sourceY = sourceNode.y + 50;
               const pathString = `M ${sourceX} ${sourceY} L ${targetNode.x} ${targetNode.y}`;
 
               return (
