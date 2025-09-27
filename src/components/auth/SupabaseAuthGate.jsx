@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useSupabaseAuth } from '../../hooks/useSupabaseAuth';
 import { Button } from '../ui/button';
@@ -22,6 +22,21 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
     error,
     signInWithOAuth,
   } = useSupabaseAuth();
+
+  useEffect(() => {
+    if (mode !== 'library' || typeof window === 'undefined') {
+      return;
+    }
+
+    if (user) {
+      window.jarvisAPI?.openAdminPanel?.();
+      return;
+    }
+
+    if (!loading) {
+      window.jarvisAPI?.closeAdminPanel?.();
+    }
+  }, [user, loading, mode]);
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100">
@@ -72,7 +87,7 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
 
 SupabaseAuthGate.propTypes = {
   children: PropTypes.node.isRequired,
-  mode: PropTypes.oneOf(['widget', 'library']),
+  mode: PropTypes.oneOf(['widget', 'library', 'admin-panel']),
 };
 
 export default SupabaseAuthGate;

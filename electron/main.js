@@ -202,6 +202,7 @@ app.on('open-url', (event, url) => {
 
 let mainWindow;
 let libraryWindow;
+let adminPanelWindow;
 let logger;
 let hotkeyManager;
 let tray;
@@ -605,7 +606,7 @@ const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessi
 const createLibraryWindow = () => {
   if (libraryWindow && !libraryWindow.isDestroyed()) {
     libraryWindow.focus();
-    return;
+    return libraryWindow;
   }
 
   libraryWindow = new BrowserWindow({
@@ -647,6 +648,116 @@ const createLibraryWindow = () => {
       shell.openExternal(url);
     }
   });
+
+  return libraryWindow;
+};
+
+const positionAdminPanelWindow = (windowInstance) => {
+  if (!windowInstance) {
+    return;
+  }
+
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const workArea = primaryDisplay?.workArea || primaryDisplay?.bounds;
+
+    if (!workArea) {
+      return;
+    }
+
+    const PADDING = 24;
+    const { width: panelWidth, height: panelHeight } = windowInstance.getBounds();
+    const targetX = Math.round(workArea.x + workArea.width - panelWidth - PADDING);
+    const targetY = Math.round(workArea.y + PADDING);
+
+    windowInstance.setBounds({
+      x: targetX,
+      y: targetY,
+      width: panelWidth,
+      height: panelHeight,
+    });
+  } catch (error) {
+    logger?.warn('admin_panel_position_failed', { message: error?.message });
+  }
+};
+
+const ensureAdminPanelWindow = () => {
+  if (adminPanelWindow && !adminPanelWindow.isDestroyed()) {
+    adminPanelWindow.showInactive();
+    return adminPanelWindow;
+  }
+
+  adminPanelWindow = new BrowserWindow({
+    width: 420,
+    height: 88,
+    useContentSize: true,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    skipTaskbar: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    hasShadow: false,
+    roundedCorners: true,
+    titleBarStyle: process.platform === 'darwin' ? 'customButtonsOnHover' : 'hidden',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      devTools: isDev,
+      spellcheck: false,
+    },
+  });
+
+  try {
+    adminPanelWindow.setAlwaysOnTop(true, 'floating', 1);
+    adminPanelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } catch (error) {
+    logger?.warn('admin_panel_always_on_top_failed', { message: error?.message });
+  }
+
+  adminPanelWindow.on('ready-to-show', () => {
+    positionAdminPanelWindow(adminPanelWindow);
+    adminPanelWindow.show();
+  });
+
+  adminPanelWindow.on('closed', () => {
+    adminPanelWindow = null;
+  });
+
+  adminPanelWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  adminPanelWindow.webContents.on('will-navigate', (event, url) => {
+    if (!adminPanelWindow) {
+      return;
+    }
+    if (url !== adminPanelWindow.webContents.getURL()) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  const panelUrl = getRendererUrl('admin-panel');
+  adminPanelWindow.loadURL(panelUrl);
+
+  return adminPanelWindow;
+};
+
+const closeAdminPanelWindow = () => {
+  if (!adminPanelWindow || adminPanelWindow.isDestroyed()) {
+    return;
+  }
+
+  try {
+    adminPanelWindow.close();
+  } catch (error) {
+    logger?.warn('admin_panel_close_failed', { message: error?.message });
+  }
 };
 
 app.whenReady().then(() => {
@@ -695,6 +806,17 @@ app.whenReady().then(() => {
   applyTraySettings();
   registerPassThroughShortcut();
   broadcastSettings();
+
+  try {
+    screen.on?.('display-metrics-changed', () => {
+      if (!adminPanelWindow || adminPanelWindow.isDestroyed()) {
+        return;
+      }
+      positionAdminPanelWindow(adminPanelWindow);
+    });
+  } catch (error) {
+    logger?.warn('admin_panel_screen_listener_failed', { message: error?.message });
+  }
   ipcMain.handle('auth:launch-oauth', async (_event, payload = {}) => {
     const targetUrl = typeof payload?.url === 'string' ? payload.url : null;
     if (!targetUrl) {
@@ -984,6 +1106,42 @@ app.whenReady().then(() => {
     }
 
     return { success: true, settings: { ...settings } };
+  });
+
+  ipcMain.handle('admin-panel:ensure', () => {
+    const panel = ensureAdminPanelWindow();
+    if (!panel) {
+      return { success: false, error: { code: 'panel_unavailable', message: '패널 창을 생성할 수 없습니다.' } };
+    }
+    return { success: true, windowId: panel.id };
+  });
+
+  ipcMain.handle('admin-panel:close', () => {
+    closeAdminPanelWindow();
+    return { success: true };
+  });
+
+  ipcMain.handle('library:show', () => {
+    const targetWindow = createLibraryWindow();
+    if (targetWindow && !targetWindow.isDestroyed()) {
+      if (targetWindow.isMinimized()) {
+        targetWindow.restore();
+      }
+      targetWindow.show();
+      targetWindow.focus();
+      return { success: true, windowId: targetWindow.id };
+    }
+
+    return { success: false, error: { code: 'library_unavailable', message: '라이브러리 창을 열 수 없습니다.' } };
+  });
+
+  ipcMain.handle('library:request-refresh', () => {
+    if (libraryWindow && !libraryWindow.isDestroyed()) {
+      libraryWindow.webContents.send('library:refresh');
+      return { success: true, delivered: true };
+    }
+
+    return { success: true, delivered: false };
   });
 
   ipcMain.handle('window:toggleVisibility', () => {

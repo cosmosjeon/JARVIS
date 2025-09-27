@@ -55,4 +55,8 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  body.admin-panel-mode {
+    background-color: transparent;
+  }
 }

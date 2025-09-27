@@ -5,7 +5,8 @@ import { Button } from "components/ui/button";
 
 import TreeCanvas from "./TreeCanvas";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
-import { fetchTreesWithNodes, upsertTreeMetadata, deleteTree } from "services/supabaseTrees";
+import { fetchTreesWithNodes, deleteTree } from "services/supabaseTrees";
+import { createTreeForUser, openWidgetForTree } from "services/treeCreation";
 
 const EmptyState = ({ message }) => (
   <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
@@ -62,6 +63,22 @@ const LibraryApp = () => {
 
   useEffect(() => {
     refreshLibrary();
+  }, [refreshLibrary]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.jarvisAPI?.onLibraryRefresh !== "function") {
+      return () => {};
+    }
+
+    const unsubscribe = window.jarvisAPI.onLibraryRefresh(() => {
+      refreshLibrary();
+    });
+
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
   }, [refreshLibrary]);
 
   const handleTreeDelete = useCallback(async (treeId) => {
@@ -161,56 +178,20 @@ const LibraryApp = () => {
                   return;
                 }
 
-                const newTreeId = (() => {
-                  try {
-                    if (window.crypto?.randomUUID) {
-                      return `tree_${window.crypto.randomUUID()}`;
-                    }
-                  } catch (error) {
-                    // ignore and fallback
-                  }
-                  return `tree_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
-                })();
-
                 try {
-                  await upsertTreeMetadata({
-                    treeId: newTreeId,
-                    title: "새 지식 트리",
-                    userId: user.id,
-                  });
+                  const newTree = await createTreeForUser({ userId: user.id });
 
                   setTrees((previous) => {
                     const merged = new Map(previous.map((entry) => [entry.id, entry]));
-                    const now = Date.now();
-                    merged.set(newTreeId, {
-                      id: newTreeId,
-                      title: "새 지식 트리",
-                      treeData: { nodes: [], links: [] },
-                      createdAt: now,
-                      updatedAt: now,
-                    });
+                    merged.set(newTree.id, newTree);
                     const nextList = Array.from(merged.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                    setSelectedId(newTreeId);
                     return nextList;
                   });
 
-                  const payload = {
-                    treeId: newTreeId,
-                    reusePrimary: false,
-                    fresh: true,
-                  };
+                  setSelectedId(newTree.id);
 
-                  if (window.jarvisAPI?.openWidget) {
-                    await window.jarvisAPI.openWidget(payload);
-                  } else if (window.jarvisAPI?.toggleWindow) {
-                    window.jarvisAPI.toggleWindow();
-                  } else {
-                    const url = new URL(window.location.href);
-                    url.searchParams.set("mode", "widget");
-                    url.searchParams.set("treeId", newTreeId);
-                    url.searchParams.set("fresh", "1");
-                    window.open(url.toString(), "_blank");
-                  }
+                  await openWidgetForTree({ treeId: newTree.id, fresh: true });
+                  window.jarvisAPI?.requestLibraryRefresh?.();
                 } catch (err) {
                   setError(err);
                 }

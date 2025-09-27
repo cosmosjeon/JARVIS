@@ -99,6 +99,8 @@ const generateId = (prefix = 'tree') => {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
 };
 
+export const generateTreeId = () => generateId('tree');
+
 const normalizeTimestamp = (value) => {
   if (value === null || value === undefined) {
     return null;
