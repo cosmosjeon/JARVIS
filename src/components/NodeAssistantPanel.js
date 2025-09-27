@@ -671,6 +671,7 @@ const NodeAssistantPanel = ({
         position: 'relative',
         zIndex: 1001,
         pointerEvents: 'auto',
+        WebkitAppRegion: 'no-drag',
       }}
       data-interactive-zone="true"
     >
@@ -679,6 +680,10 @@ const NodeAssistantPanel = ({
         <div
           ref={highlightRootRef}
           className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0"
+          style={{
+            WebkitAppRegion: 'no-drag',
+            userSelect: 'text',
+          }}
         >
           <div className="flex h-full flex-col gap-3">
             {messages.map((message) => {
