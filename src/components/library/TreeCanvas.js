@@ -3,7 +3,7 @@ import { Calendar, FileText } from "lucide-react";
 
 import WidgetTreeViewer from "./WidgetTreeViewer";
 
-const TreeCanvas = ({ selectedMemo }) => {
+const TreeCanvas = ({ selectedMemo, onNodeSelect }) => {
   const nodeCount = useMemo(() => selectedMemo?.treeData?.nodes?.length ?? 0, [selectedMemo]);
 
   const formatDate = (value) =>
@@ -45,7 +45,11 @@ const TreeCanvas = ({ selectedMemo }) => {
 
       <div className="flex flex-1 overflow-hidden bg-slate-900/40">
         {nodeCount > 0 ? (
-          <WidgetTreeViewer key={selectedMemo.id} treeData={selectedMemo.treeData} />
+          <WidgetTreeViewer
+            key={selectedMemo.id}
+            treeData={selectedMemo.treeData}
+            onNodeSelect={onNodeSelect}
+          />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
             아직 노드가 없습니다.

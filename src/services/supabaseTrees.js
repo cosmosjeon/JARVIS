@@ -276,6 +276,8 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
   // 동기화가 필요한 경우 별도의 함수로 처리해야 함
 };
 
+// 링크는 parent_id로 관리되므로 별도 테이블 불필요
+
 export const upsertTreeMetadata = async ({ treeId, title, userId }) => {
   const supabase = ensureSupabase();
   const now = Date.now();

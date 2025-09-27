@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
     getState: () => ipcRenderer.invoke('window:getState'),
     onStateChange: (handler) => {
       if (typeof handler !== 'function') {
-        return () => {};
+        return () => { };
       }
       const listener = (_event, payload) => handler(payload);
       ipcRenderer.on('window:state', listener);
@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   log: (level, message, meta) => ipcRenderer.invoke('logger:write', { level, message, meta }),
   onLog: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('app:log', listener);
@@ -44,7 +44,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onClipboard: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('widget:showFromClipboard', listener);
@@ -52,7 +52,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onClipboardError: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('widget:clipboardError', listener);
@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onTrayCommand: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('tray:command', listener);
@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onLibraryRefresh: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = () => handler();
     ipcRenderer.on('library:refresh', listener);
@@ -76,7 +76,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onSettings: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('settings:changed', listener);
@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onPassThroughToggle: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = () => handler();
     ipcRenderer.on('pass-through:toggle', listener);
@@ -92,7 +92,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onWidgetSetActiveTree: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('widget:set-active-tree', listener);
@@ -100,7 +100,7 @@ contextBridge.exposeInMainWorld('jarvisAPI', {
   },
   onOAuthCallback: (handler) => {
     if (typeof handler !== 'function') {
-      return () => {};
+      return () => { };
     }
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('auth:oauth-callback', listener);

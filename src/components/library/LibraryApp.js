@@ -4,6 +4,7 @@ import { Loader2, FolderTree as FolderIcon } from "lucide-react";
 import { Button } from "components/ui/button";
 
 import TreeCanvas from "./TreeCanvas";
+import LibraryQAPanel from "./LibraryQAPanel";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
 import { fetchTreesWithNodes, deleteTree } from "services/supabaseTrees";
 import { createTreeForUser, openWidgetForTree } from "services/treeCreation";
@@ -20,6 +21,7 @@ const LibraryApp = () => {
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedNode, setSelectedNode] = useState(null);
 
   const selectedTree = useMemo(
     () => trees.find((tree) => tree.id === selectedId) ?? null,
@@ -67,7 +69,7 @@ const LibraryApp = () => {
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.jarvisAPI?.onLibraryRefresh !== "function") {
-      return () => {};
+      return () => { };
     }
 
     const unsubscribe = window.jarvisAPI.onLibraryRefresh(() => {
@@ -126,6 +128,56 @@ const LibraryApp = () => {
     }
   }, [user, refreshLibrary]);
 
+  // 노드 선택 핸들러
+  const handleNodeSelect = useCallback((node) => {
+    setSelectedNode(node);
+  }, []);
+
+  // 노드 업데이트 핸들러
+  const handleNodeUpdate = useCallback((updatedNode) => {
+    setTrees(prevTrees => 
+      prevTrees.map(tree => 
+        tree.id === selectedTree?.id 
+          ? {
+              ...tree,
+              treeData: {
+                ...tree.treeData,
+                nodes: tree.treeData?.nodes?.map(node => 
+                  node.id === updatedNode.id ? updatedNode : node
+                ) || []
+              }
+            }
+          : tree
+      )
+    );
+  }, [selectedTree]);
+
+  // 새 노드 생성 핸들러
+  const handleNewNodeCreated = useCallback((newNode, newLink) => {
+    setTrees(prevTrees => 
+      prevTrees.map(tree => 
+        tree.id === selectedTree?.id 
+          ? {
+              ...tree,
+              treeData: {
+                ...tree.treeData,
+                nodes: [...(tree.treeData?.nodes || []), newNode],
+                links: [
+                  ...(tree.treeData?.links || []),
+                  newLink || {
+                    source: newNode.parentId,
+                    target: newNode.id,
+                    value: 1
+                  }
+                ]
+              }
+            }
+          : tree
+      )
+    );
+    setSelectedNode(newNode);
+  }, [selectedTree]);
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100">
       <aside className="flex w-64 flex-col border-r border-slate-900/60 bg-slate-950/80">
@@ -152,11 +204,10 @@ const LibraryApp = () => {
                       event.preventDefault();
                       handleTreeDelete(tree.id);
                     }}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${
-                      isActive
+                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${isActive
                         ? "bg-slate-800 text-slate-50"
                         : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
-                    }`}
+                      }`}
                   >
                     <FolderIcon className="h-4 w-4" />
                     <span className="flex-1 truncate">{tree.title}</span>
@@ -241,8 +292,28 @@ const LibraryApp = () => {
           <EmptyState message="로그인 후 트리를 확인할 수 있습니다." />
         ) : error ? (
           <EmptyState message={error?.message || "트리를 불러오지 못했습니다."} />
+        ) : selectedTree ? (
+          <div className="flex h-full">
+            {/* 트리 뷰어 */}
+            <div className="flex-1">
+              <TreeCanvas 
+                selectedMemo={selectedTree} 
+                onNodeSelect={handleNodeSelect}
+              />
+            </div>
+            
+            {/* 질문 답변 패널 */}
+            <div className="w-80 border-l border-slate-900/60 bg-slate-950/40">
+              <LibraryQAPanel
+                selectedNode={selectedNode}
+                selectedTree={selectedTree}
+                onNodeUpdate={handleNodeUpdate}
+                onNewNodeCreated={handleNewNodeCreated}
+              />
+            </div>
+          </div>
         ) : (
-          <TreeCanvas selectedMemo={selectedTree} />
+          <EmptyState message="트리를 선택해주세요." />
         )}
       </main>
     </div>
