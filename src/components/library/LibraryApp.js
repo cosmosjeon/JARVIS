@@ -291,14 +291,9 @@ const LibraryApp = () => {
 
   const handleFolderSelect = useCallback((folderId) => {
     setSelectedFolderId(folderId);
-    // 폴더 선택 시 해당 폴더의 첫 번째 트리를 자동 선택
-    const folderTrees = trees.filter(tree => tree.folderId === folderId);
-    if (folderTrees.length > 0) {
-      setSelectedId(folderTrees[0].id);
-    } else {
-      setSelectedId(null);
-    }
-  }, [trees]);
+    // 폴더 선택 시 트리는 자동 선택하지 않음
+    setSelectedId(null);
+  }, []);
 
   const handleTreeMoveToFolder = useCallback(async (tree) => {
     if (!user) return;

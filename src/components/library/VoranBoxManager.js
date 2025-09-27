@@ -32,6 +32,23 @@ const VoranBoxManager = ({
     const [newFolderName, setNewFolderName] = useState("");
     const [navigationMode, setNavigationMode] = useState(false); // 탭 네비게이션 모드
     const [currentFolderIndex, setCurrentFolderIndex] = useState(0); // 현재 선택된 폴더 인덱스
+    const [localSelectedTreeId, setLocalSelectedTreeId] = useState(null); // 로컬 선택된 트리 ID
+
+    // VoranBoxManager가 열릴 때 폴더 선택 초기화 및 첫 번째 트리 자동 선택
+    React.useEffect(() => {
+        if (isVisible) {
+            if (onFolderSelect) {
+                onFolderSelect(null);
+            }
+            // 첫 번째 VORAN BOX 트리 자동 선택
+            const voranTrees = trees.filter(tree => !tree.folderId);
+            if (voranTrees.length > 0) {
+                setLocalSelectedTreeId(voranTrees[0].id);
+                setNavigationMode(true);
+                setCurrentFolderIndex(0);
+            }
+        }
+    }, [isVisible, onFolderSelect, trees]);
 
     const formatDate = (timestamp) => {
         if (!timestamp) return "날짜 없음";
@@ -120,14 +137,17 @@ const VoranBoxManager = ({
     }, [trees, onTreeMoveToFolder]);
 
     const handleTreeClick = useCallback((tree) => {
-        // 트리 선택 시 트리를 열지 않고 선택 상태만 업데이트
-        if (onTreeSelect) {
-            onTreeSelect(tree);
-        }
+        // 트리 선택 시 선택 상태 업데이트
+        setLocalSelectedTreeId(tree.id);
         // 탭 네비게이션 모드 활성화
         setNavigationMode(true);
         setCurrentFolderIndex(0);
-    }, [onTreeSelect]);
+
+        // 첫 번째 폴더 자동 선택
+        if (folders.length > 0 && onFolderSelect) {
+            onFolderSelect(folders[0].id);
+        }
+    }, [folders, onFolderSelect]);
 
     const handleTreeDoubleClick = useCallback((tree) => {
         if (onTreeOpen) {
@@ -173,12 +193,16 @@ const VoranBoxManager = ({
         }
 
         // 탭 네비게이션 모드일 때
-        if (navigationMode && selectedTreeId) {
+        if (navigationMode && localSelectedTreeId) {
             if (e.key === "Tab") {
                 e.preventDefault();
-                // 다음 폴더로 이동
+                // 다음 폴더로 이동하고 실제로 선택
                 setCurrentFolderIndex(prev => {
                     const nextIndex = (prev + 1) % folders.length;
+                    const targetFolder = folders[nextIndex];
+                    if (targetFolder && onFolderSelect) {
+                        onFolderSelect(targetFolder.id);
+                    }
                     return nextIndex;
                 });
             } else if (e.key === "Enter") {
@@ -186,24 +210,38 @@ const VoranBoxManager = ({
                 // 선택된 폴더에 트리 저장
                 const targetFolder = folders[currentFolderIndex];
                 if (targetFolder && onTreeMoveToFolder) {
-                    const selectedTree = trees.find(tree => tree.id === selectedTreeId);
+                    const selectedTree = trees.find(tree => tree.id === localSelectedTreeId);
                     if (selectedTree) {
                         onTreeMoveToFolder({
                             ...selectedTree,
                             targetFolderId: targetFolder.id
                         });
-                        // 네비게이션 모드 종료
-                        setNavigationMode(false);
-                        setCurrentFolderIndex(0);
+
+                        // 다음 트리 자동 선택
+                        const voranTrees = trees.filter(tree => !tree.folderId);
+                        const currentIndex = voranTrees.findIndex(tree => tree.id === localSelectedTreeId);
+                        const nextIndex = (currentIndex + 1) % voranTrees.length;
+
+                        if (voranTrees.length > 0) {
+                            setLocalSelectedTreeId(voranTrees[nextIndex].id);
+                            setCurrentFolderIndex(0);
+                        } else {
+                            // VORAN BOX에 트리가 없으면 네비게이션 모드 종료
+                            setNavigationMode(false);
+                            setCurrentFolderIndex(0);
+                        }
                     }
                 }
             } else if (e.key === "Escape") {
                 // 네비게이션 모드 취소
                 setNavigationMode(false);
                 setCurrentFolderIndex(0);
+                if (onFolderSelect) {
+                    onFolderSelect(null);
+                }
             }
         }
-    }, [showCreateFolder, handleFolderCreate, navigationMode, selectedTreeId, folders, currentFolderIndex, onTreeMoveToFolder, trees]);
+    }, [showCreateFolder, handleFolderCreate, navigationMode, localSelectedTreeId, folders, currentFolderIndex, onTreeMoveToFolder, onFolderSelect, trees]);
 
 
     // 키보드 이벤트 리스너 등록
@@ -247,7 +285,7 @@ const VoranBoxManager = ({
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, "voran", null)}
                     >
-                        <div className="border-b border-slate-700/50 px-4 py-3">
+                        <div className="border-b border-slate-700/50 px-4 h-[87px] flex flex-col justify-center">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-lg font-semibold text-slate-200">VORAN BOX</h3>
@@ -267,7 +305,7 @@ const VoranBoxManager = ({
                             <p className="mt-1 text-xs text-slate-400">
                                 저장된 트리들을 관리하세요
                             </p>
-                            {navigationMode && selectedTreeId && (
+                            {navigationMode && localSelectedTreeId && (
                                 <div className="mt-2 text-xs text-blue-400 font-medium">
                                     탭키로 폴더를 선택하고 엔터로 저장하세요
                                 </div>
@@ -292,7 +330,7 @@ const VoranBoxManager = ({
                             ) : (
                                 <div className="space-y-2">
                                     {voranTrees.map((tree) => {
-                                        const isSelected = tree.id === selectedTreeId;
+                                        const isSelected = tree.id === localSelectedTreeId;
                                         const isDragging = draggedTreeId === tree.id;
 
                                         return (
@@ -347,7 +385,7 @@ const VoranBoxManager = ({
 
                     {/* 폴더 관리 영역 */}
                     <div className="flex-1 bg-slate-900/40">
-                        <div className="border-b border-slate-700/50 px-4 py-3">
+                        <div className="px-4 pt-3 pb-0">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-semibold text-slate-200">폴더 관리</h3>
                                 <Button
@@ -359,9 +397,53 @@ const VoranBoxManager = ({
                                     <FolderPlus className="h-4 w-4" />
                                 </Button>
                             </div>
-                            <p className="mt-1 text-xs text-slate-400">
-                                트리를 폴더별로 정리하세요
-                            </p>
+                        </div>
+
+                        {/* 폴더 목록 (상단 1행) */}
+                        <div className="px-4 py-2 border-b border-slate-700/50">
+                            <div className="flex gap-2 overflow-x-auto">
+                                {folders.length === 0 ? (
+                                    <div className="flex items-center justify-center py-4 text-center">
+                                        <p className="text-sm text-slate-400">폴더가 없습니다</p>
+                                    </div>
+                                ) : (
+                                    folders.map((folder, index) => {
+                                        const isNavigationSelected = navigationMode && index === currentFolderIndex;
+                                        const isDragTarget = dragOverTarget?.type === "folder" && dragOverTarget?.id === folder.id;
+
+                                        return (
+                                            <button
+                                                key={folder.id}
+                                                className={cn(
+                                                    "flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-slate-800/80 border border-slate-700/50",
+                                                    "hover:bg-slate-700/80 hover:border-slate-600/50",
+                                                    (selectedFolderId === folder.id || isNavigationSelected) && "bg-blue-600/30 border-blue-500/70",
+                                                    isDragTarget && "bg-blue-900/30 border-blue-500/70"
+                                                )}
+                                                onClick={() => {
+                                                    if (onFolderSelect) {
+                                                        onFolderSelect(folder.id);
+                                                    }
+                                                    // 폴더 클릭 시에도 네비게이션 모드 활성화
+                                                    if (localSelectedTreeId) {
+                                                        setNavigationMode(true);
+                                                        setCurrentFolderIndex(index);
+                                                    }
+                                                }}
+                                                onDragOver={(e) => handleDragOver(e, "folder", folder.id)}
+                                                onDragLeave={handleDragLeave}
+                                                onDrop={(e) => handleDrop(e, "folder", folder.id)}
+                                            >
+                                                <Folder className="h-3 w-3 text-slate-400" />
+                                                <span className="text-slate-200">{folder.name}</span>
+                                                <span className="text-xs text-slate-400 bg-slate-700 px-1 py-0.5 rounded-full">
+                                                    {folderTreeCounts[folder.id] || 0}
+                                                </span>
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
                         </div>
 
                         {/* 폴더 생성 폼 */}
@@ -409,44 +491,76 @@ const VoranBoxManager = ({
                             )}
                         </AnimatePresence>
 
-                        {/* 폴더 목록 (상단 1행) */}
-                        <div className="px-4 py-3">
-                            <div className="flex gap-2 overflow-x-auto">
-                                {folders.length === 0 ? (
-                                    <div className="flex items-center justify-center py-4 text-center">
-                                        <p className="text-sm text-slate-400">폴더가 없습니다</p>
-                                    </div>
-                                ) : (
-                                    folders.map((folder, index) => {
-                                        const isNavigationSelected = navigationMode && index === currentFolderIndex;
-                                        const isDragTarget = dragOverTarget?.type === "folder" && dragOverTarget?.id === folder.id;
+                        {/* 선택된 폴더의 트리 목록 */}
+                        {selectedFolderId && (
+                            <div className="flex-1 overflow-y-auto px-4 py-3">
+                                {(() => {
+                                    const selectedFolder = folders.find(f => f.id === selectedFolderId);
+                                    const folderTrees = trees.filter(tree => tree.folderId === selectedFolderId);
 
-                                        return (
-                                            <button
-                                                key={folder.id}
-                                                className={cn(
-                                                    "flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
-                                                    "hover:bg-slate-800/50",
-                                                    selectedFolderId === folder.id && "bg-blue-600/20 border border-blue-500/50",
-                                                    isNavigationSelected && "bg-blue-900/20 border border-blue-500/50 ring-2 ring-blue-500/30",
-                                                    isDragTarget && "bg-blue-900/20 border border-blue-500/50"
-                                                )}
-                                                onClick={() => onFolderSelect && onFolderSelect(folder.id)}
-                                                onDragOver={(e) => handleDragOver(e, "folder", folder.id)}
-                                                onDragLeave={handleDragLeave}
-                                                onDrop={(e) => handleDrop(e, "folder", folder.id)}
-                                            >
-                                                <Folder className="h-4 w-4 text-slate-400" />
-                                                <span className="text-slate-200">{folder.name}</span>
-                                                <span className="text-xs text-slate-400 bg-slate-700 px-1.5 py-0.5 rounded-full">
-                                                    {folderTreeCounts[folder.id] || 0}
-                                                </span>
-                                            </button>
-                                        );
-                                    })
-                                )}
+                                    return (
+                                        <div className="space-y-2">
+                                            {folderTrees.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center py-8 text-center">
+                                                    <TreeIcon className="h-8 w-8 text-slate-600 mb-2" />
+                                                    <p className="text-sm text-slate-400">이 폴더에 트리가 없습니다</p>
+                                                </div>
+                                            ) : (
+                                                folderTrees.map((tree) => {
+                                                    const isSelected = tree.id === localSelectedTreeId;
+                                                    const isDragging = draggedTreeId === tree.id;
+
+                                                    return (
+                                                        <motion.div
+                                                            key={tree.id}
+                                                            initial={{ opacity: 0, y: -10 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            exit={{ opacity: 0, y: -10 }}
+                                                            transition={{ duration: 0.2 }}
+                                                            draggable
+                                                            onDragStart={(e) => handleTreeDragStart(e, tree.id)}
+                                                            onDragEnd={handleTreeDragEnd}
+                                                            onClick={() => handleTreeClick(tree)}
+                                                            onDoubleClick={() => handleTreeDoubleClick(tree)}
+                                                            className={cn(
+                                                                "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all cursor-pointer",
+                                                                "hover:bg-slate-800/50 active:bg-slate-800/70",
+                                                                isSelected && "bg-slate-700/50 border border-slate-600/50",
+                                                                isDragging && "opacity-50 scale-95"
+                                                            )}
+                                                        >
+                                                            <TreeIcon className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="font-medium text-slate-200 truncate">
+                                                                    {tree.title || "제목 없는 트리"}
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-xs text-slate-400">
+                                                                    <Clock className="h-3 w-3" />
+                                                                    <span>{formatDate(tree.updatedAt)}</span>
+                                                                    <span>•</span>
+                                                                    <span>{tree.treeData?.nodes?.length || 0}개 노드</span>
+                                                                </div>
+                                                            </div>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleTreeMoveToFolder(tree);
+                                                                }}
+                                                            >
+                                                                <MoreHorizontal className="h-3 w-3" />
+                                                            </Button>
+                                                        </motion.div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                             </div>
-                        </div>
+                        )}
                     </div>
                 </motion.div>
             </motion.div>
