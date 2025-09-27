@@ -332,3 +332,22 @@ export const deleteTree = async (treeId) => {
     throw error;
   }
 };
+
+export const deleteNodes = async ({ nodeIds, userId }) => {
+  const supabase = ensureSupabase();
+
+  if (!nodeIds || !nodeIds.length) {
+    return;
+  }
+
+  const timestamp = Date.now();
+  const { error } = await supabase
+    .from('nodes')
+    .update({ deleted_at: timestamp, updated_at: timestamp })
+    .in('id', nodeIds)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw error;
+  }
+};

@@ -65,7 +65,7 @@ export const useSmartPositioning = (nodePosition, panelSize, viewTransform, cont
       width: finalWidth,
       height: finalHeight
     };
-  }, [nodePosition, panelSize, viewTransform, containerRef]);
+  }, [nodePosition.x, nodePosition.y, panelSize.width, panelSize.height, viewTransform.x, viewTransform.y, viewTransform.k, containerRef?.current]);
 
   // Update position when dependencies change
   useEffect(() => {
@@ -97,14 +97,14 @@ export const useSmartPositioning = (nodePosition, panelSize, viewTransform, cont
         resizeObserverRef.current.disconnect();
       }
     };
-  }, [calculateOptimalPosition, containerRef]);
+  }, [calculateOptimalPosition]); // containerRef 제거
 
   // Listen for zoom/pan changes
   useEffect(() => {
     const optimal = calculateOptimalPosition();
     setPosition({ x: optimal.x, y: optimal.y });
     setAdjustedSize({ width: optimal.width, height: optimal.height });
-  }, [viewTransform.x, viewTransform.y, viewTransform.k, calculateOptimalPosition]);
+  }, [calculateOptimalPosition]); // 개별 viewTransform 속성 제거
 
   return {
     position,

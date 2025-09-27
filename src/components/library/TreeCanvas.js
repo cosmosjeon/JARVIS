@@ -3,7 +3,7 @@ import { Calendar, FileText } from "lucide-react";
 
 import WidgetTreeViewer from "./WidgetTreeViewer";
 
-const TreeCanvas = ({ selectedMemo, onNodeSelect }) => {
+const TreeCanvas = ({ selectedMemo, onNodeSelect, onNodeRemove }) => {
   const nodeCount = useMemo(() => selectedMemo?.treeData?.nodes?.length ?? 0, [selectedMemo]);
 
   const formatDate = (value) =>
@@ -49,6 +49,7 @@ const TreeCanvas = ({ selectedMemo, onNodeSelect }) => {
             key={selectedMemo.id}
             treeData={selectedMemo.treeData}
             onNodeSelect={onNodeSelect}
+            onRemoveNode={onNodeRemove}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">

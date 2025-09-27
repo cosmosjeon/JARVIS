@@ -41,7 +41,7 @@ const normalizeTreeData = (treeData) => {
   return { nodes, links };
 };
 
-const WidgetTreeViewer = ({ treeData, onNodeSelect }) => {
+const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const overlayRef = useRef(null);
@@ -217,7 +217,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect }) => {
                 onRequestAnswer={() => { }}
                 onAnswerComplete={() => { }}
                 onAnswerError={() => { }}
-                onRemoveNode={undefined}
+                onRemoveNode={onRemoveNode}
                 hasChildren={childMap.has(node.id) && childMap.get(node.id).size > 0}
                 isCollapsed={false}
                 onToggleCollapse={undefined}

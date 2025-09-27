@@ -12,7 +12,7 @@ const TYPING_INTERVAL_MS = 18;
 
 const MarkdownMessage = ({ text }) => {
   if (!text) return null;
-  
+
   // 간단한 마크다운 파싱 (실제로는 더 정교한 파서가 필요할 수 있음)
   const blocks = text.split('\n\n').map((block, index) => ({
     id: index,
@@ -33,11 +33,11 @@ const MarkdownMessage = ({ text }) => {
   );
 };
 
-const LibraryQAPanel = ({ 
-  selectedNode, 
-  selectedTree, 
+const LibraryQAPanel = ({
+  selectedNode,
+  selectedTree,
   onNodeUpdate,
-  onNewNodeCreated 
+  onNewNodeCreated
 }) => {
   const { user } = useSupabaseAuth();
   const [messages, setMessages] = useState([]);
@@ -45,7 +45,7 @@ const LibraryQAPanel = ({
   const [isComposing, setIsComposing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
-  
+
   const questionServiceRef = useRef(new QuestionService());
   const typingTimers = useRef([]);
   const messagesEndRef = useRef(null);
@@ -53,11 +53,11 @@ const LibraryQAPanel = ({
   // 선택된 노드가 변경될 때 메시지 초기화
   useEffect(() => {
     if (selectedNode) {
-      const initialMessages = Array.isArray(selectedNode.conversation) 
+      const initialMessages = Array.isArray(selectedNode.conversation)
         ? selectedNode.conversation.map(msg => ({
-            ...msg,
-            content: msg.content || msg.text || ''
-          }))
+          ...msg,
+          content: msg.content || msg.text || ''
+        }))
         : [];
       setMessages(initialMessages);
     } else {
@@ -96,7 +96,7 @@ const LibraryQAPanel = ({
     try {
       const result = await window.jarvisAPI[channel](payload);
       console.log(`API 호출 결과: ${channel}`, result);
-      
+
       if (!result.success) {
         throw new Error(result.error?.message || 'API 호출에 실패했습니다.');
       }
@@ -110,7 +110,7 @@ const LibraryQAPanel = ({
   // 답변 생성 및 타이핑 애니메이션
   const animateAssistantResponse = useCallback((assistantId, answerText, context = {}) => {
     clearTypingTimers();
-    
+
     let currentText = '';
     const words = answerText.split(' ');
     let wordIndex = 0;
@@ -120,9 +120,9 @@ const LibraryQAPanel = ({
         currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex];
         wordIndex++;
 
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === assistantId 
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === assistantId
               ? { ...msg, text: currentText }
               : msg
           )
@@ -132,9 +132,9 @@ const LibraryQAPanel = ({
         typingTimers.current.push(timer);
       } else {
         // 타이핑 완료
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === assistantId 
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === assistantId
               ? { ...msg, status: 'complete' }
               : msg
           )
@@ -161,9 +161,6 @@ const LibraryQAPanel = ({
     const userId = `${timestamp}-user`;
     const assistantId = `${timestamp}-assistant`;
 
-    // 첫 번째 질문인지 확인 (기존 대화가 없으면 첫 번째)
-    const isFirstQuestion = messages.length === 0;
-
     // 사용자 메시지 추가
     const userMessage = {
       id: userId,
@@ -182,37 +179,32 @@ const LibraryQAPanel = ({
       timestamp: timestamp + 1
     };
 
-    // 첫 번째 질문이면 기존 노드에 추가, 아니면 새 노드로 바로 이동
-    if (isFirstQuestion) {
-      setMessages(prev => [...prev, userMessage, assistantMessage]);
-    } else {
-      // 두 번째 질문부터는 즉시 새 노드로 이동
-      const newNodeId = `node_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
-      const keyword = question.split(' ').slice(0, 3).join(' ') || 'Q';
-      
-      const newNode = {
-        id: newNodeId,
-        keyword: keyword,
-        question: question,
-        answer: '', // 답변은 나중에 채움
-        status: 'asking',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        conversation: [userMessage, assistantMessage],
-        parentId: selectedNode.id,
-        level: (selectedNode.level || 0) + 1
-      };
+    // 라이브러리에서는 모든 질문을 새 노드로 생성
+    const newNodeId = `node_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
+    const keyword = question.split(' ').slice(0, 3).join(' ') || 'Q';
 
-      // 새 노드로 즉시 전환하고 메시지도 설정
-      setMessages([userMessage, assistantMessage]);
-      
-      if (onNewNodeCreated) {
-        onNewNodeCreated(newNode, {
-          source: newNode.parentId,
-          target: newNode.id,
-          value: 1
-        });
-      }
+    const newNode = {
+      id: newNodeId,
+      keyword: keyword,
+      question: question,
+      answer: '', // 답변은 나중에 채움
+      status: 'asking',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      conversation: [userMessage, assistantMessage],
+      parentId: selectedNode.id,
+      level: (selectedNode.level || 0) + 1
+    };
+
+    // 새 노드로 즉시 전환하고 메시지도 설정
+    setMessages([userMessage, assistantMessage]);
+
+    if (onNewNodeCreated) {
+      onNewNodeCreated(newNode, {
+        source: newNode.parentId,
+        target: newNode.id,
+        value: 1
+      });
     }
 
     try {
@@ -221,9 +213,9 @@ const LibraryQAPanel = ({
         role: msg.role,
         content: msg.content || msg.text || ''
       })).filter(msg => msg.content && msg.content.trim());
-      
+
       console.log('변환된 OpenAI 메시지:', openaiMessages);
-      
+
       const response = await invokeAgent('askRoot', {
         messages: openaiMessages
       });
@@ -235,72 +227,42 @@ const LibraryQAPanel = ({
       // 답변 애니메이션 시작
       animateAssistantResponse(assistantId, response.answer);
 
-      if (isFirstQuestion) {
-        // 첫 번째 질문: 기존 노드 업데이트
-        const updatedMessages = [...messages, userMessage, {
-          ...assistantMessage,
-          text: response.answer,
-          status: 'complete'
-        }];
+      // 새로 생성된 노드 업데이트
+      const updatedMessages = [userMessage, {
+        ...assistantMessage,
+        text: response.answer,
+        status: 'complete'
+      }];
 
-        const updatedNode = {
-          ...selectedNode,
-          conversation: updatedMessages,
-          answer: response.answer,
-          status: 'answered',
-          updatedAt: timestamp
-        };
+      const updatedNode = {
+        ...newNode,
+        conversation: updatedMessages,
+        answer: response.answer,
+        status: 'answered',
+        updatedAt: timestamp
+      };
 
-        // 데이터베이스 업데이트
-        await upsertTreeNodes({
-          treeId: selectedTree.id,
-          nodes: [updatedNode],
-          userId: user.id
-        });
+      // 데이터베이스에 새 노드 저장
+      await upsertTreeNodes({
+        treeId: selectedTree.id,
+        nodes: [updatedNode],
+        userId: user.id
+      });
 
-        // 로컬 상태 업데이트
-        if (onNodeUpdate) {
-          onNodeUpdate(updatedNode);
-        }
-      } else {
-        // 두 번째 질문 이후: 새 노드 업데이트
-        const updatedMessages = [userMessage, {
-          ...assistantMessage,
-          text: response.answer,
-          status: 'complete'
-        }];
-
-        // 현재 선택된 노드(새로 생성된 노드) 업데이트
-        const updatedNode = {
-          ...selectedNode,
-          conversation: updatedMessages,
-          answer: response.answer,
-          status: 'answered',
-          updatedAt: timestamp
-        };
-
-        // 데이터베이스에 새 노드 저장
-        await upsertTreeNodes({
-          treeId: selectedTree.id,
-          nodes: [updatedNode],
-          userId: user.id
-        });
-
-        // 로컬 상태 업데이트
-        if (onNodeUpdate) {
-          onNodeUpdate(updatedNode);
-        }
+      // 로컬 상태 업데이트
+      if (onNodeUpdate) {
+        onNodeUpdate(updatedNode);
       }
 
     } catch (error) {
       console.error('질문 처리 실패:', error);
       const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
       setError(errorMessage);
-      
+
       // 에러 메시지로 교체
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === assistantId 
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === assistantId
             ? { ...msg, text: `오류: ${errorMessage}`, status: 'error' }
             : msg
         )
@@ -363,7 +325,7 @@ const LibraryQAPanel = ({
           {selectedNode.keyword || selectedNode.id}
         </div>
       </CardHeader>
-      
+
       <CardContent className="flex flex-1 flex-col space-y-3">
         {/* 메시지 영역 */}
         <ScrollArea className="flex-1 pr-2">
@@ -376,18 +338,17 @@ const LibraryQAPanel = ({
               messages.map((message) => {
                 const isAssistant = message.role === 'assistant';
                 const Icon = isAssistant ? Bot : User;
-                
+
                 return (
                   <div
                     key={message.id}
                     className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                        isAssistant
-                          ? 'bg-muted/50 text-foreground'
-                          : 'bg-primary text-primary-foreground'
-                      }`}
+                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${isAssistant
+                        ? 'bg-muted/50 text-foreground'
+                        : 'bg-primary text-primary-foreground'
+                        }`}
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <Icon className="h-3 w-3" />

@@ -6,7 +6,7 @@ import { Button } from "components/ui/button";
 import TreeCanvas from "./TreeCanvas";
 import LibraryQAPanel from "./LibraryQAPanel";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
-import { fetchTreesWithNodes, deleteTree } from "services/supabaseTrees";
+import { fetchTreesWithNodes, deleteTree, deleteNodes } from "services/supabaseTrees";
 import { createTreeForUser, openWidgetForTree } from "services/treeCreation";
 
 const EmptyState = ({ message }) => (
@@ -61,11 +61,11 @@ const LibraryApp = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]); // user 객체 전체 대신 user.id만 의존성으로 사용
 
   useEffect(() => {
     refreshLibrary();
-  }, [refreshLibrary]);
+  }, [user?.id, refreshLibrary]); // user.id와 refreshLibrary를 의존성으로 사용
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.jarvisAPI?.onLibraryRefresh !== "function") {
@@ -135,18 +135,18 @@ const LibraryApp = () => {
 
   // 노드 업데이트 핸들러
   const handleNodeUpdate = useCallback((updatedNode) => {
-    setTrees(prevTrees => 
-      prevTrees.map(tree => 
-        tree.id === selectedTree?.id 
+    setTrees(prevTrees =>
+      prevTrees.map(tree =>
+        tree.id === selectedTree?.id
           ? {
-              ...tree,
-              treeData: {
-                ...tree.treeData,
-                nodes: tree.treeData?.nodes?.map(node => 
-                  node.id === updatedNode.id ? updatedNode : node
-                ) || []
-              }
+            ...tree,
+            treeData: {
+              ...tree.treeData,
+              nodes: tree.treeData?.nodes?.map(node =>
+                node.id === updatedNode.id ? updatedNode : node
+              ) || []
             }
+          }
           : tree
       )
     );
@@ -154,29 +154,89 @@ const LibraryApp = () => {
 
   // 새 노드 생성 핸들러
   const handleNewNodeCreated = useCallback((newNode, newLink) => {
-    setTrees(prevTrees => 
-      prevTrees.map(tree => 
-        tree.id === selectedTree?.id 
+    setTrees(prevTrees =>
+      prevTrees.map(tree =>
+        tree.id === selectedTree?.id
           ? {
-              ...tree,
-              treeData: {
-                ...tree.treeData,
-                nodes: [...(tree.treeData?.nodes || []), newNode],
-                links: [
-                  ...(tree.treeData?.links || []),
-                  newLink || {
-                    source: newNode.parentId,
-                    target: newNode.id,
-                    value: 1
-                  }
-                ]
-              }
+            ...tree,
+            treeData: {
+              ...tree.treeData,
+              nodes: [...(tree.treeData?.nodes || []), newNode],
+              links: [
+                ...(tree.treeData?.links || []),
+                newLink || {
+                  source: newNode.parentId,
+                  target: newNode.id,
+                  value: 1
+                }
+              ]
             }
+          }
           : tree
       )
     );
     setSelectedNode(newNode);
   }, [selectedTree]);
+
+  // 노드 삭제 핸들러
+  const handleNodeRemove = useCallback(async (nodeId) => {
+    if (!selectedTree || !user) {
+      return;
+    }
+
+    // 확인 대화상자
+    const confirmed = window.confirm("이 노드를 삭제하시겠습니까? 하위 노드들도 함께 삭제됩니다.");
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      // 하위 노드들도 함께 찾기
+      const getAllChildNodes = (parentId, nodes) => {
+        const children = nodes.filter(node => node.parentId === parentId);
+        let allChildren = [...children];
+        children.forEach(child => {
+          allChildren = [...allChildren, ...getAllChildNodes(child.id, nodes)];
+        });
+        return allChildren;
+      };
+
+      const allNodesToDelete = [nodeId, ...getAllChildNodes(nodeId, selectedTree.treeData?.nodes || [])];
+      
+      // 데이터베이스에서 노드들 삭제
+      await deleteNodes({
+        nodeIds: allNodesToDelete,
+        userId: user.id
+      });
+
+      // 로컬 상태에서 노드들 제거
+      setTrees(prevTrees =>
+        prevTrees.map(tree =>
+          tree.id === selectedTree.id
+            ? {
+              ...tree,
+              treeData: {
+                ...tree.treeData,
+                nodes: (tree.treeData?.nodes || []).filter(node => !allNodesToDelete.includes(node.id)),
+                links: (tree.treeData?.links || []).filter(link => 
+                  !allNodesToDelete.includes(link.source) && !allNodesToDelete.includes(link.target)
+                )
+              }
+            }
+            : tree
+        )
+      );
+
+      // 삭제된 노드가 선택된 노드라면 선택 해제
+      if (allNodesToDelete.includes(selectedNode?.id)) {
+        setSelectedNode(null);
+      }
+
+    } catch (error) {
+      console.error('노드 삭제 실패:', error);
+      alert('노드 삭제 중 오류가 발생했습니다.');
+    }
+  }, [selectedTree, user, selectedNode]);
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100">
@@ -205,8 +265,8 @@ const LibraryApp = () => {
                       handleTreeDelete(tree.id);
                     }}
                     className={`flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${isActive
-                        ? "bg-slate-800 text-slate-50"
-                        : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
+                      ? "bg-slate-800 text-slate-50"
+                      : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
                       }`}
                   >
                     <FolderIcon className="h-4 w-4" />
@@ -296,12 +356,13 @@ const LibraryApp = () => {
           <div className="flex h-full">
             {/* 트리 뷰어 */}
             <div className="flex-1">
-              <TreeCanvas 
-                selectedMemo={selectedTree} 
+              <TreeCanvas
+                selectedMemo={selectedTree}
                 onNodeSelect={handleNodeSelect}
+                onNodeRemove={handleNodeRemove}
               />
             </div>
-            
+
             {/* 질문 답변 패널 */}
             <div className="w-80 border-l border-slate-900/60 bg-slate-950/40">
               <LibraryQAPanel
