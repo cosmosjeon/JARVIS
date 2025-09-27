@@ -117,13 +117,16 @@ const AdminWidgetPanel = () => {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent">
       <div className="flex flex-col items-center gap-2" style={{ WebkitAppRegion: 'drag' }}>
-        <div className="flex h-12 items-center gap-2 rounded-full bg-gradient-to-br from-[#111827] via-[#1f2937] to-[#0f172a] px-3 py-2 shadow-2xl ring-1 ring-slate-800/70 backdrop-blur-md">
+        <div className="flex h-12 items-center gap-2 rounded-full bg-slate-900/80 px-3 py-2 ring-1 ring-slate-800/50 backdrop-blur-xl">
           {/* Voran 로고 */}
           <button
             type="button"
             onClick={handleVoranClick}
-            className="flex h-8 w-8 items-center justify-center transition hover:bg-slate-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
-            style={{ WebkitAppRegion: 'no-drag' }}
+            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-slate-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
+            style={{ 
+              WebkitAppRegion: 'no-drag',
+              boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
+            }}
           >
             <img src={adminWidgetLogo} alt="Voran" className="h-6 w-6" draggable={false} />
           </button>
@@ -138,7 +141,12 @@ const AdminWidgetPanel = () => {
                 ? 'bg-sky-600/60 text-slate-200'
                 : 'bg-[#1f8ab5] text-white hover:bg-[#2ba5d3] active:bg-[#1978a0]'
             }`}
-            style={{ WebkitAppRegion: 'no-drag' }}
+            style={{ 
+              WebkitAppRegion: 'no-drag',
+              boxShadow: creating 
+                ? '2px 2px 4px rgba(0, 0, 0, 0.2), -2px -2px 4px rgba(255, 255, 255, 0.05)'
+                : '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
+            }}
           >
             NEW
           </button>
@@ -150,7 +158,10 @@ const AdminWidgetPanel = () => {
               type="button"
               onClick={() => handleFolderClick(tree)}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-cyan-400 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70"
-              style={{ WebkitAppRegion: 'no-drag' }}
+              style={{ 
+                WebkitAppRegion: 'no-drag',
+                boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
+              }}
               title={tree.title}
             >
               <Folder className="h-4 w-4" />
@@ -159,7 +170,12 @@ const AdminWidgetPanel = () => {
 
           {/* 빈 폴더 아이콘 (트리가 2개 미만일 때) */}
           {recentTrees.length < 2 && (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-slate-500">
+            <div 
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-slate-500"
+              style={{
+                boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
+              }}
+            >
               <Folder className="h-4 w-4" />
             </div>
           )}
@@ -168,7 +184,10 @@ const AdminWidgetPanel = () => {
           <button
             type="button"
             className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-slate-400 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
-            style={{ WebkitAppRegion: 'drag' }}
+            style={{ 
+              WebkitAppRegion: 'drag',
+              boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
+            }}
             title="위젯 이동"
           >
             <GripVertical className="h-4 w-4" />
