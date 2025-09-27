@@ -96,6 +96,7 @@ const NodeAssistantPanel = ({
   onRequestAnswer,
   onAnswerComplete,
   onAnswerError,
+  onCloseNode = () => { },
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -135,6 +136,11 @@ const NodeAssistantPanel = ({
   const questionServiceRef = useRef(externalQuestionService ?? new QuestionService());
   const isHydratingRef = useRef(true);
   const hasBootstrappedRef = useRef(false);
+
+  // initialConversation이 변경되면 messages 업데이트
+  useEffect(() => {
+    setMessages(normalizedInitialConversation);
+  }, [normalizedInitialConversation]);
   const panelRef = useRef(null);
   const highlightRootRef = useRef(null);
   const highlighterRef = useRef(null);
@@ -454,68 +460,80 @@ const NodeAssistantPanel = ({
       const userId = `${timestamp}-user`;
       const assistantId = `${timestamp}-assistant`;
 
-      setMessages((prev) => [
-        ...prev,
-        { id: userId, role: 'user', text: question },
-        { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
-      ]);
+      // 첫 번째 질문만 기존 노드에 추가, 두 번째 질문부터는 새 노드로 생성
+      const isFirstQuestion = messages.length === 0;
 
-      try {
-        let answerText = overrideAnswerText ?? '';
-        let metadata = null;
-
-        if (!answerText) {
-          if (typeof onRequestAnswer === 'function') {
-            const result = await onRequestAnswer({
-              node,
-              question,
-              isRootNode: resolvedIsRootNode,
-              shouldCreateChild,
-            });
-            answerText = result?.answer ?? '';
-            metadata = result || {};
-          } else {
-            answerText = buildAnswerText(summary, question);
-          }
-        }
-
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantId
-              ? { ...message, text: '', status: 'typing' }
-              : message,
-          ),
-        );
-
-        animateAssistantResponse(assistantId, answerText, {
-          question,
-          metadata,
-          shouldCreateChild,
-          isRootNode: resolvedIsRootNode,
-        });
-
+      if (isFirstQuestion) {
+        // 첫 번째 질문: 기존 노드에 추가
+        setMessages((prev) => [
+          ...prev,
+          { id: userId, role: 'user', text: question },
+          { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
+        ]);
+      } else {
+        // 두 번째 질문부터: 질문 입력 즉시 기존 노드 닫고 새 노드 생성
         if (shouldCreateChild && onSecondQuestion) {
-          await onSecondQuestion(node.id, question, answerText, metadata);
+          // 질문 입력 즉시 기존 노드 닫기
+          onCloseNode();
+
+          // 즉시 새 노드 생성
+          await onSecondQuestion(node.id, question, '', {});
+
+          return; // 새 노드로 생성했으므로 여기서 종료
         }
-      } catch (error) {
-        const messageText = error?.message || '요청 처리 중 오류가 발생했습니다.';
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantId
-              ? { ...message, text: `⚠️ ${messageText}`, status: 'error' }
-              : message,
-          ),
-        );
-        if (resolvedIsRootNode && !skipSecondQuestionCheck) {
-          const current = questionServiceRef.current.getQuestionCount(node.id);
-          questionServiceRef.current.setQuestionCount(node.id, Math.max(current - 1, 0));
+      }
+
+      // 첫 번째 질문일 때만 답변 생성
+      if (isFirstQuestion) {
+        try {
+          let answerText = overrideAnswerText ?? '';
+          let metadata = null;
+
+          if (!answerText) {
+            if (typeof onRequestAnswer === 'function') {
+              const result = await onRequestAnswer({
+                node,
+                question,
+                isRootNode: resolvedIsRootNode,
+                shouldCreateChild: false, // 첫 번째 질문이므로 자식 노드 생성하지 않음
+              });
+              answerText = result?.answer ?? '';
+              metadata = result || {};
+            } else {
+              answerText = buildAnswerText(summary, question);
+            }
+          }
+
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? { ...message, text: '', status: 'typing' }
+                : message,
+            ),
+          );
+
+          animateAssistantResponse(assistantId, answerText, {
+            question,
+            metadata,
+            shouldCreateChild: false, // 첫 번째 질문이므로 자식 노드 생성하지 않음
+            isRootNode: resolvedIsRootNode,
+          });
+        } catch (error) {
+          const messageText = error?.message || '요청 처리 중 오류가 발생했습니다.';
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? { ...message, text: `⚠️ ${messageText}`, status: 'error' }
+                : message,
+            ),
+          );
+          onAnswerError?.(node.id, {
+            question,
+            error,
+            shouldCreateChild: false,
+            isRootNode: resolvedIsRootNode,
+          });
         }
-        onAnswerError?.(node.id, {
-          question,
-          error,
-          shouldCreateChild,
-          isRootNode: resolvedIsRootNode,
-        });
       }
     },
     [
@@ -553,6 +571,7 @@ const NodeAssistantPanel = ({
         const userId = `${timestamp}-user`;
         const assistantId = `${timestamp}-assistant`;
 
+        // Bootstrap 모드에서는 첫 번째 질문만 기존 노드에 추가
         setMessages((prev) => [
           ...prev,
           { id: userId, role: 'user', text: trimmed },
@@ -566,10 +585,10 @@ const NodeAssistantPanel = ({
             prev.map((message) =>
               message.id === assistantId
                 ? {
-                    ...message,
-                    text: `⚠️ ${error?.message || '루트 노드 생성 중 오류가 발생했습니다.'}`,
-                    status: 'error',
-                  }
+                  ...message,
+                  text: `⚠️ ${error?.message || '루트 노드 생성 중 오류가 발생했습니다.'}`,
+                  status: 'error',
+                }
                 : message,
             ),
           );
@@ -596,7 +615,7 @@ const NodeAssistantPanel = ({
           }
           return;
         }
-        handleSend().catch(() => {});
+        handleSend().catch(() => { });
       }
     },
     [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode],
@@ -677,7 +696,7 @@ const NodeAssistantPanel = ({
           className="glass-surface flex items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
           onSubmit={(event) => {
             event.preventDefault();
-            handleSend().catch(() => {});
+            handleSend().catch(() => { });
           }}
           style={{ pointerEvents: 'auto', zIndex: 1002 }}
         >
@@ -686,9 +705,8 @@ const NodeAssistantPanel = ({
             aria-label="하이라이트 모드"
             aria-pressed={isHighlightMode}
             onClick={handleHighlightToggle}
-            className={`glass-chip flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-200/60 ${
-              isHighlightMode ? 'bg-emerald-500/40 text-emerald-100' : 'bg-white/10 text-slate-100 hover:bg-white/20'
-            }`}
+            className={`glass-chip flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-200/60 ${isHighlightMode ? 'bg-emerald-500/40 text-emerald-100' : 'bg-white/10 text-slate-100 hover:bg-white/20'
+              }`}
           >
             🖍
           </button>
