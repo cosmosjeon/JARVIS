@@ -55,7 +55,7 @@ const OAuthCallbackPage = () => {
         <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 12 }}>로그인 정보를 확인했어요</h1>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(226, 232, 240, 0.8)' }}>
           앱으로 자동으로 돌아갑니다. 잠시 기다려 주세요.
-          창이 닫히지 않으면 아래 버튼을 눌러 JARVIS를 다시 열어 주세요.
+          창이 닫히지 않으면 아래 버튼을 눌러 VORAN을 다시 열어 주세요.
         </p>
         <button
           type="button"

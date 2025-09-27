@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, FolderTree as FolderIcon } from "lucide-react";
 
 import { Button } from "components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "components/ui/resizable";
 
 import TreeCanvas from "./TreeCanvas";
 import LibraryQAPanel from "./LibraryQAPanel";
@@ -353,26 +354,29 @@ const LibraryApp = () => {
         ) : error ? (
           <EmptyState message={error?.message || "트리를 불러오지 못했습니다."} />
         ) : selectedTree ? (
-          <div className="flex h-full max-h-screen overflow-hidden">
+          <ResizablePanelGroup direction="horizontal" className="h-full max-h-screen">
             {/* 트리 뷰어 */}
-            <div className="flex-1 min-h-0">
+            <ResizablePanel defaultSize={70} minSize={30} className="min-h-0">
               <TreeCanvas
                 selectedMemo={selectedTree}
                 onNodeSelect={handleNodeSelect}
                 onNodeRemove={handleNodeRemove}
               />
-            </div>
+            </ResizablePanel>
+
+            {/* 리사이즈 핸들 */}
+            <ResizableHandle withHandle className="bg-slate-700 hover:bg-slate-600" />
 
             {/* 질문 답변 패널 */}
-            <div className="w-80 border-l border-slate-900/60 bg-slate-950/40 h-full max-h-screen overflow-hidden flex-shrink-0">
+            <ResizablePanel defaultSize={30} minSize={20} maxSize={50} className="bg-slate-950/40">
               <LibraryQAPanel
                 selectedNode={selectedNode}
                 selectedTree={selectedTree}
                 onNodeUpdate={handleNodeUpdate}
                 onNewNodeCreated={handleNewNodeCreated}
               />
-            </div>
-          </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
         ) : (
           <EmptyState message="트리를 선택해주세요." />
         )}

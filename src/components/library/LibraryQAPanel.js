@@ -105,7 +105,7 @@ const LibraryQAPanel = ({
   // LLM API 호출
   const invokeAgent = useCallback(async (channel, payload = {}) => {
     if (typeof window === 'undefined' || !window.jarvisAPI) {
-      throw new Error('JARVIS API를 사용할 수 없습니다.');
+      throw new Error('VORAN API를 사용할 수 없습니다.');
     }
 
     console.log(`API 호출 시도: ${channel}`, payload);
@@ -330,7 +330,7 @@ const LibraryQAPanel = ({
       <CardHeader className="pb-3 flex-shrink-0">
         <CardTitle className="text-base flex items-center gap-2">
           <Bot className="h-4 w-4" />
-          질문 답변
+          VORAN
           {isProcessing && (
             <Badge variant="outline" className="text-xs">
               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -345,7 +345,7 @@ const LibraryQAPanel = ({
 
       <CardContent className="flex flex-1 flex-col space-y-3 min-h-0 overflow-hidden">
         {/* 메시지 영역 */}
-        <ScrollArea className="flex-1 pr-2 min-h-0 max-h-full">
+        <ScrollArea className="flex-1 min-h-0 max-h-full">
           <div className="space-y-3 h-full">
             {messages.length === 0 ? (
               <div className="text-center text-sm text-muted-foreground py-8">
@@ -362,7 +362,7 @@ const LibraryQAPanel = ({
                     className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${isAssistant
+                      className={`${isAssistant ? 'w-full' : 'max-w-[80%]'} rounded-lg px-3 py-2 text-sm ${isAssistant
                         ? 'bg-muted/50 text-foreground'
                         : 'bg-primary text-primary-foreground'
                         }`}
@@ -370,7 +370,7 @@ const LibraryQAPanel = ({
                       <div className="flex items-center gap-2 mb-1">
                         <Icon className="h-3 w-3" />
                         <span className="text-xs opacity-70">
-                          {isAssistant ? 'JARVIS' : '사용자'}
+                          {isAssistant ? 'VORAN' : '사용자'}
                         </span>
                         {message.status === 'pending' && (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -401,7 +401,7 @@ const LibraryQAPanel = ({
         <div className="flex-shrink-0">
           {!isApiAvailable ? (
             <div className="text-center text-sm text-red-400 bg-red-50 dark:bg-red-950/20 p-3 rounded">
-              JARVIS API를 사용할 수 없습니다. Electron 환경에서 실행해주세요.
+              VORAN API를 사용할 수 없습니다. Electron 환경에서 실행해주세요.
             </div>
           ) : (
             <form

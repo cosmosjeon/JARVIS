@@ -54,7 +54,7 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
         <Card className="w-full max-w-md bg-slate-900 border-slate-800">
           <CardHeader>
             <CardTitle className="text-lg">
-              {mode === 'library' ? '라이브러리에 접속하려면 로그인하세요' : 'JARVIS를 사용하려면 로그인하세요'}
+              {mode === 'library' ? '라이브러리에 접속하려면 로그인하세요' : 'VORAN을 사용하려면 로그인하세요'}
             </CardTitle>
             <CardDescription>
               Google 또는 카카오 계정으로 빠르게 로그인할 수 있어요. 한번 로그인하면 위젯과 라이브러리를 모두 사용할 수 있습니다.

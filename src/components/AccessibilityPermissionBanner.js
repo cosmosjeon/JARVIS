@@ -13,7 +13,7 @@ const AccessibilityPermissionBanner = () => {
       <div>
         <p className="font-semibold">macOS 접근성 권한이 필요합니다</p>
         <p className="text-xs text-rose-100/90">
-          설정 &rsaquo; 보안 및 개인 정보 보호 &rsaquo; 접근성에서 JARVIS를 허용한 뒤, 다시 시도해 주세요.
+          설정 &rsaquo; 보안 및 개인 정보 보호 &rsaquo; 접근성에서 VORAN을 허용한 뒤, 다시 시도해 주세요.
         </p>
       </div>
       <div className="flex gap-2">

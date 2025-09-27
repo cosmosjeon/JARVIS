@@ -7,7 +7,7 @@ import { ScrollArea } from "components/ui/scroll-area";
 import { buildFallbackConversation, sanitizeConversationMessages } from "services/supabaseTrees";
 
 const ROLE_LABEL = {
-  assistant: "JARVIS",
+  assistant: "VORAN",
   user: "사용자",
 };
 
