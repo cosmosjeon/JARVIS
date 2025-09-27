@@ -670,9 +670,11 @@ const NodeAssistantPanel = ({
         position: 'relative',
         zIndex: 1001,
         pointerEvents: 'auto',
+        WebkitAppRegion: 'no-drag',
       }}
       data-interactive-zone="true"
     >
+
       <div
         className="flex flex-wrap items-start justify-between gap-3 pb-2"
         data-pan-handle="true"

@@ -295,6 +295,10 @@ const HierarchicalForceTree = () => {
           nodes: mappedNodes,
           links: Array.isArray(targetTree.treeData?.links) ? targetTree.treeData.links : [],
         });
+        treeLibrarySyncRef.current.set(targetTree.id, {
+          lastCount: mappedNodes.length,
+          refreshed: mappedNodes.length > 0,
+        });
         setActiveTreeId(targetTree.id);
         writeSessionTreeId(targetTree.id);
         if (typeof window !== 'undefined') {
@@ -309,6 +313,9 @@ const HierarchicalForceTree = () => {
         setActiveTreeId(null);
         setData({ nodes: [], links: [] });
         writeSessionTreeId(null);
+        if (resolvedTreeId) {
+          treeLibrarySyncRef.current.delete(resolvedTreeId);
+        }
       }
     } catch (error) {
       setTreeSyncError(error);
@@ -608,6 +615,26 @@ const HierarchicalForceTree = () => {
           nodes: normalizedNodes,
           userId: user.id,
         });
+
+        const stateMap = treeLibrarySyncRef.current;
+        const existingState = stateMap.get(resolvedTreeId) || { lastCount: 0, refreshed: false };
+        const previousCount = existingState.lastCount || 0;
+        const alreadyRefreshed = existingState.refreshed === true;
+        const nextCount = normalizedNodes.length;
+
+        if (!alreadyRefreshed && previousCount === 0 && nextCount > 0 && typeof window !== 'undefined') {
+          try {
+            window.jarvisAPI?.requestLibraryRefresh?.();
+          } catch (error) {
+            // IPC failures are non-fatal for sync notifications
+          }
+          stateMap.set(resolvedTreeId, { lastCount: nextCount, refreshed: true });
+        } else {
+          stateMap.set(resolvedTreeId, {
+            lastCount: nextCount,
+            refreshed: alreadyRefreshed || nextCount > 0,
+          });
+        }
       }
     } catch (error) {
       setTreeSyncError(error);
