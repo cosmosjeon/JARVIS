@@ -217,6 +217,12 @@ module.exports = (logger) => {
       return false;
     }
 
+    logger?.info?.('Windows hotkey register: attempting to register', {
+      accelerator,
+      enableDoubleCtrl,
+      existingHandlers: scopedHandlers.size
+    });
+
     const existing = scopedHandlers.get(accelerator);
     if (existing) {
       logger?.info?.('Windows hotkey re-registering existing accelerator, cleaning up previous listeners', {
@@ -229,9 +235,10 @@ module.exports = (logger) => {
 
     const wrappedHandler = () => {
       try {
+        logger?.info?.('Windows hotkey handler triggered', { accelerator });
         handler();
       } catch (error) {
-        logger?.error?.('Windows hotkey handler failed', { error: error?.message });
+        logger?.error?.('Windows hotkey handler failed', { error: error?.message, accelerator });
       }
     };
 
@@ -253,13 +260,21 @@ module.exports = (logger) => {
     const success = globalShortcut.register(accelerator, wrappedHandler);
     if (success) {
       scopedHandlers.set(accelerator, { handler: wrappedHandler, detach: detachDoubleCtrlListeners });
-      logger?.info?.('Windows hotkey registered', {
+      logger?.info?.('Windows hotkey registered successfully', {
         accelerator,
         enableDoubleCtrl,
         doubleCtrlMode,
+        totalRegistered: scopedHandlers.size
       });
       return true;
     }
+
+    logger?.warn?.('Windows hotkey globalShortcut.register failed', {
+      accelerator,
+      enableDoubleCtrl,
+      doubleCtrlMode,
+      error: 'globalShortcut.register returned false'
+    });
 
     if (enableDoubleCtrl) {
       logger?.warn?.('Windows hotkey accelerator registration failed; relying on double Ctrl listeners only', {
@@ -270,7 +285,10 @@ module.exports = (logger) => {
       return Boolean(detachDoubleCtrlListeners);
     }
 
-    logger?.warn?.('Windows hotkey registration failed and no double Ctrl listeners enabled', { accelerator });
+    logger?.error?.('Windows hotkey registration failed and no double Ctrl listeners enabled', {
+      accelerator,
+      reason: 'globalShortcut.register failed and no fallback available'
+    });
     return false;
   };
 
