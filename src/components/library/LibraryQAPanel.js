@@ -13,22 +13,130 @@ const TYPING_INTERVAL_MS = 18;
 const MarkdownMessage = ({ text }) => {
   if (!text) return null;
 
-  // 간단한 마크다운 파싱 (실제로는 더 정교한 파서가 필요할 수 있음)
-  const blocks = text.split('\n\n').map((block, index) => ({
-    id: index,
-    content: block.trim()
-  }));
+  // 마크다운 파싱 함수
+  const parseMarkdown = (content) => {
+    const lines = content.split('\n');
+    const elements = [];
+    let currentList = null;
+    let currentCodeBlock = null;
+    let codeLanguage = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+
+      // 코드 블록 처리
+      if (trimmedLine.startsWith('```')) {
+        if (currentCodeBlock === null) {
+          // 코드 블록 시작
+          codeLanguage = trimmedLine.slice(3).trim();
+          currentCodeBlock = [];
+        } else {
+          // 코드 블록 끝
+          elements.push(
+            <pre key={`code-${i}`} className="bg-slate-800 text-slate-200 p-3 rounded-md overflow-x-auto my-2">
+              <code className={`language-${codeLanguage}`}>
+                {currentCodeBlock.join('\n')}
+              </code>
+            </pre>
+          );
+          currentCodeBlock = null;
+          codeLanguage = '';
+        }
+        continue;
+      }
+
+      if (currentCodeBlock !== null) {
+        currentCodeBlock.push(line);
+        continue;
+      }
+
+      // 리스트 처리
+      if (trimmedLine.match(/^[-*+]\s/)) {
+        if (!currentList) {
+          currentList = [];
+        }
+        currentList.push(trimmedLine.slice(2));
+        continue;
+      } else if (currentList) {
+        // 리스트 끝
+        elements.push(
+          <ul key={`list-${i}`} className="list-disc list-inside space-y-1 my-2 ml-4">
+            {currentList.map((item, idx) => (
+              <li key={idx} className="text-sm">{item}</li>
+            ))}
+          </ul>
+        );
+        currentList = null;
+      }
+
+      // 헤딩 처리
+      if (trimmedLine.startsWith('### ')) {
+        elements.push(
+          <h3 key={`h3-${i}`} className="text-lg font-semibold mt-4 mb-2 text-slate-200">
+            {trimmedLine.slice(4)}
+          </h3>
+        );
+        continue;
+      }
+
+      if (trimmedLine.startsWith('## ')) {
+        elements.push(
+          <h2 key={`h2-${i}`} className="text-xl font-bold mt-4 mb-2 text-slate-100">
+            {trimmedLine.slice(3)}
+          </h2>
+        );
+        continue;
+      }
+
+      if (trimmedLine.startsWith('# ')) {
+        elements.push(
+          <h1 key={`h1-${i}`} className="text-2xl font-bold mt-4 mb-2 text-slate-100">
+            {trimmedLine.slice(2)}
+          </h1>
+        );
+        continue;
+      }
+
+      // 인라인 코드 처리
+      let processedLine = line;
+      processedLine = processedLine.replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-slate-200 px-1 py-0.5 rounded text-sm">$1</code>');
+      
+      // 굵은 글씨 처리
+      processedLine = processedLine.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-slate-100">$1</strong>');
+      processedLine = processedLine.replace(/__([^_]+)__/g, '<strong class="font-bold text-slate-100">$1</strong>');
+      
+      // 기울임 글씨 처리
+      processedLine = processedLine.replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
+      processedLine = processedLine.replace(/_([^_]+)_/g, '<em class="italic">$1</em>');
+
+      // 빈 줄이 아닌 경우에만 추가
+      if (trimmedLine) {
+        elements.push(
+          <p key={`p-${i}`} className="whitespace-pre-wrap leading-relaxed text-slate-200" dangerouslySetInnerHTML={{ __html: processedLine }} />
+        );
+      } else {
+        elements.push(<br key={`br-${i}`} />);
+      }
+    }
+
+    // 마지막 리스트 처리
+    if (currentList) {
+      elements.push(
+        <ul key="list-final" className="list-disc list-inside space-y-1 my-2 ml-4">
+          {currentList.map((item, idx) => (
+            <li key={idx} className="text-sm">{item}</li>
+          ))}
+        </ul>
+      );
+    }
+
+    return elements;
+  };
 
   return (
-    <div className="space-y-2">
-      {blocks.map((block) => {
-        if (!block.content) return null;
-        return (
-          <p key={block.id} className="whitespace-pre-wrap leading-relaxed">
-            {block.content}
-          </p>
-        );
-      })}
+    <div className="space-y-2 prose prose-invert max-w-none">
+      {parseMarkdown(text)}
     </div>
   );
 };
@@ -359,29 +467,22 @@ const LibraryQAPanel = ({
                 return (
                   <div
                     key={message.id}
-                    className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
+                    className={`${isAssistant ? 'w-full' : 'flex justify-end'}`}
                   >
-                    <div
-                      className={`${isAssistant ? 'w-full' : 'max-w-[80%]'} rounded-lg px-3 py-2 text-sm ${isAssistant
-                        ? 'bg-muted/50 text-foreground'
-                        : 'bg-primary text-primary-foreground'
-                        }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <Icon className="h-3 w-3" />
-                        <span className="text-xs opacity-70">
-                          {isAssistant ? 'VORAN' : '사용자'}
-                        </span>
+                    {isAssistant ? (
+                      <div className="w-full">
                         {message.status === 'pending' && (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <div className="flex items-center gap-2 mb-2">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          </div>
                         )}
-                      </div>
-                      {isAssistant ? (
                         <MarkdownMessage text={message.text} />
-                      ) : (
+                      </div>
+                    ) : (
+                      <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-primary text-primary-foreground">
                         <p className="whitespace-pre-wrap">{message.text}</p>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })

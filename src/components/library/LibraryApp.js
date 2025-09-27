@@ -368,7 +368,7 @@ const LibraryApp = () => {
             <ResizableHandle withHandle className="bg-slate-700 hover:bg-slate-600" />
 
             {/* 질문 답변 패널 */}
-            <ResizablePanel defaultSize={30} minSize={20} maxSize={50} className="bg-slate-950/40">
+            <ResizablePanel defaultSize={30} minSize={20} maxSize={80} className="bg-slate-950/40">
               <LibraryQAPanel
                 selectedNode={selectedNode}
                 selectedTree={selectedTree}
