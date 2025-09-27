@@ -122,17 +122,75 @@ const TreeNode = ({
     return limitWords(currentNode.id || '', 4);
   };
 
-  // Calculate dimensions to fit text properly - apply nodeScaleFactor
-  const keywordLength = (node.keyword || node.id).length;
-  const baseWidth = Math.max(54, keywordLength * 9 + 20) * nodeScaleFactor;
-  const baseHeight = 30 * nodeScaleFactor;
+  // Calculate dimensions to fit text properly - apply nodeScaleFactor consistently
+  const keywordText = node.keyword || node.id;
   const hoverText = summarizeForHover(node);
-  const charUnit = 9 * nodeScaleFactor;
-  const sidePadding = 24 * nodeScaleFactor;
-  const computedHoverWidth = Math.max(54 * nodeScaleFactor, hoverText.length * charUnit + sidePadding);
+
+  // 텍스트 너비를 정확하게 계산하는 함수
+  const calculateTextWidth = (text, fontSize) => {
+    let totalWidth = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      // 한글, 중문, 일문 등은 폰트 크기와 동일한 너비
+      // 영문, 숫자, 기호는 폰트 크기의 약 50-60%
+      if (/[\u3131-\u3163\uAC00-\uD7AF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF]/.test(char)) {
+        totalWidth += fontSize; // 한글, 중문, 일문
+      } else {
+        totalWidth += fontSize * 0.6; // 영문, 숫자, 기호
+      }
+    }
+    return totalWidth;
+  };
+
+  // 폰트 크기와 문자 간격을 고려한 정확한 계산
+  const fontSize = 14 * nodeScaleFactor;
+  const basePadding = 20 * nodeScaleFactor; // 기본 패딩
+  const hoverPadding = 24 * nodeScaleFactor; // 호버 상태 패딩
+  const minWidth = 54 * nodeScaleFactor; // 최소 너비
+
+  // 텍스트가 너무 길면 잘라내는 함수
+  const truncateText = (text, maxWidth, fontSize) => {
+    if (calculateTextWidth(text, fontSize) <= maxWidth) {
+      return text;
+    }
+
+    // 최대 너비에서 "..." 3글자 분량을 뺀 공간에 맞춰 텍스트 자르기
+    const ellipsisWidth = calculateTextWidth("...", fontSize);
+    const availableWidth = maxWidth - ellipsisWidth;
+
+    let truncated = '';
+    for (let i = 0; i < text.length; i++) {
+      const testText = truncated + text[i];
+      if (calculateTextWidth(testText, fontSize) > availableWidth) {
+        break;
+      }
+      truncated = testText;
+    }
+    return truncated + "...";
+  };
+
+  // 기본 노드 크기 계산 (최대 너비 제한)
+  const maxBaseWidth = 200 * nodeScaleFactor; // 최대 기본 너비
+  const maxHoverWidth = 300 * nodeScaleFactor; // 최대 호버 너비
+
+  const keywordTextWidth = calculateTextWidth(keywordText, fontSize);
+  const hoverTextWidth = calculateTextWidth(hoverText, fontSize);
+
+  const idealBaseWidth = Math.max(minWidth, keywordTextWidth + basePadding);
+  const idealHoverWidth = Math.max(minWidth, hoverTextWidth + hoverPadding);
+
+  const baseWidth = Math.min(idealBaseWidth, maxBaseWidth);
+  const baseHeight = 30 * nodeScaleFactor;
+  const computedHoverWidth = Math.min(idealHoverWidth, maxHoverWidth);
   const hoverWidth = Math.max(Math.ceil(baseWidth * 1.35), computedHoverWidth);
   // Only expand horizontally on hover; keep height unchanged
   const hoverHeight = baseHeight;
+
+  // 텍스트 크기에 맞춰 실제 표시할 텍스트 계산
+  const maxKeywordWidth = baseWidth - basePadding;
+  const maxHoverTextWidth = hoverWidth - hoverPadding;
+  const displayKeywordText = truncateText(keywordText, maxKeywordWidth, fontSize);
+  const displayHoverText = truncateText(hoverText, maxHoverTextWidth, fontSize);
   const [chatSize, setChatSize] = useState(() => selectPanelSize(initialConversation, nodeScaleFactor));
   const borderRadius = 8 * nodeScaleFactor; // Subtle rounded corners scaled by window size
 
@@ -460,7 +518,7 @@ const TreeNode = ({
         <motion.text
           textAnchor="middle"
           dominantBaseline="central"
-          fontSize={(displayMode === 'hover' ? 14 : 14) * nodeScaleFactor}
+          fontSize={fontSize}
           fontFamily="Arial, sans-serif"
           fontWeight="bold"
           fill="#666666"
@@ -468,7 +526,7 @@ const TreeNode = ({
           transition={{ duration: 0.15 }}
           y={20 * nodeScaleFactor}
         >
-          {displayMode === 'hover' ? hoverText : (node.keyword || node.id)}
+          {displayMode === 'hover' ? displayHoverText : displayKeywordText}
         </motion.text>
       )}
 
