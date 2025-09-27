@@ -103,14 +103,6 @@ const TreeCanvas = ({ selectedMemo, onMemoUpdate }) => {
 
             <div className="flex items-center gap-3">
               <Badge variant="outline">{nodeCount}개 노드</Badge>
-              <Button
-                variant={isEditMode ? "default" : "outline"}
-                size="sm"
-                onClick={() => setIsEditMode((prev) => !prev)}
-              >
-                <Edit3 className="mr-2 h-4 w-4" />
-                {isEditMode ? "보기 모드" : "편집 모드"}
-              </Button>
             </div>
           </div>
         </div>
