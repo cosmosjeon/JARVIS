@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, FolderTree as FolderIcon } from "lucide-react";
+import { Loader2, FolderTree as FolderIcon, ChevronDown, ChevronRight } from "lucide-react";
 
 import { Button } from "components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "components/ui/resizable";
@@ -35,6 +35,7 @@ const LibraryApp = () => {
   const [folders, setFolders] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
+  const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [foldersLoading, setFoldersLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -668,9 +669,7 @@ const LibraryApp = () => {
       ? [...navSelectedIds]
       : [treeId];
 
-    if (!navSelectedIds.includes(treeId)) {
-      setNavSelectedIds(activeSelection);
-    }
+    setNavSelectedIds(activeSelection);
 
     setDraggedTreeIds(activeSelection);
     setDragOverFolderId(null);
@@ -722,6 +721,19 @@ const LibraryApp = () => {
       setDraggedTreeIds([]);
     }
   }, [extractTreeIdsFromDataTransfer, handleTreeMoveToFolder]);
+
+  const toggleFolder = useCallback((folderId) => {
+    setExpandedFolders(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(folderId)) {
+        newSet.delete(folderId);
+      } else {
+        newSet.add(folderId);
+      }
+      return newSet;
+    });
+    setSelectedFolderId(folderId);
+  }, []);
 
   const handleNavDropToVoran = useCallback(async (event) => {
     event.preventDefault();
@@ -816,6 +828,7 @@ const LibraryApp = () => {
                 const isFolderSelected = selectedFolderId === folder.id;
                 const hasSelectedTreeInFolder = folderTrees.some(tree => tree.id === selectedId);
                 const isDragTarget = dragOverFolderId === folder.id;
+                const isExpanded = expandedFolders.has(folder.id);
 
                 return (
                   <div key={folder.id} className="space-y-1">
@@ -823,7 +836,7 @@ const LibraryApp = () => {
                     <button
                       type="button"
                       tabIndex={-1}
-                      onClick={() => setSelectedFolderId(folder.id)}
+                      onClick={() => toggleFolder(folder.id)}
                       onDragOver={(event) => {
                         event.preventDefault();
                         setDragOverFolderId(folder.id);
@@ -835,7 +848,15 @@ const LibraryApp = () => {
                         : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
                         } ${isDragTarget ? "ring-2 ring-blue-400/70" : ""}`}
                     >
-                      <FolderIcon className="h-4 w-4" />
+                      {folderTrees.length > 0 ? (
+                        isExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )
+                      ) : (
+                        <FolderIcon className="h-4 w-4" />
+                      )}
                       <span className="flex-1 truncate">{folder.name}</span>
                       <span className="text-xs text-slate-400 bg-slate-700 px-1.5 py-0.5 rounded-full">
                         {folderTrees.length}
@@ -843,15 +864,18 @@ const LibraryApp = () => {
                     </button>
 
                     {/* 폴더 내 트리들 */}
-                    {(isFolderSelected || hasSelectedTreeInFolder) && folderTrees.length > 0 && (
+                    {isExpanded && folderTrees.length > 0 && (
                       <div className="ml-6 space-y-1">
                         {folderTrees.map((tree) => {
                           const isActive = tree.id === selectedId;
+                          const isSelectedInNav = navSelectedIds.includes(tree.id);
+                          const isDraggingTree = draggedTreeIds.includes(tree.id);
                           return (
                             <button
                               key={tree.id}
                               type="button"
                               tabIndex={-1}
+                              draggable
                               onClick={() => {
                                 setSelectedId(tree.id);
                                 setNavSelectedIds([tree.id]);
@@ -861,10 +885,12 @@ const LibraryApp = () => {
                                 event.preventDefault();
                                 handleTreeDelete(tree.id);
                               }}
+                              onDragStart={(event) => handleNavDragStart(event, tree.id)}
+                              onDragEnd={handleNavDragEnd}
                               className={`w-full flex items-center gap-3 rounded-md px-3 py-1.5 text-left text-sm transition ${isActive
                                 ? "bg-slate-700 text-slate-50"
                                 : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                                }`}
+                                } ${isSelectedInNav ? "border border-blue-500/50 bg-blue-900/25" : ""} ${isDraggingTree ? "opacity-60" : ""}`}
                             >
                               <div className="w-2 h-2 rounded-full bg-slate-500" />
                               <span className="flex-1 truncate">{tree.title}</span>
