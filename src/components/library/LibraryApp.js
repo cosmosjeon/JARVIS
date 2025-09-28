@@ -43,11 +43,21 @@ const LibraryApp = () => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createType, setCreateType] = useState("folder");
   const previousSelectedTreeRef = useRef(null);
+  const [navSelectedIds, setNavSelectedIds] = useState([]);
+  const [draggedTreeIds, setDraggedTreeIds] = useState([]);
+  const [dragOverFolderId, setDragOverFolderId] = useState(null);
+  const [dragOverVoranBox, setDragOverVoranBox] = useState(false);
 
   const selectedTree = useMemo(
     () => trees.find((tree) => tree.id === selectedId) ?? null,
     [trees, selectedId]
   );
+
+  useEffect(() => {
+    if (selectedId) {
+      setNavSelectedIds([selectedId]);
+    }
+  }, [selectedId]);
 
   useEffect(() => {
     if (!user) {
@@ -397,45 +407,351 @@ const LibraryApp = () => {
     setSelectedId(null);
   }, []);
 
-  const handleTreeMoveToFolder = useCallback(async (tree) => {
-    if (!user) return;
+  const extractTreeIdsFromDataTransfer = useCallback((dataTransfer) => {
+    if (!dataTransfer) {
+      return [];
+    }
 
     try {
-      // Check if tree has targetFolderId (from drag and drop)
-      const targetFolderId = tree.targetFolderId;
-
-      if (targetFolderId === null) {
-        // Move to VORAN BOX (remove from folder)
-        await moveTreeToFolder({ treeId: tree.id, folderId: null, userId: user.id });
-        setTrees(prev =>
-          prev.map(t =>
-            t.id === tree.id ? { ...t, folderId: null } : t
-          )
-        );
-      } else if (targetFolderId) {
-        // Move to specific folder
-        await moveTreeToFolder({ treeId: tree.id, folderId: targetFolderId, userId: user.id });
-        setTrees(prev =>
-          prev.map(t =>
-            t.id === tree.id ? { ...t, folderId: targetFolderId } : t
-          )
-        );
-      } else {
-        // Fallback: move to first folder (original behavior)
-        const firstFolder = folders[0];
-        if (firstFolder) {
-          await moveTreeToFolder({ treeId: tree.id, folderId: firstFolder.id, userId: user.id });
-          setTrees(prev =>
-            prev.map(t =>
-              t.id === tree.id ? { ...t, folderId: firstFolder.id } : t
-            )
-          );
+      const raw = dataTransfer.getData("application/json");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.treeIds)) {
+          return parsed.treeIds.filter(Boolean);
         }
       }
-    } catch (err) {
-      setError(err);
+    } catch (error) {
+      console.error("Failed to parse drag data (json)", error);
     }
-  }, [user, folders]);
+
+    try {
+      const fallback = dataTransfer.getData("text/plain");
+      if (fallback) {
+        return fallback.split(",").map((id) => id.trim()).filter(Boolean);
+      }
+    } catch (error) {
+      console.error("Failed to parse drag data (text)", error);
+    }
+
+    return [];
+  }, []);
+
+  const handleTreeMoveToFolder = useCallback(async (request = {}) => {
+    if (!user) {
+      return {
+        moved: [],
+        failures: [],
+        renamed: [],
+        skipped: [],
+      };
+    }
+
+    const { treeIds, targetFolderId = null } = request;
+
+    const ids = Array.isArray(treeIds)
+      ? treeIds.filter(Boolean)
+      : (treeIds ? [treeIds] : []);
+
+    if (ids.length === 0) {
+      return {
+        moved: [],
+        failures: [],
+        renamed: [],
+        skipped: [],
+      };
+    }
+
+    const treeMap = new Map(trees.map((tree) => [tree.id, tree]));
+    const candidates = ids
+      .map((id) => treeMap.get(id))
+      .filter(Boolean);
+
+    if (candidates.length === 0) {
+      return {
+        moved: [],
+        failures: [],
+        renamed: [],
+        skipped: [],
+      };
+    }
+
+    const normalizeTitle = (value) => value?.trim() || "제목 없는 트리";
+
+    const mapError = (err) => {
+      const message = err?.message || "알 수 없는 오류가 발생했습니다.";
+      const lower = message.toLowerCase();
+
+      if (lower.includes("permission") || lower.includes("권한")) {
+        return {
+          reason: "permission",
+          message: "이 폴더로 옮길 수 있는 권한이 없습니다.",
+        };
+      }
+
+      if (lower.includes("network") || lower.includes("fetch") || lower.includes("timeout") || err?.name === "TypeError") {
+        return {
+          reason: "network",
+          message: "네트워크 문제로 이동하지 못했습니다. 다시 시도해 주세요.",
+        };
+      }
+
+      return {
+        reason: "unknown",
+        message,
+      };
+    };
+
+    const existingTitles = new Set(
+      trees
+        .filter((tree) => tree.folderId === targetFolderId && !ids.includes(tree.id))
+        .map((tree) => normalizeTitle(tree.title))
+    );
+
+    const ensureUniqueTitle = (title) => {
+      const base = normalizeTitle(title);
+
+      if (!existingTitles.has(base)) {
+        existingTitles.add(base);
+        return base;
+      }
+
+      const match = base.match(/^(.*?)(?:\s*\((\d+)\))?$/);
+      const stem = match?.[1]?.trim() || base;
+      let counter = Number(match?.[2]) || 1;
+      let candidate = base;
+
+      while (existingTitles.has(candidate)) {
+        counter += 1;
+        candidate = `${stem} (${counter})`;
+      }
+
+      existingTitles.add(candidate);
+      return candidate;
+    };
+
+    const moved = [];
+    const failures = [];
+    const renamed = [];
+    const skipped = [];
+    const previousStates = [];
+
+    for (const tree of candidates) {
+      const previous = {
+        id: tree.id,
+        folderId: tree.folderId ?? null,
+        title: normalizeTitle(tree.title),
+      };
+
+      if ((tree.folderId ?? null) === targetFolderId) {
+        skipped.push(tree.id);
+        continue;
+      }
+
+      let nextTitle = normalizeTitle(tree.title);
+      let renameInfo = null;
+
+      if (targetFolderId) {
+        const uniqueTitle = ensureUniqueTitle(nextTitle);
+        if (uniqueTitle !== nextTitle) {
+          try {
+            await upsertTreeMetadata({ treeId: tree.id, title: uniqueTitle, userId: user.id });
+            renameInfo = {
+              id: tree.id,
+              previousTitle: nextTitle,
+              newTitle: uniqueTitle,
+            };
+            nextTitle = uniqueTitle;
+          } catch (err) {
+            failures.push({ id: tree.id, ...mapError(err) });
+            continue;
+          }
+        }
+      }
+
+      try {
+        await moveTreeToFolder({ treeId: tree.id, folderId: targetFolderId, userId: user.id });
+        moved.push({ id: tree.id, title: nextTitle, targetFolderId });
+        previousStates.push(previous);
+        if (renameInfo) {
+          renamed.push(renameInfo);
+        }
+      } catch (err) {
+        failures.push({ id: tree.id, ...mapError(err) });
+
+        if (renameInfo) {
+          try {
+            await upsertTreeMetadata({ treeId: tree.id, title: renameInfo.previousTitle, userId: user.id });
+            existingTitles.delete(renameInfo.newTitle);
+          } catch (rollbackError) {
+            console.error("Failed to rollback rename after move failure", rollbackError);
+          }
+        }
+      }
+    }
+
+    if (moved.length > 0) {
+      const movedLookup = new Map(moved.map((entry) => [entry.id, entry]));
+      const renamedLookup = new Map(renamed.map((entry) => [entry.id, entry]));
+
+      setTrees((prevTrees) => prevTrees.map((tree) => {
+        if (!movedLookup.has(tree.id)) {
+          return tree;
+        }
+
+        const moveInfo = movedLookup.get(tree.id);
+        const renameInfo = renamedLookup.get(tree.id);
+
+        return {
+          ...tree,
+          folderId: moveInfo.targetFolderId,
+          title: renameInfo ? renameInfo.newTitle : tree.title,
+        };
+      }));
+    }
+
+    const undo = async () => {
+      if (previousStates.length === 0) {
+        return;
+      }
+
+      try {
+        for (const previous of previousStates) {
+          const renameInfo = renamed.find((entry) => entry.id === previous.id);
+
+          if (renameInfo && renameInfo.previousTitle !== renameInfo.newTitle) {
+            await upsertTreeMetadata({ treeId: previous.id, title: renameInfo.previousTitle, userId: user.id });
+          }
+
+          await moveTreeToFolder({ treeId: previous.id, folderId: previous.folderId, userId: user.id });
+        }
+
+        setTrees((prevTrees) => prevTrees.map((tree) => {
+          const previous = previousStates.find((entry) => entry.id === tree.id);
+          if (!previous) {
+            return tree;
+          }
+
+          const renameInfo = renamed.find((entry) => entry.id === tree.id);
+
+          return {
+            ...tree,
+            folderId: previous.folderId,
+            title: renameInfo ? renameInfo.previousTitle : tree.title,
+          };
+        }));
+      } catch (err) {
+        console.error("Failed to undo tree move", err);
+        setError(err);
+      }
+    };
+
+    return {
+      moved,
+      failures,
+      renamed,
+      skipped,
+      undo,
+    };
+  }, [trees, user, moveTreeToFolder, upsertTreeMetadata]);
+
+  const handleNavDragStart = useCallback((event, treeId) => {
+    if (!treeId) {
+      return;
+    }
+
+    const tree = trees.find((entry) => entry.id === treeId);
+    if (!tree) {
+      return;
+    }
+
+    const activeSelection = navSelectedIds.includes(treeId) && navSelectedIds.length > 0
+      ? [...navSelectedIds]
+      : [treeId];
+
+    if (!navSelectedIds.includes(treeId)) {
+      setNavSelectedIds(activeSelection);
+    }
+
+    setDraggedTreeIds(activeSelection);
+    setDragOverFolderId(null);
+    setDragOverVoranBox(false);
+
+    if (event?.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      try {
+        event.dataTransfer.setData("application/json", JSON.stringify({ treeIds: activeSelection }));
+      } catch (error) {
+        console.error("Failed to serialise nav drag payload", error);
+      }
+      event.dataTransfer.setData("text/plain", activeSelection.join(","));
+    }
+  }, [navSelectedIds, trees]);
+
+  const handleNavDragEnd = useCallback(() => {
+    setDraggedTreeIds([]);
+    setDragOverFolderId(null);
+    setDragOverVoranBox(false);
+  }, []);
+
+  const handleNavDropToFolder = useCallback(async (event, folderId) => {
+    event.preventDefault();
+    const treeIds = extractTreeIdsFromDataTransfer(event?.dataTransfer);
+
+    setDragOverFolderId(null);
+    setDragOverVoranBox(false);
+
+    if (treeIds.length === 0) {
+      setDraggedTreeIds([]);
+      return;
+    }
+
+    try {
+      const result = await handleTreeMoveToFolder({ treeIds, targetFolderId: folderId });
+      if (result?.moved?.length > 0) {
+        setSelectedFolderId(folderId);
+        setSelectedId(result.moved[0].id);
+        setNavSelectedIds(result.moved.map((item) => item.id));
+      }
+      if (result?.failures?.length > 0) {
+        setError(new Error(result.failures[0]?.message || "일부 항목을 이동하지 못했습니다."));
+      }
+    } catch (error) {
+      console.error("Failed to drop tree to folder", error);
+      setError(error);
+    } finally {
+      setDraggedTreeIds([]);
+    }
+  }, [extractTreeIdsFromDataTransfer, handleTreeMoveToFolder]);
+
+  const handleNavDropToVoran = useCallback(async (event) => {
+    event.preventDefault();
+    const treeIds = extractTreeIdsFromDataTransfer(event?.dataTransfer);
+
+    setDragOverFolderId(null);
+    setDragOverVoranBox(false);
+
+    if (treeIds.length === 0) {
+      setDraggedTreeIds([]);
+      return;
+    }
+
+    try {
+      const result = await handleTreeMoveToFolder({ treeIds, targetFolderId: null });
+      if (result?.moved?.length > 0) {
+        setSelectedFolderId(null);
+        setSelectedId(result.moved[0].id);
+        setNavSelectedIds(result.moved.map((item) => item.id));
+      }
+      if (result?.failures?.length > 0) {
+        setError(new Error(result.failures[0]?.message || "일부 항목을 이동하지 못했습니다."));
+      }
+    } catch (error) {
+      console.error("Failed to drop tree to VORAN BOX", error);
+      setError(error);
+    } finally {
+      setDraggedTreeIds([]);
+    }
+  }, [extractTreeIdsFromDataTransfer, handleTreeMoveToFolder]);
 
   // 필터된 트리 목록 (선택된 폴더에 따라)
   const filteredTrees = useMemo(() => {
@@ -499,6 +815,7 @@ const LibraryApp = () => {
                 const folderTrees = trees.filter(tree => tree.folderId === folder.id);
                 const isFolderSelected = selectedFolderId === folder.id;
                 const hasSelectedTreeInFolder = folderTrees.some(tree => tree.id === selectedId);
+                const isDragTarget = dragOverFolderId === folder.id;
 
                 return (
                   <div key={folder.id} className="space-y-1">
@@ -507,10 +824,16 @@ const LibraryApp = () => {
                       type="button"
                       tabIndex={-1}
                       onClick={() => setSelectedFolderId(folder.id)}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setDragOverFolderId(folder.id);
+                      }}
+                      onDragLeave={() => setDragOverFolderId((prev) => (prev === folder.id ? null : prev))}
+                      onDrop={(event) => handleNavDropToFolder(event, folder.id)}
                       className={`w-full flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${isFolderSelected || hasSelectedTreeInFolder
                         ? "bg-slate-800 text-slate-50"
                         : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
-                        }`}
+                        } ${isDragTarget ? "ring-2 ring-blue-400/70" : ""}`}
                     >
                       <FolderIcon className="h-4 w-4" />
                       <span className="flex-1 truncate">{folder.name}</span>
@@ -529,7 +852,10 @@ const LibraryApp = () => {
                               key={tree.id}
                               type="button"
                               tabIndex={-1}
-                              onClick={() => setSelectedId(tree.id)}
+                              onClick={() => {
+                                setSelectedId(tree.id);
+                                setNavSelectedIds([tree.id]);
+                              }}
                               onDoubleClick={() => { void handleTreeOpen(tree.id); }}
                               onContextMenu={(event) => {
                                 event.preventDefault();
@@ -554,26 +880,42 @@ const LibraryApp = () => {
               {/* VORAN BOX에 있는 트리들 (폴더에 속하지 않은 트리들) */}
               {trees.filter(tree => !tree.folderId).length > 0 && (
                 <div className="space-y-1">
-                  <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  <div
+                    className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide ${dragOverVoranBox ? "bg-blue-900/30 text-blue-200 border border-blue-500/60 rounded-md" : "text-slate-400"}`}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      setDragOverVoranBox(true);
+                    }}
+                    onDragLeave={() => setDragOverVoranBox(false)}
+                    onDrop={handleNavDropToVoran}
+                  >
                     VORAN BOX
                   </div>
                   {trees.filter(tree => !tree.folderId).map((tree) => {
                     const isActive = tree.id === selectedId;
+                    const isSelectedInNav = navSelectedIds.includes(tree.id);
+                    const isDraggingThisTree = draggedTreeIds.includes(tree.id);
                     return (
                       <button
                         key={tree.id}
                         type="button"
                         tabIndex={-1}
-                        onClick={() => setSelectedId(tree.id)}
+                        draggable
+                        onClick={() => {
+                          setSelectedId(tree.id);
+                          setNavSelectedIds([tree.id]);
+                        }}
                         onDoubleClick={() => { void handleTreeOpen(tree.id); }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           handleTreeDelete(tree.id);
                         }}
+                        onDragStart={(event) => handleNavDragStart(event, tree.id)}
+                        onDragEnd={handleNavDragEnd}
                         className={`w-full flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition ${isActive
                           ? "bg-slate-800 text-slate-50"
                           : "text-slate-300 hover:bg-slate-900 hover:text-slate-50"
-                          }`}
+                          } ${isSelectedInNav ? "border border-blue-500/50 bg-blue-900/30" : ""} ${isDraggingThisTree ? "opacity-60" : ""}`}
                       >
                         <FolderIcon className="h-4 w-4" />
                         <span className="flex-1 truncate">{tree.title}</span>

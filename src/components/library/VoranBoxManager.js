@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     X,
@@ -8,7 +8,12 @@ import {
     FolderPlus,
     Folder,
     Edit,
-    Trash2
+    Trash2,
+    CheckCircle2,
+    Info,
+    AlertTriangle,
+    Ban,
+    XCircle
 } from "lucide-react";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
@@ -31,48 +36,165 @@ const VoranBoxManager = ({
     selectedFolderId,
     loading = false
 }) => {
-    const [draggedTreeId, setDraggedTreeId] = useState(null);
+    const [selectedTreeIds, setSelectedTreeIds] = useState([]);
+    const [draggedTreeIds, setDraggedTreeIds] = useState([]);
+    const [isDragging, setIsDragging] = useState(false);
     const [dragOverTarget, setDragOverTarget] = useState(null);
     const [showCreateFolder, setShowCreateFolder] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
-    const [navigationMode, setNavigationMode] = useState(false); // 탭 네비게이션 모드
-    const [currentFolderIndex, setCurrentFolderIndex] = useState(0); // 현재 선택된 폴더 인덱스
-    const [localSelectedTreeId, setLocalSelectedTreeId] = useState(null); // 로컬 선택된 트리 ID
-    const [contextMenuTreeId, setContextMenuTreeId] = useState(null); // 컨텍스트 메뉴가 열린 트리 ID
-    const [editingTreeId, setEditingTreeId] = useState(null); // 편집 중인 트리 ID
-    const [editingTreeName, setEditingTreeName] = useState(""); // 편집 중인 트리 이름
+    const [navigationMode, setNavigationMode] = useState(false);
+    const [currentFolderIndex, setCurrentFolderIndex] = useState(0);
+    const [localSelectedTreeId, setLocalSelectedTreeId] = useState(null);
+    const [contextMenuTreeId, setContextMenuTreeId] = useState(null);
+    const [editingTreeId, setEditingTreeId] = useState(null);
+    const [editingTreeName, setEditingTreeName] = useState("");
+    const [activePreviewFolderId, setActivePreviewFolderId] = useState(null);
+    const [showInvalidDropIndicator, setShowInvalidDropIndicator] = useState(false);
+    const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+    const [toasts, setToasts] = useState([]);
 
-    // 박스 레이아웃을 나갈 때 폴더 선택 초기화
+    const dragPreviewRef = useRef(null);
+    const dragStatusRef = useRef({ canDrop: false });
+    const folderHoverTimerRef = useRef(null);
+    const lastVibrateRef = useRef(0);
+    const voranListRef = useRef(null);
+    const toastIdRef = useRef(0);
+    const toastTimersRef = useRef(new Map());
+
+const toastVisuals = useMemo(() => ({
+        success: {
+            container: "bg-emerald-500/10 border border-emerald-400/40 text-emerald-100",
+            iconClass: "text-emerald-300",
+            Icon: CheckCircle2,
+        },
+        info: {
+            container: "bg-blue-500/10 border border-blue-400/40 text-blue-100",
+            iconClass: "text-blue-300",
+            Icon: Info,
+        },
+        warning: {
+            container: "bg-amber-500/10 border border-amber-400/40 text-amber-100",
+            iconClass: "text-amber-300",
+            Icon: AlertTriangle,
+        },
+        error: {
+            container: "bg-red-500/10 border border-red-400/40 text-red-100",
+            iconClass: "text-red-300",
+            Icon: XCircle,
+        },
+        default: {
+            container: "bg-slate-800/70 border border-slate-600/40 text-slate-100",
+            iconClass: "text-slate-200",
+            Icon: Info,
+        },
+}), []);
+
+const arraysEqual = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+        if (a[i] !== b[i]) {
+            return false;
+        }
+    }
+    return true;
+};
+
+    const cleanupDragPreview = useCallback(() => {
+        if (dragPreviewRef.current && document.body.contains(dragPreviewRef.current)) {
+            document.body.removeChild(dragPreviewRef.current);
+        }
+        dragPreviewRef.current = null;
+    }, []);
+
+    const createDragPreviewElement = useCallback((treeIds) => {
+        if (typeof document === "undefined" || treeIds.length === 0) {
+            return null;
+        }
+
+        const preview = document.createElement("div");
+        preview.style.position = "absolute";
+        preview.style.top = "-9999px";
+        preview.style.left = "-9999px";
+        preview.style.pointerEvents = "none";
+        preview.style.display = "flex";
+        preview.style.flexDirection = "column";
+        preview.style.gap = "6px";
+        preview.style.padding = "12px 16px";
+        preview.style.minWidth = "180px";
+        preview.style.borderRadius = "12px";
+        preview.style.background = "rgba(15, 23, 42, 0.88)";
+        preview.style.border = "1px solid rgba(96, 165, 250, 0.7)";
+        preview.style.boxShadow = "0 18px 38px rgba(15, 23, 42, 0.45)";
+        preview.style.backdropFilter = "blur(6px)";
+
+        const badge = document.createElement("span");
+        badge.textContent = "이동";
+        badge.style.alignSelf = "flex-end";
+        badge.style.fontSize = "10px";
+        badge.style.fontWeight = "600";
+        badge.style.letterSpacing = "0.4px";
+        badge.style.padding = "2px 8px";
+        badge.style.borderRadius = "9999px";
+        badge.style.background = "rgba(37, 99, 235, 0.85)";
+        badge.style.color = "white";
+        preview.appendChild(badge);
+
+        const firstTree = trees.find((tree) => tree.id === treeIds[0]);
+        const title = document.createElement("span");
+        title.textContent = firstTree?.title || "제목 없는 트리";
+        title.style.fontSize = "12px";
+        title.style.fontWeight = "600";
+        title.style.color = "rgba(226, 232, 240, 1)";
+        title.style.maxWidth = "240px";
+        title.style.whiteSpace = "nowrap";
+        title.style.overflow = "hidden";
+        title.style.textOverflow = "ellipsis";
+        preview.appendChild(title);
+
+        if (treeIds.length > 1) {
+            const extra = document.createElement("span");
+            extra.textContent = `+${treeIds.length - 1}개 항목`;
+            extra.style.fontSize = "11px";
+            extra.style.color = "rgba(148, 163, 184, 1)";
+            preview.appendChild(extra);
+        }
+
+        return preview;
+    }, [trees]);
+
     const handleClose = useCallback(() => {
-        // 폴더 선택 초기화
         if (onFolderSelect) {
             onFolderSelect(null);
         }
-        // 네비게이션 모드 종료
         setNavigationMode(false);
         setCurrentFolderIndex(0);
         setLocalSelectedTreeId(null);
-        // 원래 onClose 호출
+        setSelectedTreeIds([]);
+        cleanupDragPreview();
         if (onClose) {
             onClose();
         }
-    }, [onFolderSelect, onClose]);
+    }, [cleanupDragPreview, onClose, onFolderSelect]);
 
-    // VoranBoxManager가 열릴 때 폴더 선택 초기화 및 첫 번째 트리 자동 선택
-    React.useEffect(() => {
+    useEffect(() => {
         if (isVisible) {
             if (onFolderSelect) {
                 onFolderSelect(null);
             }
-            // 첫 번째 VORAN BOX 트리 자동 선택
-            const voranTrees = trees.filter(tree => !tree.folderId);
+            const voranTrees = trees.filter((tree) => !tree.folderId);
             if (voranTrees.length > 0) {
                 setLocalSelectedTreeId(voranTrees[0].id);
+                setSelectedTreeIds([voranTrees[0].id]);
                 setNavigationMode(true);
                 setCurrentFolderIndex(0);
+            } else {
+                setLocalSelectedTreeId(null);
+                setSelectedTreeIds([]);
             }
         }
-    }, [isVisible, onFolderSelect]); // trees 의존성 제거
+    }, [isVisible, onFolderSelect, trees]);
 
     const formatDate = (timestamp) => {
         if (!timestamp) return "날짜 없음";
@@ -84,15 +206,34 @@ const VoranBoxManager = ({
         });
     };
 
-    // VORAN BOX에 표시할 트리들 (폴더에 속하지 않은 트리들)
-    const voranTrees = useMemo(() => {
-        return trees.filter(tree => !tree.folderId);
-    }, [trees]);
+    const voranTrees = useMemo(() => trees.filter((tree) => !tree.folderId), [trees]);
 
-    // 폴더별 트리 개수 계산
+    useEffect(() => {
+        setSelectedTreeIds((prev) => {
+            if (prev.length === 0) {
+                return prev;
+            }
+            const available = new Set(voranTrees.map((tree) => tree.id));
+            const filtered = prev.filter((id) => available.has(id));
+            return filtered.length === prev.length ? prev : filtered;
+        });
+    }, [voranTrees]);
+
+    useEffect(() => {
+        if (selectedTreeIds.length === 0) {
+            if (localSelectedTreeId !== null) {
+                setLocalSelectedTreeId(null);
+            }
+            return;
+        }
+        if (!selectedTreeIds.includes(localSelectedTreeId)) {
+            setLocalSelectedTreeId(selectedTreeIds[selectedTreeIds.length - 1]);
+        }
+    }, [localSelectedTreeId, selectedTreeIds]);
+
     const folderTreeCounts = useMemo(() => {
         const counts = {};
-        trees.forEach(tree => {
+        trees.forEach((tree) => {
             if (tree.folderId) {
                 counts[tree.folderId] = (counts[tree.folderId] || 0) + 1;
             }
@@ -100,126 +241,355 @@ const VoranBoxManager = ({
         return counts;
     }, [trees]);
 
-    const handleTreeDragStart = useCallback((e, treeId) => {
-        setDraggedTreeId(treeId);
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", treeId);
-
-        // 드래그 시작 시 트리 선택만 처리 (폴더 이동은 하지 않음)
-        const tree = trees.find(t => t.id === treeId);
-        if (tree) {
-            // 트리 선택 시 선택 상태 업데이트만
-            setLocalSelectedTreeId(tree.id);
-            // 네비게이션 모드는 활성화하지 않음
+    const removeToast = useCallback((id) => {
+        const timer = toastTimersRef.current.get(id);
+        if (timer) {
+            clearTimeout(timer);
+            toastTimersRef.current.delete(id);
         }
-
-        // Create custom drag image (only if setDragImage is available)
-        if (e.dataTransfer.setDragImage) {
-            const dragImage = e.target.cloneNode(true);
-            dragImage.style.transform = "rotate(5deg)";
-            dragImage.style.opacity = "0.8";
-            dragImage.style.position = "absolute";
-            dragImage.style.top = "-1000px";
-            dragImage.style.left = "-1000px";
-            document.body.appendChild(dragImage);
-
-            // 드래그 이미지의 중심을 마우스 커서 위치로 설정
-            const rect = dragImage.getBoundingClientRect();
-            e.dataTransfer.setDragImage(dragImage, rect.width / 2, rect.height / 2);
-
-            // Clean up drag image after a short delay
-            setTimeout(() => {
-                if (document.body.contains(dragImage)) {
-                    document.body.removeChild(dragImage);
-                }
-            }, 0);
-        }
-    }, [trees]);
-
-    const handleTreeDragEnd = useCallback(() => {
-        setDraggedTreeId(null);
-        setDragOverTarget(null);
+        setToasts((prev) => prev.filter((toast) => toast.id !== id));
     }, []);
 
-    const handleDragOver = useCallback((e, targetType, targetId) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setDragOverTarget({ type: targetType, id: targetId });
-    }, []);
-
-    const handleDragLeave = useCallback((e) => {
-        // Only clear if we're actually leaving the drop zone
-        if (!e.currentTarget.contains(e.relatedTarget)) {
-            setDragOverTarget(null);
+    const showToast = useCallback(({ type = "default", message, duration = 2000, actionLabel, onAction } = {}) => {
+        if (!message) {
+            return null;
         }
-    }, []);
+        const nextId = toastIdRef.current + 1;
+        toastIdRef.current = nextId;
+        const toast = {
+            id: nextId,
+            type,
+            message,
+            actionLabel,
+            onAction,
+        };
+        setToasts((prev) => [...prev, toast]);
+        if (duration > 0) {
+            const timer = setTimeout(() => removeToast(nextId), duration);
+            toastTimersRef.current.set(nextId, timer);
+        }
+        return nextId;
+    }, [removeToast]);
 
-    const handleDrop = useCallback((e, targetType, targetId) => {
-        e.preventDefault();
-        const treeId = e.dataTransfer.getData("text/plain");
-
-        if (treeId && onTreeMoveToFolder) {
-            const tree = trees.find(t => t.id === treeId);
-            if (tree) {
-                if (targetType === "voran") {
-                    // Move to VORAN BOX (remove from folder)
-                    onTreeMoveToFolder({ ...tree, targetFolderId: null });
-                } else if (targetType === "folder") {
-                    // Move to specific folder
-                    onTreeMoveToFolder({ ...tree, targetFolderId: targetId });
-                }
+    const handleToastAction = useCallback(async (toast) => {
+        if (!toast) {
+            return;
+        }
+        removeToast(toast.id);
+        if (toast.onAction) {
+            try {
+                await toast.onAction();
+                showToast({ type: "info", message: "이동을 되돌렸습니다.", duration: 2000 });
+            } catch (err) {
+                console.error("Undo action failed", err);
+                showToast({ type: "error", message: err?.message || "되돌리기에 실패했습니다.", duration: 3000 });
             }
         }
+    }, [removeToast, showToast]);
 
-        setDragOverTarget(null);
-    }, [trees, onTreeMoveToFolder]);
+    useEffect(() => () => {
+        cleanupDragPreview();
+        toastTimersRef.current.forEach((timer) => clearTimeout(timer));
+        toastTimersRef.current.clear();
+    }, [cleanupDragPreview]);
 
-    const handleTreeClick = useCallback((tree) => {
-        // 트리 선택 시 선택 상태 업데이트만
-        setLocalSelectedTreeId(tree.id);
+    const updateSelection = useCallback((tree, event, { notify = false } = {}) => {
+        if (!tree) {
+            return;
+        }
 
-        // VORAN BOX의 트리인 경우에만 네비게이션 모드 활성화
-        const isVoranTree = !tree.folderId;
-        if (isVoranTree) {
+        const { id: treeId } = tree;
+        const isToggle = event?.metaKey || event?.ctrlKey;
+        const isRange = event?.shiftKey;
+
+        setSelectedTreeIds((prevSelected) => {
+            let nextSelected = prevSelected;
+
+            if (isRange && prevSelected.length > 0) {
+                const anchorId = (localSelectedTreeId && voranTrees.some((t) => t.id === localSelectedTreeId))
+                    ? localSelectedTreeId
+                    : (prevSelected[prevSelected.length - 1] ?? treeId);
+                const anchorIndex = voranTrees.findIndex((item) => item.id === anchorId);
+                const targetIndex = voranTrees.findIndex((item) => item.id === treeId);
+
+                if (anchorIndex !== -1 && targetIndex !== -1) {
+                    const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+                    const rangeIds = voranTrees.slice(start, end + 1).map((item) => item.id);
+                    nextSelected = Array.from(new Set([...prevSelected, ...rangeIds]));
+                } else {
+                    nextSelected = prevSelected.includes(treeId) ? prevSelected : [...prevSelected, treeId];
+                }
+            } else if (isToggle) {
+                if (prevSelected.includes(treeId)) {
+                    const filtered = prevSelected.filter((id) => id !== treeId);
+                    nextSelected = filtered.length > 0 ? filtered : [treeId];
+                } else {
+                    nextSelected = [...prevSelected, treeId];
+                }
+            } else {
+                nextSelected = [treeId];
+            }
+
+            return arraysEqual(prevSelected, nextSelected) ? prevSelected : nextSelected;
+        });
+
+        setLocalSelectedTreeId(treeId);
+
+        if (!tree.folderId) {
             setNavigationMode(true);
             setCurrentFolderIndex(0);
             if (onFolderSelect) {
                 onFolderSelect(null);
             }
         }
-    }, [onFolderSelect]);
+
+        if (notify && onTreeSelect) {
+            onTreeSelect(tree);
+        }
+    }, [localSelectedTreeId, onFolderSelect, onTreeSelect, voranTrees]);
+
+    const handleTreeDragStart = useCallback((e, treeId) => {
+        const tree = trees.find((entry) => entry.id === treeId);
+        if (!tree) {
+            return;
+        }
+
+        let activeSelection = selectedTreeIds.includes(treeId) && selectedTreeIds.length > 0
+            ? [...selectedTreeIds]
+            : [treeId];
+
+        if (!selectedTreeIds.includes(treeId)) {
+            requestAnimationFrame(() => {
+                setSelectedTreeIds((prevSelected) => (prevSelected.includes(treeId) ? prevSelected : [treeId]));
+            });
+        }
+
+        setLocalSelectedTreeId(treeId);
+        if (!tree.folderId) {
+            setNavigationMode(true);
+            setCurrentFolderIndex(0);
+            if (onFolderSelect) {
+                onFolderSelect(null);
+            }
+        }
+
+        setDraggedTreeIds(activeSelection);
+        setIsDragging(true);
+        dragStatusRef.current.canDrop = false;
+
+        if (e?.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            try {
+                e.dataTransfer.setData("application/json", JSON.stringify({ treeIds: activeSelection }));
+            } catch (error) {
+                console.error("Failed to serialise drag payload", error);
+            }
+            e.dataTransfer.setData("text/plain", activeSelection.join(","));
+
+            if (e.dataTransfer.setDragImage) {
+                const preview = createDragPreviewElement(activeSelection);
+                if (preview) {
+                    document.body.appendChild(preview);
+                    dragPreviewRef.current = preview;
+                    const rect = preview.getBoundingClientRect();
+                    e.dataTransfer.setDragImage(preview, rect.width / 2, rect.height / 2);
+                }
+            }
+        }
+    }, [createDragPreviewElement, onFolderSelect, selectedTreeIds, trees]);
+
+    const handleTreeDragEnd = useCallback(() => {
+        setDraggedTreeIds([]);
+        setIsDragging(false);
+        setDragOverTarget(null);
+        setShowInvalidDropIndicator(false);
+        setActivePreviewFolderId(null);
+        dragStatusRef.current.canDrop = false;
+        if (folderHoverTimerRef.current) {
+            clearTimeout(folderHoverTimerRef.current);
+            folderHoverTimerRef.current = null;
+        }
+        cleanupDragPreview();
+    }, [cleanupDragPreview]);
+
+    const handleDragOver = useCallback((e, targetType, targetId) => {
+        e.preventDefault();
+        if (e?.dataTransfer) {
+            e.dataTransfer.dropEffect = "move";
+        }
+        dragStatusRef.current.canDrop = true;
+        setShowInvalidDropIndicator(false);
+        setDragOverTarget({ type: targetType, id: targetId });
+
+        if (targetType === "folder") {
+            if (folderHoverTimerRef.current) {
+                clearTimeout(folderHoverTimerRef.current);
+            }
+            if (activePreviewFolderId && activePreviewFolderId !== targetId) {
+                setActivePreviewFolderId(null);
+            }
+            folderHoverTimerRef.current = setTimeout(() => {
+                setActivePreviewFolderId(targetId);
+            }, 600);
+        } else {
+            if (folderHoverTimerRef.current) {
+                clearTimeout(folderHoverTimerRef.current);
+                folderHoverTimerRef.current = null;
+            }
+            setActivePreviewFolderId(null);
+        }
+    }, [activePreviewFolderId]);
+
+    const handleDragLeave = useCallback((e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+            setDragOverTarget(null);
+            dragStatusRef.current.canDrop = false;
+            setShowInvalidDropIndicator(false);
+            if (folderHoverTimerRef.current) {
+                clearTimeout(folderHoverTimerRef.current);
+                folderHoverTimerRef.current = null;
+            }
+            setActivePreviewFolderId(null);
+        }
+    }, []);
+
+    const handleDrop = useCallback(async (e, targetType, targetId) => {
+        e.preventDefault();
+        dragStatusRef.current.canDrop = false;
+        setDragOverTarget(null);
+        setActivePreviewFolderId(null);
+        setShowInvalidDropIndicator(false);
+        if (folderHoverTimerRef.current) {
+            clearTimeout(folderHoverTimerRef.current);
+            folderHoverTimerRef.current = null;
+        }
+
+        let payloadIds = [];
+        try {
+            const raw = e?.dataTransfer?.getData("application/json");
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed.treeIds)) {
+                    payloadIds = parsed.treeIds.filter(Boolean);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to parse drag payload", error);
+        }
+
+        if (payloadIds.length === 0) {
+            const fallback = e?.dataTransfer?.getData("text/plain");
+            if (fallback) {
+                payloadIds = fallback.split(",").map((id) => id.trim()).filter(Boolean);
+            }
+        }
+
+        if (payloadIds.length === 0 && draggedTreeIds.length > 0) {
+            payloadIds = [...draggedTreeIds];
+        }
+
+        if (payloadIds.length === 0 || !onTreeMoveToFolder) {
+            handleTreeDragEnd();
+            return;
+        }
+
+        const uniqueIds = Array.from(new Set(payloadIds));
+        const targetFolderId = targetType === "folder" ? targetId : null;
+        const draggedTrees = trees.filter((tree) => uniqueIds.includes(tree.id));
+        const isNoOp = draggedTrees.length > 0 && draggedTrees.every((tree) => (tree.folderId ?? null) === targetFolderId);
+        if (isNoOp) {
+            handleTreeDragEnd();
+            return;
+        }
+
+        try {
+            const result = await onTreeMoveToFolder({ treeIds: uniqueIds, targetFolderId });
+
+            if (targetType === "folder" && onFolderSelect) {
+                onFolderSelect(targetId);
+            }
+            if (targetType === "voran" && onFolderSelect) {
+                onFolderSelect(null);
+            }
+
+            const successCount = result?.moved?.length || 0;
+            const failureCount = result?.failures?.length || 0;
+            const folderName = targetType === "folder"
+                ? (folders.find((folder) => folder.id === targetId)?.name || "폴더")
+                : "VORAN BOX";
+
+            if (successCount > 0) {
+                let message;
+                if (successCount === 1) {
+                    const movedTreeId = result.moved[0].id;
+                    const movedTree = trees.find((tree) => tree.id === movedTreeId) || draggedTrees.find((tree) => tree.id === movedTreeId);
+                    const title = movedTree?.title || "제목 없는 트리";
+                    message = `‘${title}’이(가) ‘${folderName}’으로 이동되었습니다.`;
+                } else {
+                    message = `${successCount}개 항목이 ‘${folderName}’으로 이동되었습니다.`;
+                }
+                if (failureCount > 0) {
+                    message += ` (${successCount}개 성공, ${failureCount}개 실패)`;
+                }
+                showToast({
+                    type: failureCount > 0 ? "warning" : "success",
+                    message,
+                    duration: 3000,
+                    actionLabel: result?.undo ? "되돌리기" : undefined,
+                    onAction: result?.undo,
+                });
+            }
+
+            if (Array.isArray(result?.renamed)) {
+                result.renamed.forEach((rename) => {
+                    showToast({
+                        type: "info",
+                        message: `동일한 이름이 있습니다. 바꾸기/겹치기 없이 새 이름으로 저장합니다. → ${rename.newTitle}`,
+                        duration: 2500,
+                    });
+                });
+            }
+
+            if (Array.isArray(result?.failures)) {
+                result.failures.forEach((failure) => {
+                    showToast({
+                        type: "error",
+                        message: failure?.message || "이동에 실패했습니다.",
+                        duration: 3500,
+                    });
+                });
+            }
+        } catch (error) {
+            console.error("Failed to move tree", error);
+            showToast({ type: "error", message: error?.message || "이동에 실패했습니다.", duration: 3500 });
+        } finally {
+            setSelectedTreeIds((prev) => prev.filter((id) => !uniqueIds.includes(id)));
+            handleTreeDragEnd();
+        }
+    }, [draggedTreeIds, folders, handleTreeDragEnd, onFolderSelect, onTreeMoveToFolder, showToast, trees]);
+
+    const handleTreeClick = useCallback((tree, event) => {
+        updateSelection(tree, event, { notify: true });
+    }, [updateSelection]);
 
     const handleTreeDoubleClick = useCallback((tree) => {
+        if (!tree) {
+            return;
+        }
+        updateSelection(tree, null, { notify: false });
         if (onTreeOpen) {
             onTreeOpen(tree.id);
         }
-    }, [onTreeOpen]);
-
-    const handleTreeMoveToFolder = useCallback((tree) => {
-        if (onTreeMoveToFolder) {
-            onTreeMoveToFolder(tree);
-        }
-    }, [onTreeMoveToFolder]);
+    }, [onTreeOpen, updateSelection]);
 
     const handleFolderCreate = useCallback(() => {
-        console.log('VoranBoxManager - 폴더 생성 시도:', {
-            name: newFolderName.trim(),
-            hasOnFolderCreate: !!onFolderCreate
-        });
-
         if (newFolderName.trim() && onFolderCreate) {
             onFolderCreate({ name: newFolderName.trim() });
             setNewFolderName("");
             setShowCreateFolder(false);
-        } else {
-            console.log('폴더 생성 조건 불만족:', {
-                hasName: !!newFolderName.trim(),
-                hasOnFolderCreate: !!onFolderCreate
-            });
         }
     }, [newFolderName, onFolderCreate]);
 
-    // 트리 이름 변경 핸들러
     const handleTreeRename = useCallback((treeId, newName) => {
         if (onTreeRename && newName?.trim()) {
             onTreeRename(treeId, newName.trim());
@@ -228,7 +598,6 @@ const VoranBoxManager = ({
         }
     }, [onTreeRename]);
 
-    // 트리 삭제 핸들러
     const handleTreeDelete = useCallback((treeId) => {
         if (onTreeDelete) {
             onTreeDelete(treeId);
@@ -236,41 +605,35 @@ const VoranBoxManager = ({
         setContextMenuTreeId(null);
     }, [onTreeDelete]);
 
-    // 컨텍스트 메뉴 토글
     const toggleContextMenu = useCallback((treeId) => {
-        setContextMenuTreeId(prev => prev === treeId ? null : treeId);
+        setContextMenuTreeId((prev) => (prev === treeId ? null : treeId));
     }, []);
 
-    // 편집 모드 시작
     const startEditing = useCallback((tree) => {
         setEditingTreeId(tree.id);
         setEditingTreeName(tree.title || "");
         setContextMenuTreeId(null);
     }, []);
 
-    // 편집 취소
     const cancelEditing = useCallback(() => {
         setEditingTreeId(null);
         setEditingTreeName("");
     }, []);
 
-    // 컨텍스트 메뉴 외부 클릭 시 닫기
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (contextMenuTreeId && !event.target.closest('.context-menu-container')) {
+            if (contextMenuTreeId && !event.target.closest(".context-menu-container")) {
                 setContextMenuTreeId(null);
             }
         };
-
         if (contextMenuTreeId) {
-            document.addEventListener('click', handleClickOutside);
-            return () => document.removeEventListener('click', handleClickOutside);
+            document.addEventListener("click", handleClickOutside);
+            return () => document.removeEventListener("click", handleClickOutside);
         }
+        return undefined;
     }, [contextMenuTreeId]);
 
-    // 키보드 네비게이션 핸들러
-    const handleKeyDown = useCallback((e) => {
-        // 폴더 생성 모드일 때는 기존 로직 사용
+    const handleKeyDown = useCallback(async (e) => {
         if (showCreateFolder) {
             if (e.key === "Enter") {
                 handleFolderCreate();
@@ -281,28 +644,19 @@ const VoranBoxManager = ({
             return;
         }
 
-        // 좌우 방향키로 폴더 이동
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
             e.preventDefault();
-            setCurrentFolderIndex(prev => {
-                const totalItems = folders.length + 1; // VORAN BOX 포함
-                let nextIndex;
-
-                if (e.key === "ArrowLeft") {
-                    // 왼쪽 방향키: 이전 폴더
-                    nextIndex = prev === 0 ? totalItems - 1 : prev - 1;
-                } else {
-                    // 오른쪽 방향키: 다음 폴더
-                    nextIndex = (prev + 1) % totalItems;
-                }
+            setCurrentFolderIndex((prev) => {
+                const totalItems = folders.length + 1;
+                const nextIndex = e.key === "ArrowLeft"
+                    ? (prev === 0 ? totalItems - 1 : prev - 1)
+                    : (prev + 1) % totalItems;
 
                 if (nextIndex === 0) {
-                    // VORAN BOX 선택
                     if (onFolderSelect) {
                         onFolderSelect(null);
                     }
                 } else {
-                    // 실제 폴더 선택
                     const targetFolder = folders[nextIndex - 1];
                     if (targetFolder && onFolderSelect) {
                         onFolderSelect(targetFolder.id);
@@ -312,47 +666,34 @@ const VoranBoxManager = ({
             });
         }
 
-        // 위아래 방향키로 트리 이동 (VORAN BOX에서만)
         if (e.key === "ArrowUp" || e.key === "ArrowDown") {
             e.preventDefault();
-
-            // VORAN BOX의 트리들만 가져오기
-            const voranTrees = trees.filter(tree => !tree.folderId);
-
             if (voranTrees.length > 0) {
-                const currentIndex = voranTrees.findIndex(tree => tree.id === localSelectedTreeId);
+                const currentIndex = voranTrees.findIndex((tree) => tree.id === localSelectedTreeId);
                 let nextIndex;
-
                 if (e.key === "ArrowUp") {
-                    // 위쪽 방향키: 이전 트리
                     nextIndex = currentIndex === -1 ? 0 : (currentIndex === 0 ? voranTrees.length - 1 : currentIndex - 1);
                 } else {
-                    // 아래쪽 방향키: 다음 트리
                     nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % voranTrees.length;
                 }
-
                 if (voranTrees[nextIndex]) {
-                    setLocalSelectedTreeId(voranTrees[nextIndex].id);
-                    // 트리 이동 시에는 폴더 선택을 변경하지 않음
+                    const nextId = voranTrees[nextIndex].id;
+                    setLocalSelectedTreeId(nextId);
+                    setSelectedTreeIds([nextId]);
                 }
             }
         }
 
-        // 탭키는 VoranBoxManager가 포커스를 받고 있을 때만 동작
         if (e.key === "Tab") {
             e.preventDefault();
-            // 다음 폴더로 이동하고 실제로 선택 (VORAN BOX 포함)
-            setCurrentFolderIndex(prev => {
-                const totalItems = folders.length + 1; // VORAN BOX 포함
+            setCurrentFolderIndex((prev) => {
+                const totalItems = folders.length + 1;
                 const nextIndex = (prev + 1) % totalItems;
-
                 if (nextIndex === 0) {
-                    // VORAN BOX 선택
                     if (onFolderSelect) {
                         onFolderSelect(null);
                     }
                 } else {
-                    // 실제 폴더 선택
                     const targetFolder = folders[nextIndex - 1];
                     if (targetFolder && onFolderSelect) {
                         onFolderSelect(targetFolder.id);
@@ -362,72 +703,83 @@ const VoranBoxManager = ({
             });
         }
 
-        // 엔터키와 스페이스바로 트리 저장
-        if (localSelectedTreeId) {
-            if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                // 선택된 폴더에 트리 저장 (VORAN BOX 포함)
+        if (localSelectedTreeId && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            const selectedTree = trees.find((tree) => tree.id === localSelectedTreeId);
+            if (!selectedTree) {
+                return;
+            }
+            try {
                 if (currentFolderIndex === 0) {
-                    // VORAN BOX에 저장 (트리를 VORAN BOX로 이동)
-                    const selectedTree = trees.find(tree => tree.id === localSelectedTreeId);
-                    if (selectedTree && onTreeMoveToFolder) {
-                        onTreeMoveToFolder({
-                            ...selectedTree,
-                            targetFolderId: null
-                        });
-                    }
+                    await onTreeMoveToFolder?.({ treeIds: [selectedTree.id], targetFolderId: null });
                 } else {
-                    // 실제 폴더에 저장
                     const targetFolder = folders[currentFolderIndex - 1];
-                    if (targetFolder && onTreeMoveToFolder) {
-                        const selectedTree = trees.find(tree => tree.id === localSelectedTreeId);
-                        if (selectedTree) {
-                            onTreeMoveToFolder({
-                                ...selectedTree,
-                                targetFolderId: targetFolder.id
-                            });
-                        }
+                    if (targetFolder) {
+                        await onTreeMoveToFolder?.({ treeIds: [selectedTree.id], targetFolderId: targetFolder.id });
                     }
                 }
-
-                // 다음 트리 자동 선택 (공통 로직)
-                const voranTrees = trees.filter(tree => !tree.folderId);
-                const currentIndex = voranTrees.findIndex(tree => tree.id === localSelectedTreeId);
-                const nextIndex = (currentIndex + 1) % voranTrees.length;
-
-                if (voranTrees.length > 1) {
-                    // 다음 트리가 있으면 선택
-                    setLocalSelectedTreeId(voranTrees[nextIndex].id);
-                    // 현재 폴더 인덱스 유지 (리셋하지 않음)
-                } else {
-                    // 마지막 트리이거나 트리가 없으면
-                    if (currentFolderIndex === 0) {
-                        // VORAN BOX에 저장했으면 트리 계속 선택 유지
-                        setNavigationMode(true);
-                        // 현재 폴더 인덱스 유지 (VORAN BOX)
-                    } else {
-                        // 실제 폴더에 저장했으면 트리 포커싱 멈춤
-                        setNavigationMode(false);
-                        setLocalSelectedTreeId(null);
-                    }
-                }
-            } else if (e.key === "Escape") {
-                // 오버레이 닫기
-                handleClose();
+            } catch (error) {
+                console.error("Keyboard move failed", error);
+                showToast({ type: "error", message: error?.message || "이동에 실패했습니다.", duration: 3500 });
             }
         }
-    }, [showCreateFolder, handleFolderCreate, navigationMode, localSelectedTreeId, folders, currentFolderIndex, onTreeMoveToFolder, onFolderSelect, trees]);
 
-
-    // 키보드 이벤트 리스너 등록
-    React.useEffect(() => {
-        if (isVisible) {
-            document.addEventListener('keydown', handleKeyDown);
-            return () => {
-                document.removeEventListener('keydown', handleKeyDown);
-            };
+        if (e.key === "Escape") {
+            handleClose();
         }
-    }, [isVisible, handleKeyDown]);
+    }, [currentFolderIndex, folders, handleClose, handleFolderCreate, localSelectedTreeId, navigationMode, onFolderSelect, onTreeMoveToFolder, showCreateFolder, showToast, trees, voranTrees]);
+
+    useEffect(() => {
+        if (isVisible) {
+            document.addEventListener("keydown", handleKeyDown);
+            return () => document.removeEventListener("keydown", handleKeyDown);
+        }
+        return undefined;
+    }, [handleKeyDown, isVisible]);
+
+    useEffect(() => {
+        if (!isDragging) {
+            setShowInvalidDropIndicator(false);
+            return undefined;
+        }
+
+        const handleWindowDragOver = (event) => {
+            setCursorPosition({ x: event.clientX, y: event.clientY });
+            const container = voranListRef.current;
+            if (container) {
+                const rect = container.getBoundingClientRect();
+                const threshold = 48;
+                const scrollStep = 14;
+                if (event.clientY < rect.top + threshold) {
+                    container.scrollBy({ top: -scrollStep, behavior: "auto" });
+                } else if (event.clientY > rect.bottom - threshold) {
+                    container.scrollBy({ top: scrollStep, behavior: "auto" });
+                }
+            }
+            if (!dragStatusRef.current.canDrop) {
+                const now = Date.now();
+                if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function" && now - lastVibrateRef.current > 250) {
+                    try {
+                        navigator.vibrate(18);
+                    } catch (err) {
+                        // 일부 환경에서는 지원하지 않을 수 있음
+                    }
+                    lastVibrateRef.current = now;
+                }
+                setShowInvalidDropIndicator(true);
+            } else {
+                setShowInvalidDropIndicator(false);
+            }
+        };
+
+        window.addEventListener("dragover", handleWindowDragOver);
+        window.addEventListener("dragend", handleTreeDragEnd);
+
+        return () => {
+            window.removeEventListener("dragover", handleWindowDragOver);
+            window.removeEventListener("dragend", handleTreeDragEnd);
+        };
+    }, [handleTreeDragEnd, isDragging]);
 
     if (!isVisible) {
         return null;
@@ -450,11 +802,11 @@ const VoranBoxManager = ({
                     className="w-full max-w-6xl h-[80vh] mx-4 bg-slate-900 border border-slate-700 rounded-lg shadow-xl flex overflow-hidden"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    {/* VORAN BOX 영역 */}
+                    {/* VORAN BOX */}
                     <div
                         className={cn(
                             "flex-1 border-r border-slate-700/50 bg-slate-900/40 transition-colors",
-                            dragOverTarget?.type === "voran" && "bg-blue-900/20 border-blue-500/50"
+                            dragOverTarget?.type === "voran" && "bg-blue-900/25 border-blue-500/60"
                         )}
                         onDragOver={(e) => handleDragOver(e, "voran", null)}
                         onDragLeave={handleDragLeave}
@@ -464,9 +816,7 @@ const VoranBoxManager = ({
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-lg font-semibold text-slate-200">VORAN BOX</h3>
-                                    <span className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded-full">
-                                        {voranTrees.length}
-                                    </span>
+                                    <span className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded-full">{voranTrees.length}</span>
                                 </div>
                                 <Button
                                     variant="ghost"
@@ -477,22 +827,16 @@ const VoranBoxManager = ({
                                     <X className="h-4 w-4" />
                                 </Button>
                             </div>
-                            <p className="mt-1 text-xs text-slate-400">
-                                저장된 트리들을 관리하세요
-                            </p>
+                            <p className="mt-1 text-xs text-slate-400">저장된 트리들을 관리하세요</p>
                             {navigationMode && localSelectedTreeId && (
-                                <div className="mt-2 text-xs text-blue-400 font-medium">
-                                    탭키로 폴더를 선택하고 엔터로 저장하세요
-                                </div>
+                                <div className="mt-2 text-xs text-blue-400 font-medium">탭키로 폴더를 선택하고 엔터로 저장하세요</div>
                             )}
                             {dragOverTarget?.type === "voran" && (
-                                <div className="mt-2 text-xs text-blue-400 font-medium">
-                                    여기에 트리를 놓으면 VORAN BOX로 이동합니다
-                                </div>
+                                <div className="mt-2 text-xs text-blue-400 font-medium">여기에 트리를 놓으면 VORAN BOX로 이동합니다</div>
                             )}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto px-4 py-3">
+                        <div className="flex-1 overflow-y-auto px-4 py-3" ref={voranListRef}>
                             {loading ? (
                                 <div className="flex items-center justify-center py-8">
                                     <div className="text-sm text-slate-400">로딩 중...</div>
@@ -505,29 +849,33 @@ const VoranBoxManager = ({
                             ) : (
                                 <div className="space-y-0">
                                     {voranTrees.map((tree, index) => {
-                                        const isSelected = tree.id === localSelectedTreeId;
-                                        const isDragging = draggedTreeId === tree.id;
+                                        const isSelected = selectedTreeIds.includes(tree.id);
+                                        const isDraggingTree = draggedTreeIds.includes(tree.id);
 
                                         return (
                                             <div key={tree.id}>
-                                                {index > 0 && (
-                                                    <div className="border-t border-slate-600/50 my-1"></div>
-                                                )}
+                                                {index > 0 && <div className="border-t border-slate-600/50 my-1" />}
                                                 <motion.div
                                                     initial={{ opacity: 0, y: -10 }}
                                                     animate={{ opacity: 1, y: 0 }}
                                                     exit={{ opacity: 0, y: -10 }}
                                                     transition={{ duration: 0.2 }}
                                                     draggable={editingTreeId !== tree.id}
+                                                    onMouseDown={(event) => {
+                                                        if (event.button !== 0 || editingTreeId === tree.id) {
+                                                            return;
+                                                        }
+                                                        updateSelection(tree, event, { notify: false });
+                                                    }}
                                                     onDragStart={(e) => editingTreeId !== tree.id && handleTreeDragStart(e, tree.id)}
                                                     onDragEnd={handleTreeDragEnd}
-                                                    onClick={() => editingTreeId !== tree.id && handleTreeClick(tree)}
+                                                    onClick={(event) => editingTreeId !== tree.id && handleTreeClick(tree, event)}
                                                     onDoubleClick={() => editingTreeId !== tree.id && handleTreeDoubleClick(tree)}
                                                     className={cn(
                                                         "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all",
                                                         editingTreeId !== tree.id && "cursor-pointer hover:bg-slate-800/50 active:bg-slate-800/70",
-                                                        isSelected && "bg-slate-700/50 border border-slate-600/50",
-                                                        isDragging && "opacity-50 scale-95"
+                                                        isSelected && "bg-slate-700/60 border border-slate-500/70 shadow-inner",
+                                                        isDraggingTree && "opacity-60 scale-[0.98]"
                                                     )}
                                                 >
                                                     <TreeIcon className="h-3 w-3 text-slate-400 flex-shrink-0" />
@@ -537,9 +885,9 @@ const VoranBoxManager = ({
                                                                 value={editingTreeName}
                                                                 onChange={(e) => setEditingTreeName(e.target.value)}
                                                                 onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') {
+                                                                    if (e.key === "Enter") {
                                                                         handleTreeRename(tree.id, editingTreeName);
-                                                                    } else if (e.key === 'Escape') {
+                                                                    } else if (e.key === "Escape") {
                                                                         cancelEditing();
                                                                     }
                                                                 }}
@@ -549,9 +897,7 @@ const VoranBoxManager = ({
                                                             />
                                                         ) : (
                                                             <>
-                                                                <div className="font-medium text-slate-200 truncate text-xs">
-                                                                    {tree.title || "제목 없는 트리"}
-                                                                </div>
+                                                                <div className="font-medium text-slate-200 truncate text-xs">{tree.title || "제목 없는 트리"}</div>
                                                                 <div className="flex items-center gap-1.5 text-xs text-slate-400">
                                                                     <Clock className="h-2.5 w-2.5" />
                                                                     <span className="text-xs">{formatDate(tree.updatedAt)}</span>
@@ -574,8 +920,6 @@ const VoranBoxManager = ({
                                                             >
                                                                 <MoreHorizontal className="h-3 w-3" />
                                                             </Button>
-                                                            
-                                                            {/* 컨텍스트 메뉴 */}
                                                             {contextMenuTreeId === tree.id && (
                                                                 <div className="absolute right-0 top-6 z-50 bg-slate-800 border border-slate-600 rounded-md shadow-lg py-1 min-w-[120px]">
                                                                     <button
@@ -611,7 +955,7 @@ const VoranBoxManager = ({
                         </div>
                     </div>
 
-                    {/* 폴더 관리 영역 */}
+                    {/* 폴더 관리 */}
                     <div className="flex-1 bg-slate-900/40 flex flex-col">
                         <div className="px-4 pt-3 pb-0">
                             <div className="flex items-center justify-between">
@@ -627,24 +971,20 @@ const VoranBoxManager = ({
                             </div>
                         </div>
 
-                        {/* 폴더 목록 (상단 1행) */}
                         <div className="px-4 py-2 border-b border-slate-700/50">
                             <div className="flex gap-2 overflow-x-auto">
-                                {/* VORAN BOX 항목 (첫 번째) */}
                                 <button
                                     className={cn(
                                         "flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-slate-800/80 border border-slate-700/50",
-                                        "focus:outline-none focus:ring-0", // 주황 테두리 제거
-                                        // 선택된 상태가 아닐 때만 호버 디자인 적용
+                                        "focus:outline-none focus:ring-0",
                                         !(selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && "hover:bg-slate-700/80 hover:border-slate-600/50",
                                         (selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && "bg-blue-600/30 border-blue-500/70",
-                                        dragOverTarget?.type === "voran" && "bg-blue-900/30 border-blue-500/70"
+                                        dragOverTarget?.type === "voran" && "bg-blue-900/30 border-blue-500/70 ring-1 ring-blue-400/60 scale-[1.02] shadow-md"
                                     )}
                                     onClick={() => {
                                         if (onFolderSelect) {
                                             onFolderSelect(null);
                                         }
-                                        // VORAN BOX 클릭 시에도 네비게이션 모드 활성화
                                         if (localSelectedTreeId) {
                                             setNavigationMode(true);
                                             setCurrentFolderIndex(0);
@@ -656,38 +996,35 @@ const VoranBoxManager = ({
                                 >
                                     <TreeIcon className="h-3 w-3 text-slate-400" />
                                     <span className="text-slate-200">VORAN BOX</span>
-                                    <span className="text-xs text-slate-400 bg-slate-700 px-1 py-0.5 rounded-full">
-                                        {voranTrees.length}
-                                    </span>
+                                    <span className="text-xs text-slate-400 bg-slate-700 px-1 py-0.5 rounded-full">{voranTrees.length}</span>
                                 </button>
 
-                                {/* 실제 폴더들 */}
                                 {folders.length === 0 ? (
                                     <div className="flex items-center justify-center py-4 text-center">
                                         <p className="text-sm text-slate-400">폴더가 없습니다</p>
                                     </div>
                                 ) : (
                                     folders.map((folder, index) => {
-                                        const folderIndex = index + 1; // VORAN BOX가 0번이므로 +1
+                                        const folderIndex = index + 1;
                                         const isNavigationSelected = navigationMode && folderIndex === currentFolderIndex;
                                         const isDragTarget = dragOverTarget?.type === "folder" && dragOverTarget?.id === folder.id;
+                                        const isPreview = activePreviewFolderId === folder.id;
 
                                         return (
                                             <button
                                                 key={folder.id}
                                                 className={cn(
                                                     "flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-slate-800/80 border border-slate-700/50",
-                                                    "focus:outline-none focus:ring-0", // 주황 테두리 제거
-                                                    // 선택된 상태가 아닐 때만 호버 디자인 적용
+                                                    "focus:outline-none focus:ring-0",
                                                     !(selectedFolderId === folder.id || isNavigationSelected) && "hover:bg-slate-700/80 hover:border-slate-600/50",
                                                     (selectedFolderId === folder.id || isNavigationSelected) && "bg-blue-600/30 border-blue-500/70",
-                                                    isDragTarget && "bg-blue-900/30 border-blue-500/70"
+                                                    isDragTarget && "bg-blue-900/30 border-blue-500/70 ring-1 ring-blue-400/60",
+                                                    isPreview && "scale-[1.04] shadow-lg ring-2 ring-blue-300/60"
                                                 )}
                                                 onClick={() => {
                                                     if (onFolderSelect) {
                                                         onFolderSelect(folder.id);
                                                     }
-                                                    // 폴더 클릭 시에도 네비게이션 모드 활성화
                                                     if (localSelectedTreeId) {
                                                         setNavigationMode(true);
                                                         setCurrentFolderIndex(folderIndex);
@@ -699,9 +1036,7 @@ const VoranBoxManager = ({
                                             >
                                                 <Folder className="h-3 w-3 text-slate-400" />
                                                 <span className="text-slate-200">{folder.name}</span>
-                                                <span className="text-xs text-slate-400 bg-slate-700 px-1 py-0.5 rounded-full">
-                                                    {folderTreeCounts[folder.id] || 0}
-                                                </span>
+                                                <span className="text-xs text-slate-400 bg-slate-700 px-1 py-0.5 rounded-full">{folderTreeCounts[folder.id] || 0}</span>
                                             </button>
                                         );
                                     })
@@ -709,7 +1044,6 @@ const VoranBoxManager = ({
                             </div>
                         </div>
 
-                        {/* 폴더 생성 폼 */}
                         <AnimatePresence>
                             {showCreateFolder && (
                                 <motion.div
@@ -754,7 +1088,6 @@ const VoranBoxManager = ({
                             )}
                         </AnimatePresence>
 
-                        {/* 선택된 폴더의 트리 목록 - 전체 영역 사용 */}
                         <div className="flex-1 overflow-y-auto px-4 py-3 transition-colors">
                             {selectedFolderId ? (
                                 <div
@@ -767,110 +1100,103 @@ const VoranBoxManager = ({
                                     onDrop={(e) => handleDrop(e, "folder", selectedFolderId)}
                                 >
                                     {(() => {
-                                        const selectedFolder = folders.find(f => f.id === selectedFolderId);
-                                        const folderTrees = trees.filter(tree => tree.folderId === selectedFolderId);
+                                        const folderTrees = trees.filter((tree) => tree.folderId === selectedFolderId);
+                                        if (folderTrees.length === 0) {
+                                            return (
+                                                <div className="flex flex-col items-center justify-center py-8 text-center h-full">
+                                                    <TreeIcon className="h-8 w-8 text-slate-600 mb-2" />
+                                                    <p className="text-sm text-slate-400">이 폴더에 트리가 없습니다</p>
+                                                    {dragOverTarget?.type === "folder" && dragOverTarget?.id === selectedFolderId && (
+                                                        <div className="mt-2 text-xs text-blue-400 font-medium">여기에 트리를 놓으면 이 폴더로 이동합니다</div>
+                                                    )}
+                                                </div>
+                                            );
+                                        }
 
                                         return (
-                                            <div className="space-y-0 h-full">
-                                                {folderTrees.length === 0 ? (
-                                                    <div className="flex flex-col items-center justify-center py-8 text-center h-full">
-                                                        <TreeIcon className="h-8 w-8 text-slate-600 mb-2" />
-                                                        <p className="text-sm text-slate-400">이 폴더에 트리가 없습니다</p>
-                                                        {dragOverTarget?.type === "folder" && dragOverTarget?.id === selectedFolderId && (
-                                                            <div className="mt-2 text-xs text-blue-400 font-medium">
-                                                                여기에 트리를 놓으면 이 폴더로 이동합니다
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <div className="space-y-0">
-                                                        {folderTrees.map((tree, index) => {
-                                                            const isSelected = tree.id === localSelectedTreeId;
-                                                            const isDragging = draggedTreeId === tree.id;
-
-                                                            return (
-                                                                <div key={tree.id}>
-                                                                    {index > 0 && (
-                                                                        <div className="border-t border-slate-600/50 my-1"></div>
-                                                                    )}
-                                                                    <motion.div
-                                                                        initial={{ opacity: 0, y: -10 }}
-                                                                        animate={{ opacity: 1, y: 0 }}
-                                                                        exit={{ opacity: 0, y: -10 }}
-                                                                        transition={{ duration: 0.2 }}
+                                            <div className="space-y-0">
+                                                {folderTrees.map((tree, index) => {
+                                                    const isSelected = tree.id === localSelectedTreeId;
+                                                    const isDraggingTree = draggedTreeIds.includes(tree.id);
+                                                    return (
+                                                        <div key={tree.id}>
+                                                            {index > 0 && <div className="border-t border-slate-600/50 my-1" />}
+                                                            <motion.div
+                                                                initial={{ opacity: 0, y: -10 }}
+                                                                animate={{ opacity: 1, y: 0 }}
+                                                                exit={{ opacity: 0, y: -10 }}
+                                                                transition={{ duration: 0.2 }}
                                                                         draggable
+                                                                        onMouseDown={(event) => {
+                                                                            if (event.button !== 0) {
+                                                                                return;
+                                                                            }
+                                                                            updateSelection(tree, event, { notify: false });
+                                                                        }}
                                                                         onDragStart={(e) => handleTreeDragStart(e, tree.id)}
-                                                                        onDragEnd={handleTreeDragEnd}
-                                                                        onClick={() => handleTreeClick(tree)}
-                                                                        onDoubleClick={() => handleTreeDoubleClick(tree)}
-                                                                        className={cn(
-                                                                            "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all cursor-pointer",
-                                                                            "hover:bg-slate-800/50 active:bg-slate-800/70",
-                                                                            isSelected && "bg-slate-700/50 border border-slate-600/50",
-                                                                            isDragging && "opacity-50 scale-95"
-                                                                        )}
+                                                                onDragEnd={handleTreeDragEnd}
+                                                                onClick={(event) => handleTreeClick(tree, event)}
+                                                                onDoubleClick={() => handleTreeDoubleClick(tree)}
+                                                                className={cn(
+                                                                    "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all cursor-pointer",
+                                                                    "hover:bg-slate-800/50 active:bg-slate-800/70",
+                                                                    isSelected && "bg-slate-700/50 border border-slate-600/50",
+                                                                    isDraggingTree && "opacity-50 scale-95"
+                                                                )}
+                                                            >
+                                                                <TreeIcon className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="font-medium text-slate-200 truncate text-xs">{tree.title || "제목 없는 트리"}</div>
+                                                                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                                                                        <Clock className="h-2.5 w-2.5" />
+                                                                        <span className="text-xs">{formatDate(tree.updatedAt)}</span>
+                                                                        <span>•</span>
+                                                                        <span className="text-xs">{tree.treeData?.nodes?.length || 0}개 노드</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="relative context-menu-container">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            toggleContextMenu(tree.id);
+                                                                        }}
                                                                     >
-                                                                        <TreeIcon className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className="font-medium text-slate-200 truncate text-xs">
-                                                                                {tree.title || "제목 없는 트리"}
-                                                                            </div>
-                                                                            <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                                                                                <Clock className="h-2.5 w-2.5" />
-                                                                                <span className="text-xs">{formatDate(tree.updatedAt)}</span>
-                                                                                <span>•</span>
-                                                                                <span className="text-xs">{tree.treeData?.nodes?.length || 0}개 노드</span>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="relative context-menu-container">
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
+                                                                        <MoreHorizontal className="h-3 w-3" />
+                                                                    </Button>
+                                                                    {contextMenuTreeId === tree.id && (
+                                                                        <div className="absolute right-0 top-6 z-50 bg-slate-800 border border-slate-600 rounded-md shadow-lg py-1 min-w-[120px]">
+                                                                            <button
+                                                                                className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
-                                                                                    toggleContextMenu(tree.id);
+                                                                                    startEditing(tree);
                                                                                 }}
                                                                             >
-                                                                                <MoreHorizontal className="h-3 w-3" />
-                                                                            </Button>
-                                                                            
-                                                                            {/* 컨텍스트 메뉴 */}
-                                                                            {contextMenuTreeId === tree.id && (
-                                                                                <div className="absolute right-0 top-6 z-50 bg-slate-800 border border-slate-600 rounded-md shadow-lg py-1 min-w-[120px]">
-                                                                                    <button
-                                                                                        className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            startEditing(tree);
-                                                                                        }}
-                                                                                    >
-                                                                                        <Edit className="h-3 w-3" />
-                                                                                        이름 고치기
-                                                                                    </button>
-                                                                                    <button
-                                                                                        className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-slate-700 flex items-center gap-2"
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            handleTreeDelete(tree.id);
-                                                                                        }}
-                                                                                    >
-                                                                                        <Trash2 className="h-3 w-3" />
-                                                                                        지우기
-                                                                                    </button>
-                                                                                </div>
-                                                                            )}
+                                                                                <Edit className="h-3 w-3" />
+                                                                                이름 고치기
+                                                                            </button>
+                                                                            <button
+                                                                                className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-slate-700 flex items-center gap-2"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    handleTreeDelete(tree.id);
+                                                                                }}
+                                                                            >
+                                                                                <Trash2 className="h-3 w-3" />
+                                                                                지우기
+                                                                            </button>
                                                                         </div>
-                                                                    </motion.div>
+                                                                    )}
                                                                 </div>
-                                                            );
-                                                        })}
-                                                        {dragOverTarget?.type === "folder" && dragOverTarget?.id === selectedFolderId && folderTrees.length > 0 && (
-                                                            <div className="mt-2 text-xs text-blue-400 font-medium text-center">
-                                                                여기에 트리를 놓으면 이 폴더로 이동합니다
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                            </motion.div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {dragOverTarget?.type === "folder" && dragOverTarget?.id === selectedFolderId && (
+                                                    <div className="mt-2 text-xs text-blue-400 font-medium text-center">여기에 트리를 놓으면 이 폴더로 이동합니다</div>
                                                 )}
                                             </div>
                                         );
@@ -893,42 +1219,76 @@ const VoranBoxManager = ({
                             )}
                         </div>
 
-                        {/* 조작키 안내 */}
                         <div className="border-t border-slate-700/50 px-4 py-2 bg-slate-800/30">
                             <div className="text-xs text-slate-400 space-y-1">
                                 <div className="flex items-center gap-4">
-                                    <span className="flex items-center gap-1">
-                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">←</kbd>
-                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">→</kbd>
-                                        <span className="text-slate-500">폴더 이동</span>
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↑</kbd>
-                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↓</kbd>
-                                        <span className="text-slate-500">트리 선택</span>
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Tab</kbd>
-                                        <span className="text-slate-500">폴더 순환</span>
-                                    </span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">←</kbd><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">→</kbd><span className="text-slate-500">폴더 이동</span></span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↑</kbd><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↓</kbd><span className="text-slate-500">트리 선택</span></span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Tab</kbd><span className="text-slate-500">폴더 순환</span></span>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <span className="flex items-center gap-1">
-                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Enter</kbd>
-                                        <span className="text-slate-500">트리 저장</span>
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Esc</kbd>
-                                        <span className="text-slate-500">닫기</span>
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <span className="text-slate-500">드래그로 이동</span>
-                                    </span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Enter</kbd><span className="text-slate-500">트리 저장</span></span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Esc</kbd><span className="text-slate-500">닫기</span></span>
+                                    <span className="flex items-center gap-1 text-slate-500">드래그로 이동</span>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </motion.div>
+
+                <div className="pointer-events-none fixed right-6 top-6 z-[101] space-y-2">
+                    <AnimatePresence>
+                        {toasts.map((toast) => {
+                            const visuals = toastVisuals[toast.type] || toastVisuals.default;
+                            const Icon = visuals.Icon;
+                            return (
+                                <motion.div
+                                    key={toast.id}
+                                    initial={{ opacity: 0, y: -12 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -12 }}
+                                    transition={{ duration: 0.18 }}
+                                    className={cn(
+                                        "pointer-events-auto flex min-w-[260px] max-w-[320px] items-start gap-3 rounded-lg px-4 py-3 shadow-lg backdrop-blur-sm",
+                                        visuals.container
+                                    )}
+                                >
+                                    <Icon className={cn("h-4 w-4 mt-0.5 flex-shrink-0", visuals.iconClass)} />
+                                    <div className="flex-1 text-xs leading-5">{toast.message}</div>
+                                    {toast.actionLabel && toast.onAction && (
+                                        <button
+                                            className="text-xs font-semibold text-blue-200 hover:text-white"
+                                            onClick={(event) => {
+                                                event.preventDefault();
+                                                event.stopPropagation();
+                                                handleToastAction(toast);
+                                            }}
+                                        >
+                                            {toast.actionLabel}
+                                        </button>
+                                    )}
+                                </motion.div>
+                            );
+                        })}
+                    </AnimatePresence>
+                </div>
+
+                <AnimatePresence>
+                    {isDragging && showInvalidDropIndicator && (
+                        <motion.div
+                            key="invalid-drop-indicator"
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            transition={{ duration: 0.12 }}
+                            className="pointer-events-none fixed z-[102] flex items-center gap-2 rounded-md border border-red-400/50 bg-red-500/10 px-3 py-1 text-xs text-red-200 shadow-lg backdrop-blur-sm"
+                            style={{ transform: `translate3d(${cursorPosition.x + 14}px, ${cursorPosition.y + 18}px, 0)` }}
+                        >
+                            <Ban className="h-3.5 w-3.5" />
+                            <span>놓을 수 없습니다</span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.div>
         </AnimatePresence>
     );
