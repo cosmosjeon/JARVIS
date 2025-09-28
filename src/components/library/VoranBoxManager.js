@@ -822,17 +822,45 @@ const VoranBoxManager = ({
                                                                                 <span className="text-xs">{tree.treeData?.nodes?.length || 0}개 노드</span>
                                                                             </div>
                                                                         </div>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleTreeMoveToFolder(tree);
-                                                                            }}
-                                                                        >
-                                                                            <MoreHorizontal className="h-3 w-3" />
-                                                                        </Button>
+                                                                        <div className="relative context-menu-container">
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    toggleContextMenu(tree.id);
+                                                                                }}
+                                                                            >
+                                                                                <MoreHorizontal className="h-3 w-3" />
+                                                                            </Button>
+                                                                            
+                                                                            {/* 컨텍스트 메뉴 */}
+                                                                            {contextMenuTreeId === tree.id && (
+                                                                                <div className="absolute right-0 top-6 z-50 bg-slate-800 border border-slate-600 rounded-md shadow-lg py-1 min-w-[120px]">
+                                                                                    <button
+                                                                                        className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            startEditing(tree);
+                                                                                        }}
+                                                                                    >
+                                                                                        <Edit className="h-3 w-3" />
+                                                                                        이름 고치기
+                                                                                    </button>
+                                                                                    <button
+                                                                                        className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-slate-700 flex items-center gap-2"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            handleTreeDelete(tree.id);
+                                                                                        }}
+                                                                                    >
+                                                                                        <Trash2 className="h-3 w-3" />
+                                                                                        지우기
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </motion.div>
                                                                 </div>
                                                             );
