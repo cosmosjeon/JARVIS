@@ -2,11 +2,24 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Highlighter from 'web-highlighter';
 import QuestionService from '../services/QuestionService';
 import { useSettings } from '../hooks/SettingsContext';
+import MarkdownMessage from './common/MarkdownMessage';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
   expanded: { width: 1920, height: 1080 },
 };
+
+// 노드 스케일 팩터를 적용한 패널 크기 계산
+const getScaledPanelSizes = (scaleFactor = 1) => ({
+  compact: {
+    width: PANEL_SIZES.compact.width * scaleFactor,
+    height: PANEL_SIZES.compact.height * scaleFactor
+  },
+  expanded: {
+    width: PANEL_SIZES.expanded.width * scaleFactor,
+    height: PANEL_SIZES.expanded.height * scaleFactor
+  },
+});
 
 const TYPING_INTERVAL_MS = 18;
 
@@ -19,65 +32,6 @@ const buildAnswerText = (summary, question) => {
   const detail = `${summary.intro}`;
   const body = [detail, bulletText].filter(Boolean).join('\n\n');
   return `${intro}\n\n${body}`.trim();
-};
-
-const parseMarkdownBlocks = (text) => {
-  const lines = text.split(/\r?\n/);
-  const blocks = [];
-  let currentList = null;
-
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      currentList = null;
-      return;
-    }
-
-    if (/^[-*]\s+/.test(trimmed)) {
-      if (!currentList) {
-        currentList = { type: 'list', items: [] };
-        blocks.push(currentList);
-      }
-      currentList.items.push(trimmed.replace(/^[-*]\s+/, '').trim());
-      return;
-    }
-
-    currentList = null;
-    blocks.push({ type: 'paragraph', content: trimmed });
-  });
-
-  return blocks;
-};
-
-const MarkdownMessage = ({ text }) => {
-  const blocks = useMemo(() => parseMarkdownBlocks(text), [text]);
-
-  if (!blocks.length) {
-    return null;
-  }
-
-  return (
-    <div className="markdown-body">
-      {blocks.map((block, blockIndex) => {
-        if (block.type === 'list') {
-          return (
-            <ul key={`md-list-${blockIndex}`}>
-              {block.items.map((item, itemIndex) => (
-                <li key={`md-list-item-${blockIndex}-${itemIndex}`}>{item}</li>
-              ))}
-            </ul>
-          );
-        }
-
-        return (
-          <p key={`md-paragraph-${blockIndex}`}>
-            {block.content}
-          </p>
-        );
-      })}
-    </div>
-  );
 };
 
 const NodeAssistantPanel = ({
@@ -97,6 +51,8 @@ const NodeAssistantPanel = ({
   onAnswerComplete,
   onAnswerError,
   onCloseNode = () => { },
+  onPanZoomGesture,
+  nodeScaleFactor = 1,
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -664,7 +620,7 @@ const NodeAssistantPanel = ({
   return (
     <div
       ref={panelRef}
-      className="relative flex flex-1 flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-6 min-h-0 backdrop-blur-md"
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl border border-white/30 bg-white/25 p-6 backdrop-blur-3xl"
       style={{
         fontFamily: 'Arial, sans-serif',
         position: 'relative',
@@ -673,15 +629,25 @@ const NodeAssistantPanel = ({
         WebkitAppRegion: 'no-drag',
       }}
       data-interactive-zone="true"
+      onWheelCapture={(event) => {
+        if ((event.ctrlKey || event.metaKey) && typeof onPanZoomGesture === 'function') {
+          onPanZoomGesture(event);
+        }
+      }}
     >
 
       <div
-        className="flex flex-wrap items-start justify-between gap-3 pb-2"
+        className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
         data-pan-handle="true"
         style={{
           cursor: 'grab',
           userSelect: 'none',
           WebkitUserSelect: 'none',
+        }}
+        onWheelCapture={(event) => {
+          if (typeof onPanZoomGesture === 'function') {
+            onPanZoomGesture(event);
+          }
         }}
       >
         <div className="min-w-0 flex-1">
@@ -690,45 +656,50 @@ const NodeAssistantPanel = ({
           </p>
           <p className="text-xs text-slate-200/70">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
         </div>
-        <div className="flex items-center gap-2" data-block-pan="true">
-          <button
-            type="button"
-            onClick={onCloseNode}
-            className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
-          >
-            닫기
-          </button>
-        </div>
+        {!bootstrapMode && (
+          <div className="flex items-center gap-2" data-block-pan="true">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onCloseNode();
+              }}
+              className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
+            >
+              닫기
+            </button>
+          </div>
+        )}
       </div>
 
       <div
         ref={highlightRootRef}
-        className="glass-scrollbar flex-1 overflow-y-auto overflow-x-hidden pr-1 min-h-0"
+        className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
       >
-          <div className="flex h-full flex-col gap-3">
+          <div className="flex h-full flex-col gap-6">
             {messages.map((message) => {
               const isAssistant = message.role === 'assistant';
 
               return (
                 <div
                   key={message.id}
-                  className={`flex ${isAssistant ? 'justify-center' : 'justify-end'}`}
+                  className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   data-testid={isAssistant ? 'assistant-message' : 'user-message'}
                   data-status={message.status || 'complete'}
                 >
-                  <div
-                    className={
-                      isAssistant
-                        ? 'glass-surface w-full max-w-[520px] break-words rounded-3xl border border-white/10 px-6 py-4 text-sm leading-relaxed text-slate-50 shadow-2xl'
-                        : 'max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm'
-                    }
-                  >
-                    {isAssistant ? (
-                      <MarkdownMessage text={message.text} />
-                    ) : (
+                  {isAssistant ? (
+                    <div className="w-full">
+                      <MarkdownMessage
+                        text={message.text}
+                        className="w-full text-base leading-7 text-slate-100"
+                      />
+                    </div>
+                  ) : (
+                    <div className="max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm">
                       <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -736,7 +707,7 @@ const NodeAssistantPanel = ({
         </div>
 
         {/* 다중 질문 버튼 */}
-        <div className="flex justify-start -mb-2" data-block-pan="true">
+        <div className="flex -mb-2 flex-shrink-0 justify-start" data-block-pan="true">
           <button
             type="button"
             onClick={handleHighlightToggle}
@@ -751,7 +722,7 @@ const NodeAssistantPanel = ({
         </div>
 
         <form
-          className="glass-surface flex items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
+          className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
           onSubmit={(event) => {
             event.preventDefault();
             handleSend().catch(() => { });

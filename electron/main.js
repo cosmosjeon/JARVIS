@@ -506,8 +506,8 @@ const createWindow = ({ treeId = null, sessionId = generateSessionId(), fresh = 
     // 창 크기 설정
     width: 1024,
     height: 720,
-    minWidth: 520,
-    minHeight: 360,
+    minWidth: 320,
+    minHeight: 240,
 
     // 창 프레임 설정
     frame: false,                             // 완전히 프레임 제거
@@ -614,8 +614,8 @@ const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessi
   const widgetWindow = new BrowserWindow({
     width: 1024,
     height: 720,
-    minWidth: 520,
-    minHeight: 360,
+    minWidth: 320,
+    minHeight: 240,
     frame: false,
     transparent: windowConfig.transparent,
     backgroundColor: '#00000000',

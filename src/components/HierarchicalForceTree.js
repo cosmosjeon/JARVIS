@@ -21,8 +21,20 @@ import {
   sanitizeConversationMessages,
   buildFallbackConversation,
 } from '../services/supabaseTrees';
+import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from '../services/treeCreation';
 
 const WINDOW_CHROME_HEIGHT = 48;
+
+const DOM_DELTA_PIXEL = 0;
+const DOM_DELTA_LINE = 1;
+const DOM_DELTA_PAGE = 2;
+
+const normalizeWheelDelta = (value, mode) => {
+  if (!Number.isFinite(value)) return 0;
+  if (mode === DOM_DELTA_LINE) return value * 16;
+  if (mode === DOM_DELTA_PAGE) return value * 120;
+  return value;
+};
 
 const getViewportDimensions = () => {
   if (typeof window === 'undefined') {
@@ -34,10 +46,30 @@ const getViewportDimensions = () => {
   };
 };
 
+// 창 크기에 따른 노드 스케일 팩터 계산
+const calculateNodeScaleFactor = (dimensions) => {
+  // 기준 크기 (1024x672)
+  const BASE_WIDTH = 1024;
+  const BASE_HEIGHT = 720 - WINDOW_CHROME_HEIGHT;
+
+  // 현재 창 크기
+  const currentWidth = dimensions.width || BASE_WIDTH;
+  const currentHeight = dimensions.height || BASE_HEIGHT;
+
+  // 너비와 높이 스케일을 각각 계산하고 더 작은 값 사용 (비율 유지)
+  const widthScale = currentWidth / BASE_WIDTH;
+  const heightScale = currentHeight / BASE_HEIGHT;
+  const scaleFactor = Math.min(widthScale, heightScale);
+
+  // 최소 0.4배, 최대 2.0배로 제한
+  return Math.max(0.4, Math.min(2.0, scaleFactor));
+};
+
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState(getViewportDimensions());
+  const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
@@ -55,6 +87,7 @@ const HierarchicalForceTree = () => {
   const questionService = useRef(new QuestionService());
   const conversationStoreRef = useRef(new Map());
   const pendingTreeIdRef = useRef(null);
+  const treeLibrarySyncRef = useRef(new Map());
   const zoomBehaviourRef = useRef(null);
   const pendingFocusNodeIdRef = useRef(null);
   const expandTimeoutRef = useRef(null);
@@ -635,6 +668,12 @@ const HierarchicalForceTree = () => {
             refreshed: alreadyRefreshed || nextCount > 0,
           });
         }
+
+        // 트리에 내용이 추가되었으므로 빈 트리 추적 중지
+        if (isTrackingEmptyTree(resolvedTreeId)) {
+          stopTrackingEmptyTree(resolvedTreeId);
+          console.log(`트리에 내용이 추가되어 빈 트리 추적 중지: ${resolvedTreeId}`);
+        }
       }
     } catch (error) {
       setTreeSyncError(error);
@@ -669,6 +708,34 @@ const HierarchicalForceTree = () => {
       }
     };
   }, [data, user, initializingTree, persistTreeData]);
+
+  // 위젯에서 나갈 때 빈 트리 정리
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleBeforeUnload = async () => {
+      try {
+        // 현재 트리 데이터를 가져와서 빈 트리인지 확인
+        const currentTree = {
+          id: activeTreeId,
+          treeData: data
+        };
+        
+        // 빈 트리인 경우 정리
+        if (activeTreeId && data && data.nodes && data.nodes.length === 0) {
+          await cleanupEmptyTrees([currentTree]);
+        }
+      } catch (error) {
+        console.error('빈 트리 정리 중 오류:', error);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [activeTreeId, data]);
 
   // 부모 -> 자식 맵 계산 (원본 데이터 기준)
   const childrenByParent = React.useMemo(() => {
@@ -756,6 +823,59 @@ const HierarchicalForceTree = () => {
     clearPendingExpansion();
     setExpandedNodeId(null);
   }, [clearPendingExpansion]);
+
+  const forwardPanZoomGesture = useCallback((event) => {
+    const svgElement = svgRef.current;
+    const zoomBehaviour = zoomBehaviourRef.current;
+    if (!svgElement || !zoomBehaviour || !event) {
+      return false;
+    }
+
+    const mode = typeof event.deltaMode === 'number' ? event.deltaMode : DOM_DELTA_PIXEL;
+    const selection = d3.select(svgElement);
+
+    const isPinch = event.ctrlKey || event.metaKey;
+
+    if (isPinch) {
+      const normalizedDeltaY = normalizeWheelDelta(event.deltaY || 0, mode);
+      if (!Number.isFinite(normalizedDeltaY) || normalizedDeltaY === 0) {
+        return false;
+      }
+
+      const rect = svgElement.getBoundingClientRect();
+      const clientX = typeof event.clientX === 'number' ? event.clientX : rect.left + rect.width / 2;
+      const clientY = typeof event.clientY === 'number' ? event.clientY : rect.top + rect.height / 2;
+      const pointerX = clientX - rect.left;
+      const pointerY = clientY - rect.top;
+
+      // Match the sensitivity used by the default wheel delta
+      const scaleFactor = Math.pow(2, -normalizedDeltaY / 600);
+      if (!Number.isFinite(scaleFactor) || scaleFactor === 0) {
+        return false;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      selection.interrupt('focus-node');
+      zoomBehaviour.scaleBy(selection, scaleFactor, [pointerX, pointerY]);
+      return true;
+    }
+
+    const normalizedDeltaX = normalizeWheelDelta(event.deltaX || 0, mode);
+    const normalizedDeltaY = normalizeWheelDelta(event.deltaY || 0, mode);
+    if (normalizedDeltaX === 0 && normalizedDeltaY === 0) {
+      return false;
+    }
+
+    const currentTransform = d3.zoomTransform(svgElement);
+    const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
+
+    event.preventDefault();
+    event.stopPropagation();
+    selection.interrupt('focus-node');
+    zoomBehaviour.translateBy(selection, -normalizedDeltaX / scale, -normalizedDeltaY / scale);
+    return true;
+  }, []);
 
   // 부트스트랩 채팅창 위치 (화면 상단 중앙)
   const rootDragHandlePosition = React.useMemo(() => {
@@ -1176,10 +1296,6 @@ const HierarchicalForceTree = () => {
       return undefined;
     }
 
-    const DOM_DELTA_PIXEL = 0;
-    const DOM_DELTA_LINE = 1;
-    const DOM_DELTA_PAGE = 2;
-
     const isSecondaryButtonDrag = (evt) => {
       if (typeof evt.button === 'number' && (evt.button === 1 || evt.button === 2)) return true;
       if (typeof evt.buttons === 'number') {
@@ -1238,12 +1354,6 @@ const HierarchicalForceTree = () => {
       return magnitude <= 200;
     };
 
-    const normalizeWheelDelta = (value, mode) => {
-      if (!Number.isFinite(value)) return 0;
-      if (mode === DOM_DELTA_LINE) return value * 16;
-      if (mode === DOM_DELTA_PAGE) return value * 120;
-      return value;
-    };
     const zoomBehaviour = zoomFactory()
       .scaleExtent([0.3, 4])
       .filter((event) => {
@@ -1413,7 +1523,9 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     const handleResize = () => {
       setIsResizing(true);
-      setDimensions(getViewportDimensions());
+      const newDimensions = getViewportDimensions();
+      setDimensions(newDimensions);
+      setNodeScaleFactor(calculateNodeScaleFactor(newDimensions));
       if (handleResize._t) clearTimeout(handleResize._t);
       handleResize._t = setTimeout(() => setIsResizing(false), 140);
     };
@@ -1660,6 +1772,10 @@ const HierarchicalForceTree = () => {
 
     const handlePointerDown = (event) => {
       const target = event.target;
+      if (target instanceof Element && target.closest('[data-interactive-zone="true"]')) {
+        resetState();
+        return;
+      }
       if (target instanceof Element && target.closest('[data-node-id]')) {
         resetState();
         return;
@@ -1913,6 +2029,8 @@ const HierarchicalForceTree = () => {
               isRootNode={true}
               bootstrapMode={true}
               onBootstrapFirstSend={handleBootstrapSubmit}
+              onPanZoomGesture={forwardPanZoomGesture}
+              nodeScaleFactor={nodeScaleFactor}
             />
           </div>
         </div>
@@ -2081,6 +2199,8 @@ const HierarchicalForceTree = () => {
                     viewTransform={viewTransform}
                     overlayElement={overlayElement}
                     onCloseNode={() => handleCloseNode(node.id)}
+                    onPanZoomGesture={forwardPanZoomGesture}
+                    nodeScaleFactor={nodeScaleFactor}
                   />
                 </motion.g>
               );
