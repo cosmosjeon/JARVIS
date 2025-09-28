@@ -656,19 +656,21 @@ const NodeAssistantPanel = ({
           </p>
           <p className="text-xs text-slate-200/70">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
         </div>
-        <div className="flex items-center gap-2" data-block-pan="true">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onCloseNode();
-            }}
-            className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
-          >
-            닫기
-          </button>
-        </div>
+        {!bootstrapMode && (
+          <div className="flex items-center gap-2" data-block-pan="true">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onCloseNode();
+              }}
+              className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
+            >
+              닫기
+            </button>
+          </div>
+        )}
       </div>
 
       <div
