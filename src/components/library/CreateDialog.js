@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from "components/ui/select";
 
+const ROOT_FOLDER_VALUE = "__root__";
+
 const CreateDialog = ({
   open,
   onOpenChange,
@@ -31,7 +33,7 @@ const CreateDialog = ({
   useEffect(() => {
     if (open) {
       setName("");
-      setSelectedFolderId("");
+      setSelectedFolderId(type === "folder" ? ROOT_FOLDER_VALUE : "");
     }
   }, [open, type]);
 
@@ -48,7 +50,8 @@ const CreateDialog = ({
     if (!name.trim()) return;
 
     if (type === "folder") {
-      onFolderCreate(name.trim(), selectedFolderId || null);
+      const parentId = selectedFolderId === ROOT_FOLDER_VALUE ? null : selectedFolderId || null;
+      onFolderCreate(name.trim(), parentId);
     } else if (type === "memo" && selectedFolderId) {
       onMemoCreate(name.trim(), selectedFolderId);
     }
@@ -94,7 +97,7 @@ const CreateDialog = ({
             <Label htmlFor="library-select-folder">
               {type === "folder" ? "상위 폴더" : "저장할 폴더"}
             </Label>
-            <Select value={selectedFolderId} onValueChange={setSelectedFolderId}>
+            <Select value={selectedFolderId || undefined} onValueChange={setSelectedFolderId}>
               <SelectTrigger id="library-select-folder">
                 <SelectValue
                   placeholder={
@@ -106,7 +109,7 @@ const CreateDialog = ({
               </SelectTrigger>
               <SelectContent>
                 {type === "folder" && (
-                  <SelectItem value="">루트 폴더</SelectItem>
+                  <SelectItem value={ROOT_FOLDER_VALUE}>루트 폴더</SelectItem>
                 )}
                 {folderOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>

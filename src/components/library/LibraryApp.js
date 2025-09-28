@@ -8,6 +8,7 @@ import Logo from "assets/admin-widget/logo.svg";
 import TreeCanvas from "./TreeCanvas";
 import LibraryQAPanel from "./LibraryQAPanel";
 import VoranBoxManager from "./VoranBoxManager";
+import CreateDialog from "./CreateDialog";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
 import {
   fetchTreesWithNodes,
@@ -17,7 +18,8 @@ import {
   createFolder,
   updateFolder,
   deleteFolder,
-  moveTreeToFolder
+  moveTreeToFolder,
+  upsertTreeMetadata
 } from "services/supabaseTrees";
 import { createTreeForUser, openWidgetForTree } from "services/treeCreation";
 
@@ -38,6 +40,8 @@ const LibraryApp = () => {
   const [error, setError] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [showVoranBoxManager, setShowVoranBoxManager] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createType, setCreateType] = useState("folder");
 
   const selectedTree = useMemo(
     () => trees.find((tree) => tree.id === selectedId) ?? null,
@@ -157,6 +161,24 @@ const LibraryApp = () => {
       setError(err);
     } finally {
       setLoading(false);
+    }
+  }, [user, refreshLibrary]);
+
+  const handleTreeRename = useCallback(async (treeId, newTitle) => {
+    if (!user || !treeId || !newTitle?.trim()) {
+      return;
+    }
+
+    try {
+      await upsertTreeMetadata({
+        treeId,
+        title: newTitle.trim(),
+        userId: user.id
+      });
+      await refreshLibrary();
+    } catch (err) {
+      setError(err);
+      alert(`트리 이름 변경 중 오류가 발생했습니다: ${err.message}`);
     }
   }, [user, refreshLibrary]);
 
@@ -378,6 +400,21 @@ const LibraryApp = () => {
             <EmptyState message="아직 저장된 트리나 폴더가 없습니다." />
           ) : (
             <nav className="flex flex-col gap-1 px-2 py-3">
+              {/* New Folder 버튼 */}
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => {
+                  setCreateType("folder");
+                  setShowCreateDialog(true);
+                }}
+                className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition text-slate-300 hover:bg-slate-900 hover:text-slate-50 border border-dashed border-slate-600 hover:border-slate-500"
+              >
+                <FolderIcon className="h-4 w-4" />
+                <span className="flex-1 truncate">New Folder</span>
+                <span className="text-xs text-slate-400">+</span>
+              </button>
+
               {/* 폴더들 표시 */}
               {folders.map((folder) => {
                 const folderTrees = trees.filter(tree => tree.folderId === folder.id);
@@ -603,11 +640,23 @@ const LibraryApp = () => {
         }}
         onTreeMoveToFolder={handleTreeMoveToFolder}
         onTreeOpen={handleTreeOpen}
+        onTreeRename={handleTreeRename}
+        onTreeDelete={handleTreeDelete}
         onFolderCreate={handleFolderCreate}
         onFolderSelect={handleFolderSelect}
         selectedTreeId={selectedId}
         selectedFolderId={selectedFolderId}
         loading={loading || foldersLoading}
+      />
+
+      {/* Create Dialog */}
+      <CreateDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        type={createType}
+        folders={folders}
+        onFolderCreate={(name, parentId) => handleFolderCreate({ name, parentId })}
+        onMemoCreate={() => {}} // 메모 생성은 현재 사용하지 않음
       />
     </div>
   );

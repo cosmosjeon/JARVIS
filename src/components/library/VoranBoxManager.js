@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     X,
@@ -6,7 +6,9 @@ import {
     Clock,
     MoreHorizontal,
     FolderPlus,
-    Folder
+    Folder,
+    Edit,
+    Trash2
 } from "lucide-react";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
@@ -21,6 +23,8 @@ const VoranBoxManager = ({
     onTreeSelect,
     onTreeMoveToFolder,
     onTreeOpen,
+    onTreeRename,
+    onTreeDelete,
     onFolderCreate,
     onFolderSelect,
     selectedTreeId,
@@ -34,6 +38,9 @@ const VoranBoxManager = ({
     const [navigationMode, setNavigationMode] = useState(false); // 탭 네비게이션 모드
     const [currentFolderIndex, setCurrentFolderIndex] = useState(0); // 현재 선택된 폴더 인덱스
     const [localSelectedTreeId, setLocalSelectedTreeId] = useState(null); // 로컬 선택된 트리 ID
+    const [contextMenuTreeId, setContextMenuTreeId] = useState(null); // 컨텍스트 메뉴가 열린 트리 ID
+    const [editingTreeId, setEditingTreeId] = useState(null); // 편집 중인 트리 ID
+    const [editingTreeName, setEditingTreeName] = useState(""); // 편집 중인 트리 이름
 
     // 박스 레이아웃을 나갈 때 폴더 선택 초기화
     const handleClose = useCallback(() => {
@@ -211,6 +218,55 @@ const VoranBoxManager = ({
             });
         }
     }, [newFolderName, onFolderCreate]);
+
+    // 트리 이름 변경 핸들러
+    const handleTreeRename = useCallback((treeId, newName) => {
+        if (onTreeRename && newName?.trim()) {
+            onTreeRename(treeId, newName.trim());
+            setEditingTreeId(null);
+            setEditingTreeName("");
+        }
+    }, [onTreeRename]);
+
+    // 트리 삭제 핸들러
+    const handleTreeDelete = useCallback((treeId) => {
+        if (onTreeDelete) {
+            onTreeDelete(treeId);
+        }
+        setContextMenuTreeId(null);
+    }, [onTreeDelete]);
+
+    // 컨텍스트 메뉴 토글
+    const toggleContextMenu = useCallback((treeId) => {
+        setContextMenuTreeId(prev => prev === treeId ? null : treeId);
+    }, []);
+
+    // 편집 모드 시작
+    const startEditing = useCallback((tree) => {
+        setEditingTreeId(tree.id);
+        setEditingTreeName(tree.title || "");
+        setContextMenuTreeId(null);
+    }, []);
+
+    // 편집 취소
+    const cancelEditing = useCallback(() => {
+        setEditingTreeId(null);
+        setEditingTreeName("");
+    }, []);
+
+    // 컨텍스트 메뉴 외부 클릭 시 닫기
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (contextMenuTreeId && !event.target.closest('.context-menu-container')) {
+                setContextMenuTreeId(null);
+            }
+        };
+
+        if (contextMenuTreeId) {
+            document.addEventListener('click', handleClickOutside);
+            return () => document.removeEventListener('click', handleClickOutside);
+        }
+    }, [contextMenuTreeId]);
 
     // 키보드 네비게이션 핸들러
     const handleKeyDown = useCallback((e) => {
@@ -462,41 +518,90 @@ const VoranBoxManager = ({
                                                     animate={{ opacity: 1, y: 0 }}
                                                     exit={{ opacity: 0, y: -10 }}
                                                     transition={{ duration: 0.2 }}
-                                                    draggable
-                                                    onDragStart={(e) => handleTreeDragStart(e, tree.id)}
+                                                    draggable={editingTreeId !== tree.id}
+                                                    onDragStart={(e) => editingTreeId !== tree.id && handleTreeDragStart(e, tree.id)}
                                                     onDragEnd={handleTreeDragEnd}
-                                                    onClick={() => handleTreeClick(tree)}
-                                                    onDoubleClick={() => handleTreeDoubleClick(tree)}
+                                                    onClick={() => editingTreeId !== tree.id && handleTreeClick(tree)}
+                                                    onDoubleClick={() => editingTreeId !== tree.id && handleTreeDoubleClick(tree)}
                                                     className={cn(
-                                                        "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all cursor-pointer",
-                                                        "hover:bg-slate-800/50 active:bg-slate-800/70",
+                                                        "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all",
+                                                        editingTreeId !== tree.id && "cursor-pointer hover:bg-slate-800/50 active:bg-slate-800/70",
                                                         isSelected && "bg-slate-700/50 border border-slate-600/50",
                                                         isDragging && "opacity-50 scale-95"
                                                     )}
                                                 >
                                                     <TreeIcon className="h-3 w-3 text-slate-400 flex-shrink-0" />
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="font-medium text-slate-200 truncate text-xs">
-                                                            {tree.title || "제목 없는 트리"}
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                                                            <Clock className="h-2.5 w-2.5" />
-                                                            <span className="text-xs">{formatDate(tree.updatedAt)}</span>
-                                                            <span>•</span>
-                                                            <span className="text-xs">{tree.treeData?.nodes?.length || 0}개 노드</span>
-                                                        </div>
+                                                        {editingTreeId === tree.id ? (
+                                                            <Input
+                                                                value={editingTreeName}
+                                                                onChange={(e) => setEditingTreeName(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        handleTreeRename(tree.id, editingTreeName);
+                                                                    } else if (e.key === 'Escape') {
+                                                                        cancelEditing();
+                                                                    }
+                                                                }}
+                                                                onBlur={() => handleTreeRename(tree.id, editingTreeName)}
+                                                                className="h-6 text-xs bg-slate-700 border-slate-600 text-slate-200"
+                                                                autoFocus
+                                                            />
+                                                        ) : (
+                                                            <>
+                                                                <div className="font-medium text-slate-200 truncate text-xs">
+                                                                    {tree.title || "제목 없는 트리"}
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                                                                    <Clock className="h-2.5 w-2.5" />
+                                                                    <span className="text-xs">{formatDate(tree.updatedAt)}</span>
+                                                                    <span>•</span>
+                                                                    <span className="text-xs">{tree.treeData?.nodes?.length || 0}개 노드</span>
+                                                                </div>
+                                                            </>
+                                                        )}
                                                     </div>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleTreeMoveToFolder(tree);
-                                                        }}
-                                                    >
-                                                        <MoreHorizontal className="h-3 w-3" />
-                                                    </Button>
+                                                    {editingTreeId !== tree.id && (
+                                                        <div className="relative context-menu-container">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleContextMenu(tree.id);
+                                                                }}
+                                                            >
+                                                                <MoreHorizontal className="h-3 w-3" />
+                                                            </Button>
+                                                            
+                                                            {/* 컨텍스트 메뉴 */}
+                                                            {contextMenuTreeId === tree.id && (
+                                                                <div className="absolute right-0 top-6 z-50 bg-slate-800 border border-slate-600 rounded-md shadow-lg py-1 min-w-[120px]">
+                                                                    <button
+                                                                        className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            startEditing(tree);
+                                                                        }}
+                                                                    >
+                                                                        <Edit className="h-3 w-3" />
+                                                                        이름 고치기
+                                                                    </button>
+                                                                    <button
+                                                                        className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-slate-700 flex items-center gap-2"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleTreeDelete(tree.id);
+                                                                        }}
+                                                                    >
+                                                                        <Trash2 className="h-3 w-3" />
+                                                                        지우기
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </motion.div>
                                             </div>
                                         );
