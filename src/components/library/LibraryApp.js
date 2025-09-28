@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, FolderTree as FolderIcon } from "lucide-react";
 
 import { Button } from "components/ui/button";
@@ -21,7 +21,7 @@ import {
   moveTreeToFolder,
   upsertTreeMetadata
 } from "services/supabaseTrees";
-import { createTreeForUser, openWidgetForTree } from "services/treeCreation";
+import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from "services/treeCreation";
 
 const EmptyState = ({ message }) => (
   <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
@@ -42,11 +42,61 @@ const LibraryApp = () => {
   const [showVoranBoxManager, setShowVoranBoxManager] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createType, setCreateType] = useState("folder");
+  const previousSelectedTreeRef = useRef(null);
 
   const selectedTree = useMemo(
     () => trees.find((tree) => tree.id === selectedId) ?? null,
     [trees, selectedId]
   );
+
+  useEffect(() => {
+    if (!user) {
+      previousSelectedTreeRef.current = selectedTree;
+      return;
+    }
+
+    const previousTree = previousSelectedTreeRef.current;
+    const currentTreeId = selectedTree?.id ?? null;
+
+    previousSelectedTreeRef.current = selectedTree;
+
+    if (!previousTree || previousTree.id === currentTreeId) {
+      return;
+    }
+
+    if (!isTrackingEmptyTree(previousTree.id)) {
+      return;
+    }
+
+    const latestSnapshot = trees.find((tree) => tree.id === previousTree.id) || previousTree;
+
+    if (!latestSnapshot?.treeData) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const performCleanup = async () => {
+      try {
+        const deletedCount = await cleanupEmptyTrees([latestSnapshot]);
+        if (!cancelled && deletedCount > 0) {
+          setTrees((prevTrees) => prevTrees.filter((tree) => tree.id !== latestSnapshot.id));
+          if (selectedId === latestSnapshot.id) {
+            setSelectedId(null);
+          }
+          window.jarvisAPI?.requestLibraryRefresh?.();
+        }
+      } catch (err) {
+        console.error('빈 트리 자동 정리 실패:', err);
+      }
+    };
+
+    performCleanup();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTree, trees, user, selectedId]);
 
   const refreshLibrary = useCallback(async () => {
     if (!user) {
@@ -99,9 +149,38 @@ const LibraryApp = () => {
     }
   }, [user?.id]);
 
+  const handleCleanupEmptyTrees = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      const deletedCount = await cleanupEmptyTrees(trees);
+      if (deletedCount > 0) {
+        console.log(`${deletedCount}개의 빈 트리가 정리되었습니다.`);
+        await refreshLibrary();
+      }
+    } catch (err) {
+      console.error('빈 트리 정리 중 오류:', err);
+    }
+  }, [user, trees, refreshLibrary]);
+
   useEffect(() => {
     refreshLibrary();
   }, [user?.id, refreshLibrary]); // user.id와 refreshLibrary를 의존성으로 사용
+
+  // 빈 트리 정리 - 컴포넌트 마운트 시와 주기적으로 실행
+  useEffect(() => {
+    if (!user || trees.length === 0) return;
+
+    // 초기 정리
+    handleCleanupEmptyTrees();
+
+    // 주기적 정리 (5분마다)
+    const cleanupInterval = setInterval(() => {
+      handleCleanupEmptyTrees();
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(cleanupInterval);
+  }, [user, trees.length, handleCleanupEmptyTrees]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.jarvisAPI?.onLibraryRefresh !== "function") {

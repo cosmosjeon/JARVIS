@@ -21,6 +21,7 @@ import {
   sanitizeConversationMessages,
   buildFallbackConversation,
 } from '../services/supabaseTrees';
+import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from '../services/treeCreation';
 
 const WINDOW_CHROME_HEIGHT = 48;
 
@@ -667,6 +668,12 @@ const HierarchicalForceTree = () => {
             refreshed: alreadyRefreshed || nextCount > 0,
           });
         }
+
+        // 트리에 내용이 추가되었으므로 빈 트리 추적 중지
+        if (isTrackingEmptyTree(resolvedTreeId)) {
+          stopTrackingEmptyTree(resolvedTreeId);
+          console.log(`트리에 내용이 추가되어 빈 트리 추적 중지: ${resolvedTreeId}`);
+        }
       }
     } catch (error) {
       setTreeSyncError(error);
@@ -701,6 +708,34 @@ const HierarchicalForceTree = () => {
       }
     };
   }, [data, user, initializingTree, persistTreeData]);
+
+  // 위젯에서 나갈 때 빈 트리 정리
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleBeforeUnload = async () => {
+      try {
+        // 현재 트리 데이터를 가져와서 빈 트리인지 확인
+        const currentTree = {
+          id: activeTreeId,
+          treeData: data
+        };
+        
+        // 빈 트리인 경우 정리
+        if (activeTreeId && data && data.nodes && data.nodes.length === 0) {
+          await cleanupEmptyTrees([currentTree]);
+        }
+      } catch (error) {
+        console.error('빈 트리 정리 중 오류:', error);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [activeTreeId, data]);
 
   // 부모 -> 자식 맵 계산 (원본 데이터 기준)
   const childrenByParent = React.useMemo(() => {

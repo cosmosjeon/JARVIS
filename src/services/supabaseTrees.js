@@ -186,6 +186,7 @@ export const transformTreeRowsToLibraryData = (trees, nodeRows) => {
       },
       createdAt: normalizeTimestamp(tree.created_at),
       updatedAt: normalizeTimestamp(tree.updated_at),
+      folderId: tree.folder_id || null,
     };
   });
 };
@@ -195,7 +196,7 @@ export const fetchTreesWithNodes = async (userId) => {
 
   const query = supabase
     .from('trees')
-    .select('id, title, created_at, updated_at, deleted_at')
+    .select('id, title, created_at, updated_at, deleted_at, folder_id')
     .is('deleted_at', null)
     .order('updated_at', { ascending: false });
 
