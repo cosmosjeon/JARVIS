@@ -102,9 +102,9 @@ class TreeAnimationService extends TreeLayoutService {
      * @param {Function} onUpdate - 애니메이션 업데이트 콜백
      * @returns {Object} 애니메이션 제어 객체
      */
-    calculateTreeLayoutWithAnimation(currentNodes, nodes, links, dimensions, onUpdate) {
+    calculateTreeLayoutWithAnimation(currentNodes, nodes, links, dimensions, onUpdate, options = {}) {
         // 목표 레이아웃 계산
-        const targetLayout = this.calculateTreeLayout(nodes, links, dimensions);
+        const targetLayout = this.calculateTreeLayout(nodes, links, dimensions, options);
 
         // 애니메이션 실행
         return this.animateNodePositions(
