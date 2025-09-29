@@ -15,7 +15,7 @@ const getSystemTheme = () => {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 };
 
-export const ThemeProvider = ({ children, defaultTheme = "system" }) => {
+export const ThemeProvider = ({ children, defaultTheme = "light" }) => {
   const [theme, setTheme] = useState(defaultTheme);
 
   useEffect(() => {
