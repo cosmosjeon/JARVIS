@@ -34,7 +34,7 @@ const MarkdownMessage = ({ text }) => {
         } else {
           // 코드 블록 끝
           elements.push(
-            <pre key={`code-${i}`} className="bg-slate-800 text-slate-200 p-3 rounded-md overflow-x-auto my-2">
+            <pre key={`code-${i}`} className="bg-muted/80 text-card-foreground p-3 rounded-md overflow-x-auto my-2">
               <code className={`language-${codeLanguage}`}>
                 {currentCodeBlock.join('\n')}
               </code>
@@ -73,7 +73,7 @@ const MarkdownMessage = ({ text }) => {
       // 헤딩 처리
       if (trimmedLine.startsWith('### ')) {
         elements.push(
-          <h3 key={`h3-${i}`} className="text-lg font-semibold mt-4 mb-2 text-slate-200">
+          <h3 key={`h3-${i}`} className="text-lg font-semibold mt-4 mb-2 text-card-foreground">
             {trimmedLine.slice(4)}
           </h3>
         );
@@ -82,7 +82,7 @@ const MarkdownMessage = ({ text }) => {
 
       if (trimmedLine.startsWith('## ')) {
         elements.push(
-          <h2 key={`h2-${i}`} className="text-xl font-bold mt-4 mb-2 text-slate-100">
+          <h2 key={`h2-${i}`} className="text-xl font-bold mt-4 mb-2 text-card-foreground">
             {trimmedLine.slice(3)}
           </h2>
         );
@@ -91,7 +91,7 @@ const MarkdownMessage = ({ text }) => {
 
       if (trimmedLine.startsWith('# ')) {
         elements.push(
-          <h1 key={`h1-${i}`} className="text-2xl font-bold mt-4 mb-2 text-slate-100">
+          <h1 key={`h1-${i}`} className="text-2xl font-bold mt-4 mb-2 text-card-foreground">
             {trimmedLine.slice(2)}
           </h1>
         );
@@ -100,11 +100,11 @@ const MarkdownMessage = ({ text }) => {
 
       // 인라인 코드 처리
       let processedLine = line;
-      processedLine = processedLine.replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-slate-200 px-1 py-0.5 rounded text-sm">$1</code>');
+      processedLine = processedLine.replace(/`([^`]+)`/g, '<code class="bg-muted/70 text-card-foreground px-1 py-0.5 rounded text-sm">$1</code>');
 
       // 굵은 글씨 처리
-      processedLine = processedLine.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-slate-100">$1</strong>');
-      processedLine = processedLine.replace(/__([^_]+)__/g, '<strong class="font-bold text-slate-100">$1</strong>');
+      processedLine = processedLine.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-card-foreground">$1</strong>');
+      processedLine = processedLine.replace(/__([^_]+)__/g, '<strong class="font-bold text-card-foreground">$1</strong>');
 
       // 기울임 글씨 처리
       processedLine = processedLine.replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
@@ -113,7 +113,7 @@ const MarkdownMessage = ({ text }) => {
       // 빈 줄이 아닌 경우에만 추가
       if (trimmedLine) {
         elements.push(
-          <p key={`p-${i}`} className="whitespace-pre-wrap leading-relaxed text-slate-200" dangerouslySetInnerHTML={{ __html: processedLine }} />
+          <p key={`p-${i}`} className="whitespace-pre-wrap leading-relaxed text-card-foreground" dangerouslySetInnerHTML={{ __html: processedLine }} />
         );
       } else {
         elements.push(<br key={`br-${i}`} />);

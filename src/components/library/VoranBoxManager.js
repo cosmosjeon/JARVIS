@@ -83,8 +83,8 @@ const toastVisuals = useMemo(() => ({
             Icon: XCircle,
         },
         default: {
-            container: "bg-slate-800/70 border border-slate-600/40 text-slate-100",
-            iconClass: "text-slate-200",
+            container: "bg-muted/70 border border-border/40 text-card-foreground",
+            iconClass: "text-card-foreground",
             Icon: Info,
         },
 }), []);
@@ -799,35 +799,35 @@ const arraysEqual = (a, b) => {
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.95, opacity: 0 }}
                     transition={{ type: "spring", duration: 0.3 }}
-                    className="w-full max-w-6xl h-[80vh] mx-4 bg-slate-900 border border-slate-700 rounded-lg shadow-xl flex overflow-hidden"
+                    className="w-full max-w-6xl h-[80vh] mx-4 bg-card border border-border rounded-lg shadow-xl flex overflow-hidden"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* VORAN BOX */}
                     <div
                         className={cn(
-                            "flex-1 border-r border-slate-700/50 bg-slate-900/40 transition-colors",
+                            "flex-1 border-r border-border/60 bg-card/40 transition-colors",
                             dragOverTarget?.type === "voran" && "bg-blue-900/25 border-blue-500/60"
                         )}
                         onDragOver={(e) => handleDragOver(e, "voran", null)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, "voran", null)}
                     >
-                        <div className="border-b border-slate-700/50 px-4 h-[87px] flex flex-col justify-center">
+                        <div className="border-b border-border/60 px-4 h-[87px] flex flex-col justify-center">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-lg font-semibold text-slate-200">VORAN BOX</h3>
-                                    <span className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded-full">{voranTrees.length}</span>
+                                    <h3 className="text-lg font-semibold text-card-foreground">VORAN BOX</h3>
+                                    <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">{voranTrees.length}</span>
                                 </div>
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={handleClose}
-                                    className="h-6 w-6 p-0 text-slate-400 hover:text-slate-200"
+                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
                                 >
                                     <X className="h-4 w-4" />
                                 </Button>
                             </div>
-                            <p className="mt-1 text-xs text-slate-400">저장된 트리들을 관리하세요</p>
+                            <p className="mt-1 text-xs text-muted-foreground">저장된 트리들을 관리하세요</p>
                             {navigationMode && localSelectedTreeId && (
                                 <div className="mt-2 text-xs text-blue-400 font-medium">탭키로 폴더를 선택하고 엔터로 저장하세요</div>
                             )}
@@ -839,12 +839,12 @@ const arraysEqual = (a, b) => {
                         <div className="flex-1 overflow-y-auto px-4 py-3" ref={voranListRef}>
                             {loading ? (
                                 <div className="flex items-center justify-center py-8">
-                                    <div className="text-sm text-slate-400">로딩 중...</div>
+                                    <div className="text-sm text-muted-foreground">로딩 중...</div>
                                 </div>
                             ) : voranTrees.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                                    <TreeIcon className="h-8 w-8 text-slate-600 mb-2" />
-                                    <p className="text-sm text-slate-400">저장된 트리가 없습니다</p>
+                                    <TreeIcon className="h-8 w-8 text-muted-foreground/70 mb-2" />
+                                    <p className="text-sm text-muted-foreground">저장된 트리가 없습니다</p>
                                 </div>
                             ) : (
                                 <div className="space-y-0">
@@ -854,7 +854,7 @@ const arraysEqual = (a, b) => {
 
                                         return (
                                             <div key={tree.id}>
-                                                {index > 0 && <div className="border-t border-slate-600/50 my-1" />}
+                                                {index > 0 && <div className="border-t border-border/50 my-1" />}
                                                 <motion.div
                                                     initial={{ opacity: 0, y: -10 }}
                                                     animate={{ opacity: 1, y: 0 }}
@@ -873,12 +873,12 @@ const arraysEqual = (a, b) => {
                                                     onDoubleClick={() => editingTreeId !== tree.id && handleTreeDoubleClick(tree)}
                                                     className={cn(
                                                         "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all",
-                                                        editingTreeId !== tree.id && "cursor-pointer hover:bg-slate-800/50 active:bg-slate-800/70",
-                                                        isSelected && "bg-slate-700/60 border border-slate-500/70 shadow-inner",
+                                                        editingTreeId !== tree.id && "cursor-pointer hover:bg-muted/50 active:bg-muted/70",
+                                                        isSelected && "bg-border/60 border border-border/60 shadow-inner",
                                                         isDraggingTree && "opacity-60 scale-[0.98]"
                                                     )}
                                                 >
-                                                    <TreeIcon className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                                    <TreeIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                                     <div className="flex-1 min-w-0">
                                                         {editingTreeId === tree.id ? (
                                                             <Input
@@ -892,13 +892,13 @@ const arraysEqual = (a, b) => {
                                                                     }
                                                                 }}
                                                                 onBlur={() => handleTreeRename(tree.id, editingTreeName)}
-                                                                className="h-6 text-xs bg-slate-700 border-slate-600 text-slate-200"
+                                                                className="h-6 text-xs bg-border border-border text-card-foreground"
                                                                 autoFocus
                                                             />
                                                         ) : (
                                                             <>
-                                                                <div className="font-medium text-slate-200 truncate text-xs">{tree.title || "제목 없는 트리"}</div>
-                                                                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                                                                <div className="font-medium text-card-foreground truncate text-xs">{tree.title || "제목 없는 트리"}</div>
+                                                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                                                     <Clock className="h-2.5 w-2.5" />
                                                                     <span className="text-xs">{formatDate(tree.updatedAt)}</span>
                                                                     <span>•</span>
@@ -912,7 +912,7 @@ const arraysEqual = (a, b) => {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
+                                                                className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-border/60 hover:bg-border/50"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     toggleContextMenu(tree.id);
@@ -921,9 +921,9 @@ const arraysEqual = (a, b) => {
                                                                 <MoreHorizontal className="h-3 w-3" />
                                                             </Button>
                                                             {contextMenuTreeId === tree.id && (
-                                                                <div className="absolute right-0 top-6 z-50 bg-slate-800 border border-slate-600 rounded-md shadow-lg py-1 min-w-[120px]">
+                                                                <div className="absolute right-0 top-6 z-50 bg-muted border border-border rounded-md shadow-lg py-1 min-w-[120px]">
                                                                     <button
-                                                                        className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                                                                        className="w-full px-3 py-1.5 text-left text-xs text-card-foreground hover:bg-border flex items-center gap-2"
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             startEditing(tree);
@@ -933,7 +933,7 @@ const arraysEqual = (a, b) => {
                                                                         이름 고치기
                                                                     </button>
                                                                     <button
-                                                                        className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-slate-700 flex items-center gap-2"
+                                                                        className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-border flex items-center gap-2"
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             handleTreeDelete(tree.id);
@@ -956,28 +956,28 @@ const arraysEqual = (a, b) => {
                     </div>
 
                     {/* 폴더 관리 */}
-                    <div className="flex-1 bg-slate-900/40 flex flex-col">
+                    <div className="flex-1 bg-card/40 flex flex-col">
                         <div className="px-4 pt-3 pb-0">
                             <div className="flex items-center justify-between">
-                                <h3 className="text-lg font-semibold text-slate-200">폴더 관리</h3>
+                                <h3 className="text-lg font-semibold text-card-foreground">폴더 관리</h3>
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setShowCreateFolder(true)}
-                                    className="h-6 w-6 p-0 text-slate-400 hover:text-slate-200"
+                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
                                 >
                                     <FolderPlus className="h-4 w-4" />
                                 </Button>
                             </div>
                         </div>
 
-                        <div className="px-4 py-2 border-b border-slate-700/50">
+                        <div className="px-4 py-2 border-b border-border/60">
                             <div className="flex gap-2 overflow-x-auto">
                                 <button
                                     className={cn(
-                                        "flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-slate-800/80 border border-slate-700/50",
+                                        "flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-muted/80 border border-border/60",
                                         "focus:outline-none focus:ring-0",
-                                        !(selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && "hover:bg-slate-700/80 hover:border-slate-600/50",
+                                        !(selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && "hover:bg-border/80 hover:border-border/50",
                                         (selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && "bg-blue-600/30 border-blue-500/70",
                                         dragOverTarget?.type === "voran" && "bg-blue-900/30 border-blue-500/70 ring-1 ring-blue-400/60 scale-[1.02] shadow-md"
                                     )}
@@ -994,14 +994,14 @@ const arraysEqual = (a, b) => {
                                     onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDrop(e, "voran", null)}
                                 >
-                                    <TreeIcon className="h-3 w-3 text-slate-400" />
-                                    <span className="text-slate-200">VORAN BOX</span>
-                                    <span className="text-xs text-slate-400 bg-slate-700 px-1 py-0.5 rounded-full">{voranTrees.length}</span>
+                                    <TreeIcon className="h-3 w-3 text-muted-foreground" />
+                                    <span className="text-card-foreground">VORAN BOX</span>
+                                    <span className="text-xs text-muted-foreground bg-border px-1 py-0.5 rounded-full">{voranTrees.length}</span>
                                 </button>
 
                                 {folders.length === 0 ? (
                                     <div className="flex items-center justify-center py-4 text-center">
-                                        <p className="text-sm text-slate-400">폴더가 없습니다</p>
+                                        <p className="text-sm text-muted-foreground">폴더가 없습니다</p>
                                     </div>
                                 ) : (
                                     folders.map((folder, index) => {
@@ -1014,9 +1014,9 @@ const arraysEqual = (a, b) => {
                                             <button
                                                 key={folder.id}
                                                 className={cn(
-                                                    "flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-slate-800/80 border border-slate-700/50",
+                                                    "flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-muted/80 border border-border/60",
                                                     "focus:outline-none focus:ring-0",
-                                                    !(selectedFolderId === folder.id || isNavigationSelected) && "hover:bg-slate-700/80 hover:border-slate-600/50",
+                                                    !(selectedFolderId === folder.id || isNavigationSelected) && "hover:bg-border/80 hover:border-border/50",
                                                     (selectedFolderId === folder.id || isNavigationSelected) && "bg-blue-600/30 border-blue-500/70",
                                                     isDragTarget && "bg-blue-900/30 border-blue-500/70 ring-1 ring-blue-400/60",
                                                     isPreview && "scale-[1.04] shadow-lg ring-2 ring-blue-300/60"
@@ -1034,9 +1034,9 @@ const arraysEqual = (a, b) => {
                                                 onDragLeave={handleDragLeave}
                                                 onDrop={(e) => handleDrop(e, "folder", folder.id)}
                                             >
-                                                <Folder className="h-3 w-3 text-slate-400" />
-                                                <span className="text-slate-200">{folder.name}</span>
-                                                <span className="text-xs text-slate-400 bg-slate-700 px-1 py-0.5 rounded-full">{folderTreeCounts[folder.id] || 0}</span>
+                                                <Folder className="h-3 w-3 text-muted-foreground" />
+                                                <span className="text-card-foreground">{folder.name}</span>
+                                                <span className="text-xs text-muted-foreground bg-border px-1 py-0.5 rounded-full">{folderTreeCounts[folder.id] || 0}</span>
                                             </button>
                                         );
                                     })
@@ -1051,7 +1051,7 @@ const arraysEqual = (a, b) => {
                                     animate={{ height: "auto", opacity: 1 }}
                                     exit={{ height: 0, opacity: 0 }}
                                     transition={{ duration: 0.2 }}
-                                    className="border-b border-slate-700/50 px-4 py-3"
+                                    className="border-b border-border/60 px-4 py-3"
                                 >
                                     <div className="space-y-2">
                                         <Input
@@ -1059,7 +1059,7 @@ const arraysEqual = (a, b) => {
                                             onChange={(e) => setNewFolderName(e.target.value)}
                                             onKeyDown={handleKeyDown}
                                             placeholder="폴더 이름"
-                                            className="h-8 text-sm bg-slate-800 border-slate-600 focus:border-blue-500"
+                                            className="h-8 text-sm bg-muted border-border focus:border-blue-500"
                                             autoFocus
                                         />
                                         <div className="flex gap-2">
@@ -1104,8 +1104,8 @@ const arraysEqual = (a, b) => {
                                         if (folderTrees.length === 0) {
                                             return (
                                                 <div className="flex flex-col items-center justify-center py-8 text-center h-full">
-                                                    <TreeIcon className="h-8 w-8 text-slate-600 mb-2" />
-                                                    <p className="text-sm text-slate-400">이 폴더에 트리가 없습니다</p>
+                                                    <TreeIcon className="h-8 w-8 text-muted-foreground/70 mb-2" />
+                                                    <p className="text-sm text-muted-foreground">이 폴더에 트리가 없습니다</p>
                                                     {dragOverTarget?.type === "folder" && dragOverTarget?.id === selectedFolderId && (
                                                         <div className="mt-2 text-xs text-blue-400 font-medium">여기에 트리를 놓으면 이 폴더로 이동합니다</div>
                                                     )}
@@ -1120,7 +1120,7 @@ const arraysEqual = (a, b) => {
                                                     const isDraggingTree = draggedTreeIds.includes(tree.id);
                                                     return (
                                                         <div key={tree.id}>
-                                                            {index > 0 && <div className="border-t border-slate-600/50 my-1" />}
+                                                            {index > 0 && <div className="border-t border-border/50 my-1" />}
                                                             <motion.div
                                                                 initial={{ opacity: 0, y: -10 }}
                                                                 animate={{ opacity: 1, y: 0 }}
@@ -1139,15 +1139,15 @@ const arraysEqual = (a, b) => {
                                                                 onDoubleClick={() => handleTreeDoubleClick(tree)}
                                                                 className={cn(
                                                                     "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all cursor-pointer",
-                                                                    "hover:bg-slate-800/50 active:bg-slate-800/70",
-                                                                    isSelected && "bg-slate-700/50 border border-slate-600/50",
+                                                                    "hover:bg-muted/50 active:bg-muted/70",
+                                                                    isSelected && "bg-border/60 border border-border/50",
                                                                     isDraggingTree && "opacity-50 scale-95"
                                                                 )}
                                                             >
-                                                                <TreeIcon className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                                                <TreeIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                                                 <div className="flex-1 min-w-0">
-                                                                    <div className="font-medium text-slate-200 truncate text-xs">{tree.title || "제목 없는 트리"}</div>
-                                                                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                                                                    <div className="font-medium text-card-foreground truncate text-xs">{tree.title || "제목 없는 트리"}</div>
+                                                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                                                         <Clock className="h-2.5 w-2.5" />
                                                                         <span className="text-xs">{formatDate(tree.updatedAt)}</span>
                                                                         <span>•</span>
@@ -1158,7 +1158,7 @@ const arraysEqual = (a, b) => {
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
-                                                                        className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-slate-700/50 hover:bg-slate-600/50"
+                                                                        className="h-6 w-6 p-0 opacity-60 group-hover:opacity-100 transition-opacity bg-border/60 hover:bg-border/50"
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             toggleContextMenu(tree.id);
@@ -1167,9 +1167,9 @@ const arraysEqual = (a, b) => {
                                                                         <MoreHorizontal className="h-3 w-3" />
                                                                     </Button>
                                                                     {contextMenuTreeId === tree.id && (
-                                                                        <div className="absolute right-0 top-6 z-50 bg-slate-800 border border-slate-600 rounded-md shadow-lg py-1 min-w-[120px]">
+                                                                        <div className="absolute right-0 top-6 z-50 bg-muted border border-border rounded-md shadow-lg py-1 min-w-[120px]">
                                                                             <button
-                                                                                className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700 flex items-center gap-2"
+                                                                                className="w-full px-3 py-1.5 text-left text-xs text-card-foreground hover:bg-border flex items-center gap-2"
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
                                                                                     startEditing(tree);
@@ -1179,7 +1179,7 @@ const arraysEqual = (a, b) => {
                                                                                 이름 고치기
                                                                             </button>
                                                                             <button
-                                                                                className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-slate-700 flex items-center gap-2"
+                                                                                className="w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-border flex items-center gap-2"
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
                                                                                     handleTreeDelete(tree.id);
@@ -1207,11 +1207,11 @@ const arraysEqual = (a, b) => {
                                     <div className="flex items-center gap-3 mb-4">
                                         <img src={Logo} alt="VORAN" className="h-12 w-12 opacity-80" />
                                         <div className="text-left">
-                                            <h3 className="text-lg font-semibold text-slate-200 mb-1">라이브러리</h3>
-                                            <p className="text-sm text-slate-400">라이브러리에서 열 트리를 선택하세요.</p>
+                                            <h3 className="text-lg font-semibold text-card-foreground mb-1">라이브러리</h3>
+                                            <p className="text-sm text-muted-foreground">라이브러리에서 열 트리를 선택하세요.</p>
                                         </div>
                                     </div>
-                                    <div className="flex flex-col items-center gap-2 text-xs text-slate-500">
+                                    <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground/80">
                                         <p>• 폴더를 클릭하여 트리를 확인하세요</p>
                                         <p>• 키보드로 빠르게 탐색할 수 있습니다</p>
                                     </div>
@@ -1219,17 +1219,17 @@ const arraysEqual = (a, b) => {
                             )}
                         </div>
 
-                        <div className="border-t border-slate-700/50 px-4 py-2 bg-slate-800/30">
-                            <div className="text-xs text-slate-400 space-y-1">
+                        <div className="border-t border-border/60 px-4 py-2 bg-muted/30">
+                            <div className="text-xs text-muted-foreground space-y-1">
                                 <div className="flex items-center gap-4">
-                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">←</kbd><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">→</kbd><span className="text-slate-500">폴더 이동</span></span>
-                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↑</kbd><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">↓</kbd><span className="text-slate-500">트리 선택</span></span>
-                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Tab</kbd><span className="text-slate-500">폴더 순환</span></span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-border rounded text-xs">←</kbd><kbd className="px-1.5 py-0.5 bg-border rounded text-xs">→</kbd><span className="text-muted-foreground/80">폴더 이동</span></span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-border rounded text-xs">↑</kbd><kbd className="px-1.5 py-0.5 bg-border rounded text-xs">↓</kbd><span className="text-muted-foreground/80">트리 선택</span></span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-border rounded text-xs">Tab</kbd><span className="text-muted-foreground/80">폴더 순환</span></span>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Enter</kbd><span className="text-slate-500">트리 저장</span></span>
-                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">Esc</kbd><span className="text-slate-500">닫기</span></span>
-                                    <span className="flex items-center gap-1 text-slate-500">드래그로 이동</span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-border rounded text-xs">Enter</kbd><span className="text-muted-foreground/80">트리 저장</span></span>
+                                    <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-border rounded text-xs">Esc</kbd><span className="text-muted-foreground/80">닫기</span></span>
+                                    <span className="flex items-center gap-1 text-muted-foreground/80">드래그로 이동</span>
                                 </div>
                             </div>
                         </div>
