@@ -60,6 +60,7 @@ const VoranBoxManager = ({
     const voranListRef = useRef(null);
     const toastIdRef = useRef(0);
     const toastTimersRef = useRef(new Map());
+    const wasVisibleRef = useRef(false);
 
 const toastVisuals = useMemo(() => ({
         success: {
@@ -179,21 +180,25 @@ const arraysEqual = (a, b) => {
     }, [cleanupDragPreview, onClose, onFolderSelect]);
 
     useEffect(() => {
-        if (isVisible) {
+        if (isVisible && !wasVisibleRef.current) {
             if (onFolderSelect) {
                 onFolderSelect(null);
             }
-            const voranTrees = trees.filter((tree) => !tree.folderId);
-            if (voranTrees.length > 0) {
-                setLocalSelectedTreeId(voranTrees[0].id);
-                setSelectedTreeIds([voranTrees[0].id]);
+            const initialVoranTrees = trees.filter((tree) => !tree.folderId);
+            if (initialVoranTrees.length > 0) {
+                setLocalSelectedTreeId(initialVoranTrees[0].id);
+                setSelectedTreeIds([initialVoranTrees[0].id]);
                 setNavigationMode(true);
                 setCurrentFolderIndex(0);
             } else {
                 setLocalSelectedTreeId(null);
                 setSelectedTreeIds([]);
             }
+        } else if (!isVisible && wasVisibleRef.current) {
+            setNavigationMode(false);
+            setCurrentFolderIndex(0);
         }
+        wasVisibleRef.current = isVisible;
     }, [isVisible, onFolderSelect, trees]);
 
     const formatDate = (timestamp) => {
@@ -335,14 +340,6 @@ const arraysEqual = (a, b) => {
 
         setLocalSelectedTreeId(treeId);
 
-        if (!tree.folderId) {
-            setNavigationMode(true);
-            setCurrentFolderIndex(0);
-            if (onFolderSelect) {
-                onFolderSelect(null);
-            }
-        }
-
         if (notify && onTreeSelect) {
             onTreeSelect(tree);
         }
@@ -365,13 +362,6 @@ const arraysEqual = (a, b) => {
         }
 
         setLocalSelectedTreeId(treeId);
-        if (!tree.folderId) {
-            setNavigationMode(true);
-            setCurrentFolderIndex(0);
-            if (onFolderSelect) {
-                onFolderSelect(null);
-            }
-        }
 
         setDraggedTreeIds(activeSelection);
         setIsDragging(true);
