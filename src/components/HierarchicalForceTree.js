@@ -72,6 +72,18 @@ const HierarchicalForceTree = () => {
   const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
+  const [layoutOrientation, setLayoutOrientation] = useState(() => {
+    if (typeof window === 'undefined') {
+      return 'vertical';
+    }
+    try {
+      const stored = window.localStorage.getItem('jarvis.tree.orientation');
+      return stored === 'horizontal' ? 'horizontal' : 'vertical';
+    } catch (error) {
+      return 'vertical';
+    }
+  });
+  const [linkValidationError, setLinkValidationError] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -91,6 +103,7 @@ const HierarchicalForceTree = () => {
   const zoomBehaviourRef = useRef(null);
   const pendingFocusNodeIdRef = useRef(null);
   const expandTimeoutRef = useRef(null);
+  const linkValidationTimeoutRef = useRef(null);
   const outsidePointerRef = useRef({
     active: false,
     pointerId: null,
@@ -175,6 +188,25 @@ const HierarchicalForceTree = () => {
       }
     }
   }, [sessionInfo.fresh, sessionStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem('jarvis.tree.orientation', layoutOrientation);
+    } catch (error) {
+      // ignore storage errors
+    }
+  }, [layoutOrientation]);
+
+  useEffect(() => () => {
+    if (linkValidationTimeoutRef.current) {
+      const clear = typeof window !== 'undefined' ? window.clearTimeout : clearTimeout;
+      clear(linkValidationTimeoutRef.current);
+      linkValidationTimeoutRef.current = null;
+    }
+  }, []);
 
   const hasResolvedInitialTreeRef = useRef(false);
 
@@ -485,6 +517,11 @@ const HierarchicalForceTree = () => {
     };
 
     // 새 노드를 데이터에 추가
+    if (willCreateCycle(resolvedParentId, newNode.id)) {
+      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
+      return;
+    }
+
     const newData = {
       ...data,
       nodes: [...data.nodes, newNode],
@@ -769,6 +806,81 @@ const HierarchicalForceTree = () => {
       return next;
     });
   };
+
+  const showLinkValidationMessage = useCallback((message) => {
+    setLinkValidationError(message);
+    if (linkValidationTimeoutRef.current) {
+      const clear = typeof window !== 'undefined' ? window.clearTimeout : clearTimeout;
+      clear(linkValidationTimeoutRef.current);
+    }
+    const schedule = typeof window !== 'undefined' ? window.setTimeout : setTimeout;
+    linkValidationTimeoutRef.current = schedule(() => {
+      setLinkValidationError(null);
+      linkValidationTimeoutRef.current = null;
+    }, 2600);
+  }, []);
+
+  const willCreateCycle = useCallback((sourceId, targetId, additionalLinks = []) => {
+    const normalize = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+    const normalizedSource = normalize(sourceId);
+    const normalizedTarget = normalize(targetId);
+
+    if (!normalizedSource || !normalizedTarget) {
+      return false;
+    }
+
+    if (normalizedSource === normalizedTarget) {
+      return true;
+    }
+
+    const adjacency = new Map();
+
+    const appendEdge = (from, to) => {
+      if (!from || !to) {
+        return;
+      }
+      if (!adjacency.has(from)) {
+        adjacency.set(from, new Set());
+      }
+      adjacency.get(from).add(to);
+    };
+
+    const baseLinks = Array.isArray(data?.links) ? data.links : [];
+    baseLinks.forEach((link) => {
+      appendEdge(normalize(link.source), normalize(link.target));
+    });
+
+    additionalLinks.forEach((link) => {
+      appendEdge(normalize(link.source), normalize(link.target));
+    });
+
+    appendEdge(normalizedSource, normalizedTarget);
+
+    const stack = [normalizedTarget];
+    const visited = new Set();
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (current === normalizedSource) {
+        return true;
+      }
+      if (visited.has(current)) {
+        continue;
+      }
+      visited.add(current);
+      const neighbors = adjacency.get(current);
+      if (!neighbors) {
+        continue;
+      }
+      neighbors.forEach((next) => {
+        if (!visited.has(next)) {
+          stack.push(next);
+        }
+      });
+    }
+
+    return false;
+  }, [data.links]);
 
   // 접힘 상태에 따른 보이는 노드/링크 계산
   const visibleGraph = React.useMemo(() => {
@@ -1066,6 +1178,11 @@ const HierarchicalForceTree = () => {
       { keyword }
     );
 
+    if (willCreateCycle(parentNodeId, newNodeData.id)) {
+      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
+      return;
+    }
+
     const timestamp = Date.now();
     const initialConversation = [
       { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
@@ -1129,7 +1246,7 @@ const HierarchicalForceTree = () => {
         input.focus();
       }
     }, 50);
-  }, [extractImportantKeyword, handleRequestAnswer]);
+  }, [extractImportantKeyword, handleRequestAnswer, showLinkValidationMessage, willCreateCycle]);
 
   const handlePlaceholderCreate = (parentNodeId, keywords) => {
     if (!Array.isArray(keywords) || keywords.length === 0) return;
@@ -1162,6 +1279,11 @@ const HierarchicalForceTree = () => {
       target: node.id,
       value: 1,
     }));
+
+    if (placeholderLinks.some((link) => willCreateCycle(link.source, link.target))) {
+      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
+      return;
+    }
 
     const newData = {
       ...data,
@@ -1551,7 +1673,8 @@ const HierarchicalForceTree = () => {
         const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
         linkKeysRef.current = nextKeys;
         setLinks(annotatedLinks);
-      }
+      },
+      { orientation: layoutOrientation }
     );
 
     animationRef.current = animation;
@@ -1566,7 +1689,7 @@ const HierarchicalForceTree = () => {
         animationRef.current.stop();
       }
     };
-  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
+  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links, layoutOrientation]);
 
   const focusNodeToCenter = useCallback((node, options = {}) => {
     if (!node || !svgRef.current) {
@@ -1714,7 +1837,8 @@ const HierarchicalForceTree = () => {
             const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
             linkKeysRef.current = nextKeys;
             setLinks(annotatedLinks);
-          }
+          },
+          { orientation: layoutOrientation }
         );
         animationRef.current = animation;
       });
@@ -1884,6 +2008,36 @@ const HierarchicalForceTree = () => {
         <div className="absolute bottom-6 left-1/2 z-[1200] w-[320px] -translate-x-1/2 rounded-lg border border-red-400/60 bg-red-900/60 px-4 py-3 text-xs text-red-100 shadow-lg">
           <p className="font-medium">동기화 오류</p>
           <p className="opacity-80">{treeSyncError.message || 'Supabase와 동기화할 수 없습니다.'}</p>
+        </div>
+      ) : null}
+      <div
+        className="absolute top-4 left-6 z-[1300] flex"
+        style={{ pointerEvents: 'none' }}
+      >
+        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
+          <button
+            type="button"
+            onClick={() => setLayoutOrientation('vertical')}
+            className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'vertical' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={layoutOrientation === 'vertical'}
+          >
+            아래로
+          </button>
+          <button
+            type="button"
+            onClick={() => setLayoutOrientation('horizontal')}
+            className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'horizontal' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={layoutOrientation === 'horizontal'}
+          >
+            오른쪽
+          </button>
+        </div>
+      </div>
+      {linkValidationError ? (
+        <div className="pointer-events-none absolute top-4 right-6 z-[1300]">
+          <div className="pointer-events-auto rounded-lg border border-red-400/60 bg-red-900/80 px-3 py-2 text-xs font-medium text-red-100 shadow-lg">
+            {linkValidationError}
+          </div>
         </div>
       ) : null}
       {/* 창 드래그 핸들 - 중앙 최상단 */}
@@ -2091,12 +2245,14 @@ const HierarchicalForceTree = () => {
 
                   if (!sourceNode || !targetNode) return null;
 
-                    // Calculate source position from toggle icon bottom edge
-                    const sourceX = sourceNode.x;
-                    const sourceY = sourceNode.y + 14 + 20; // Toggle icon is 14px below node center + 20px (full icon height)
+                  const isHorizontalLayout = layoutOrientation === 'horizontal';
+                  const sourceX = sourceNode.x;
+                  const sourceY = isHorizontalLayout ? sourceNode.y : sourceNode.y + 14 + 20;
+                  const targetX = targetNode.x;
+                  const targetY = targetNode.y;
 
                   const shouldAnimate = link.isNew;
-                  const pathString = `M ${sourceX} ${sourceY} L ${targetNode.x} ${targetNode.y}`;
+                  const pathString = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
 
                   return (
                     <g key={`${String(link.source)}->${String(link.target)}`}>

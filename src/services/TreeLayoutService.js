@@ -69,10 +69,20 @@ class TreeLayoutService {
      * @param {Object} dimensions - 화면 크기 {width, height}
      * @returns {Object} {nodes, links} - 계산된 위치가 포함된 노드와 링크
      */
-    calculateTreeLayout(nodes, links, dimensions) {
+    calculateTreeLayout(nodes, links, dimensions, options = {}) {
         try {
             // 화면 크기에 맞게 트리 레이아웃 크기 조정
-            this.treeLayout.size([dimensions.width - 100, dimensions.height - 100]);
+            const safeDimensions = dimensions || {};
+            const baseWidth = Number.isFinite(safeDimensions.width) ? safeDimensions.width : 900;
+            const baseHeight = Number.isFinite(safeDimensions.height) ? safeDimensions.height : 700;
+            const usableWidth = Math.max(baseWidth - 100, 100);
+            const usableHeight = Math.max(baseHeight - 100, 100);
+            const orientationSetting = typeof options?.orientation === "string" ? options.orientation : "vertical";
+            const isHorizontal = orientationSetting === "horizontal";
+            const layoutWidth = isHorizontal ? usableHeight : usableWidth;
+            const layoutHeight = isHorizontal ? usableWidth : usableHeight;
+
+            this.treeLayout.size([layoutWidth, layoutHeight]);
 
             // 계층 구조로 변환
             const root = this.convertToHierarchy(nodes, links);
@@ -81,13 +91,17 @@ class TreeLayoutService {
             this.treeLayout(root);
 
             // 정렬된 노드 배열 생성
-            const layoutNodes = root.descendants().map(node => ({
-                ...node.data,
-                x: node.x + 50, // 여백 추가
-                y: node.y + 50,
-                depth: node.depth,
-                height: node.height
-            }));
+            const layoutNodes = root.descendants().map(node => {
+                const baseX = (node.x || 0) + 50;
+                const baseY = (node.y || 0) + 50;
+                return {
+                    ...node.data,
+                    x: isHorizontal ? baseY : baseX,
+                    y: isHorizontal ? baseX : baseY,
+                    depth: node.depth,
+                    height: node.height
+                };
+            });
 
             // 정렬된 링크 배열 생성
             const layoutLinks = root.links().map(link => ({
