@@ -1,14 +1,141 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import DataTransformService from '../../services/DataTransformService';
 import ForceSimulationService from '../../services/ForceSimulationService';
-import { fetchMemosForTree, upsertMemo, deleteMemo as deleteMemoFromDB } from '../../services/supabaseTrees';
-import MemoBlock from './MemoBlock';
-import MemoNoteBlock from './MemoNoteBlock';
-import MemoCreationModal from './MemoCreationModal';
 import NodeAssistantPanel from '../NodeAssistantPanel';
+import MemoPanel from './MemoPanel';
 import QuestionService from '../../services/QuestionService';
+
+const NODE_COLOR_PALETTE = (d3.schemeTableau10 && d3.schemeTableau10.length ? d3.schemeTableau10 : d3.schemeCategory10);
+const DEFAULT_CONTEXT_MENU_STATE = {
+    open: false,
+    x: 0,
+    y: 0,
+    nodeId: null,
+    nodeType: null,
+};
+
+const getNodeDatum = (node) => {
+    if (!node) {
+        return {};
+    }
+
+    const hierarchyPayload = node.data || {};
+    if (hierarchyPayload && typeof hierarchyPayload === 'object' && hierarchyPayload.data) {
+        return hierarchyPayload.data || {};
+    }
+
+    return hierarchyPayload;
+};
+
+const getNodeId = (node) => {
+    if (!node) return null;
+    const hierarchyPayload = node.data || {};
+    return hierarchyPayload.id || getNodeDatum(node).id || node.id || null;
+};
+
+const sanitizeText = (value) => {
+    if (typeof value !== 'string') {
+        if (value === null || value === undefined) return '';
+        return String(value);
+    }
+    return value;
+};
+
+const extractNodeHoverText = (nodeData = {}) => {
+    const memoTitle = sanitizeText(nodeData?.memo?.title).trim();
+    if (memoTitle) {
+        return memoTitle;
+    }
+
+    const memoContent = sanitizeText(nodeData?.memo?.content).trim();
+    if (memoContent) {
+        return memoContent;
+    }
+
+    const question = sanitizeText(nodeData?.questionData?.question).trim();
+    if (question) {
+        return question;
+    }
+
+    const keyword = sanitizeText(nodeData.keyword).trim();
+    if (keyword) {
+        return keyword;
+    }
+
+    const fullText = sanitizeText(nodeData.fullText).trim();
+    if (fullText) {
+        return fullText;
+    }
+
+    const name = sanitizeText(nodeData.name).trim();
+    if (name) {
+        return name;
+    }
+
+    const id = sanitizeText(nodeData.id).trim();
+    if (id) {
+        return id;
+    }
+
+    return '';
+};
+
+const computeHoverLines = (text, maxCharsPerLine = 28, maxLines = 3) => {
+    const normalized = sanitizeText(text).replace(/\s+/g, ' ').trim();
+    if (!normalized) {
+        return [];
+    }
+
+    const lines = [];
+    let remaining = normalized;
+
+    for (let i = 0; i < maxLines && remaining.length > 0; i += 1) {
+        if (remaining.length <= maxCharsPerLine) {
+            lines.push(remaining);
+            remaining = '';
+            break;
+        }
+
+        let sliceEnd = remaining.lastIndexOf(' ', maxCharsPerLine);
+        if (sliceEnd <= 0) {
+            sliceEnd = maxCharsPerLine;
+        }
+
+        const line = remaining.slice(0, sliceEnd).trim();
+        if (line) {
+            lines.push(line);
+        }
+
+        remaining = remaining.slice(sliceEnd).trim();
+    }
+
+    if (remaining.length > 0 && lines.length > 0) {
+        const lastIndex = lines.length - 1;
+        lines[lastIndex] = `${lines[lastIndex].replace(/[.…]*$/, '')}…`;
+    }
+
+    return lines;
+};
+
+const computeTooltipDimensions = (lines) => {
+    if (!lines || lines.length === 0) {
+        return { width: 0, height: 0 };
+    }
+
+    const horizontalPadding = 28;
+    const verticalPadding = 18;
+    const charWidthEstimate = 9;
+    const lineHeight = 18;
+
+    const longestLineLength = lines.reduce((max, line) => Math.max(max, line.length), 0);
+    const rawWidth = longestLineLength * charWidthEstimate + horizontalPadding;
+    const width = Math.min(280, Math.max(140, rawWidth));
+    const height = lines.length * lineHeight + verticalPadding;
+
+    return { width, height };
+};
 
 /**
  * ForceDirectedTree Component
@@ -20,10 +147,8 @@ const ForceDirectedTree = ({
     dimensions,
     onNodeClick,
     onNodeRemove,
-<<<<<<< HEAD
-    treeId,
-    userId,
-=======
+    onMemoCreate,
+    onMemoUpdate,
     questionService,
     getInitialConversation,
     onConversationChange,
@@ -32,7 +157,6 @@ const ForceDirectedTree = ({
     onAnswerError,
     onSecondQuestion,
     onPlaceholderCreate,
->>>>>>> 8894695ccd073d7726a9f25dbeda189d1ce394bb
 }) => {
     const questionServiceRef = useRef(questionService || new QuestionService());
     const svgRef = useRef(null);
@@ -40,51 +164,24 @@ const ForceDirectedTree = ({
     const simulationServiceRef = useRef(null);
     const [simulatedNodes, setSimulatedNodes] = useState([]);
     const [simulatedLinks, setSimulatedLinks] = useState([]);
-    const [simulatedMemos, setSimulatedMemos] = useState([]);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [isDraggingNode, setIsDraggingNode] = useState(false);
     const [draggedNodeId, setDraggedNodeId] = useState(null);
+    const [hoveredNodeId, setHoveredNodeId] = useState(null);
+    const [contextMenuState, setContextMenuState] = useState(DEFAULT_CONTEXT_MENU_STATE);
     const dragStartTimeRef = useRef(0);
     const shouldOpenNodeRef = useRef(false);
-
-    // 메모 관련 상태
-    const [memos, setMemos] = useState([]);
-    const [isMemoModalVisible, setIsMemoModalVisible] = useState(false);
-    const [memoModalNode, setMemoModalNode] = useState(null);
+    const draggedMemoSnapshotRef = useRef([]);
 
     // SVG 중심 위치 계산
     const centerX = dimensions.width / 2;
     const centerY = dimensions.height / 2;
 
-<<<<<<< HEAD
-    // 메모 로드 (treeId 변경 시)
-    useEffect(() => {
-        if (!treeId || !userId) {
-            setMemos([]);
-            return;
-        }
-
-        const loadMemos = async () => {
-            try {
-                const loadedMemos = await fetchMemosForTree({ treeId, userId });
-                setMemos(loadedMemos);
-            } catch (error) {
-                console.error('메모 로드 실패:', error);
-                setMemos([]);
-            }
-        };
-
-        loadMemos();
-    }, [treeId, userId]);
-=======
     // viewTransform 초기값을 중심으로 설정
     const [viewTransform, setViewTransform] = useState({ x: centerX, y: centerY, k: 1 });
->>>>>>> 8894695ccd073d7726a9f25dbeda189d1ce394bb
 
     // Simulation 초기화
     useEffect(() => {
-        console.log('Simulation 초기화 - memos 개수:', memos.length);
-
         if (!data || !data.nodes || data.nodes.length === 0) {
             setSimulatedNodes([]);
             setSimulatedLinks([]);
@@ -109,19 +206,15 @@ const ForceDirectedTree = ({
         }
 
         // 3. Simulation 생성 및 tick 콜백
-        const handleTick = (nodes, links, memoNodes) => {
-            console.log('Simulation tick - memoNodes 개수:', memoNodes.length);
+        const handleTick = (nodes, links) => {
             setSimulatedNodes([...nodes]);
             setSimulatedLinks([...links]);
-            setSimulatedMemos([...memoNodes]);
         };
 
-        console.log('createSimulation 호출 - memos:', memos);
         simulationServiceRef.current.createSimulation(
             hierarchyData,
             dimensions,
-            handleTick,
-            memos // 메모를 simulation에 전달
+            handleTick
         );
 
         // Cleanup
@@ -130,7 +223,7 @@ const ForceDirectedTree = ({
                 simulationServiceRef.current.cleanup();
             }
         };
-    }, [data, dimensions, memos]);
+    }, [data, dimensions]);
 
     // dimensions가 변경될 때 viewTransform 업데이트 (비율 유지)
     const prevCenterRef = useRef({ x: centerX, y: centerY });
@@ -148,6 +241,68 @@ const ForceDirectedTree = ({
         prevCenterRef.current = { x: centerX, y: centerY };
     }, [centerX, centerY]);
 
+    useEffect(() => {
+        if (!hoveredNodeId) {
+            return;
+        }
+
+        const stillExists = simulatedNodes.some((node) => node?.data?.id === hoveredNodeId);
+        if (!stillExists) {
+            setHoveredNodeId(null);
+        }
+    }, [hoveredNodeId, simulatedNodes]);
+
+    useEffect(() => {
+        if (selectedNodeId) {
+            setHoveredNodeId(null);
+        }
+    }, [selectedNodeId]);
+
+    useEffect(() => {
+        if (!selectedNodeId) {
+            return;
+        }
+
+        const stillExists = simulatedNodes.some((node) => node?.data?.id === selectedNodeId);
+        if (!stillExists) {
+            setSelectedNodeId(null);
+        }
+    }, [selectedNodeId, simulatedNodes]);
+
+    useEffect(() => {
+        if (!contextMenuState.open) {
+            return;
+        }
+
+        const handlePointerDown = (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (target && target.closest('[data-force-tree-context-menu="true"]')) {
+                return;
+            }
+            setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') {
+                setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+            }
+        };
+
+        const handleScroll = () => {
+            setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+        };
+
+        window.addEventListener('pointerdown', handlePointerDown, true);
+        window.addEventListener('keydown', handleEscape, true);
+        window.addEventListener('wheel', handleScroll, true);
+
+        return () => {
+            window.removeEventListener('pointerdown', handlePointerDown, true);
+            window.removeEventListener('keydown', handleEscape, true);
+            window.removeEventListener('wheel', handleScroll, true);
+        };
+    }, [contextMenuState.open]);
+
     // Zoom/Pan 설정
     const zoomBehaviorRef = useRef(null);
 
@@ -157,7 +312,7 @@ const ForceDirectedTree = ({
         const svg = d3.select(svgRef.current);
 
         const zoom = d3.zoom()
-            .scaleExtent([0.3, 3])
+            .scaleExtent([0.3, 8])
             .filter((event) => {
                 // 노드 드래그 중에는 줌/팬 비활성화
                 if (isDraggingNode) return false;
@@ -241,6 +396,10 @@ const ForceDirectedTree = ({
 
     // 노드 드래그 핸들러
     const handleDragStart = useCallback((event, nodeData) => {
+        if (event.button !== 0) {
+            return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
 
@@ -249,10 +408,29 @@ const ForceDirectedTree = ({
         shouldOpenNodeRef.current = false;
 
         setIsDraggingNode(true);
-        setDraggedNodeId(nodeData.data.id);
+        const datum = getNodeDatum(nodeData);
+        const nodeId = getNodeId(nodeData);
+        setDraggedNodeId(nodeId);
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
 
         if (simulationServiceRef.current) {
             simulationServiceRef.current.handleDragStart(event, nodeData);
+        }
+
+        const simulation = simulationServiceRef.current?.getSimulation?.();
+        if (simulation && datum?.nodeType !== 'memo') {
+            const memoFollowers = simulation.nodes().filter((candidate) => (
+                getNodeDatum(candidate)?.nodeType === 'memo'
+                && getNodeDatum(candidate)?.memoParentId === nodeId
+            ));
+
+            draggedMemoSnapshotRef.current = memoFollowers.map((memoNode) => ({
+                node: memoNode,
+                offsetX: (memoNode.x || 0) - (nodeData.x || 0),
+                offsetY: (memoNode.y || 0) - (nodeData.y || 0),
+            }));
+        } else {
+            draggedMemoSnapshotRef.current = [];
         }
 
         // 전역 드래그 핸들러 (즉시 등록하여 노드 밖으로 나가도 드래그 계속됨)
@@ -278,6 +456,14 @@ const ForceDirectedTree = ({
             };
 
             simulationServiceRef.current.handleDrag(mockEvent, nodeData);
+
+            if (draggedMemoSnapshotRef.current.length > 0) {
+                draggedMemoSnapshotRef.current.forEach(({ node: memoNode, offsetX, offsetY }) => {
+                    if (!memoNode) return;
+                    memoNode.fx = forceX + offsetX;
+                    memoNode.fy = forceY + offsetY;
+                });
+            }
         };
 
         const handleGlobalPointerUp = (e) => {
@@ -293,6 +479,15 @@ const ForceDirectedTree = ({
 
             setIsDraggingNode(false);
             setDraggedNodeId(null);
+
+            if (draggedMemoSnapshotRef.current.length > 0) {
+                draggedMemoSnapshotRef.current.forEach(({ node: memoNode }) => {
+                    if (!memoNode) return;
+                    memoNode.fx = null;
+                    memoNode.fy = null;
+                });
+                draggedMemoSnapshotRef.current = [];
+            }
 
             // 리스너 제거
             document.removeEventListener('pointermove', handleGlobalPointerMove);
@@ -342,18 +537,83 @@ const ForceDirectedTree = ({
         // 플래그 리셋
         shouldOpenNodeRef.current = false;
 
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+
         // 노드를 화면 중앙으로 이동
+        const datum = getNodeDatum(node);
+        const nodeId = getNodeId(node);
+
         centerNodeOnScreen(node);
 
-        setSelectedNodeId(node.data.id);
+        setSelectedNodeId(nodeId);
         if (onNodeClick) {
-            onNodeClick(node.data.id);
+            onNodeClick(nodeId);
         }
     }, [onNodeClick, isDraggingNode, draggedNodeId, centerNodeOnScreen]);
+
+    const handleNodeContextMenu = useCallback((event, node) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!node || isDraggingNode || draggedNodeId) {
+            return;
+        }
+
+        const datum = getNodeDatum(node);
+        if (!datum?.id) {
+            return;
+        }
+
+        const container = containerRef.current;
+        const rect = container ? container.getBoundingClientRect() : null;
+
+        const x = rect ? event.clientX - rect.left : event.clientX;
+        const y = rect ? event.clientY - rect.top : event.clientY;
+
+        setContextMenuState({
+            open: true,
+            x,
+            y,
+            nodeId: datum.id,
+            nodeType: datum.nodeType || 'node',
+        });
+    }, [draggedNodeId, isDraggingNode]);
+
+    const handleMenuAddMemo = useCallback(() => {
+        if (!contextMenuState.nodeId || !onMemoCreate) {
+            setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+            return;
+        }
+
+        const maybeId = onMemoCreate(contextMenuState.nodeId);
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+
+        Promise.resolve(maybeId).then((newMemoId) => {
+            if (!newMemoId) {
+                return;
+            }
+            setSelectedNodeId(newMemoId);
+            shouldOpenNodeRef.current = false;
+        }).catch(() => {
+            // ignore memo creation errors in UI layer
+        });
+    }, [contextMenuState.nodeId, onMemoCreate]);
+
+    const handleMenuRemoveNode = useCallback(() => {
+        if (contextMenuState.nodeId && onNodeRemove) {
+            if (selectedNodeId === contextMenuState.nodeId) {
+                setSelectedNodeId(null);
+            }
+            onNodeRemove(contextMenuState.nodeId);
+        }
+
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+    }, [contextMenuState.nodeId, onNodeRemove, selectedNodeId]);
 
     // 배경 클릭 핸들러 (선택 해제)
     const handleBackgroundClick = useCallback(() => {
         setSelectedNodeId(null);
+        setHoveredNodeId(null);
     }, []);
 
     // Conversation 관리
@@ -366,181 +626,6 @@ const ForceDirectedTree = ({
             onConversationChange(nodeId, messages);
         }
     }, [onConversationChange]);
-
-    // 메모 관리 함수들
-    const generateMemoId = useCallback(() => {
-        return `memo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    }, []);
-
-    const handleAddMemo = useCallback((node) => {
-        setMemoModalNode(node);
-        setIsMemoModalVisible(true);
-    }, []);
-
-    const handleSaveMemo = useCallback(async (content) => {
-        if (!memoModalNode || !content.trim()) return;
-
-        const newMemo = {
-            id: generateMemoId(),
-            nodeId: memoModalNode.data.id,
-            content: content.trim(),
-            // position은 simulation이 관리하므로 초기값만 설정
-            position: {
-                x: memoModalNode.x + (Math.random() - 0.5) * 60, // 노드 근처 랜덤 위치 (더 가깝게)
-                y: memoModalNode.y + (Math.random() - 0.5) * 60,
-            },
-            createdAt: Date.now(),
-        };
-
-        console.log('메모 생성:', newMemo);
-
-        // 로컬 상태 즉시 업데이트 (낙관적 업데이트)
-        setMemos(prev => {
-            const updated = [...prev, newMemo];
-            console.log('메모 상태 업데이트:', updated);
-            return updated;
-        });
-        setIsMemoModalVisible(false);
-        setMemoModalNode(null);
-
-        // Supabase에 저장 (비동기)
-        if (treeId && userId) {
-            try {
-                await upsertMemo({ memo: newMemo, treeId, userId });
-                console.log('메모 Supabase 저장 성공');
-            } catch (error) {
-                console.error('메모 저장 실패:', error);
-                // 에러 발생 시 롤백
-                setMemos(prev => prev.filter(m => m.id !== newMemo.id));
-            }
-        } else {
-            console.warn('treeId 또는 userId 없음 - 로컬 전용 메모:', { treeId, userId });
-        }
-    }, [memoModalNode, generateMemoId, treeId, userId]);
-
-    const handleEditMemo = useCallback(async (memoId, newContent) => {
-        // 로컬 상태 즉시 업데이트
-        const updatedMemo = memos.find(m => m.id === memoId);
-        if (!updatedMemo) return;
-
-        const newMemo = { ...updatedMemo, content: newContent, updatedAt: Date.now() };
-        setMemos(prev => prev.map(memo =>
-            memo.id === memoId ? newMemo : memo
-        ));
-
-        // Supabase에 저장 (비동기)
-        if (treeId && userId) {
-            try {
-                await upsertMemo({ memo: newMemo, treeId, userId });
-            } catch (error) {
-                console.error('메모 수정 실패:', error);
-                // 에러 발생 시 롤백
-                setMemos(prev => prev.map(memo =>
-                    memo.id === memoId ? updatedMemo : memo
-                ));
-            }
-        }
-    }, [memos, treeId, userId]);
-
-    const handleDeleteMemo = useCallback(async (memoId) => {
-        // 로컬 상태 즉시 업데이트
-        const deletedMemo = memos.find(m => m.id === memoId);
-        setMemos(prev => prev.filter(memo => memo.id !== memoId));
-
-        // Supabase에서 삭제 (비동기)
-        if (treeId && userId) {
-            try {
-                await deleteMemoFromDB({ memoId, userId });
-            } catch (error) {
-                console.error('메모 삭제 실패:', error);
-                // 에러 발생 시 롤백
-                if (deletedMemo) {
-                    setMemos(prev => [...prev, deletedMemo]);
-                }
-            }
-        }
-    }, [memos, treeId, userId]);
-
-    const handleMemoDragStart = useCallback((event, memo) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        // 드래그 시작 시간 기록
-        dragStartTimeRef.current = Date.now();
-        shouldOpenNodeRef.current = false;
-
-        setIsDraggingNode(true);
-        setDraggedNodeId(memo.id);
-
-        if (simulationServiceRef.current) {
-            simulationServiceRef.current.handleDragStart(event, memo);
-        }
-
-        // 전역 드래그 핸들러 (즉시 등록하여 노드 밖으로 나가도 드래그 계속됨)
-        const handleGlobalPointerMove = (e) => {
-            if (!simulationServiceRef.current) return;
-
-            const svg = svgRef.current;
-            if (!svg) return;
-
-            const point = svg.createSVGPoint();
-            point.x = e.clientX;
-            point.y = e.clientY;
-
-            const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
-
-            // SVG viewBox 좌표 -> Force simulation 좌표로 변환
-            const forceX = (svgPoint.x - centerX - viewTransform.x) / viewTransform.k;
-            const forceY = (svgPoint.y - centerY - viewTransform.y) / viewTransform.k;
-
-            const mockEvent = {
-                x: forceX,
-                y: forceY,
-            };
-
-            simulationServiceRef.current.handleDrag(mockEvent, memo);
-        };
-
-        const handleGlobalPointerUp = async (e) => {
-            // 드래그 시간 체크 (0.1초 이하면 클릭으로 처리)
-            const dragDuration = Date.now() - dragStartTimeRef.current;
-            if (dragDuration <= 100) {
-                shouldOpenNodeRef.current = true;
-            }
-
-            // 메모 위치 저장 (드래그가 실제로 발생한 경우)
-            if (dragDuration > 100 && treeId && userId && memo.x !== undefined && memo.y !== undefined) {
-                try {
-                    const updatedMemo = {
-                        ...memo,
-                        position: { x: memo.x, y: memo.y },
-                        updatedAt: Date.now()
-                    };
-                    await upsertMemo({ memo: updatedMemo, treeId, userId });
-                } catch (error) {
-                    console.error('메모 위치 저장 실패:', error);
-                }
-            }
-
-            // 드래그 종료 처리 (fx, fy 해제)
-            if (simulationServiceRef.current) {
-                simulationServiceRef.current.handleDragEnd(e, memo);
-            }
-
-            setIsDraggingNode(false);
-            setDraggedNodeId(null);
-
-            // 리스너 제거
-            document.removeEventListener('pointermove', handleGlobalPointerMove);
-            document.removeEventListener('pointerup', handleGlobalPointerUp);
-            document.removeEventListener('pointercancel', handleGlobalPointerUp);
-        };
-
-        // 전역 리스너 등록 (즉시)
-        document.addEventListener('pointermove', handleGlobalPointerMove);
-        document.addEventListener('pointerup', handleGlobalPointerUp);
-        document.addEventListener('pointercancel', handleGlobalPointerUp);
-    }, [centerX, centerY, viewTransform, treeId, userId]);
 
     // ESC 키로 패널 닫기
     useEffect(() => {
@@ -569,6 +654,21 @@ const ForceDirectedTree = ({
             />
         );
     }
+
+    const contextMenuCoordinates = contextMenuState.open
+        ? {
+            x: Math.min(
+                Math.max(contextMenuState.x, 0),
+                Math.max(0, (dimensions?.width || 0) - 176),
+            ),
+            y: Math.min(
+                Math.max(contextMenuState.y, 0),
+                Math.max(0, (dimensions?.height || 0) - 96),
+            ),
+        }
+        : null;
+
+    const isMemoContextTarget = contextMenuState.nodeType === 'memo';
 
     return (
         <div
@@ -621,6 +721,12 @@ const ForceDirectedTree = ({
                             const targetX = link.target.x || 0;
                             const targetY = link.target.y || 0;
 
+                            const targetDatum = getNodeDatum(link.target);
+                            const isMemoLink = targetDatum?.nodeType === 'memo';
+                            const linkStroke = isMemoLink ? 'rgba(40, 41, 48, 0.7)' : 'rgba(255,255,255,0.2)';
+                            const linkWidth = isMemoLink ? 1.2 : 2;
+                            const linkOpacity = isMemoLink ? 0.9 : 1;
+
                             return (
                                 <motion.line
                                     key={`link-${index}`}
@@ -628,11 +734,12 @@ const ForceDirectedTree = ({
                                     y1={sourceY}
                                     x2={targetX}
                                     y2={targetY}
-                                    stroke="rgba(255,255,255,0.2)"
-                                    strokeWidth={2}
-                                    markerEnd="url(#arrowhead-force)"
+                                    stroke={linkStroke}
+                                    strokeWidth={linkWidth}
+                                    strokeDasharray={isMemoLink ? '2,3' : undefined}
+                                    markerEnd={isMemoLink ? undefined : 'url(#arrowhead-force)'}
                                     initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
+                                    animate={{ opacity: linkOpacity }}
                                     transition={{ duration: 0.3 }}
                                 />
                             );
@@ -642,79 +749,201 @@ const ForceDirectedTree = ({
                     {/* 노드 렌더링 */}
                     <g className="nodes">
                         {simulatedNodes.map((node) => {
-                            const isLeaf = !node.children || node.children.length === 0;
-                            const isBeingDragged = draggedNodeId === node.data.id;
+                            const datum = getNodeDatum(node);
+                            const nodeId = getNodeId(node);
+
+                            if (!nodeId) {
+                                return null;
+                            }
+
+                            const depth = Number.isFinite(node.depth) ? node.depth : 0;
+                            const isMemoNode = datum?.nodeType === 'memo';
+                            const palette = NODE_COLOR_PALETTE && NODE_COLOR_PALETTE.length
+                                ? NODE_COLOR_PALETTE
+                                : d3.schemeCategory10;
+                            const fillColor = isMemoNode
+                                ? '#08090d'
+                                : palette[depth % palette.length];
+                            const isBeingDragged = draggedNodeId === nodeId;
+                            const isSelected = selectedNodeId === nodeId;
+                            const isHovered = hoveredNodeId === nodeId;
                             const isOtherNodeDragging = isDraggingNode && !isBeingDragged;
 
+                            const baseRadius = isMemoNode
+                                ? 6
+                                : (depth === 0 ? 8 : 5.5);
+                            const radius = isSelected
+                                ? baseRadius + 3
+                                : isHovered
+                                    ? baseRadius + 1.5
+                                    : baseRadius;
+
+                            const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
+
+                            const hoverText = isHovered ? extractNodeHoverText(datum) : '';
+                            const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
+                            const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
+                            const tooltipTranslateX = -tooltipWidth / 2;
+                            const tooltipTranslateY = -(radius + tooltipHeight + 12);
+                            const tooltipLineHeight = 18;
+
                             return (
-                                <MemoBlock
-                                    key={node.data.id}
-                                    node={node}
-                                    position={{ x: node.x || 0, y: node.y || 0 }}
-                                    isSelected={selectedNodeId === node.data.id}
-                                    isLeaf={isLeaf}
-                                    onDragStart={handleDragStart}
-                                    onClick={handleNodeClick}
-                                    scale={viewTransform.k}
-                                    isDisabled={isOtherNodeDragging}
-                                    onAddMemo={handleAddMemo}
-                                    onAddConnection={(node) => {
-                                        console.log('ForceDirectedTree: 연결선 추가', node.data.id);
+                                <g
+                                    key={nodeId}
+                                    transform={`translate(${node.x || 0}, ${node.y || 0})`}
+                                    style={{
+                                        cursor: isBeingDragged ? 'grabbing' : (isOtherNodeDragging ? 'default' : 'grab'),
+                                        pointerEvents: isOtherNodeDragging ? 'none' : 'auto',
                                     }}
-                                    onToggleChildren={(node) => {
-                                        console.log('ForceDirectedTree: 자식 노드 접기/펼치기', node.data.id);
+                                    onPointerDown={(event) => {
+                                        if (isOtherNodeDragging) return;
+                                        setHoveredNodeId(null);
+                                        handleDragStart(event, node);
                                     }}
-                                />
+                                    onClick={(event) => {
+                                        if (isOtherNodeDragging) return;
+                                        event.stopPropagation();
+                                        handleNodeClick(node);
+                                    }}
+                                    onContextMenu={(event) => handleNodeContextMenu(event, node)}
+                                    onPointerEnter={() => {
+                                        if (isOtherNodeDragging) return;
+                                        setHoveredNodeId(nodeId);
+                                    }}
+                                    onPointerLeave={() => {
+                                        setHoveredNodeId((current) => (current === nodeId ? null : current));
+                                    }}
+                                >
+                                    <motion.circle
+                                        r={radius}
+                                        fill={fillColor}
+                                        stroke={isMemoNode ? '#202127' : (isSelected ? '#ffffff' : 'rgba(255,255,255,0.45)')}
+                                        strokeWidth={isSelected ? 2.4 : isMemoNode ? 1.8 : 1.6}
+                                        initial={{ scale: 0, opacity: 0 }}
+                                        animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
+                                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                                    />
+
+                                    {/* 확대 시 노드 내부에 이름 표시 */}
+                                    {viewTransform.k > 2 && (
+                                        <motion.text
+                                            textAnchor="middle"
+                                            dominantBaseline="middle"
+                                            fill="#ffffff"
+                                            fontSize={Math.min(radius * 0.7, 9)}
+                                            fontWeight={600}
+                                            pointerEvents="none"
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            transition={{ duration: 0.2 }}
+                                            style={{
+                                                textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                                            }}
+                                        >
+                                            {node.data.keyword || node.data.name || ''}
+                                        </motion.text>
+                                    )}
+
+                                    {isSelected && !isMemoNode && (
+
+                                        <motion.circle
+                                            r={radius + 6}
+                                            fill="none"
+                                            stroke={fillColor}
+                                            strokeWidth={1.2}
+                                            strokeOpacity={0.65}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                        />
+                                    )}
+
+                                    <AnimatePresence>
+                                        {isHovered && hoverLines.length > 0 && tooltipWidth > 0 && tooltipHeight > 0 && (
+                                            <motion.g
+                                                key={`tooltip-${nodeId}`}
+                                                initial={{ opacity: 0, y: -4 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -4 }}
+                                                transition={{ duration: 0.18 }}
+                                                transform={`translate(${tooltipTranslateX}, ${tooltipTranslateY})`}
+                                                style={{ pointerEvents: 'none' }}
+                                            >
+                                                <rect
+                                                    width={tooltipWidth}
+                                                    height={tooltipHeight}
+                                                    rx={10}
+                                                    ry={10}
+                                                    fill="rgba(0, 0, 0, 0.8)"
+                                                    stroke="rgba(255,255,255,0.35)"
+                                                    strokeWidth={1}
+                                                />
+                                                {hoverLines.map((line, index) => (
+                                                    <text
+                                                        key={`${nodeId}-line-${index}`}
+                                                        x={tooltipWidth / 2}
+                                                        y={14 + index * tooltipLineHeight}
+                                                        textAnchor="middle"
+                                                        fill="#f5f5f5"
+                                                        fontSize={12}
+                                                        fontWeight={500}
+                                                    >
+                                                        {line}
+                                                    </text>
+                                                ))}
+                                            </motion.g>
+                                        )}
+                                    </AnimatePresence>
+                                </g>
                             );
                         })}
-                    </g>
-
-                    {/* 메모-노드 연결선 렌더링 */}
-                    <g className="memo-links">
-                        {simulatedLinks
-                            .filter(link => link.isMemoLink)
-                            .map((link) => (
-                                <motion.line
-                                    key={`memo-link-${link.target.id}`}
-                                    x1={link.source.x || 0}
-                                    y1={link.source.y || 0}
-                                    x2={link.target.x || 0}
-                                    y2={link.target.y || 0}
-                                    stroke="rgba(255,255,255,0.2)" // 노드 연결선과 동일한 색상
-                                    strokeWidth={2} // 노드 연결선과 동일한 두께
-                                    markerEnd="url(#arrowhead-force)" // 노드 연결선과 동일한 화살표
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ duration: 0.3 }}
-                                />
-                            ))}
-                    </g>
-
-                    {/* 메모 블럭 렌더링 */}
-                    <g className="memos">
-                        {simulatedMemos.map((memo) => (
-                            <MemoNoteBlock
-                                key={memo.id}
-                                memo={memo}
-                                position={{ x: memo.x || 0, y: memo.y || 0 }}
-                                onDragStart={handleMemoDragStart}
-                                onEdit={handleEditMemo}
-                                onDelete={handleDeleteMemo}
-                                scale={viewTransform.k}
-                            />
-                        ))}
                     </g>
                 </g>
             </svg>
 
+            {contextMenuState.open && contextMenuCoordinates && (
+                <div
+                    className="pointer-events-auto absolute z-[1300] w-44 overflow-hidden rounded-lg border border-white/12 bg-black/85 shadow-2xl backdrop-blur-md"
+                    style={{
+                        left: contextMenuCoordinates.x,
+                        top: contextMenuCoordinates.y,
+                    }}
+                    data-force-tree-context-menu="true"
+                >
+                    <button
+                        type="button"
+                        className={`w-full px-3 py-2 text-left text-[13px] transition hover:bg-white/10 ${(!onMemoCreate || isMemoContextTarget) ? 'cursor-not-allowed text-white/35' : 'text-white/90'}`}
+                        disabled={!onMemoCreate || isMemoContextTarget}
+                        onClick={() => {
+                            if (!onMemoCreate || isMemoContextTarget) return;
+                            handleMenuAddMemo();
+                        }}
+                    >
+                        메모 추가
+                    </button>
+                    <div className="h-px w-full bg-white/10" />
+                    <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-[13px] text-red-300 transition hover:bg-red-500/20"
+                        onClick={handleMenuRemoveNode}
+                    >
+                        노드 삭제
+                    </button>
+                </div>
+            )}
+
             {/* AI 대화 패널 */}
             {selectedNodeId && (() => {
-                const selectedNode = simulatedNodes.find(n => n.data.id === selectedNodeId);
+                const selectedNode = simulatedNodes.find((candidate) => getNodeId(candidate) === selectedNodeId);
                 if (!selectedNode) return null;
 
-                // 화면 크기의 95% 사용
-                const panelWidth = dimensions.width * 0.95;
-                const panelHeight = dimensions.height * 0.95;
+                const selectedDatum = getNodeDatum(selectedNode);
+                const isMemoSelection = selectedDatum?.nodeType === 'memo';
+                const panelWidth = isMemoSelection
+                    ? Math.min(Math.max(dimensions.width * 0.45, 360), 520)
+                    : dimensions.width * 0.95;
+                const panelHeight = isMemoSelection
+                    ? Math.min(Math.max(dimensions.height * 0.45, 320), 520)
+                    : dimensions.height * 0.95;
 
                 return (
                     <div
@@ -730,50 +959,47 @@ const ForceDirectedTree = ({
                         data-interactive-zone="true"
                     >
                         <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
-                            <NodeAssistantPanel
-                                node={selectedNode.data}
-                                color={d3.schemeCategory10[0]}
-                                onSizeChange={() => { }}
-                                onSecondQuestion={onSecondQuestion || (() => { })}
-                                onPlaceholderCreate={onPlaceholderCreate || (() => { })}
-                                questionService={questionServiceRef.current}
-                                initialConversation={getInitialConversationForNode(selectedNodeId)}
-                                onConversationChange={(messages) => handleConversationChange(selectedNodeId, messages)}
-                                onRequestAnswer={onRequestAnswer || (() => { })}
-                                onAnswerComplete={onAnswerComplete || (() => { })}
-                                onAnswerError={onAnswerError || (() => { })}
-                                nodeSummary={{
-                                    label: selectedNode.data.keyword || selectedNode.data.id,
-                                    intro: selectedNode.data.fullText || '',
-                                    bullets: []
-                                }}
-                                isRootNode={false}
-                                bootstrapMode={false}
-                                onBootstrapFirstSend={() => { }}
-                                onPanZoomGesture={() => { }}
-                                nodeScaleFactor={1}
-                            />
+                            {isMemoSelection ? (
+                                <MemoPanel
+                                    memo={selectedDatum}
+                                    onClose={() => setSelectedNodeId(null)}
+                                    onUpdate={(updates) => {
+                                        if (!onMemoUpdate) return;
+                                        onMemoUpdate(selectedDatum.id, updates);
+                                    }}
+                                />
+                            ) : (
+                                <NodeAssistantPanel
+                                    node={selectedDatum}
+                                    color={d3.schemeCategory10[0]}
+                                    onSizeChange={() => { }}
+                                    onSecondQuestion={onSecondQuestion || (() => { })}
+                                    onPlaceholderCreate={onPlaceholderCreate || (() => { })}
+                                    questionService={questionServiceRef.current}
+                                    initialConversation={getInitialConversationForNode(selectedNodeId)}
+                                    onConversationChange={(messages) => handleConversationChange(selectedNodeId, messages)}
+                                    onRequestAnswer={onRequestAnswer || (() => { })}
+                                    onAnswerComplete={onAnswerComplete || (() => { })}
+                                    onAnswerError={onAnswerError || (() => { })}
+                                    nodeSummary={{
+                                        label: selectedDatum.keyword || selectedDatum.id,
+                                        intro: selectedDatum.fullText || '',
+                                        bullets: []
+                                    }}
+                                    isRootNode={false}
+                                    bootstrapMode={false}
+                                    onBootstrapFirstSend={() => { }}
+                                    onCloseNode={() => setSelectedNodeId(null)}
+                                    onPanZoomGesture={() => { }}
+                                    nodeScaleFactor={1}
+                                />
+                            )}
                         </div>
                     </div>
                 );
             })()}
-
-            {/* 메모 생성 모달 */}
-            <MemoCreationModal
-                isVisible={isMemoModalVisible}
-                nodePosition={memoModalNode ? { x: memoModalNode.x || 0, y: memoModalNode.y || 0 } : { x: 0, y: 0 }}
-                nodeKeyword={memoModalNode?.data?.keyword || memoModalNode?.name || ''}
-                onSave={handleSaveMemo}
-                onCancel={() => {
-                    setIsMemoModalVisible(false);
-                    setMemoModalNode(null);
-                }}
-                viewTransform={viewTransform}
-                containerDimensions={dimensions}
-            />
         </div>
     );
 };
 
 export default ForceDirectedTree;
-

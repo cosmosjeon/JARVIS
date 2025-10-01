@@ -2436,10 +2436,8 @@ const HierarchicalForceTree = () => {
           dimensions={dimensions}
           onNodeClick={handleNodeClickForAssistant}
           onNodeRemove={removeNodeAndDescendants}
-<<<<<<< HEAD
           treeId={activeTreeId}
           userId={user?.id}
-=======
           questionService={questionService.current}
           getInitialConversation={getInitialConversationForNode}
           onConversationChange={handleConversationChange}
@@ -2448,7 +2446,6 @@ const HierarchicalForceTree = () => {
           onAnswerError={handleAnswerError}
           onSecondQuestion={handleSecondQuestion}
           onPlaceholderCreate={handlePlaceholderCreate}
->>>>>>> 8894695ccd073d7726a9f25dbeda189d1ce394bb
         />
       )}
 
