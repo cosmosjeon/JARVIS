@@ -18,11 +18,12 @@ class ForceSimulationService {
      * @param {Object} hierarchyData - D3 hierarchy 데이터
      * @param {Object} dimensions - {width, height}
      * @param {Function} onTick - tick 이벤트 콜백
-     * @returns {Object} {nodes, links} - simulation 적용된 데이터
+     * @param {Array} memos - 메모 배열 (선택사항)
+     * @returns {Object} {nodes, links, memos} - simulation 적용된 데이터
      */
-    createSimulation(hierarchyData, dimensions = { width: 928, height: 600 }, onTick = null) {
+    createSimulation(hierarchyData, dimensions = { width: 928, height: 600 }, onTick = null, memos = []) {
         if (!hierarchyData) {
-            return { nodes: [], links: [] };
+            return { nodes: [], links: [], memos: [] };
         }
 
         // Hierarchy를 nodes/links로 변환
@@ -35,17 +36,49 @@ class ForceSimulationService {
             node.index = i;
         });
 
+        // 메모를 simulation 노드로 변환
+        const memoNodes = memos.map((memo, i) => ({
+            ...memo,
+            index: nodes.length + i,
+            isMemo: true,
+            x: memo.position.x,
+            y: memo.position.y,
+            vx: 0,
+            vy: 0,
+            fx: null,
+            fy: null,
+        }));
+
+        // 모든 노드 (기존 노드 + 메모 노드) 결합
+        const allNodes = [...nodes, ...memoNodes];
+
+        // 메모-노드 연결 링크 생성
+        const memoLinks = memos.map(memo => {
+            const targetNode = nodes.find(node => node.data.id === memo.nodeId);
+            const memoNode = memoNodes.find(memoNode => memoNode.id === memo.id);
+            return {
+                source: targetNode,
+                target: memoNode,
+                isMemoLink: true,
+            };
+        });
+
+        // 모든 링크 결합
+        const allLinks = [...links, ...memoLinks];
+
         // 기존 simulation 정리
         this.cleanup();
 
         // Force simulation 생성
-        this.simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(links)
-                .id(d => d.id || d.data.id)
-                .distance(100)
-                .strength(1)
+        this.simulation = d3.forceSimulation(allNodes)
+            .force('link', d3.forceLink(allLinks)
+                .id(d => d.id || d.data?.id)
+                .distance(d => d.isMemoLink ? 100 : 150) // 메모 링크는 100, 노드 링크는 150
+                .strength(d => d.isMemoLink ? 0.5 : 1) // 메모 링크는 더 약하게
             )
-            .force('charge', d3.forceManyBody().strength(-300))
+            .force('charge', d3.forceManyBody()
+                .strength(d => d.isMemo ? -150 : -300) // 메모는 더 약한 반발력
+            )
             .force('x', d3.forceX(0).strength(0.05))
             .force('y', d3.forceY(0).strength(0.05))
             .force('center', d3.forceCenter(0, 0));
@@ -54,11 +87,11 @@ class ForceSimulationService {
         if (onTick && typeof onTick === 'function') {
             this.onTickCallback = onTick;
             this.simulation.on('tick', () => {
-                onTick(nodes, links);
+                onTick(nodes, links, memoNodes);
             });
         }
 
-        return { nodes, links };
+        return { nodes, links, memos: memoNodes };
     }
 
     /**

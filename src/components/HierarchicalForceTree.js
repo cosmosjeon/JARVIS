@@ -2222,6 +2222,8 @@ const HierarchicalForceTree = () => {
           dimensions={dimensions}
           onNodeClick={handleNodeClickForAssistant}
           onNodeRemove={removeNodeAndDescendants}
+          treeId={activeTreeId}
+          userId={user?.id}
         />
       )}
 

@@ -29,7 +29,7 @@ const NodeHoverActions = ({
     const buttons = [
         {
             id: 'add-memo',
-            icon: '+',
+            icon: '📝',
             onClick: onAddMemo,
         },
         {
