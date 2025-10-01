@@ -536,9 +536,9 @@ const ForceDirectedTree = ({
                 simulationServiceRef.current.handleDragEnd(e, nodeData);
             }
 
-            // 드래그 시간 체크 (0.1초 이하면 클릭으로 처리)
+            // 드래그 시간 체크 (0.2초 이하면 클릭으로 처리)
             const dragDuration = Date.now() - dragStartTimeRef.current;
-            if (dragDuration <= 100) {
+            if (dragDuration <= 120) {
                 shouldOpenNodeRef.current = true;
             }
 
@@ -835,30 +835,23 @@ const ForceDirectedTree = ({
                             const isEvenDepth = targetDepth % 2 === 0;
                             const isLightMode = theme === 'light';
 
-                            let linkStroke, arrowMarker;
+                            let linkStroke;
 
                             if (isMemoLink) {
                                 // 메모 링크
                                 linkStroke = isLightMode
                                     ? 'rgba(245, 158, 11, 0.6)'
                                     : 'rgba(252, 211, 77, 0.5)';
-                                arrowMarker = undefined;
                             } else if (isLightMode) {
                                 // 라이트모드 - 일반 링크
                                 linkStroke = isEvenDepth
                                     ? 'rgba(31, 41, 55, 0.6)'  // 짙은 회색
                                     : 'rgba(156, 163, 175, 0.5)'; // 밝은 회색
-                                arrowMarker = isEvenDepth
-                                    ? 'url(#arrowhead-dark)'
-                                    : 'url(#arrowhead-light)';
                             } else {
                                 // 다크모드 - 일반 링크
                                 linkStroke = isEvenDepth
                                     ? 'rgba(255, 255, 255, 0.4)' // 흰색
                                     : 'rgba(0, 0, 0, 0.5)'; // 검정
-                                arrowMarker = isEvenDepth
-                                    ? 'url(#arrowhead-even)'
-                                    : 'url(#arrowhead-odd)';
                             }
 
                             const linkWidth = isMemoLink ? 1.2 : 1.5;
@@ -874,7 +867,6 @@ const ForceDirectedTree = ({
                                     stroke={linkStroke}
                                     strokeWidth={linkWidth}
                                     strokeDasharray={isMemoLink ? '2,3' : undefined}
-                                    markerEnd={arrowMarker}
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: linkOpacity }}
                                     transition={{ duration: 0.3 }}

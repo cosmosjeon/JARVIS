@@ -233,6 +233,10 @@ const HierarchicalForceTree = () => {
     });
   }, []);
 
+  // 뷰 선택 메뉴 상태
+  const [showViewMenu, setShowViewMenu] = useState(false);
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
+
   // 테마 색상
   const themeColors = useMemo(() => ({
     light: {
@@ -2365,60 +2369,6 @@ const HierarchicalForceTree = () => {
           <p className="opacity-80">{treeSyncError.message || 'Supabase와 동기화할 수 없습니다.'}</p>
         </div>
       ) : null}
-      <div
-        className="absolute top-4 left-6 z-[1300] flex gap-3"
-        style={{ pointerEvents: 'none' }}
-      >
-        {/* 시각화 모드 토글 (트리1/트리2/차트) */}
-        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-          <button
-            type="button"
-            onClick={() => setViewMode('tree1')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree1'}
-          >
-            트리1
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('tree2')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree2'}
-          >
-            트리2
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('chart')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'chart'}
-          >
-            차트
-          </button>
-        </div>
-
-        {/* 레이아웃 방향 토글 (트리1 모드에서만 표시) */}
-        {viewMode === 'tree1' && (
-          <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-            <button
-              type="button"
-              onClick={() => setLayoutOrientation('vertical')}
-              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'vertical' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={layoutOrientation === 'vertical'}
-            >
-              아래로
-            </button>
-            <button
-              type="button"
-              onClick={() => setLayoutOrientation('horizontal')}
-              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'horizontal' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={layoutOrientation === 'horizontal'}
-            >
-              오른쪽
-            </button>
-          </div>
-        )}
-      </div>
       {linkValidationError ? (
         <div className="pointer-events-none absolute top-4 right-6 z-[1300]">
           <div className="pointer-events-auto rounded-lg border border-red-400/60 bg-red-900/80 px-3 py-2 text-xs font-medium text-red-100 shadow-lg">
@@ -2431,127 +2381,238 @@ const HierarchicalForceTree = () => {
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
-        <div className="flex h-8 w-56 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
-          {/* 왼쪽: 드래그 점들 */}
-          <div className="flex space-x-1">
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+        <div className="flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3" style={{ width: '224px' }}>
+          {/* 왼쪽: 드래그 점들 & 테마 버튼 */}
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* 드래그 점들 */}
+            <div className="flex space-x-1">
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+            </div>
+
+            {/* 테마 토글 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+              onClick={toggleTheme}
+              onMouseDown={(e) => e.stopPropagation()}
+              title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+            >
+              {theme === 'dark' ? (
+                <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                </svg>
+              )}
+            </button>
           </div>
 
-          {/* 중앙: 테마 토글 버튼 */}
-          <button
-            className="group flex h-5 w-10 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            onClick={toggleTheme}
-            onMouseDown={(e) => e.stopPropagation()}
-            title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
-          >
-            {theme === 'dark' ? (
-              <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+          {/* 오른쪽: 전체화면 & 닫기 버튼 */}
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* 전체화면 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+              onClick={() => {
+                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
+                if (api?.windowControls?.maximize) {
+                  api.windowControls.maximize();
+                }
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="전체화면"
+            >
+              <svg className="h-3 w-3 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
               </svg>
-            ) : (
-              <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-            )}
-          </button>
+            </button>
 
-          {/* 오른쪽: 닫기 버튼 */}
-          <button
-            className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            onClick={() => {
-              if (process.env.NODE_ENV === 'development') {
-                // 개발 중 동작 여부 확인용
-                // eslint-disable-next-line no-console
-                console.log('[Jarvis] Drag handle close requested');
-              }
-
-              const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
-
-              const hideWindow = () => {
+            {/* 닫기 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
+              onClick={() => {
                 if (process.env.NODE_ENV === 'development') {
+                  // 개발 중 동작 여부 확인용
                   // eslint-disable-next-line no-console
-                  console.log('[Jarvis] hideWindow fallback triggered');
-                }
-                try {
-                  if (api && typeof api.toggleWindow === 'function') {
-                    api.toggleWindow();
-                    return;
-                  }
-                } catch (toggleError) {
-                  // Ignore toggle errors and fall through to window.close fallback.
+                  console.log('[Jarvis] Drag handle close requested');
                 }
 
-                if (typeof window !== 'undefined' && typeof window.close === 'function') {
-                  window.close();
-                }
-              };
+                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
 
-              try {
-                const closeFn = api?.windowControls?.close;
-                if (typeof closeFn === 'function') {
-                  const maybeResult = closeFn();
+                const hideWindow = () => {
                   if (process.env.NODE_ENV === 'development') {
-                    const tag = '[Jarvis] windowControls.close result';
-                    if (maybeResult && typeof maybeResult.then === 'function') {
-                      maybeResult.then((response) => {
-                        // eslint-disable-next-line no-console
-                        console.log(tag, response);
-                      }).catch((err) => {
-                        // eslint-disable-next-line no-console
-                        console.log(`${tag} (rejected)`, err);
-                      });
-                    } else {
-                      // eslint-disable-next-line no-console
-                      console.log(tag, maybeResult);
+                    // eslint-disable-next-line no-console
+                    console.log('[Jarvis] hideWindow fallback triggered');
+                  }
+                  try {
+                    if (api && typeof api.toggleWindow === 'function') {
+                      api.toggleWindow();
+                      return;
                     }
+                  } catch (toggleError) {
+                    // Ignore toggle errors and fall through to window.close fallback.
                   }
 
-                  if (maybeResult && typeof maybeResult.then === 'function') {
-                    maybeResult
-                      .then((response) => {
-                        if (process.env.NODE_ENV === 'development') {
+                  if (typeof window !== 'undefined' && typeof window.close === 'function') {
+                    window.close();
+                  }
+                };
+
+                try {
+                  const closeFn = api?.windowControls?.close;
+                  if (typeof closeFn === 'function') {
+                    const maybeResult = closeFn();
+                    if (process.env.NODE_ENV === 'development') {
+                      const tag = '[Jarvis] windowControls.close result';
+                      if (maybeResult && typeof maybeResult.then === 'function') {
+                        maybeResult.then((response) => {
                           // eslint-disable-next-line no-console
-                          console.log('[Jarvis] close response (async)', response, response?.error);
-                        }
-                        if (!response?.success) {
-                          hideWindow();
-                        }
-                      })
-                      .catch(() => hideWindow());
+                          console.log(tag, response);
+                        }).catch((err) => {
+                          // eslint-disable-next-line no-console
+                          console.log(`${tag} (rejected)`, err);
+                        });
+                      } else {
+                        // eslint-disable-next-line no-console
+                        console.log(tag, maybeResult);
+                      }
+                    }
+
+                    if (maybeResult && typeof maybeResult.then === 'function') {
+                      maybeResult
+                        .then((response) => {
+                          if (process.env.NODE_ENV === 'development') {
+                            // eslint-disable-next-line no-console
+                            console.log('[Jarvis] close response (async)', response, response?.error);
+                          }
+                          if (!response?.success) {
+                            hideWindow();
+                          }
+                        })
+                        .catch(() => hideWindow());
+                      return;
+                    }
+
+                    if (!maybeResult?.success) {
+                      hideWindow();
+                    }
                     return;
                   }
-
-                  if (!maybeResult?.success) {
-                    hideWindow();
-                  }
+                } catch (error) {
+                  hideWindow();
                   return;
                 }
-              } catch (error) {
-                hideWindow();
-                return;
-              }
 
-              hideWindow();
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <svg
-              className="h-3 w-3 text-white group-hover:text-black"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+                hideWindow();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+              <svg
+                className="h-3 w-3 text-white group-hover:text-black"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 뷰 선택 버튼 - 상단바 아래 */}
+      <div
+        className="absolute top-12 left-1/2 z-[1300] -translate-x-1/2"
+        style={{ pointerEvents: 'none' }}
+      >
+        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
+          {/* 트리1 버튼 - 호버 시 레이아웃 드롭다운 */}
+          <div
+            className="relative"
+            onMouseEnter={() => setShowLayoutMenu(true)}
+            onMouseLeave={() => setShowLayoutMenu(false)}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode('tree1')}
+              className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+              aria-pressed={viewMode === 'tree1'}
+            >
+              트리1
+            </button>
+
+            {/* 레이아웃 방향 드롭다운 */}
+            {showLayoutMenu && (
+              <div
+                className="absolute top-full left-0 w-28 z-[1400]"
+                style={{ paddingTop: '8px' }}
+                onMouseEnter={() => setShowLayoutMenu(true)}
+                onMouseLeave={() => setShowLayoutMenu(false)}
+              >
+                <div
+                  className="rounded-lg shadow-2xl backdrop-blur-md border overflow-hidden"
+                  style={{
+                    background: theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.85)',
+                    borderColor: theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.12)',
+                  }}
+                >
+                  <button
+                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                      ? 'text-gray-900 hover:bg-gray-100'
+                      : 'text-white/90 hover:bg-white/10'
+                      } ${layoutOrientation === 'vertical' ? 'font-semibold' : ''}`}
+                    onClick={() => {
+                      setViewMode('tree1');
+                      setLayoutOrientation('vertical');
+                      setShowLayoutMenu(false);
+                    }}
+                  >
+                    아래로
+                  </button>
+                  <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
+                  <button
+                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                      ? 'text-gray-900 hover:bg-gray-100'
+                      : 'text-white/90 hover:bg-white/10'
+                      } ${layoutOrientation === 'horizontal' ? 'font-semibold' : ''}`}
+                    onClick={() => {
+                      setViewMode('tree1');
+                      setLayoutOrientation('horizontal');
+                      setShowLayoutMenu(false);
+                    }}
+                  >
+                    오른쪽
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 트리2 버튼 */}
+          <button
+            type="button"
+            onClick={() => setViewMode('tree2')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'tree2'}
+          >
+            트리2
+          </button>
+
+          {/* 차트 버튼 */}
+          <button
+            type="button"
+            onClick={() => setViewMode('chart')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'chart'}
+          >
+            차트
           </button>
         </div>
       </div>
