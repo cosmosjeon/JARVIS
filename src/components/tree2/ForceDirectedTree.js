@@ -786,6 +786,9 @@ const ForceDirectedTree = ({
                             const tooltipTranslateX = -tooltipWidth / 2;
                             const tooltipTranslateY = -(radius + tooltipHeight + 12);
                             const tooltipLineHeight = 18;
+                            const labelText = isMemoNode
+                                ? (datum.memo?.title || datum.keyword || datum.name || datum.id || '')
+                                : (datum.keyword || datum.name || datum.id || '');
 
                             return (
                                 <g
@@ -825,7 +828,7 @@ const ForceDirectedTree = ({
                                     />
 
                                     {/* 확대 시 노드 내부에 이름 표시 */}
-                                    {viewTransform.k > 2 && (
+                                    {viewTransform.k > 2 && labelText && (
                                         <motion.text
                                             textAnchor="middle"
                                             dominantBaseline="middle"
@@ -840,7 +843,7 @@ const ForceDirectedTree = ({
                                                 textShadow: '0 1px 2px rgba(0,0,0,0.5)',
                                             }}
                                         >
-                                            {node.data.keyword || node.data.name || ''}
+                                            {labelText}
                                         </motion.text>
                                     )}
 
