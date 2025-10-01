@@ -1,11 +1,104 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import DataTransformService from '../../services/DataTransformService';
 import ForceSimulationService from '../../services/ForceSimulationService';
-import MemoBlock from './MemoBlock';
 import NodeAssistantPanel from '../NodeAssistantPanel';
 import QuestionService from '../../services/QuestionService';
+
+const NODE_COLOR_PALETTE = (d3.schemeTableau10 && d3.schemeTableau10.length ? d3.schemeTableau10 : d3.schemeCategory10);
+
+const sanitizeText = (value) => {
+    if (typeof value !== 'string') {
+        if (value === null || value === undefined) return '';
+        return String(value);
+    }
+    return value;
+};
+
+const extractNodeHoverText = (nodeData = {}) => {
+    const question = sanitizeText(nodeData?.questionData?.question).trim();
+    if (question) {
+        return question;
+    }
+
+    const keyword = sanitizeText(nodeData.keyword).trim();
+    if (keyword) {
+        return keyword;
+    }
+
+    const fullText = sanitizeText(nodeData.fullText).trim();
+    if (fullText) {
+        return fullText;
+    }
+
+    const name = sanitizeText(nodeData.name).trim();
+    if (name) {
+        return name;
+    }
+
+    const id = sanitizeText(nodeData.id).trim();
+    if (id) {
+        return id;
+    }
+
+    return '';
+};
+
+const computeHoverLines = (text, maxCharsPerLine = 28, maxLines = 3) => {
+    const normalized = sanitizeText(text).replace(/\s+/g, ' ').trim();
+    if (!normalized) {
+        return [];
+    }
+
+    const lines = [];
+    let remaining = normalized;
+
+    for (let i = 0; i < maxLines && remaining.length > 0; i += 1) {
+        if (remaining.length <= maxCharsPerLine) {
+            lines.push(remaining);
+            remaining = '';
+            break;
+        }
+
+        let sliceEnd = remaining.lastIndexOf(' ', maxCharsPerLine);
+        if (sliceEnd <= 0) {
+            sliceEnd = maxCharsPerLine;
+        }
+
+        const line = remaining.slice(0, sliceEnd).trim();
+        if (line) {
+            lines.push(line);
+        }
+
+        remaining = remaining.slice(sliceEnd).trim();
+    }
+
+    if (remaining.length > 0 && lines.length > 0) {
+        const lastIndex = lines.length - 1;
+        lines[lastIndex] = `${lines[lastIndex].replace(/[.…]*$/, '')}…`;
+    }
+
+    return lines;
+};
+
+const computeTooltipDimensions = (lines) => {
+    if (!lines || lines.length === 0) {
+        return { width: 0, height: 0 };
+    }
+
+    const horizontalPadding = 28;
+    const verticalPadding = 18;
+    const charWidthEstimate = 9;
+    const lineHeight = 18;
+
+    const longestLineLength = lines.reduce((max, line) => Math.max(max, line.length), 0);
+    const rawWidth = longestLineLength * charWidthEstimate + horizontalPadding;
+    const width = Math.min(280, Math.max(140, rawWidth));
+    const height = lines.length * lineHeight + verticalPadding;
+
+    return { width, height };
+};
 
 /**
  * ForceDirectedTree Component
@@ -35,6 +128,7 @@ const ForceDirectedTree = ({
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [isDraggingNode, setIsDraggingNode] = useState(false);
     const [draggedNodeId, setDraggedNodeId] = useState(null);
+    const [hoveredNodeId, setHoveredNodeId] = useState(null);
     const dragStartTimeRef = useRef(0);
     const shouldOpenNodeRef = useRef(false);
 
@@ -105,6 +199,23 @@ const ForceDirectedTree = ({
 
         prevCenterRef.current = { x: centerX, y: centerY };
     }, [centerX, centerY]);
+
+    useEffect(() => {
+        if (!hoveredNodeId) {
+            return;
+        }
+
+        const stillExists = simulatedNodes.some((node) => node?.data?.id === hoveredNodeId);
+        if (!stillExists) {
+            setHoveredNodeId(null);
+        }
+    }, [hoveredNodeId, simulatedNodes]);
+
+    useEffect(() => {
+        if (selectedNodeId) {
+            setHoveredNodeId(null);
+        }
+    }, [selectedNodeId]);
 
     // Zoom/Pan 설정
     const zoomBehaviorRef = useRef(null);
@@ -312,6 +423,7 @@ const ForceDirectedTree = ({
     // 배경 클릭 핸들러 (선택 해제)
     const handleBackgroundClick = useCallback(() => {
         setSelectedNodeId(null);
+        setHoveredNodeId(null);
     }, []);
 
     // Conversation 관리
@@ -425,31 +537,123 @@ const ForceDirectedTree = ({
                     {/* 노드 렌더링 */}
                     <g className="nodes">
                         {simulatedNodes.map((node) => {
-                            const isLeaf = !node.children || node.children.length === 0;
-                            const isBeingDragged = draggedNodeId === node.data.id;
+                            const nodeId = node?.data?.id;
+
+                            if (!nodeId) {
+                                return null;
+                            }
+
+                            const depth = Number.isFinite(node.depth) ? node.depth : 0;
+                            const palette = NODE_COLOR_PALETTE && NODE_COLOR_PALETTE.length
+                                ? NODE_COLOR_PALETTE
+                                : d3.schemeCategory10;
+                            const fillColor = palette[depth % palette.length];
+                            const isBeingDragged = draggedNodeId === nodeId;
+                            const isSelected = selectedNodeId === nodeId;
+                            const isHovered = hoveredNodeId === nodeId;
                             const isOtherNodeDragging = isDraggingNode && !isBeingDragged;
 
+                            const baseRadius = depth === 0 ? 8 : 5.5;
+                            const radius = isSelected
+                                ? baseRadius + 3
+                                : isHovered
+                                    ? baseRadius + 1.5
+                                    : baseRadius;
+
+                            const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.9);
+
+                            const hoverText = isHovered ? extractNodeHoverText(node.data) : '';
+                            const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
+                            const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
+                            const tooltipTranslateX = -tooltipWidth / 2;
+                            const tooltipTranslateY = -(radius + tooltipHeight + 12);
+                            const tooltipLineHeight = 18;
+
                             return (
-                                <MemoBlock
-                                    key={node.data.id}
-                                    node={node}
-                                    position={{ x: node.x || 0, y: node.y || 0 }}
-                                    isSelected={selectedNodeId === node.data.id}
-                                    isLeaf={isLeaf}
-                                    onDragStart={handleDragStart}
-                                    onClick={handleNodeClick}
-                                    scale={viewTransform.k}
-                                    isDisabled={isOtherNodeDragging}
-                                    onAddMemo={(node) => {
-                                        console.log('ForceDirectedTree: 메모 추가', node.data.id);
+                                <g
+                                    key={nodeId}
+                                    transform={`translate(${node.x || 0}, ${node.y || 0})`}
+                                    style={{
+                                        cursor: isBeingDragged ? 'grabbing' : (isOtherNodeDragging ? 'default' : 'grab'),
+                                        pointerEvents: isOtherNodeDragging ? 'none' : 'auto',
                                     }}
-                                    onAddConnection={(node) => {
-                                        console.log('ForceDirectedTree: 연결선 추가', node.data.id);
+                                    onPointerDown={(event) => {
+                                        if (isOtherNodeDragging) return;
+                                        setHoveredNodeId(null);
+                                        handleDragStart(event, node);
                                     }}
-                                    onToggleChildren={(node) => {
-                                        console.log('ForceDirectedTree: 자식 노드 접기/펼치기', node.data.id);
+                                    onClick={(event) => {
+                                        if (isOtherNodeDragging) return;
+                                        event.stopPropagation();
+                                        handleNodeClick(node);
                                     }}
-                                />
+                                    onPointerEnter={() => {
+                                        if (isOtherNodeDragging) return;
+                                        setHoveredNodeId(nodeId);
+                                    }}
+                                    onPointerLeave={() => {
+                                        setHoveredNodeId((current) => (current === nodeId ? null : current));
+                                    }}
+                                >
+                                    <motion.circle
+                                        r={radius}
+                                        fill={fillColor}
+                                        stroke={isSelected ? '#ffffff' : 'rgba(255,255,255,0.45)'}
+                                        strokeWidth={isSelected ? 2.4 : 1.6}
+                                        initial={{ scale: 0, opacity: 0 }}
+                                        animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
+                                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                                    />
+
+                                    {isSelected && (
+                                        <motion.circle
+                                            r={radius + 6}
+                                            fill="none"
+                                            stroke={fillColor}
+                                            strokeWidth={1.2}
+                                            strokeOpacity={0.65}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                        />
+                                    )}
+
+                                    <AnimatePresence>
+                                        {isHovered && hoverLines.length > 0 && tooltipWidth > 0 && tooltipHeight > 0 && (
+                                            <motion.g
+                                                key={`tooltip-${nodeId}`}
+                                                initial={{ opacity: 0, y: -4 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -4 }}
+                                                transition={{ duration: 0.18 }}
+                                                transform={`translate(${tooltipTranslateX}, ${tooltipTranslateY})`}
+                                                style={{ pointerEvents: 'none' }}
+                                            >
+                                                <rect
+                                                    width={tooltipWidth}
+                                                    height={tooltipHeight}
+                                                    rx={10}
+                                                    ry={10}
+                                                    fill="rgba(0, 0, 0, 0.8)"
+                                                    stroke="rgba(255,255,255,0.35)"
+                                                    strokeWidth={1}
+                                                />
+                                                {hoverLines.map((line, index) => (
+                                                    <text
+                                                        key={`${nodeId}-line-${index}`}
+                                                        x={tooltipWidth / 2}
+                                                        y={14 + index * tooltipLineHeight}
+                                                        textAnchor="middle"
+                                                        fill="#f5f5f5"
+                                                        fontSize={12}
+                                                        fontWeight={500}
+                                                    >
+                                                        {line}
+                                                    </text>
+                                                ))}
+                                            </motion.g>
+                                        )}
+                                    </AnimatePresence>
+                                </g>
                             );
                         })}
                     </g>
@@ -511,4 +715,3 @@ const ForceDirectedTree = ({
 };
 
 export default ForceDirectedTree;
-
