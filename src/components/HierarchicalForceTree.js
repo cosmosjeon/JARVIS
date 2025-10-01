@@ -31,6 +31,150 @@ const DOM_DELTA_PIXEL = 0;
 const DOM_DELTA_LINE = 1;
 const DOM_DELTA_PAGE = 2;
 
+const ORTHO_PATH_DEFAULTS = {
+  cornerRadius: 20,
+  nodePadding: 18,
+};
+
+const buildRoundedPath = (rawPoints, radius) => {
+  if (!Array.isArray(rawPoints) || rawPoints.length < 2) {
+    return '';
+  }
+
+  const points = rawPoints.map((point) => ({
+    x: Number(point?.x) || 0,
+    y: Number(point?.y) || 0,
+  }));
+
+  let command = `M ${points[0].x} ${points[0].y}`;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const current = { ...points[index] };
+    const previous = points[index - 1];
+
+    if (index === points.length - 1) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const next = points[index + 1];
+    const prevVector = { x: current.x - previous.x, y: current.y - previous.y };
+    const nextVector = { x: next.x - current.x, y: next.y - current.y };
+    const prevLength = Math.hypot(prevVector.x, prevVector.y);
+    const nextLength = Math.hypot(nextVector.x, nextVector.y);
+
+    if (prevLength === 0 || nextLength === 0) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const corner = Math.min(radius, prevLength / 2, nextLength / 2);
+
+    if (corner <= 0) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const startX = current.x - (prevVector.x / prevLength) * corner;
+    const startY = current.y - (prevVector.y / prevLength) * corner;
+    const endX = current.x + (nextVector.x / nextLength) * corner;
+    const endY = current.y + (nextVector.y / nextLength) * corner;
+
+    command += ` L ${startX} ${startY}`;
+    command += ` Q ${current.x} ${current.y} ${endX} ${endY}`;
+
+    points[index] = { x: endX, y: endY };
+  }
+
+  return command;
+};
+
+const buildOrthogonalPath = (source, target, orientation = 'vertical', overrides = {}) => {
+  if (!source || !target) {
+    return '';
+  }
+
+  const { cornerRadius, nodePadding } = { ...ORTHO_PATH_DEFAULTS, ...overrides };
+  const resolvedPadding = Math.min(Math.max(nodePadding, 16), 20);
+  const baseMargin = resolvedPadding;
+
+  const sx = Number(source.x) || 0;
+  const sy = Number(source.y) || 0;
+  const tx = Number(target.x) || 0;
+  const ty = Number(target.y) || 0;
+
+  const dx = tx - sx;
+  const dy = ty - sy;
+
+  const isHorizontal = orientation === 'horizontal';
+  const primaryDistance = isHorizontal ? Math.abs(dx) : Math.abs(dy);
+  const secondaryDistance = isHorizontal ? Math.abs(dy) : Math.abs(dx);
+
+  const primaryDirection = (isHorizontal ? dx : dy) >= 0 ? 1 : -1;
+  const secondaryDirection = (isHorizontal ? dy : dx) >= 0 ? 1 : -1;
+
+  let points;
+
+  if (primaryDistance < baseMargin * 2) {
+    const lateralOffset = Math.max(baseMargin * 1.35, secondaryDistance / 2 || baseMargin * 1.35);
+    const advanceOffset = baseMargin;
+
+    if (isHorizontal) {
+      points = [
+        { x: sx, y: sy },
+        { x: sx + primaryDirection * advanceOffset, y: sy },
+        { x: sx + primaryDirection * advanceOffset, y: sy + secondaryDirection * lateralOffset },
+        { x: tx - primaryDirection * advanceOffset, y: sy + secondaryDirection * lateralOffset },
+        { x: tx - primaryDirection * advanceOffset, y: ty },
+        { x: tx, y: ty },
+      ];
+    } else {
+      points = [
+        { x: sx, y: sy },
+        { x: sx, y: sy + primaryDirection * advanceOffset },
+        { x: sx + secondaryDirection * lateralOffset, y: sy + primaryDirection * advanceOffset },
+        { x: sx + secondaryDirection * lateralOffset, y: ty - primaryDirection * advanceOffset },
+        { x: tx, y: ty - primaryDirection * advanceOffset },
+        { x: tx, y: ty },
+      ];
+    }
+  } else {
+    if (isHorizontal) {
+      let midX = sx + dx / 2;
+      if (Math.abs(midX - sx) < baseMargin) {
+        midX = sx + primaryDirection * baseMargin;
+      }
+      if (Math.abs(tx - midX) < baseMargin) {
+        midX = tx - primaryDirection * baseMargin;
+      }
+
+      points = [
+        { x: sx, y: sy },
+        { x: midX, y: sy },
+        { x: midX, y: ty },
+        { x: tx, y: ty },
+      ];
+    } else {
+      let midY = sy + dy / 2;
+      if (Math.abs(midY - sy) < baseMargin) {
+        midY = sy + primaryDirection * baseMargin;
+      }
+      if (Math.abs(ty - midY) < baseMargin) {
+        midY = ty - primaryDirection * baseMargin;
+      }
+
+      points = [
+        { x: sx, y: sy },
+        { x: sx, y: midY },
+        { x: tx, y: midY },
+        { x: tx, y: ty },
+      ];
+    }
+  }
+
+  return buildRoundedPath(points, cornerRadius);
+};
+
 const normalizeWheelDelta = (value, mode) => {
   if (!Number.isFinite(value)) return 0;
   if (mode === DOM_DELTA_LINE) return value * 16;
@@ -69,6 +213,42 @@ const calculateNodeScaleFactor = (dimensions) => {
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('jarvis.theme') || 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('jarvis.theme', next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  // 테마 색상
+  const themeColors = useMemo(() => ({
+    light: {
+      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))',
+      text: '#000000',
+      border: 'rgba(0, 0, 0, 0.1)',
+    },
+    dark: {
+      background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+      text: '#FFFFFF',
+      border: 'rgba(255, 255, 255, 0.1)',
+    },
+  }), []);
+
+  const currentTheme = themeColors[theme];
+
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState(getViewportDimensions());
   const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
@@ -108,6 +288,7 @@ const HierarchicalForceTree = () => {
   const [initializingTree, setInitializingTree] = useState(false);
   const [treeSyncError, setTreeSyncError] = useState(null);
   const [isTreeSyncing, setIsTreeSyncing] = useState(false);
+  const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(treeData);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
@@ -253,10 +434,6 @@ const HierarchicalForceTree = () => {
     conversationStoreRef.current.clear();
     incomingNodes.forEach((node) => {
       if (!node || !node.id) {
-        return;
-      }
-
-      if (node.nodeType === 'memo') {
         return;
       }
 
@@ -643,7 +820,6 @@ const HierarchicalForceTree = () => {
       });
 
       const normalizedNodes = data.nodes.map((node) => {
-        const isMemoNode = node.nodeType === 'memo';
         const parentId = parentByChild.get(node.id) || null;
         const createdAt = node.createdAt || Date.now();
         const baseQuestion = typeof node.question === 'string' && node.question.trim()
@@ -652,6 +828,7 @@ const HierarchicalForceTree = () => {
         const baseAnswer = typeof node.answer === 'string' && node.answer.trim()
           ? node.answer.trim()
           : node.questionData?.answer || node.fullText || null;
+        const isMemoNode = node.nodeType === 'memo';
         const normalizedConversation = isMemoNode
           ? []
           : sanitizeConversationMessages(conversationStoreRef.current.get(node.id));
@@ -670,15 +847,11 @@ const HierarchicalForceTree = () => {
 
         return {
           id: node.id,
-          keyword: isMemoNode
-            ? (memoPayload?.title || node.keyword || null)
-            : (node.keyword || null),
-          fullText: isMemoNode
-            ? (memoPayload?.content || '')
-            : (node.fullText || ''),
-          question: isMemoNode ? null : baseQuestion,
-          answer: isMemoNode ? null : baseAnswer,
-          status: isMemoNode ? 'memo' : (node.status || 'answered'),
+          keyword: node.keyword || null,
+          fullText: node.fullText || '',
+          question: baseQuestion,
+          answer: baseAnswer,
+          status: node.status || 'answered',
           createdAt,
           updatedAt: Date.now(),
           parentId,
@@ -966,12 +1139,6 @@ const HierarchicalForceTree = () => {
   };
 
   const setConversationForNode = useCallback((nodeId, messages) => {
-    const nodeSnapshot = dataRef.current?.nodes?.find((candidate) => candidate.id === nodeId);
-    if (nodeSnapshot && nodeSnapshot.nodeType === 'memo') {
-      conversationStoreRef.current.delete(nodeId);
-      return;
-    }
-
     const normalized = Array.isArray(messages)
       ? messages.map((message) => ({ ...message }))
       : [];
@@ -1960,44 +2127,75 @@ const HierarchicalForceTree = () => {
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
   const handleDrag = (nodeId) => {
+    let dragStart = null;
+
+    const isInteractiveTarget = (target) => {
+      if (!target) return false;
+      const interactiveSelector = '[data-node-toggle],button,a,input,textarea,select,[contenteditable="true"]';
+      return Boolean(target.closest && target.closest(interactiveSelector));
+    };
+
+    const resolveAxisLock = (rawEvent) => {
+      if (!rawEvent) return null;
+      if (rawEvent.shiftKey) {
+        return 'horizontal'; // lock vertical movement, allow X changes
+      }
+      if (rawEvent.altKey || rawEvent.metaKey) {
+        return 'vertical'; // lock horizontal movement, allow Y changes
+      }
+      return null;
+    };
+
     return d3.drag()
       .filter((event) => {
-        // 노드 드래그: Ctrl/Cmd 키를 누른 상태에서만 드래그 허용
-        return event.ctrlKey || event.metaKey;
+        const rawEvent = event?.sourceEvent || event;
+        if (!rawEvent) return false;
+        if (typeof rawEvent.button === 'number' && rawEvent.button !== 0) {
+          return false;
+        }
+        if (isInteractiveTarget(rawEvent.target)) {
+          return false;
+        }
+        return true;
       })
       .on('start', (event) => {
-        // 드래그 시작 시 애니메이션 일시 정지
         if (animationRef.current) {
           animationRef.current.stop();
         }
-      })
-      .on('drag', (event) => {
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-          // 현재 줌/팬이 적용된 컨테이너 좌표계에서 포인터 좌표를 계산
-          const container = contentGroupRef.current || svgRef.current;
-          const pointer = d3.pointer(event, container);
-          node.x = pointer[0];
-          node.y = pointer[1];
-          setNodes([...nodes]);
+
+        const targetNode = nodes.find((candidate) => candidate.id === nodeId);
+        if (targetNode) {
+          dragStart = { x: targetNode.x || 0, y: targetNode.y || 0 };
         }
       })
-      .on('end', (event) => {
-        // 드래그 종료 시 tree layout으로 다시 정렬
-        const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
-          nodes,
-          visibleGraph.nodes,
-          visibleGraph.links,
-          dimensions,
-          (animatedNodes, animatedLinks) => {
-            setNodes(animatedNodes);
-            const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
-            linkKeysRef.current = nextKeys;
-            setLinks(annotatedLinks);
-          },
-          { orientation: layoutOrientation }
-        );
-        animationRef.current = animation;
+      .on('drag', (event) => {
+        const container = contentGroupRef.current || svgRef.current;
+        if (!container) {
+          return;
+        }
+
+        const rawEvent = event?.sourceEvent || event;
+        const pointer = d3.pointer(event, container);
+        const axisLock = resolveAxisLock(rawEvent);
+
+        setNodes((currentNodes) => {
+          const existing = currentNodes.find((candidate) => candidate.id === nodeId);
+          if (!existing) {
+            return currentNodes;
+          }
+
+          const lockedX = axisLock === 'vertical' && dragStart ? dragStart.x : pointer[0];
+          const lockedY = axisLock === 'horizontal' && dragStart ? dragStart.y : pointer[1];
+
+          return currentNodes.map((node) => (
+            node.id === nodeId
+              ? { ...node, x: lockedX, y: lockedY }
+              : node
+          ));
+        });
+      })
+      .on('end', () => {
+        dragStart = null;
       });
   };
 
@@ -2138,7 +2336,7 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+        background: currentTheme.background,
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         // 창틀 여유 공간까지 완전히 채우기
@@ -2233,13 +2431,32 @@ const HierarchicalForceTree = () => {
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
-        <div className="flex h-8 w-40 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
+        <div className="flex h-8 w-56 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
           {/* 왼쪽: 드래그 점들 */}
           <div className="flex space-x-1">
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
           </div>
+
+          {/* 중앙: 테마 토글 버튼 */}
+          <button
+            className="group flex h-5 w-10 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+            style={{ WebkitAppRegion: 'no-drag' }}
+            onClick={toggleTheme}
+            onMouseDown={(e) => e.stopPropagation()}
+            title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+          >
+            {theme === 'dark' ? (
+              <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+              </svg>
+            )}
+          </button>
 
           {/* 오른쪽: 닫기 버튼 */}
           <button
@@ -2387,6 +2604,8 @@ const HierarchicalForceTree = () => {
           onNodeRemove={removeNodeAndDescendants}
           onMemoCreate={handleMemoCreate}
           onMemoUpdate={handleMemoUpdate}
+          treeId={activeTreeId}
+          userId={user?.id}
           questionService={questionService.current}
           getInitialConversation={getInitialConversationForNode}
           onConversationChange={handleConversationChange}
@@ -2395,6 +2614,7 @@ const HierarchicalForceTree = () => {
           onAnswerError={handleAnswerError}
           onSecondQuestion={handleSecondQuestion}
           onPlaceholderCreate={handlePlaceholderCreate}
+          theme={theme}
         />
       )}
 
@@ -2442,6 +2662,7 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       )}
+
       {viewMode === 'tree1' && (
         <svg
           ref={svgRef}
@@ -2451,7 +2672,7 @@ const HierarchicalForceTree = () => {
           preserveAspectRatio="none"
           data-interactive-zone="true"
           style={{
-            background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+            background: currentTheme.background,
             // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
             pointerEvents: 'auto',
             // SVG가 창틀 여유 공간까지 완전히 채우도록 설정

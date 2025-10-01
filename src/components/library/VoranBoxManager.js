@@ -13,7 +13,9 @@ import {
     Info,
     AlertTriangle,
     Ban,
-    XCircle
+    XCircle,
+    ChevronUp,
+    ChevronDown
 } from "lucide-react";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
@@ -52,6 +54,8 @@ const VoranBoxManager = ({
     const [showInvalidDropIndicator, setShowInvalidDropIndicator] = useState(false);
     const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
     const [toasts, setToasts] = useState([]);
+    const [canScrollUp, setCanScrollUp] = useState(false);
+    const [canScrollDown, setCanScrollDown] = useState(false);
 
     const dragPreviewRef = useRef(null);
     const dragStatusRef = useRef({ canDrop: false });
@@ -211,6 +215,25 @@ const arraysEqual = (a, b) => {
         });
     };
 
+    // 스크롤 관련 함수들
+    const checkScrollButtons = useCallback(() => {
+        if (!voranListRef.current) return;
+        
+        const { scrollTop, scrollHeight, clientHeight } = voranListRef.current;
+        setCanScrollUp(scrollTop > 0);
+        setCanScrollDown(scrollTop < scrollHeight - clientHeight - 1);
+    }, []);
+
+    const scrollUp = useCallback(() => {
+        if (!voranListRef.current) return;
+        voranListRef.current.scrollBy({ top: -100, behavior: 'smooth' });
+    }, []);
+
+    const scrollDown = useCallback(() => {
+        if (!voranListRef.current) return;
+        voranListRef.current.scrollBy({ top: 100, behavior: 'smooth' });
+    }, []);
+
     const voranTrees = useMemo(() => trees.filter((tree) => !tree.folderId), [trees]);
 
     useEffect(() => {
@@ -235,6 +258,31 @@ const arraysEqual = (a, b) => {
             setLocalSelectedTreeId(selectedTreeIds[selectedTreeIds.length - 1]);
         }
     }, [localSelectedTreeId, selectedTreeIds]);
+
+    // 스크롤 이벤트 리스너 추가
+    useEffect(() => {
+        const voranList = voranListRef.current;
+        if (!voranList) return;
+
+        checkScrollButtons(); // 초기 상태 체크
+        
+        const handleScroll = () => {
+            checkScrollButtons();
+        };
+
+        voranList.addEventListener('scroll', handleScroll);
+        
+        // 트리 목록이 변경될 때도 체크
+        const resizeObserver = new ResizeObserver(() => {
+            checkScrollButtons();
+        });
+        resizeObserver.observe(voranList);
+
+        return () => {
+            voranList.removeEventListener('scroll', handleScroll);
+            resizeObserver.disconnect();
+        };
+    }, [checkScrollButtons, voranTrees]);
 
     const folderTreeCounts = useMemo(() => {
         const counts = {};
@@ -808,14 +856,36 @@ const arraysEqual = (a, b) => {
                                     <h3 className="text-lg font-semibold text-card-foreground">VORAN BOX</h3>
                                     <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">{voranTrees.length}</span>
                                 </div>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={handleClose}
-                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={scrollUp}
+                                        disabled={!canScrollUp}
+                                        className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground disabled:opacity-30"
+                                        title="위로 스크롤"
+                                    >
+                                        <ChevronUp className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={scrollDown}
+                                        disabled={!canScrollDown}
+                                        className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground disabled:opacity-30"
+                                        title="아래로 스크롤"
+                                    >
+                                        <ChevronDown className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleClose}
+                                        className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
                             </div>
                             <p className="mt-1 text-xs text-muted-foreground">저장된 트리들을 관리하세요</p>
                             {navigationMode && localSelectedTreeId && (

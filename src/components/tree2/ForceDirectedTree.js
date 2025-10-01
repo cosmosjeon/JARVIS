@@ -157,7 +157,11 @@ const ForceDirectedTree = ({
     onAnswerError,
     onSecondQuestion,
     onPlaceholderCreate,
+    theme = 'dark',
 }) => {
+    const themeBackground = theme === 'light'
+        ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))'
+        : 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))';
     const questionServiceRef = useRef(questionService || new QuestionService());
     const svgRef = useRef(null);
     const containerRef = useRef(null);
@@ -354,7 +358,7 @@ const ForceDirectedTree = ({
                 const base = typeof defaultWheelDelta === 'function'
                     ? defaultWheelDelta(event)
                     : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
-                return base * 1.0;
+                return base * 0.3; // 줌 감도 낮춤 (1.0 → 0.3)
             }
 
             // Ctrl/Cmd 키가 없으면 패닝
@@ -393,6 +397,67 @@ const ForceDirectedTree = ({
             svg.on('.treepan', null);
         };
     }, [isDraggingNode, centerX, centerY]);
+
+    // 방향키로 캔버스 이동
+    useEffect(() => {
+        if (!containerRef.current || !svgRef.current) return;
+
+        const handleKeyDown = (event) => {
+            // 입력 필드에 포커스가 있으면 무시
+            const target = event.target;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+                return;
+            }
+
+            const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+            if (!arrowKeys.includes(event.key)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const svg = d3.select(svgRef.current);
+            const zoom = zoomBehaviorRef.current;
+            if (!zoom) return;
+
+            // 이동 거리 (픽셀)
+            const panDistance = 50;
+            const currentTransform = d3.zoomTransform(svg.node());
+            const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
+
+            // 스케일에 맞게 이동 거리 조정
+            const adjustedDistance = panDistance / scale;
+
+            let panX = 0;
+            let panY = 0;
+
+            switch (event.key) {
+                case 'ArrowUp':
+                    panY = adjustedDistance;
+                    break;
+                case 'ArrowDown':
+                    panY = -adjustedDistance;
+                    break;
+                case 'ArrowLeft':
+                    panX = adjustedDistance;
+                    break;
+                case 'ArrowRight':
+                    panX = -adjustedDistance;
+                    break;
+                default:
+                    break;
+            }
+
+            zoom.translateBy(svg, panX, panY);
+        };
+
+        const container = containerRef.current;
+        container.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            container.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
 
     // 노드 드래그 핸들러
     const handleDragStart = useCallback((event, nodeData) => {
@@ -528,7 +593,7 @@ const ForceDirectedTree = ({
             return;
         }
 
-        // 드래그 시간이 0.2초 초과였으면 클릭 무시
+        // 드래그 시간이 0.1초 초과였으면 클릭 무시
         if (!shouldOpenNodeRef.current) {
             shouldOpenNodeRef.current = false;
             return;
@@ -674,9 +739,11 @@ const ForceDirectedTree = ({
         <div
             ref={containerRef}
             className="relative h-full w-full"
+            tabIndex={0}
             style={{
-                background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+                background: themeBackground,
                 overflow: 'hidden',
+                outline: 'none',
             }}
         >
             <svg
@@ -698,9 +765,9 @@ const ForceDirectedTree = ({
                 }}
             >
                 <defs>
-                    {/* 링크 화살표 */}
+                    {/* 링크 화살표 - 짝수 depth (흰색) */}
                     <marker
-                        id="arrowhead-force"
+                        id="arrowhead-even"
                         viewBox="0 -5 10 10"
                         refX={15}
                         refY={0}
@@ -708,7 +775,20 @@ const ForceDirectedTree = ({
                         markerHeight={6}
                         orient="auto"
                     >
-                        <path d="M0,-5L10,0L0,5" fill="rgba(255,255,255,0.3)" />
+                        <path d="M0,-5L10,0L0,5" fill="rgba(255,255,255,0.4)" />
+                    </marker>
+
+                    {/* 링크 화살표 - 홀수 depth (검정) */}
+                    <marker
+                        id="arrowhead-odd"
+                        viewBox="0 -5 10 10"
+                        refX={15}
+                        refY={0}
+                        markerWidth={6}
+                        markerHeight={6}
+                        orient="auto"
+                    >
+                        <path d="M0,-5L10,0L0,5" fill="rgba(0,0,0,0.5)" />
                     </marker>
                 </defs>
 
@@ -723,9 +803,24 @@ const ForceDirectedTree = ({
 
                             const targetDatum = getNodeDatum(link.target);
                             const isMemoLink = targetDatum?.nodeType === 'memo';
-                            const linkStroke = isMemoLink ? 'rgba(40, 41, 48, 0.7)' : 'rgba(255,255,255,0.2)';
-                            const linkWidth = isMemoLink ? 1.2 : 2;
+
+                            // target depth로 색상 구분
+                            const targetDepth = Number.isFinite(link.target.depth) ? link.target.depth : 0;
+                            const isEvenDepth = targetDepth % 2 === 0;
+
+                            const linkStroke = isMemoLink
+                                ? 'rgba(245, 158, 11, 0.5)' // 메모 링크: 노란색
+                                : isEvenDepth
+                                    ? 'rgba(255, 255, 255, 0.4)' // 짝수 depth: 흰색
+                                    : 'rgba(0, 0, 0, 0.5)'; // 홀수 depth: 검정
+
+                            const linkWidth = isMemoLink ? 1.2 : 1.5;
                             const linkOpacity = isMemoLink ? 0.9 : 1;
+                            const arrowMarker = isMemoLink
+                                ? undefined
+                                : isEvenDepth
+                                    ? 'url(#arrowhead-even)'
+                                    : 'url(#arrowhead-odd)';
 
                             return (
                                 <motion.line
@@ -737,7 +832,7 @@ const ForceDirectedTree = ({
                                     stroke={linkStroke}
                                     strokeWidth={linkWidth}
                                     strokeDasharray={isMemoLink ? '2,3' : undefined}
-                                    markerEnd={isMemoLink ? undefined : 'url(#arrowhead-force)'}
+                                    markerEnd={arrowMarker}
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: linkOpacity }}
                                     transition={{ duration: 0.3 }}
@@ -758,25 +853,41 @@ const ForceDirectedTree = ({
 
                             const depth = Number.isFinite(node.depth) ? node.depth : 0;
                             const isMemoNode = datum?.nodeType === 'memo';
-                            const palette = NODE_COLOR_PALETTE && NODE_COLOR_PALETTE.length
-                                ? NODE_COLOR_PALETTE
-                                : d3.schemeCategory10;
-                            const fillColor = isMemoNode
-                                ? '#08090d'
-                                : palette[depth % palette.length];
                             const isBeingDragged = draggedNodeId === nodeId;
                             const isSelected = selectedNodeId === nodeId;
                             const isHovered = hoveredNodeId === nodeId;
                             const isOtherNodeDragging = isDraggingNode && !isBeingDragged;
 
-                            const baseRadius = isMemoNode
-                                ? 6
-                                : (depth === 0 ? 8 : 5.5);
-                            const radius = isSelected
-                                ? baseRadius + 3
+                            // 노드 크기 (사각형)
+                            const baseSize = isMemoNode
+                                ? 16
+                                : (depth === 0 ? 20 : 16);
+                            const nodeSize = isSelected
+                                ? baseSize + 2
                                 : isHovered
-                                    ? baseRadius + 1.5
-                                    : baseRadius;
+                                    ? baseSize + 1
+                                    : baseSize;
+
+                            // 색상 테마
+                            const isEvenDepth = depth % 2 === 0;
+
+                            const fillColor = isMemoNode
+                                ? '#FEF3C7' // 노란색 배경 (메모)
+                                : isEvenDepth
+                                    ? '#FFFFFF' // 짝수 depth: 흰색
+                                    : '#000000'; // 홀수 depth: 검정
+
+                            const strokeColor = isMemoNode
+                                ? '#F59E0B' // 노란색 테두리 (메모)
+                                : isEvenDepth
+                                    ? '#000000' // 짝수 depth: 검정 테두리
+                                    : '#FFFFFF'; // 홀수 depth: 흰색 테두리
+
+                            const textColor = isMemoNode
+                                ? '#92400E' // 진한 갈색 텍스트 (메모)
+                                : isEvenDepth
+                                    ? '#000000' // 짝수 depth: 검정 텍스트
+                                    : '#FFFFFF'; // 홀수 depth: 흰색 텍스트
 
                             const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
 
@@ -784,7 +895,7 @@ const ForceDirectedTree = ({
                             const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
                             const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
                             const tooltipTranslateX = -tooltipWidth / 2;
-                            const tooltipTranslateY = -(radius + tooltipHeight + 12);
+                            const tooltipTranslateY = -(nodeSize / 2 + tooltipHeight + 12);
                             const tooltipLineHeight = 18;
                             const labelText = isMemoNode
                                 ? (datum.memo?.title || datum.keyword || datum.name || datum.id || '')
@@ -817,44 +928,55 @@ const ForceDirectedTree = ({
                                         setHoveredNodeId((current) => (current === nodeId ? null : current));
                                     }}
                                 >
-                                    <motion.circle
-                                        r={radius}
+                                    {/* 네모 노드 */}
+                                    <motion.rect
+                                        x={-nodeSize / 2}
+                                        y={-nodeSize / 2}
+                                        width={nodeSize}
+                                        height={nodeSize}
+                                        rx={3}
+                                        ry={3}
                                         fill={fillColor}
-                                        stroke={isMemoNode ? '#202127' : (isSelected ? '#ffffff' : 'rgba(255,255,255,0.45)')}
-                                        strokeWidth={isSelected ? 2.4 : isMemoNode ? 1.8 : 1.6}
+                                        stroke={strokeColor}
+                                        strokeWidth={isSelected ? 1.5 : 1}
                                         initial={{ scale: 0, opacity: 0 }}
                                         animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
                                         transition={{ duration: 0.2, ease: 'easeOut' }}
                                     />
 
-                                    {/* 확대 시 노드 내부에 이름 표시 */}
-                                    {viewTransform.k > 2 && labelText && (
+                                    {/* 노드 내부에 이름 표시 */}
+                                    {labelText && (
                                         <motion.text
                                             textAnchor="middle"
                                             dominantBaseline="middle"
-                                            fill="#ffffff"
-                                            fontSize={Math.min(radius * 0.7, 9)}
+                                            fill={textColor}
+                                            fontSize={7}
                                             fontWeight={600}
                                             pointerEvents="none"
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
                                             transition={{ duration: 0.2 }}
                                             style={{
-                                                textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                                                textShadow: isMemoNode ? 'none' : '0 1px 2px rgba(0,0,0,0.8)',
                                             }}
                                         >
-                                            {labelText}
+                                            {labelText.length > 4 ? labelText.slice(0, 3) + '...' : labelText}
                                         </motion.text>
                                     )}
 
-                                    {isSelected && !isMemoNode && (
-
-                                        <motion.circle
-                                            r={radius + 6}
+                                    {/* 선택 효과 */}
+                                    {isSelected && (
+                                        <motion.rect
+                                            x={-(nodeSize / 2 + 3)}
+                                            y={-(nodeSize / 2 + 3)}
+                                            width={nodeSize + 6}
+                                            height={nodeSize + 6}
+                                            rx={4}
+                                            ry={4}
                                             fill="none"
-                                            stroke={fillColor}
-                                            strokeWidth={1.2}
-                                            strokeOpacity={0.65}
+                                            stroke={strokeColor}
+                                            strokeWidth={1}
+                                            strokeOpacity={0.5}
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
                                         />

@@ -764,8 +764,8 @@ const LibraryApp = () => {
   }, [setTheme]);
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <aside className="flex h-full w-[320px] flex-col border-r border-border bg-card text-card-foreground">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+      <aside className="flex h-full w-[320px] flex-col border-r border-border bg-card text-card-foreground overflow-hidden">
         <div className="border-b border-border px-5 py-6 space-y-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background">
@@ -982,8 +982,8 @@ const LibraryApp = () => {
         </ScrollArea>
       </aside>
 
-      <main className="flex flex-1 flex-col bg-background">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-card px-6 py-4 text-card-foreground">
+      <main className="flex flex-1 flex-col bg-background overflow-hidden">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-card px-6 py-4 text-card-foreground flex-shrink-0">
           <div className="space-y-1">
             <span className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground/80">
               Library Viewer
@@ -1081,7 +1081,7 @@ const LibraryApp = () => {
             </Button>
           </div>
         </header>
-        <div className="flex-1 bg-background">
+        <div className="flex-1 bg-background overflow-hidden">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-3 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -1092,8 +1092,8 @@ const LibraryApp = () => {
           ) : error ? (
             <EmptyState message={error?.message || "트리를 불러오지 못했습니다."} />
           ) : selectedTree ? (
-            <ResizablePanelGroup direction="horizontal" className="h-full">
-              <ResizablePanel defaultSize={70} minSize={30} className="min-h-0 bg-background">
+            <ResizablePanelGroup direction="horizontal" className="h-full overflow-hidden">
+              <ResizablePanel defaultSize={70} minSize={30} className="min-h-0 bg-background overflow-hidden">
                 <TreeCanvas
                   selectedMemo={selectedTree}
                   onNodeSelect={handleNodeSelect}
@@ -1101,7 +1101,7 @@ const LibraryApp = () => {
                 />
               </ResizablePanel>
               <ResizableHandle withHandle className="bg-border/80 hover:bg-border" />
-              <ResizablePanel defaultSize={30} minSize={20} maxSize={80} className="bg-card">
+              <ResizablePanel defaultSize={30} minSize={20} maxSize={80} className="bg-card overflow-hidden">
                 <LibraryQAPanel
                   selectedNode={selectedNode}
                   selectedTree={selectedTree}
