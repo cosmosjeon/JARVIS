@@ -77,8 +77,14 @@ class DataTransformService {
      * @returns {Object} hierarchy 형태 노드
      */
     static nodeToHierarchy(node) {
+        const isMemoNode = node?.nodeType === 'memo';
+        const memoTitle = isMemoNode ? (node?.memo?.title || '') : '';
+        const resolvedName = (isMemoNode
+            ? (memoTitle || node.keyword || node.id || 'Memo')
+            : (node.keyword || node.id || 'Node'));
+
         return {
-            name: node.keyword || node.id || 'Node',
+            name: resolvedName,
             id: node.id,
             data: { ...node }
         };
@@ -107,4 +113,3 @@ class DataTransformService {
 }
 
 export default DataTransformService;
-
