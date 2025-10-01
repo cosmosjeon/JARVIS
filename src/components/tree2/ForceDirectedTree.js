@@ -354,7 +354,7 @@ const ForceDirectedTree = ({
                 const base = typeof defaultWheelDelta === 'function'
                     ? defaultWheelDelta(event)
                     : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
-                return base * 1.0;
+                return base * 0.3; // 줌 감도 낮춤 (1.0 → 0.3)
             }
 
             // Ctrl/Cmd 키가 없으면 패닝
@@ -528,7 +528,7 @@ const ForceDirectedTree = ({
             return;
         }
 
-        // 드래그 시간이 0.2초 초과였으면 클릭 무시
+        // 드래그 시간이 0.1초 초과였으면 클릭 무시
         if (!shouldOpenNodeRef.current) {
             shouldOpenNodeRef.current = false;
             return;

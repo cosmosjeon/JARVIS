@@ -14,7 +14,7 @@ const WindowChrome = () => {
       return undefined;
     }
 
-    let detachListener = () => {};
+    let detachListener = () => { };
 
     if (typeof api.onStateChange === 'function') {
       detachListener = api.onStateChange((payload = {}) => {
@@ -33,7 +33,7 @@ const WindowChrome = () => {
             ...response.state,
           }));
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     return () => {
