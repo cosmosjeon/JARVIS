@@ -792,12 +792,22 @@ const HierarchicalForceTree = () => {
         const baseAnswer = typeof node.answer === 'string' && node.answer.trim()
           ? node.answer.trim()
           : node.questionData?.answer || node.fullText || null;
-        const normalizedConversation = sanitizeConversationMessages(
-          conversationStoreRef.current.get(node.id)
-        );
-        const conversation = normalizedConversation.length
-          ? normalizedConversation
-          : buildFallbackConversation(baseQuestion, baseAnswer);
+        const isMemoNode = node.nodeType === 'memo';
+        const normalizedConversation = isMemoNode
+          ? []
+          : sanitizeConversationMessages(conversationStoreRef.current.get(node.id));
+        const conversation = isMemoNode
+          ? []
+          : (normalizedConversation.length
+            ? normalizedConversation
+            : buildFallbackConversation(baseQuestion, baseAnswer));
+        const memoPayload = isMemoNode
+          ? {
+            title: node.memo?.title || node.keyword || '',
+            content: node.memo?.content || node.fullText || '',
+            metadata: node.memo?.metadata || node.memoMetadata || null,
+          }
+          : null;
 
         return {
           id: node.id,
@@ -811,6 +821,10 @@ const HierarchicalForceTree = () => {
           parentId,
           conversation,
           questionData: node.questionData,
+          nodeType: node.nodeType || null,
+          memoParentId: node.memoParentId || null,
+          memo: memoPayload,
+          memoMetadata: memoPayload?.metadata || null,
         };
       });
 
@@ -1568,6 +1582,106 @@ const HierarchicalForceTree = () => {
     }
   };
 
+<<<<<<< HEAD
+=======
+  const handleMemoCreate = useCallback((parentNodeId) => {
+    const parentExists = dataRef.current?.nodes?.some((node) => node.id === parentNodeId);
+    if (!parentExists) {
+      return null;
+    }
+
+    const timestamp = Date.now();
+    const memoId = createClientGeneratedId('memo');
+    const parentNode = dataRef.current?.nodes?.find((node) => node.id === parentNodeId);
+    const defaultTitle = parentNode?.keyword
+      ? `${parentNode.keyword} 메모`
+      : '새 메모';
+
+    setData((prev) => ({
+      ...prev,
+      nodes: [
+        ...prev.nodes,
+        {
+          id: memoId,
+          nodeType: 'memo',
+          memoParentId: parentNodeId,
+          parentId: parentNodeId,
+          keyword: defaultTitle,
+          fullText: '',
+          memo: {
+            title: defaultTitle,
+            content: '',
+          },
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          conversation: [],
+        },
+      ],
+      links: [
+        ...prev.links,
+        {
+          source: parentNodeId,
+          target: memoId,
+          value: 0.6,
+          relationship: 'memo',
+        },
+      ],
+    }));
+
+    return memoId;
+  }, [createClientGeneratedId]);
+
+  const handleMemoUpdate = useCallback((memoId, updates = {}) => {
+    if (!memoId) {
+      return;
+    }
+
+    setData((prev) => {
+      let hasChanged = false;
+
+      const nextNodes = prev.nodes.map((node) => {
+        if (node.id !== memoId) {
+          return node;
+        }
+
+        const currentMemo = node.memo || { title: '', content: '' };
+        const nextTitle = typeof updates.title === 'string' ? updates.title : currentMemo.title;
+        const nextContent = typeof updates.content === 'string' ? updates.content : currentMemo.content;
+
+        if (nextTitle === currentMemo.title && nextContent === currentMemo.content) {
+          return node;
+        }
+
+        hasChanged = true;
+
+        return {
+          ...node,
+          memo: {
+            title: nextTitle,
+            content: nextContent,
+          },
+          keyword: node.nodeType === 'memo'
+            ? (nextTitle || node.keyword || '').slice(0, 48)
+            : node.keyword,
+          fullText: node.nodeType === 'memo'
+            ? (nextContent || '')
+            : node.fullText,
+          updatedAt: Date.now(),
+        };
+      });
+
+      if (!hasChanged) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        nodes: nextNodes,
+      };
+    });
+  }, []);
+
+>>>>>>> c36b3d59588159fd59181e1e8edb1c564cf331e3
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
     setSelectedNodeId(nodeId);
