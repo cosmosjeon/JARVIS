@@ -20,11 +20,21 @@ const ForceDirectedTree = ({
     dimensions,
     onNodeClick,
     onNodeRemove,
+<<<<<<< HEAD
     treeId,
     userId,
+=======
+    questionService,
+    getInitialConversation,
+    onConversationChange,
+    onRequestAnswer,
+    onAnswerComplete,
+    onAnswerError,
+    onSecondQuestion,
+    onPlaceholderCreate,
+>>>>>>> 8894695ccd073d7726a9f25dbeda189d1ce394bb
 }) => {
-    const questionServiceRef = useRef(new QuestionService());
-    const conversationStoreRef = useRef(new Map());
+    const questionServiceRef = useRef(questionService || new QuestionService());
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const simulationServiceRef = useRef(null);
@@ -32,10 +42,7 @@ const ForceDirectedTree = ({
     const [simulatedLinks, setSimulatedLinks] = useState([]);
     const [simulatedMemos, setSimulatedMemos] = useState([]);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
-    const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
     const [isDraggingNode, setIsDraggingNode] = useState(false);
-    const [isPanning, setIsPanning] = useState(false);
-    const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
     const [draggedNodeId, setDraggedNodeId] = useState(null);
     const dragStartTimeRef = useRef(0);
     const shouldOpenNodeRef = useRef(false);
@@ -49,6 +56,7 @@ const ForceDirectedTree = ({
     const centerX = dimensions.width / 2;
     const centerY = dimensions.height / 2;
 
+<<<<<<< HEAD
     // 메모 로드 (treeId 변경 시)
     useEffect(() => {
         if (!treeId || !userId) {
@@ -68,6 +76,10 @@ const ForceDirectedTree = ({
 
         loadMemos();
     }, [treeId, userId]);
+=======
+    // viewTransform 초기값을 중심으로 설정
+    const [viewTransform, setViewTransform] = useState({ x: centerX, y: centerY, k: 1 });
+>>>>>>> 8894695ccd073d7726a9f25dbeda189d1ce394bb
 
     // Simulation 초기화
     useEffect(() => {
@@ -120,6 +132,22 @@ const ForceDirectedTree = ({
         };
     }, [data, dimensions, memos]);
 
+    // dimensions가 변경될 때 viewTransform 업데이트 (비율 유지)
+    const prevCenterRef = useRef({ x: centerX, y: centerY });
+    useEffect(() => {
+        const prevCenter = prevCenterRef.current;
+        const deltaX = centerX - prevCenter.x;
+        const deltaY = centerY - prevCenter.y;
+
+        setViewTransform(prev => ({
+            x: prev.x + deltaX,
+            y: prev.y + deltaY,
+            k: prev.k
+        }));
+
+        prevCenterRef.current = { x: centerX, y: centerY };
+    }, [centerX, centerY]);
+
     // Zoom/Pan 설정
     const zoomBehaviorRef = useRef(null);
 
@@ -134,12 +162,20 @@ const ForceDirectedTree = ({
                 // 노드 드래그 중에는 줌/팬 비활성화
                 if (isDraggingNode) return false;
 
-                // 마우스 휠로 줌
+                // foreignObject나 노드 내부에서는 줌/팬 비활성화
+                const target = event.target instanceof Element ? event.target : null;
+                if (target && target.closest('foreignObject')) return false;
+
+                // wheel 이벤트는 모두 허용 (트랙패드 줌/스크롤)
                 if (event.type === 'wheel') return true;
 
-                // 우클릭 또는 휠 버튼으로 팬
-                if (event.button === 2) return true;
-                if (event.button === 1) return true; // 휠 버튼
+                // 더블클릭은 비활성화
+                if (event.type === 'dblclick') return false;
+
+                // 모든 버튼 드래그 허용 (좌클릭, 우클릭, 휠 버튼)
+                if (event.type === 'mousedown' || event.type === 'pointerdown') return true;
+                if (event.type === 'mousemove' || event.type === 'pointermove') return true;
+                if (event.type === 'mouseup' || event.type === 'pointerup') return true;
 
                 return false;
             })
@@ -151,55 +187,57 @@ const ForceDirectedTree = ({
                 });
             });
 
+        // 초기 transform을 현재 viewTransform으로 설정
+        const initialTransform = d3.zoomIdentity.translate(viewTransform.x, viewTransform.y).scale(viewTransform.k);
+        svg.call(zoom.transform, initialTransform);
+
+        // wheelDelta 커스터마이즈하여 민감도 조절
+        const defaultWheelDelta = zoom.wheelDelta();
+        zoom.wheelDelta((event) => {
+            // Ctrl/Cmd 키가 있으면 줌 (핀치 줌)
+            if (event.ctrlKey || event.metaKey) {
+                const base = typeof defaultWheelDelta === 'function'
+                    ? defaultWheelDelta(event)
+                    : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
+                return base * 1.0;
+            }
+
+            // Ctrl/Cmd 키가 없으면 패닝
+            return 0;
+        });
+
         zoomBehaviorRef.current = zoom;
         svg.call(zoom);
 
-        // 휠 버튼 드래그로 팬 기능 추가
-        const handleWheelDown = (event) => {
-            if (event.button === 1 && !isDraggingNode) { // 휠 버튼
-                event.preventDefault();
-                setIsPanning(true);
-                setLastPanPoint({ x: event.clientX, y: event.clientY });
-                svg.style.cursor = 'grabbing';
+        // wheel 이벤트를 직접 처리하여 패닝 구현
+        svg.on('wheel.treepan', (event) => {
+            // Ctrl/Cmd 키가 있으면 핀치 줌 (zoom behavior가 처리)
+            if (event.ctrlKey || event.metaKey) {
+                return;
             }
-        };
 
-        const handleMouseMove = (event) => {
-            if (isPanning && !isDraggingNode) {
-                event.preventDefault();
-                const deltaX = event.clientX - lastPanPoint.x;
-                const deltaY = event.clientY - lastPanPoint.y;
+            // Ctrl/Cmd 키가 없으면 패닝
+            event.preventDefault();
 
-                setViewTransform(prev => ({
-                    x: prev.x + deltaX,
-                    y: prev.y + deltaY,
-                    k: prev.k
-                }));
+            const deltaX = event.deltaX || 0;
+            const deltaY = event.deltaY || 0;
 
-                setLastPanPoint({ x: event.clientX, y: event.clientY });
+            if (deltaX === 0 && deltaY === 0) {
+                return;
             }
-        };
 
-        const handleMouseUp = (event) => {
-            if (event.button === 1 && isPanning) { // 휠 버튼
-                event.preventDefault();
-                setIsPanning(false);
-                svg.style.cursor = 'default';
-            }
-        };
-
-        // 이벤트 리스너 등록
-        svg.on('mousedown', handleWheelDown);
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+            const currentTransform = d3.zoomTransform(svg.node());
+            const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
+            const panX = -deltaX / scale;
+            const panY = -deltaY / scale;
+            zoom.translateBy(svg, panX, panY);
+        });
 
         return () => {
             svg.on('.zoom', null);
-            svg.on('mousedown', null);
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
+            svg.on('.treepan', null);
         };
-    }, [isDraggingNode, isPanning, lastPanPoint]);
+    }, [isDraggingNode, centerX, centerY]);
 
     // 노드 드래그 핸들러
     const handleDragStart = useCallback((event, nodeData) => {
@@ -231,8 +269,8 @@ const ForceDirectedTree = ({
             const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
 
             // SVG viewBox 좌표 -> Force simulation 좌표로 변환
-            const forceX = (svgPoint.x - centerX - viewTransform.x) / viewTransform.k;
-            const forceY = (svgPoint.y - centerY - viewTransform.y) / viewTransform.k;
+            const forceX = (svgPoint.x - viewTransform.x) / viewTransform.k;
+            const forceY = (svgPoint.y - viewTransform.y) / viewTransform.k;
 
             const mockEvent = {
                 x: forceX,
@@ -273,8 +311,8 @@ const ForceDirectedTree = ({
     const centerNodeOnScreen = useCallback((node) => {
         if (!node || !svgRef.current || !zoomBehaviorRef.current) return;
 
-        const targetX = -node.x * viewTransform.k;
-        const targetY = -node.y * viewTransform.k;
+        const targetX = centerX - node.x * viewTransform.k;
+        const targetY = centerY - node.y * viewTransform.k;
 
         const svg = d3.select(svgRef.current);
         const targetTransform = d3.zoomIdentity
@@ -286,7 +324,7 @@ const ForceDirectedTree = ({
             .duration(500)
             .ease(d3.easeCubicInOut)
             .call(zoomBehaviorRef.current.transform, targetTransform);
-    }, [viewTransform]);
+    }, [viewTransform, centerX, centerY]);
 
     // 노드 클릭 핸들러
     const handleNodeClick = useCallback((node) => {
@@ -320,12 +358,14 @@ const ForceDirectedTree = ({
 
     // Conversation 관리
     const getInitialConversationForNode = useCallback((nodeId) => {
-        return conversationStoreRef.current.get(nodeId) || [];
-    }, []);
+        return getInitialConversation ? getInitialConversation(nodeId) : [];
+    }, [getInitialConversation]);
 
     const handleConversationChange = useCallback((nodeId, messages) => {
-        conversationStoreRef.current.set(nodeId, messages);
-    }, []);
+        if (onConversationChange) {
+            onConversationChange(nodeId, messages);
+        }
+    }, [onConversationChange]);
 
     // 메모 관리 함수들
     const generateMemoId = useCallback(() => {
@@ -517,19 +557,16 @@ const ForceDirectedTree = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedNodeId]);
 
-    // 빈 데이터 처리
+    // 빈 데이터 처리 - bootstrap 패널이 상위에서 표시되므로 빈 배경만 렌더링
     if (!data || !data.nodes || data.nodes.length === 0) {
         return (
             <div
-                className="flex h-full w-full items-center justify-center"
+                className="relative h-full w-full"
                 style={{
                     background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+                    overflow: 'hidden',
                 }}
-            >
-                <div className="text-white/60">
-                    트리 데이터가 없습니다
-                </div>
-            </div>
+            />
         );
     }
 
@@ -552,7 +589,7 @@ const ForceDirectedTree = ({
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    cursor: isDraggingNode ? 'grabbing' : isPanning ? 'grabbing' : 'default',
+                    cursor: isDraggingNode ? 'grabbing' : 'default',
                 }}
                 onClick={(e) => {
                     // 배경 클릭 시 선택 해제
@@ -575,7 +612,7 @@ const ForceDirectedTree = ({
                     </marker>
                 </defs>
 
-                <g transform={`translate(${centerX + viewTransform.x}, ${centerY + viewTransform.y}) scale(${viewTransform.k})`}>
+                <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
                     {/* 링크 렌더링 */}
                     <g className="links">
                         {simulatedLinks.map((link, index) => {
@@ -697,11 +734,14 @@ const ForceDirectedTree = ({
                                 node={selectedNode.data}
                                 color={d3.schemeCategory10[0]}
                                 onSizeChange={() => { }}
-                                onSecondQuestion={() => { }}
-                                onPlaceholderCreate={() => { }}
+                                onSecondQuestion={onSecondQuestion || (() => { })}
+                                onPlaceholderCreate={onPlaceholderCreate || (() => { })}
                                 questionService={questionServiceRef.current}
                                 initialConversation={getInitialConversationForNode(selectedNodeId)}
                                 onConversationChange={(messages) => handleConversationChange(selectedNodeId, messages)}
+                                onRequestAnswer={onRequestAnswer || (() => { })}
+                                onAnswerComplete={onAnswerComplete || (() => { })}
+                                onAnswerError={onAnswerError || (() => { })}
                                 nodeSummary={{
                                     label: selectedNode.data.keyword || selectedNode.data.id,
                                     intro: selectedNode.data.fullText || '',
