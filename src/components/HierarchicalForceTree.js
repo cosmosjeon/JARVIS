@@ -1550,15 +1550,15 @@ const HierarchicalForceTree = () => {
         }
 
         if (event.type === 'wheel') {
-          if (isPinchZoomWheel(event)) return true;
-          if (isTrackpadScrollWheel(event)) return false;
-          return false;
+          // 트랙패드 핀치 줌과 스크롤 모두 허용
+          return true;
         }
         if (event.type === 'dblclick') return false;
         if (allowTouchGesture(event)) return true;
         if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') return true;
         if (event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'mousedown' || event.type === 'mousemove') {
-          return isSecondaryButtonDrag(event);
+          // 일반 배경에서는 좌클릭/우클릭 드래그 모두 패닝 허용
+          return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
         }
         return false;
       })
@@ -1568,13 +1568,19 @@ const HierarchicalForceTree = () => {
 
     const defaultWheelDelta = zoomBehaviour.wheelDelta();
     zoomBehaviour.wheelDelta((event) => {
-      const base = typeof defaultWheelDelta === 'function'
-        ? defaultWheelDelta(event)
-        : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
+      // Ctrl/Cmd 키가 있으면 줌 (핀치 줌)
       if (event.ctrlKey || event.metaKey) {
-        return base * 0.35;
+        const base = typeof defaultWheelDelta === 'function'
+          ? defaultWheelDelta(event)
+          : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
+        return base * 1.0;
       }
-      return base;
+
+      // Ctrl/Cmd 키가 없으면 패닝 (translate)
+      // deltaY와 deltaX를 사용하여 패닝 처리
+      // wheelDelta에서 0을 반환하면 줌이 일어나지 않고,
+      // 대신 zoom 이벤트에서 translate만 적용됨
+      return 0;
     });
 
     svgSelection
@@ -1586,13 +1592,12 @@ const HierarchicalForceTree = () => {
 
     svgSelection.on('pointerdown.background', null);
     svgSelection.on('wheel.treepan', (event) => {
-      if (isPinchZoomWheel(event)) {
-        return;
-      }
-      if (!isTrackpadScrollWheel(event)) {
+      // Ctrl/Cmd 키가 있으면 핀치 줌 (zoom behavior가 처리)
+      if (event.ctrlKey || event.metaKey) {
         return;
       }
 
+      // Ctrl/Cmd 키가 없으면 패닝
       event.preventDefault();
       const mode = typeof event.deltaMode === 'number' ? event.deltaMode : DOM_DELTA_PIXEL;
       const deltaX = normalizeWheelDelta(event.deltaX || 0, mode);
@@ -2216,12 +2221,53 @@ const HierarchicalForceTree = () => {
       ) : null}
 
       {/* 트리2 뷰 (Force-Directed) */}
+      {viewMode === 'tree2' && showBootstrapChat && (
+        <div
+          className="pointer-events-none absolute"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 600,
+            height: 640,
+            zIndex: 1000,
+          }}
+          data-interactive-zone="true"
+        >
+          <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
+            <NodeAssistantPanel
+              node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
+              color={d3.schemeCategory10[0]}
+              onSizeChange={() => { }}
+              onSecondQuestion={() => { }}
+              onPlaceholderCreate={() => { }}
+              questionService={questionService.current}
+              initialConversation={getInitialConversationForNode('__bootstrap__')}
+              onConversationChange={(messages) => handleConversationChange('__bootstrap__', messages)}
+              nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
+              isRootNode={true}
+              bootstrapMode={true}
+              onBootstrapFirstSend={handleBootstrapSubmit}
+              onPanZoomGesture={forwardPanZoomGesture}
+              nodeScaleFactor={nodeScaleFactor}
+            />
+          </div>
+        </div>
+      )}
       {viewMode === 'tree2' && (
         <ForceDirectedTree
           data={data}
           dimensions={dimensions}
           onNodeClick={handleNodeClickForAssistant}
           onNodeRemove={removeNodeAndDescendants}
+          questionService={questionService.current}
+          getInitialConversation={getInitialConversationForNode}
+          onConversationChange={handleConversationChange}
+          onRequestAnswer={handleRequestAnswer}
+          onAnswerComplete={handleAnswerComplete}
+          onAnswerError={handleAnswerError}
+          onSecondQuestion={handleSecondQuestion}
+          onPlaceholderCreate={handlePlaceholderCreate}
         />
       )}
 
