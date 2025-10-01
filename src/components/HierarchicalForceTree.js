@@ -13,6 +13,8 @@ import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
 import NodeAssistantPanel from './NodeAssistantPanel';
+import ChartView from './ChartView';
+import ForceDirectedTree from './tree2/ForceDirectedTree';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import {
   fetchTreesWithNodes,
@@ -216,6 +218,20 @@ const HierarchicalForceTree = () => {
   const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window === 'undefined') {
+      return 'tree1';
+    }
+    try {
+      const stored = window.localStorage.getItem('jarvis.view.mode');
+      if (stored === 'tree2' || stored === 'chart') {
+        return stored;
+      }
+      return 'tree1';
+    } catch (error) {
+      return 'tree1';
+    }
+  });
   const [layoutOrientation, setLayoutOrientation] = useState(() => {
     if (typeof window === 'undefined') {
       return 'vertical';
@@ -333,6 +349,17 @@ const HierarchicalForceTree = () => {
       }
     }
   }, [sessionInfo.fresh, sessionStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem('jarvis.view.mode', viewMode);
+    } catch (error) {
+      // ignore storage errors
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -902,7 +929,7 @@ const HierarchicalForceTree = () => {
           id: activeTreeId,
           treeData: data
         };
-        
+
         // 빈 트리인 경우 정리
         if (activeTreeId && data && data.nodes && data.nodes.length === 0) {
           await cleanupEmptyTrees([currentTree]);
@@ -913,7 +940,7 @@ const HierarchicalForceTree = () => {
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
@@ -2187,27 +2214,58 @@ const HierarchicalForceTree = () => {
         </div>
       ) : null}
       <div
-        className="absolute top-4 left-6 z-[1300] flex"
+        className="absolute top-4 left-6 z-[1300] flex gap-3"
         style={{ pointerEvents: 'none' }}
       >
+        {/* 시각화 모드 토글 (트리1/트리2/차트) */}
         <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
           <button
             type="button"
-            onClick={() => setLayoutOrientation('vertical')}
-            className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'vertical' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={layoutOrientation === 'vertical'}
+            onClick={() => setViewMode('tree1')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'tree1'}
           >
-            아래로
+            트리1
           </button>
           <button
             type="button"
-            onClick={() => setLayoutOrientation('horizontal')}
-            className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'horizontal' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={layoutOrientation === 'horizontal'}
+            onClick={() => setViewMode('tree2')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'tree2'}
           >
-            오른쪽
+            트리2
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('chart')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'chart'}
+          >
+            차트
           </button>
         </div>
+
+        {/* 레이아웃 방향 토글 (트리1 모드에서만 표시) */}
+        {viewMode === 'tree1' && (
+          <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={() => setLayoutOrientation('vertical')}
+              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'vertical' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+              aria-pressed={layoutOrientation === 'vertical'}
+            >
+              아래로
+            </button>
+            <button
+              type="button"
+              onClick={() => setLayoutOrientation('horizontal')}
+              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'horizontal' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+              aria-pressed={layoutOrientation === 'horizontal'}
+            >
+              오른쪽
+            </button>
+          </div>
+        )}
       </div>
       {linkValidationError ? (
         <div className="pointer-events-none absolute top-4 right-6 z-[1300]">
@@ -2217,7 +2275,7 @@ const HierarchicalForceTree = () => {
         </div>
       ) : null}
       {/* 창 드래그 핸들 - 중앙 최상단 */}
-      <div 
+      <div
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
@@ -2228,7 +2286,7 @@ const HierarchicalForceTree = () => {
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
           </div>
-          
+
           {/* 오른쪽: 닫기 버튼 */}
           <button
             className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
@@ -2310,17 +2368,17 @@ const HierarchicalForceTree = () => {
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <svg 
-              className="h-3 w-3 text-white group-hover:text-black" 
-              fill="none" 
-              stroke="currentColor" 
+            <svg
+              className="h-3 w-3 text-white group-hover:text-black"
+              fill="none"
+              stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M6 18L18 6M6 6l12 12" 
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
               />
             </svg>
           </button>
@@ -2332,7 +2390,29 @@ const HierarchicalForceTree = () => {
           자동 저장 중...
         </div>
       ) : null}
-      {showBootstrapChat && rootDragHandlePosition && overlayElement && (
+
+      {/* 트리2 뷰 (Force-Directed) */}
+      {viewMode === 'tree2' && (
+        <ForceDirectedTree
+          data={data}
+          dimensions={dimensions}
+          onNodeClick={handleNodeClickForAssistant}
+          onNodeRemove={removeNodeAndDescendants}
+        />
+      )}
+
+      {/* 차트 뷰 */}
+      {viewMode === 'chart' && (
+        <ChartView
+          data={data}
+          dimensions={dimensions}
+          viewTransform={viewTransform}
+          nodeScaleFactor={nodeScaleFactor}
+        />
+      )}
+
+      {/* 트리1 뷰 */}
+      {viewMode === 'tree1' && showBootstrapChat && rootDragHandlePosition && overlayElement && (
         <div
           className="pointer-events-none absolute"
           style={{
@@ -2365,224 +2445,184 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       )}
-      <svg
-        ref={svgRef}
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
-        preserveAspectRatio="none"
-        data-interactive-zone="true"
-        style={{
-          background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
-          // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
-          pointerEvents: 'auto',
-          // SVG가 창틀 여유 공간까지 완전히 채우도록 설정
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: '100vw',
-          height: '100vh',
-          margin: 0,
-          padding: 0,
-        }}
-      >
-        {/* Arrow marker definition */}
-        <defs>
-          <marker
-            id="arrowhead"
-            viewBox="0 -5 10 10"
-            refX={8}
-            refY={0}
-            markerWidth={6}
-            markerHeight={6}
-            orient="auto"
-          >
-            <path d="M0,-5L10,0L0,5" fill="rgba(224,224,224,0.85)" stroke="rgba(224,224,224,0.95)" strokeWidth={0.6} />
-          </marker>
-        </defs>
-
-        {/* Links */}
-
-        <g
-          ref={contentGroupRef}
-          key={`${dimensions.width}x${dimensions.height}`}
-          transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
-          style={{ opacity: isResizing ? 0.999 : 1 }}
+      
+      {viewMode === 'tree1' && (
+        <svg
+          ref={svgRef}
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+          preserveAspectRatio="none"
+          data-interactive-zone="true"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+            // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
+            pointerEvents: 'auto',
+            // SVG가 창틀 여유 공간까지 완전히 채우도록 설정
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            padding: 0,
+          }}
         >
-          <g className="links" style={{ pointerEvents: 'visibleStroke' }}>
-            <AnimatePresence>
-              {links
-                // TreeLayoutService에서 이미 정렬된 링크 사용
-                .map((link, index) => {
-                  const sourceNode = nodes.find((n) => n.id === link.source);
-                  const targetNode = nodes.find((n) => n.id === link.target);
+          {/* Arrow marker definition */}
+          <defs>
+            <marker
+              id="arrowhead"
+              viewBox="0 -5 10 10"
+              refX={8}
+              refY={0}
+              markerWidth={6}
+              markerHeight={6}
+              orient="auto"
+            >
+              <path d="M0,-5L10,0L0,5" fill="rgba(0,0,0,0.55)" />
+            </marker>
+          </defs>
 
-                  if (!sourceNode || !targetNode) return null;
+          {/* Links */}
 
-                  const isHorizontalLayout = layoutOrientation === 'horizontal';
-                  const sourceAnchor = {
-                    x: sourceNode.x,
-                    y: isHorizontalLayout ? sourceNode.y : sourceNode.y + 34,
-                  };
-                  const targetAnchor = {
-                    x: targetNode.x,
-                    y: targetNode.y,
-                  };
-
-                  const pathString = buildOrthogonalPath(
-                    sourceAnchor,
-                    targetAnchor,
-                    isHorizontalLayout ? 'horizontal' : 'vertical'
-                  );
-
-                  if (!pathString) {
-                    return null;
-                  }
-
-                  const linkId = `${String(link.source)}->${String(link.target)}`;
-                  const shouldAnimate = Boolean(link.isNew);
-                  const isHovered = hoveredLinkId === linkId;
-
-                  const baseStrokeWidth = isHovered ? 3.25 : 2.75;
-                  const glowStrokeWidth = baseStrokeWidth + 1.1;
-                  const strokeColor = isHovered ? 'rgba(240, 240, 240, 0.95)' : 'rgba(224, 224, 224, 0.9)';
-                  const glowColor = 'rgba(224, 224, 224, 0.28)';
-
-                  const handleEnter = () => setHoveredLinkId(linkId);
-                  const handleLeave = () => setHoveredLinkId((current) => (current === linkId ? null : current));
-
-                  const glowPathProps = {
-                    d: pathString,
-                    stroke: glowColor,
-                    strokeWidth: glowStrokeWidth,
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round',
-                    fill: 'none',
-                    style: {
-                      mixBlendMode: 'screen',
-                      filter: 'drop-shadow(0 0 6px rgba(224, 224, 224, 0.45))',
-                      opacity: 0.85,
-                    },
-                  };
-
-                  const mainPathProps = {
-                    d: pathString,
-                    stroke: strokeColor,
-                    strokeWidth: baseStrokeWidth,
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round',
-                    fill: 'none',
-                    markerEnd: 'url(#arrowhead)',
-                    style: {
-                      pointerEvents: 'visibleStroke',
-                      cursor: 'pointer',
-                      filter: isHovered
-                        ? 'drop-shadow(0 0 6px rgba(245, 245, 245, 0.55))'
-                        : 'drop-shadow(0 0 4px rgba(224, 224, 224, 0.35))',
-                      transition: 'stroke 0.2s ease, stroke-width 0.2s ease',
-                    },
-                    onPointerEnter: handleEnter,
-                    onPointerLeave: handleLeave,
-                    onFocus: handleEnter,
-                    onBlur: handleLeave,
-                  };
-
-                  return (
-                    <g key={linkId}>
-                      {shouldAnimate ? (
-                        <motion.path
-                          {...glowPathProps}
-                          initial={{ pathLength: 0, opacity: 0 }}
-                          animate={{ pathLength: 1, opacity: 0.85, strokeWidth: glowStrokeWidth }}
-                          exit={{ pathLength: 0, opacity: 0 }}
-                          transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1], delay: index * 0.05 }}
-                        />
-                      ) : (
-                        <path {...glowPathProps} />
-                      )}
-
-                      {shouldAnimate ? (
-                        <motion.path
-                          {...mainPathProps}
-                          initial={{ pathLength: 0, opacity: 0 }}
-                          animate={{ pathLength: 1, opacity: 1, strokeWidth: baseStrokeWidth }}
-                          exit={{ pathLength: 0, opacity: 0 }}
-                          transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1], delay: index * 0.05 }}
-                        />
-                      ) : (
-                        <path {...mainPathProps} />
-                      )}
-                    </g>
-                  );
-                })}
-            </AnimatePresence>
-          </g>
-
-          {/* Nodes - 최상위 레이어 */}
-          <g 
-            className="nodes" 
-            style={{ 
-              pointerEvents: 'auto', 
-              zIndex: 1000,
-              isolation: 'isolate' // 새로운 stacking context 생성
-            }}
+          <g
+            ref={contentGroupRef}
+            key={`${dimensions.width}x${dimensions.height}`}
+            transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
+            style={{ opacity: isResizing ? 0.999 : 1 }}
           >
-            {nodes.map((node, index) => {
-              // Tree layout에서는 depth를 사용
-              const nodeDepth = node.depth || 0;
+            <g className="links" style={{ pointerEvents: 'none' }}>
+              <AnimatePresence>
+                {links
+                  // TreeLayoutService에서 이미 정렬된 링크 사용
+                  .map((link, index) => {
+                    const sourceNode = nodes.find(n => n.id === link.source);
+                    const targetNode = nodes.find(n => n.id === link.target);
 
-              return (
-                <motion.g
-                  key={node.id}
-                  data-node-id={node.id}
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{
-                    delay: index * 0.1,
-                    type: "spring",
-                    stiffness: 300,
-                    damping: 25
-                  }}
-                  style={{ 
-                    pointerEvents: 'auto', 
-                    zIndex: expandedNodeId === node.id ? 9999 : 1001 + index, // 확장된 노드는 최상위
-                    position: 'relative'
-                  }}
-                  data-interactive-zone="true"
-                >
-                  <TreeNode
-                    node={node}
-                    position={{ x: node.x || 0, y: node.y || 0 }}
-                    color={colorScheme(nodeDepth)}
-                    onDrag={handleDrag}
-                    onNodeClick={handleNodeClickForAssistant}
-                    isExpanded={expandedNodeId === node.id}
-                    onSecondQuestion={handleSecondQuestion}
-                    onPlaceholderCreate={handlePlaceholderCreate}
-                    questionService={questionService.current}
-                    initialConversation={getInitialConversationForNode(node.id)}
-                    onConversationChange={(messages) => handleConversationChange(node.id, messages)}
-                    onRequestAnswer={handleRequestAnswer}
-                    onAnswerComplete={handleAnswerComplete}
-                    onAnswerError={handleAnswerError}
-                    onRemoveNode={removeNodeAndDescendants}
-                    hasChildren={(childrenByParent.get(node.id) || []).length > 0}
-                    isCollapsed={collapsedNodeIds.has(node.id)}
-                    onToggleCollapse={toggleCollapse}
-                    viewTransform={viewTransform}
-                    overlayElement={overlayElement}
-                    onCloseNode={() => handleCloseNode(node.id)}
-                    onPanZoomGesture={forwardPanZoomGesture}
-                    nodeScaleFactor={nodeScaleFactor}
-                  />
-                </motion.g>
-              );
-            })}
+                    if (!sourceNode || !targetNode) return null;
+
+                    const isHorizontalLayout = layoutOrientation === 'horizontal';
+                    const sourceX = sourceNode.x;
+                    const sourceY = isHorizontalLayout ? sourceNode.y : sourceNode.y + 14 + 20;
+                    const targetX = targetNode.x;
+                    const targetY = targetNode.y;
+
+                    const shouldAnimate = link.isNew;
+                    const pathString = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
+
+                    return (
+                      <g key={`${String(link.source)}->${String(link.target)}`}>
+                        {/* Neumorphism shadow for line */}
+                        <motion.path
+                          d={pathString}
+                          stroke="#bebebe"
+                          strokeOpacity={0.4}
+                          strokeWidth={Math.sqrt(link.value || 1) * 1.5 + 2}
+                          fill="none"
+                          style={{
+                            filter: 'blur(2px)',
+                          }}
+                          initial={{ pathLength: 0, opacity: 0 }}
+                          animate={{ pathLength: 1, opacity: 1 }}
+                          exit={{ pathLength: 0, opacity: 0 }}
+                          transition={{
+                            duration: 0.45,
+                            ease: "easeInOut",
+                            delay: index * 0.06
+                          }}
+                        />
+                        {/* Main neumorphism line */}
+                        <motion.path
+                          d={pathString}
+                          stroke="#e0e0e0"
+                          strokeOpacity={0.9}
+                          strokeWidth={Math.sqrt(link.value || 1) * 1.5}
+                          fill="none"
+                          markerEnd="url(#arrowhead)"
+                          style={{
+                            filter: 'drop-shadow(1px 1px 2px #bebebe) drop-shadow(-1px -1px 2px #ffffff)',
+                          }}
+                          initial={{ pathLength: 0, opacity: 0 }}
+                          animate={{ pathLength: 1, opacity: 1 }}
+                          exit={{ pathLength: 0, opacity: 0 }}
+                          transition={{
+                            duration: 0.45,
+                            ease: "easeInOut",
+                            delay: index * 0.06
+                          }}
+                        />
+                      </g>
+                    );
+                  })}
+              </AnimatePresence>
+            </g>
+
+            {/* Nodes - 최상위 레이어 */}
+            <g
+              className="nodes"
+              style={{
+                pointerEvents: 'auto',
+                zIndex: 1000,
+                isolation: 'isolate' // 새로운 stacking context 생성
+              }}
+            >
+              {nodes.map((node, index) => {
+                // Tree layout에서는 depth를 사용
+                const nodeDepth = node.depth || 0;
+
+                return (
+                  <motion.g
+                    key={node.id}
+                    data-node-id={node.id}
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{
+                      delay: index * 0.1,
+                      type: "spring",
+                      stiffness: 300,
+                      damping: 25
+                    }}
+                    style={{
+                      pointerEvents: 'auto',
+                      zIndex: expandedNodeId === node.id ? 9999 : 1001 + index, // 확장된 노드는 최상위
+                      position: 'relative'
+                    }}
+                    data-interactive-zone="true"
+                  >
+                    <TreeNode
+                      node={node}
+                      position={{ x: node.x || 0, y: node.y || 0 }}
+                      color={colorScheme(nodeDepth)}
+                      onDrag={handleDrag}
+                      onNodeClick={handleNodeClickForAssistant}
+                      isExpanded={expandedNodeId === node.id}
+                      onSecondQuestion={handleSecondQuestion}
+                      onPlaceholderCreate={handlePlaceholderCreate}
+                      questionService={questionService.current}
+                      initialConversation={getInitialConversationForNode(node.id)}
+                      onConversationChange={(messages) => handleConversationChange(node.id, messages)}
+                      onRequestAnswer={handleRequestAnswer}
+                      onAnswerComplete={handleAnswerComplete}
+                      onAnswerError={handleAnswerError}
+                      onRemoveNode={removeNodeAndDescendants}
+                      hasChildren={(childrenByParent.get(node.id) || []).length > 0}
+                      isCollapsed={collapsedNodeIds.has(node.id)}
+                      onToggleCollapse={toggleCollapse}
+                      viewTransform={viewTransform}
+                      overlayElement={overlayElement}
+                      onCloseNode={() => handleCloseNode(node.id)}
+                      onPanZoomGesture={forwardPanZoomGesture}
+                      nodeScaleFactor={nodeScaleFactor}
+                    />
+                  </motion.g>
+                );
+              })}
+            </g>
           </g>
-        </g>
-      </svg>
+        </svg>
+      )}
 
       {/* 디버그 패널 제거됨 */}
       <div
