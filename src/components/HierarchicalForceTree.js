@@ -31,6 +31,150 @@ const DOM_DELTA_PIXEL = 0;
 const DOM_DELTA_LINE = 1;
 const DOM_DELTA_PAGE = 2;
 
+const ORTHO_PATH_DEFAULTS = {
+  cornerRadius: 20,
+  nodePadding: 18,
+};
+
+const buildRoundedPath = (rawPoints, radius) => {
+  if (!Array.isArray(rawPoints) || rawPoints.length < 2) {
+    return '';
+  }
+
+  const points = rawPoints.map((point) => ({
+    x: Number(point?.x) || 0,
+    y: Number(point?.y) || 0,
+  }));
+
+  let command = `M ${points[0].x} ${points[0].y}`;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const current = { ...points[index] };
+    const previous = points[index - 1];
+
+    if (index === points.length - 1) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const next = points[index + 1];
+    const prevVector = { x: current.x - previous.x, y: current.y - previous.y };
+    const nextVector = { x: next.x - current.x, y: next.y - current.y };
+    const prevLength = Math.hypot(prevVector.x, prevVector.y);
+    const nextLength = Math.hypot(nextVector.x, nextVector.y);
+
+    if (prevLength === 0 || nextLength === 0) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const corner = Math.min(radius, prevLength / 2, nextLength / 2);
+
+    if (corner <= 0) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const startX = current.x - (prevVector.x / prevLength) * corner;
+    const startY = current.y - (prevVector.y / prevLength) * corner;
+    const endX = current.x + (nextVector.x / nextLength) * corner;
+    const endY = current.y + (nextVector.y / nextLength) * corner;
+
+    command += ` L ${startX} ${startY}`;
+    command += ` Q ${current.x} ${current.y} ${endX} ${endY}`;
+
+    points[index] = { x: endX, y: endY };
+  }
+
+  return command;
+};
+
+const buildOrthogonalPath = (source, target, orientation = 'vertical', overrides = {}) => {
+  if (!source || !target) {
+    return '';
+  }
+
+  const { cornerRadius, nodePadding } = { ...ORTHO_PATH_DEFAULTS, ...overrides };
+  const resolvedPadding = Math.min(Math.max(nodePadding, 16), 20);
+  const baseMargin = resolvedPadding;
+
+  const sx = Number(source.x) || 0;
+  const sy = Number(source.y) || 0;
+  const tx = Number(target.x) || 0;
+  const ty = Number(target.y) || 0;
+
+  const dx = tx - sx;
+  const dy = ty - sy;
+
+  const isHorizontal = orientation === 'horizontal';
+  const primaryDistance = isHorizontal ? Math.abs(dx) : Math.abs(dy);
+  const secondaryDistance = isHorizontal ? Math.abs(dy) : Math.abs(dx);
+
+  const primaryDirection = (isHorizontal ? dx : dy) >= 0 ? 1 : -1;
+  const secondaryDirection = (isHorizontal ? dy : dx) >= 0 ? 1 : -1;
+
+  let points;
+
+  if (primaryDistance < baseMargin * 2) {
+    const lateralOffset = Math.max(baseMargin * 1.35, secondaryDistance / 2 || baseMargin * 1.35);
+    const advanceOffset = baseMargin;
+
+    if (isHorizontal) {
+      points = [
+        { x: sx, y: sy },
+        { x: sx + primaryDirection * advanceOffset, y: sy },
+        { x: sx + primaryDirection * advanceOffset, y: sy + secondaryDirection * lateralOffset },
+        { x: tx - primaryDirection * advanceOffset, y: sy + secondaryDirection * lateralOffset },
+        { x: tx - primaryDirection * advanceOffset, y: ty },
+        { x: tx, y: ty },
+      ];
+    } else {
+      points = [
+        { x: sx, y: sy },
+        { x: sx, y: sy + primaryDirection * advanceOffset },
+        { x: sx + secondaryDirection * lateralOffset, y: sy + primaryDirection * advanceOffset },
+        { x: sx + secondaryDirection * lateralOffset, y: ty - primaryDirection * advanceOffset },
+        { x: tx, y: ty - primaryDirection * advanceOffset },
+        { x: tx, y: ty },
+      ];
+    }
+  } else {
+    if (isHorizontal) {
+      let midX = sx + dx / 2;
+      if (Math.abs(midX - sx) < baseMargin) {
+        midX = sx + primaryDirection * baseMargin;
+      }
+      if (Math.abs(tx - midX) < baseMargin) {
+        midX = tx - primaryDirection * baseMargin;
+      }
+
+      points = [
+        { x: sx, y: sy },
+        { x: midX, y: sy },
+        { x: midX, y: ty },
+        { x: tx, y: ty },
+      ];
+    } else {
+      let midY = sy + dy / 2;
+      if (Math.abs(midY - sy) < baseMargin) {
+        midY = sy + primaryDirection * baseMargin;
+      }
+      if (Math.abs(ty - midY) < baseMargin) {
+        midY = ty - primaryDirection * baseMargin;
+      }
+
+      points = [
+        { x: sx, y: sy },
+        { x: sx, y: midY },
+        { x: tx, y: midY },
+        { x: tx, y: ty },
+      ];
+    }
+  }
+
+  return buildRoundedPath(points, cornerRadius);
+};
+
 const normalizeWheelDelta = (value, mode) => {
   if (!Number.isFinite(value)) return 0;
   if (mode === DOM_DELTA_LINE) return value * 16;
@@ -108,6 +252,7 @@ const HierarchicalForceTree = () => {
   const [initializingTree, setInitializingTree] = useState(false);
   const [treeSyncError, setTreeSyncError] = useState(null);
   const [isTreeSyncing, setIsTreeSyncing] = useState(false);
+  const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(treeData);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
@@ -1830,44 +1975,75 @@ const HierarchicalForceTree = () => {
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
   const handleDrag = (nodeId) => {
+    let dragStart = null;
+
+    const isInteractiveTarget = (target) => {
+      if (!target) return false;
+      const interactiveSelector = '[data-node-toggle],button,a,input,textarea,select,[contenteditable="true"]';
+      return Boolean(target.closest && target.closest(interactiveSelector));
+    };
+
+    const resolveAxisLock = (rawEvent) => {
+      if (!rawEvent) return null;
+      if (rawEvent.shiftKey) {
+        return 'horizontal'; // lock vertical movement, allow X changes
+      }
+      if (rawEvent.altKey || rawEvent.metaKey) {
+        return 'vertical'; // lock horizontal movement, allow Y changes
+      }
+      return null;
+    };
+
     return d3.drag()
       .filter((event) => {
-        // 노드 드래그: Ctrl/Cmd 키를 누른 상태에서만 드래그 허용
-        return event.ctrlKey || event.metaKey;
+        const rawEvent = event?.sourceEvent || event;
+        if (!rawEvent) return false;
+        if (typeof rawEvent.button === 'number' && rawEvent.button !== 0) {
+          return false;
+        }
+        if (isInteractiveTarget(rawEvent.target)) {
+          return false;
+        }
+        return true;
       })
       .on('start', (event) => {
-        // 드래그 시작 시 애니메이션 일시 정지
         if (animationRef.current) {
           animationRef.current.stop();
         }
-      })
-      .on('drag', (event) => {
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-          // 현재 줌/팬이 적용된 컨테이너 좌표계에서 포인터 좌표를 계산
-          const container = contentGroupRef.current || svgRef.current;
-          const pointer = d3.pointer(event, container);
-          node.x = pointer[0];
-          node.y = pointer[1];
-          setNodes([...nodes]);
+
+        const targetNode = nodes.find((candidate) => candidate.id === nodeId);
+        if (targetNode) {
+          dragStart = { x: targetNode.x || 0, y: targetNode.y || 0 };
         }
       })
-      .on('end', (event) => {
-        // 드래그 종료 시 tree layout으로 다시 정렬
-        const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
-          nodes,
-          visibleGraph.nodes,
-          visibleGraph.links,
-          dimensions,
-          (animatedNodes, animatedLinks) => {
-            setNodes(animatedNodes);
-            const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
-            linkKeysRef.current = nextKeys;
-            setLinks(annotatedLinks);
-          },
-          { orientation: layoutOrientation }
-        );
-        animationRef.current = animation;
+      .on('drag', (event) => {
+        const container = contentGroupRef.current || svgRef.current;
+        if (!container) {
+          return;
+        }
+
+        const rawEvent = event?.sourceEvent || event;
+        const pointer = d3.pointer(event, container);
+        const axisLock = resolveAxisLock(rawEvent);
+
+        setNodes((currentNodes) => {
+          const existing = currentNodes.find((candidate) => candidate.id === nodeId);
+          if (!existing) {
+            return currentNodes;
+          }
+
+          const lockedX = axisLock === 'vertical' && dragStart ? dragStart.x : pointer[0];
+          const lockedY = axisLock === 'horizontal' && dragStart ? dragStart.y : pointer[1];
+
+          return currentNodes.map((node) => (
+            node.id === nodeId
+              ? { ...node, x: lockedX, y: lockedY }
+              : node
+          ));
+        });
+      })
+      .on('end', () => {
+        dragStart = null;
       });
   };
 
@@ -2271,6 +2447,7 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       )}
+      
       {viewMode === 'tree1' && (
         <svg
           ref={svgRef}
