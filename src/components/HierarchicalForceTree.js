@@ -664,6 +664,7 @@ const HierarchicalForceTree = () => {
           ? {
             title: node.memo?.title || node.keyword || '',
             content: node.memo?.content || node.fullText || '',
+            metadata: node.memo?.metadata || node.memoMetadata || null,
           }
           : null;
 
@@ -686,6 +687,7 @@ const HierarchicalForceTree = () => {
           nodeType: node.nodeType || null,
           memoParentId: node.memoParentId || null,
           memo: memoPayload,
+          memoMetadata: memoPayload?.metadata || null,
         };
       });
 
@@ -1470,6 +1472,7 @@ const HierarchicalForceTree = () => {
           id: memoId,
           nodeType: 'memo',
           memoParentId: parentNodeId,
+          parentId: parentNodeId,
           keyword: defaultTitle,
           fullText: '',
           memo: {
