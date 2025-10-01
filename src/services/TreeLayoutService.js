@@ -55,8 +55,15 @@ class TreeLayoutService {
             throw new Error('No root node found in the hierarchy');
         }
 
-        // 여러 루트가 있는 경우 첫 번째를 사용
-        const rootNode = rootNodes[0];
+        const hasMultipleRoots = rootNodes.length > 1;
+        const rootNode = hasMultipleRoots
+            ? {
+                id: '__virtual_root__',
+                keyword: '__virtual_root__',
+                fullText: '__virtual_root__',
+                children: rootNodes,
+            }
+            : rootNodes[0];
 
         // d3.hierarchy로 변환
         return d3.hierarchy(rootNode, d => d.children);
@@ -79,8 +86,9 @@ class TreeLayoutService {
             const usableHeight = Math.max(baseHeight - 100, 100);
             const orientationSetting = typeof options?.orientation === "string" ? options.orientation : "vertical";
             const isHorizontal = orientationSetting === "horizontal";
-            const layoutWidth = isHorizontal ? usableHeight : usableWidth;
-            const layoutHeight = isHorizontal ? usableWidth : usableHeight;
+            const LAYOUT_SCALE = 1.6;
+            const layoutWidth = (isHorizontal ? usableHeight : usableWidth) * LAYOUT_SCALE;
+            const layoutHeight = (isHorizontal ? usableWidth : usableHeight) * LAYOUT_SCALE;
 
             this.treeLayout.size([layoutWidth, layoutHeight]);
 
@@ -91,20 +99,29 @@ class TreeLayoutService {
             this.treeLayout(root);
 
             // 정렬된 노드 배열 생성
-            const layoutNodes = root.descendants().map(node => {
-                const baseX = (node.x || 0) + 50;
-                const baseY = (node.y || 0) + 50;
-                return {
-                    ...node.data,
-                    x: isHorizontal ? baseY : baseX,
-                    y: isHorizontal ? baseX : baseY,
-                    depth: node.depth,
-                    height: node.height
-                };
-            });
+            const layoutNodes = root.descendants()
+                .filter(node => node.data.id !== '__virtual_root__')
+                .map(node => {
+                    const baseX = (node.x || 0) + layoutWidth / 2;
+                    const baseY = (node.y || 0) + layoutHeight / 2;
+                    const angle = (node.x || 0) * 0.004 + (node.depth || 0) * 0.35;
+                    const radius = (node.depth || 0) * 120 + 200;
+                    const projectedX = Math.cos(angle) * radius;
+                    const projectedY = Math.sin(angle) * radius;
+
+                    return {
+                        ...node.data,
+                        x: isHorizontal ? baseY : baseX + projectedX,
+                        y: isHorizontal ? (baseX + projectedX) : baseY + projectedY,
+                        depth: node.depth,
+                        height: node.height,
+                    };
+                });
 
             // 정렬된 링크 배열 생성
-            const layoutLinks = root.links().map(link => ({
+            const layoutLinks = root.links()
+            .filter(link => link.source.data.id !== '__virtual_root__')
+            .map(link => ({
                 source: link.source.data.id,
                 target: link.target.data.id,
                 value: 1
