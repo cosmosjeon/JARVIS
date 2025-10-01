@@ -703,6 +703,7 @@ const ForceDirectedTree = ({
                                 isRootNode={false}
                                 bootstrapMode={false}
                                 onBootstrapFirstSend={() => { }}
+                                onCloseNode={() => setSelectedNodeId(null)}
                                 onPanZoomGesture={() => { }}
                                 nodeScaleFactor={1}
                             />
