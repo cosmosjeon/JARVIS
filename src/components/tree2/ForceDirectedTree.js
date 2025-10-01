@@ -777,7 +777,7 @@ const ForceDirectedTree = ({
                     >
                         <path d="M0,-5L10,0L0,5" fill="rgba(255,255,255,0.4)" />
                     </marker>
-                    
+
                     {/* 다크모드 - 링크 화살표 - 홀수 depth (검정) */}
                     <marker
                         id="arrowhead-odd"
@@ -790,7 +790,7 @@ const ForceDirectedTree = ({
                     >
                         <path d="M0,-5L10,0L0,5" fill="rgba(0,0,0,0.5)" />
                     </marker>
-                    
+
                     {/* 라이트모드 - 링크 화살표 - 짝수 depth (어두운 회색) */}
                     <marker
                         id="arrowhead-dark"
@@ -803,7 +803,7 @@ const ForceDirectedTree = ({
                     >
                         <path d="M0,-5L10,0L0,5" fill="rgba(31, 41, 55, 0.6)" />
                     </marker>
-                    
+
                     {/* 라이트모드 - 링크 화살표 - 홀수 depth (밝은 회색) */}
                     <marker
                         id="arrowhead-light"
@@ -829,18 +829,18 @@ const ForceDirectedTree = ({
 
                             const targetDatum = getNodeDatum(link.target);
                             const isMemoLink = targetDatum?.nodeType === 'memo';
-                            
+
                             // target depth로 색상 구분
                             const targetDepth = Number.isFinite(link.target.depth) ? link.target.depth : 0;
                             const isEvenDepth = targetDepth % 2 === 0;
                             const isLightMode = theme === 'light';
 
                             let linkStroke, arrowMarker;
-                            
+
                             if (isMemoLink) {
                                 // 메모 링크
-                                linkStroke = isLightMode 
-                                    ? 'rgba(245, 158, 11, 0.6)' 
+                                linkStroke = isLightMode
+                                    ? 'rgba(245, 158, 11, 0.6)'
                                     : 'rgba(252, 211, 77, 0.5)';
                                 arrowMarker = undefined;
                             } else if (isLightMode) {
@@ -848,16 +848,16 @@ const ForceDirectedTree = ({
                                 linkStroke = isEvenDepth
                                     ? 'rgba(31, 41, 55, 0.6)'  // 짙은 회색
                                     : 'rgba(156, 163, 175, 0.5)'; // 밝은 회색
-                                arrowMarker = isEvenDepth 
-                                    ? 'url(#arrowhead-dark)' 
+                                arrowMarker = isEvenDepth
+                                    ? 'url(#arrowhead-dark)'
                                     : 'url(#arrowhead-light)';
                             } else {
                                 // 다크모드 - 일반 링크
                                 linkStroke = isEvenDepth
                                     ? 'rgba(255, 255, 255, 0.4)' // 흰색
                                     : 'rgba(0, 0, 0, 0.5)'; // 검정
-                                arrowMarker = isEvenDepth 
-                                    ? 'url(#arrowhead-even)' 
+                                arrowMarker = isEvenDepth
+                                    ? 'url(#arrowhead-even)'
                                     : 'url(#arrowhead-odd)';
                             }
 
@@ -931,9 +931,9 @@ const ForceDirectedTree = ({
                             // 색상 테마
                             const isEvenDepth = depth % 2 === 0;
                             const isLightMode = theme === 'light';
-                            
+
                             let fillColor, strokeColor, textColor;
-                            
+
                             if (isMemoNode) {
                                 // 메모 노드
                                 fillColor = isLightMode ? '#FEF3C7' : '#92400E';
@@ -1057,8 +1057,8 @@ const ForceDirectedTree = ({
                                                     height={tooltipHeight}
                                                     rx={10}
                                                     ry={10}
-                                                    fill="rgba(0, 0, 0, 0.8)"
-                                                    stroke="rgba(255,255,255,0.35)"
+                                                    fill={theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.8)'}
+                                                    stroke={theme === 'light' ? 'rgba(156, 163, 175, 0.5)' : 'rgba(255, 255, 255, 0.35)'}
                                                     strokeWidth={1}
                                                 />
                                                 {hoverLines.map((line, index) => (
@@ -1067,7 +1067,7 @@ const ForceDirectedTree = ({
                                                         x={tooltipWidth / 2}
                                                         y={14 + index * tooltipLineHeight}
                                                         textAnchor="middle"
-                                                        fill="#f5f5f5"
+                                                        fill={theme === 'light' ? '#1F2937' : '#f5f5f5'}
                                                         fontSize={12}
                                                         fontWeight={500}
                                                     >
@@ -1086,7 +1086,10 @@ const ForceDirectedTree = ({
 
             {contextMenuState.open && contextMenuCoordinates && (
                 <div
-                    className="pointer-events-auto absolute z-[1300] w-44 overflow-hidden rounded-lg border border-white/12 bg-black/85 shadow-2xl backdrop-blur-md"
+                    className={`pointer-events-auto absolute z-[1300] w-44 overflow-hidden rounded-lg shadow-2xl backdrop-blur-md ${theme === 'light'
+                        ? 'bg-white/95 border border-gray-200'
+                        : 'bg-black/85 border border-white/12'
+                        }`}
                     style={{
                         left: contextMenuCoordinates.x,
                         top: contextMenuCoordinates.y,
@@ -1095,7 +1098,10 @@ const ForceDirectedTree = ({
                 >
                     <button
                         type="button"
-                        className={`w-full px-3 py-2 text-left text-[13px] transition hover:bg-white/10 ${(!onMemoCreate || isMemoContextTarget) ? 'cursor-not-allowed text-white/35' : 'text-white/90'}`}
+                        className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                            ? `hover:bg-gray-100 ${(!onMemoCreate || isMemoContextTarget) ? 'cursor-not-allowed text-gray-400' : 'text-gray-900'}`
+                            : `hover:bg-white/10 ${(!onMemoCreate || isMemoContextTarget) ? 'cursor-not-allowed text-white/35' : 'text-white/90'}`
+                            }`}
                         disabled={!onMemoCreate || isMemoContextTarget}
                         onClick={() => {
                             if (!onMemoCreate || isMemoContextTarget) return;
@@ -1104,10 +1110,13 @@ const ForceDirectedTree = ({
                     >
                         메모 추가
                     </button>
-                    <div className="h-px w-full bg-white/10" />
+                    <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
                     <button
                         type="button"
-                        className="w-full px-3 py-2 text-left text-[13px] text-red-300 transition hover:bg-red-500/20"
+                        className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                            ? 'text-red-600 hover:bg-red-50'
+                            : 'text-red-300 hover:bg-red-500/20'
+                            }`}
                         onClick={handleMenuRemoveNode}
                     >
                         노드 삭제
