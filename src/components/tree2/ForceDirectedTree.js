@@ -4,9 +4,36 @@ import { motion, AnimatePresence } from 'framer-motion';
 import DataTransformService from '../../services/DataTransformService';
 import ForceSimulationService from '../../services/ForceSimulationService';
 import NodeAssistantPanel from '../NodeAssistantPanel';
+import MemoPanel from './MemoPanel';
 import QuestionService from '../../services/QuestionService';
 
 const NODE_COLOR_PALETTE = (d3.schemeTableau10 && d3.schemeTableau10.length ? d3.schemeTableau10 : d3.schemeCategory10);
+const DEFAULT_CONTEXT_MENU_STATE = {
+    open: false,
+    x: 0,
+    y: 0,
+    nodeId: null,
+    nodeType: null,
+};
+
+const getNodeDatum = (node) => {
+    if (!node) {
+        return {};
+    }
+
+    const hierarchyPayload = node.data || {};
+    if (hierarchyPayload && typeof hierarchyPayload === 'object' && hierarchyPayload.data) {
+        return hierarchyPayload.data || {};
+    }
+
+    return hierarchyPayload;
+};
+
+const getNodeId = (node) => {
+    if (!node) return null;
+    const hierarchyPayload = node.data || {};
+    return hierarchyPayload.id || getNodeDatum(node).id || node.id || null;
+};
 
 const sanitizeText = (value) => {
     if (typeof value !== 'string') {
@@ -17,6 +44,16 @@ const sanitizeText = (value) => {
 };
 
 const extractNodeHoverText = (nodeData = {}) => {
+    const memoTitle = sanitizeText(nodeData?.memo?.title).trim();
+    if (memoTitle) {
+        return memoTitle;
+    }
+
+    const memoContent = sanitizeText(nodeData?.memo?.content).trim();
+    if (memoContent) {
+        return memoContent;
+    }
+
     const question = sanitizeText(nodeData?.questionData?.question).trim();
     if (question) {
         return question;
@@ -110,6 +147,8 @@ const ForceDirectedTree = ({
     dimensions,
     onNodeClick,
     onNodeRemove,
+    onMemoCreate,
+    onMemoUpdate,
     questionService,
     getInitialConversation,
     onConversationChange,
@@ -129,8 +168,10 @@ const ForceDirectedTree = ({
     const [isDraggingNode, setIsDraggingNode] = useState(false);
     const [draggedNodeId, setDraggedNodeId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
+    const [contextMenuState, setContextMenuState] = useState(DEFAULT_CONTEXT_MENU_STATE);
     const dragStartTimeRef = useRef(0);
     const shouldOpenNodeRef = useRef(false);
+    const draggedMemoSnapshotRef = useRef([]);
 
     // SVG 중심 위치 계산
     const centerX = dimensions.width / 2;
@@ -216,6 +257,51 @@ const ForceDirectedTree = ({
             setHoveredNodeId(null);
         }
     }, [selectedNodeId]);
+
+    useEffect(() => {
+        if (!selectedNodeId) {
+            return;
+        }
+
+        const stillExists = simulatedNodes.some((node) => node?.data?.id === selectedNodeId);
+        if (!stillExists) {
+            setSelectedNodeId(null);
+        }
+    }, [selectedNodeId, simulatedNodes]);
+
+    useEffect(() => {
+        if (!contextMenuState.open) {
+            return;
+        }
+
+        const handlePointerDown = (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (target && target.closest('[data-force-tree-context-menu="true"]')) {
+                return;
+            }
+            setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') {
+                setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+            }
+        };
+
+        const handleScroll = () => {
+            setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+        };
+
+        window.addEventListener('pointerdown', handlePointerDown, true);
+        window.addEventListener('keydown', handleEscape, true);
+        window.addEventListener('wheel', handleScroll, true);
+
+        return () => {
+            window.removeEventListener('pointerdown', handlePointerDown, true);
+            window.removeEventListener('keydown', handleEscape, true);
+            window.removeEventListener('wheel', handleScroll, true);
+        };
+    }, [contextMenuState.open]);
 
     // Zoom/Pan 설정
     const zoomBehaviorRef = useRef(null);
@@ -310,6 +396,10 @@ const ForceDirectedTree = ({
 
     // 노드 드래그 핸들러
     const handleDragStart = useCallback((event, nodeData) => {
+        if (event.button !== 0) {
+            return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
 
@@ -318,10 +408,29 @@ const ForceDirectedTree = ({
         shouldOpenNodeRef.current = false;
 
         setIsDraggingNode(true);
-        setDraggedNodeId(nodeData.data.id);
+        const datum = getNodeDatum(nodeData);
+        const nodeId = getNodeId(nodeData);
+        setDraggedNodeId(nodeId);
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
 
         if (simulationServiceRef.current) {
             simulationServiceRef.current.handleDragStart(event, nodeData);
+        }
+
+        const simulation = simulationServiceRef.current?.getSimulation?.();
+        if (simulation && datum?.nodeType !== 'memo') {
+            const memoFollowers = simulation.nodes().filter((candidate) => (
+                getNodeDatum(candidate)?.nodeType === 'memo'
+                && getNodeDatum(candidate)?.memoParentId === nodeId
+            ));
+
+            draggedMemoSnapshotRef.current = memoFollowers.map((memoNode) => ({
+                node: memoNode,
+                offsetX: (memoNode.x || 0) - (nodeData.x || 0),
+                offsetY: (memoNode.y || 0) - (nodeData.y || 0),
+            }));
+        } else {
+            draggedMemoSnapshotRef.current = [];
         }
 
         // 전역 드래그 핸들러 (즉시 등록하여 노드 밖으로 나가도 드래그 계속됨)
@@ -347,6 +456,14 @@ const ForceDirectedTree = ({
             };
 
             simulationServiceRef.current.handleDrag(mockEvent, nodeData);
+
+            if (draggedMemoSnapshotRef.current.length > 0) {
+                draggedMemoSnapshotRef.current.forEach(({ node: memoNode, offsetX, offsetY }) => {
+                    if (!memoNode) return;
+                    memoNode.fx = forceX + offsetX;
+                    memoNode.fy = forceY + offsetY;
+                });
+            }
         };
 
         const handleGlobalPointerUp = (e) => {
@@ -362,6 +479,15 @@ const ForceDirectedTree = ({
 
             setIsDraggingNode(false);
             setDraggedNodeId(null);
+
+            if (draggedMemoSnapshotRef.current.length > 0) {
+                draggedMemoSnapshotRef.current.forEach(({ node: memoNode }) => {
+                    if (!memoNode) return;
+                    memoNode.fx = null;
+                    memoNode.fy = null;
+                });
+                draggedMemoSnapshotRef.current = [];
+            }
 
             // 리스너 제거
             document.removeEventListener('pointermove', handleGlobalPointerMove);
@@ -411,14 +537,78 @@ const ForceDirectedTree = ({
         // 플래그 리셋
         shouldOpenNodeRef.current = false;
 
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+
         // 노드를 화면 중앙으로 이동
+        const datum = getNodeDatum(node);
+        const nodeId = getNodeId(node);
+
         centerNodeOnScreen(node);
 
-        setSelectedNodeId(node.data.id);
+        setSelectedNodeId(nodeId);
         if (onNodeClick) {
-            onNodeClick(node.data.id);
+            onNodeClick(nodeId);
         }
     }, [onNodeClick, isDraggingNode, draggedNodeId, centerNodeOnScreen]);
+
+    const handleNodeContextMenu = useCallback((event, node) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!node || isDraggingNode || draggedNodeId) {
+            return;
+        }
+
+        const datum = getNodeDatum(node);
+        if (!datum?.id) {
+            return;
+        }
+
+        const container = containerRef.current;
+        const rect = container ? container.getBoundingClientRect() : null;
+
+        const x = rect ? event.clientX - rect.left : event.clientX;
+        const y = rect ? event.clientY - rect.top : event.clientY;
+
+        setContextMenuState({
+            open: true,
+            x,
+            y,
+            nodeId: datum.id,
+            nodeType: datum.nodeType || 'node',
+        });
+    }, [draggedNodeId, isDraggingNode]);
+
+    const handleMenuAddMemo = useCallback(() => {
+        if (!contextMenuState.nodeId || !onMemoCreate) {
+            setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+            return;
+        }
+
+        const maybeId = onMemoCreate(contextMenuState.nodeId);
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+
+        Promise.resolve(maybeId).then((newMemoId) => {
+            if (!newMemoId) {
+                return;
+            }
+            setSelectedNodeId(newMemoId);
+            shouldOpenNodeRef.current = false;
+        }).catch(() => {
+            // ignore memo creation errors in UI layer
+        });
+    }, [contextMenuState.nodeId, onMemoCreate]);
+
+    const handleMenuRemoveNode = useCallback(() => {
+        if (contextMenuState.nodeId && onNodeRemove) {
+            if (selectedNodeId === contextMenuState.nodeId) {
+                setSelectedNodeId(null);
+            }
+            onNodeRemove(contextMenuState.nodeId);
+        }
+
+        setContextMenuState(DEFAULT_CONTEXT_MENU_STATE);
+    }, [contextMenuState.nodeId, onNodeRemove, selectedNodeId]);
 
     // 배경 클릭 핸들러 (선택 해제)
     const handleBackgroundClick = useCallback(() => {
@@ -464,6 +654,21 @@ const ForceDirectedTree = ({
             />
         );
     }
+
+    const contextMenuCoordinates = contextMenuState.open
+        ? {
+            x: Math.min(
+                Math.max(contextMenuState.x, 0),
+                Math.max(0, (dimensions?.width || 0) - 176),
+            ),
+            y: Math.min(
+                Math.max(contextMenuState.y, 0),
+                Math.max(0, (dimensions?.height || 0) - 96),
+            ),
+        }
+        : null;
+
+    const isMemoContextTarget = contextMenuState.nodeType === 'memo';
 
     return (
         <div
@@ -516,6 +721,12 @@ const ForceDirectedTree = ({
                             const targetX = link.target.x || 0;
                             const targetY = link.target.y || 0;
 
+                            const targetDatum = getNodeDatum(link.target);
+                            const isMemoLink = targetDatum?.nodeType === 'memo';
+                            const linkStroke = isMemoLink ? 'rgba(40, 41, 48, 0.7)' : 'rgba(255,255,255,0.2)';
+                            const linkWidth = isMemoLink ? 1.2 : 2;
+                            const linkOpacity = isMemoLink ? 0.9 : 1;
+
                             return (
                                 <motion.line
                                     key={`link-${index}`}
@@ -523,11 +734,12 @@ const ForceDirectedTree = ({
                                     y1={sourceY}
                                     x2={targetX}
                                     y2={targetY}
-                                    stroke="rgba(255,255,255,0.2)"
-                                    strokeWidth={2}
-                                    markerEnd="url(#arrowhead-force)"
+                                    stroke={linkStroke}
+                                    strokeWidth={linkWidth}
+                                    strokeDasharray={isMemoLink ? '2,3' : undefined}
+                                    markerEnd={isMemoLink ? undefined : 'url(#arrowhead-force)'}
                                     initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
+                                    animate={{ opacity: linkOpacity }}
                                     transition={{ duration: 0.3 }}
                                 />
                             );
@@ -537,32 +749,38 @@ const ForceDirectedTree = ({
                     {/* 노드 렌더링 */}
                     <g className="nodes">
                         {simulatedNodes.map((node) => {
-                            const nodeId = node?.data?.id;
+                            const datum = getNodeDatum(node);
+                            const nodeId = getNodeId(node);
 
                             if (!nodeId) {
                                 return null;
                             }
 
                             const depth = Number.isFinite(node.depth) ? node.depth : 0;
+                            const isMemoNode = datum?.nodeType === 'memo';
                             const palette = NODE_COLOR_PALETTE && NODE_COLOR_PALETTE.length
                                 ? NODE_COLOR_PALETTE
                                 : d3.schemeCategory10;
-                            const fillColor = palette[depth % palette.length];
+                            const fillColor = isMemoNode
+                                ? '#08090d'
+                                : palette[depth % palette.length];
                             const isBeingDragged = draggedNodeId === nodeId;
                             const isSelected = selectedNodeId === nodeId;
                             const isHovered = hoveredNodeId === nodeId;
                             const isOtherNodeDragging = isDraggingNode && !isBeingDragged;
 
-                            const baseRadius = depth === 0 ? 8 : 5.5;
+                            const baseRadius = isMemoNode
+                                ? 6
+                                : (depth === 0 ? 8 : 5.5);
                             const radius = isSelected
                                 ? baseRadius + 3
                                 : isHovered
                                     ? baseRadius + 1.5
                                     : baseRadius;
 
-                            const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.9);
+                            const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
 
-                            const hoverText = isHovered ? extractNodeHoverText(node.data) : '';
+                            const hoverText = isHovered ? extractNodeHoverText(datum) : '';
                             const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
                             const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
                             const tooltipTranslateX = -tooltipWidth / 2;
@@ -587,6 +805,7 @@ const ForceDirectedTree = ({
                                         event.stopPropagation();
                                         handleNodeClick(node);
                                     }}
+                                    onContextMenu={(event) => handleNodeContextMenu(event, node)}
                                     onPointerEnter={() => {
                                         if (isOtherNodeDragging) return;
                                         setHoveredNodeId(nodeId);
@@ -598,8 +817,8 @@ const ForceDirectedTree = ({
                                     <motion.circle
                                         r={radius}
                                         fill={fillColor}
-                                        stroke={isSelected ? '#ffffff' : 'rgba(255,255,255,0.45)'}
-                                        strokeWidth={isSelected ? 2.4 : 1.6}
+                                        stroke={isMemoNode ? '#202127' : (isSelected ? '#ffffff' : 'rgba(255,255,255,0.45)')}
+                                        strokeWidth={isSelected ? 2.4 : isMemoNode ? 1.8 : 1.6}
                                         initial={{ scale: 0, opacity: 0 }}
                                         animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
                                         transition={{ duration: 0.2, ease: 'easeOut' }}
@@ -625,7 +844,8 @@ const ForceDirectedTree = ({
                                         </motion.text>
                                     )}
 
-                                    {isSelected && (
+                                    {isSelected && !isMemoNode && (
+
                                         <motion.circle
                                             r={radius + 6}
                                             fill="none"
@@ -680,14 +900,50 @@ const ForceDirectedTree = ({
                 </g>
             </svg>
 
+            {contextMenuState.open && contextMenuCoordinates && (
+                <div
+                    className="pointer-events-auto absolute z-[1300] w-44 overflow-hidden rounded-lg border border-white/12 bg-black/85 shadow-2xl backdrop-blur-md"
+                    style={{
+                        left: contextMenuCoordinates.x,
+                        top: contextMenuCoordinates.y,
+                    }}
+                    data-force-tree-context-menu="true"
+                >
+                    <button
+                        type="button"
+                        className={`w-full px-3 py-2 text-left text-[13px] transition hover:bg-white/10 ${(!onMemoCreate || isMemoContextTarget) ? 'cursor-not-allowed text-white/35' : 'text-white/90'}`}
+                        disabled={!onMemoCreate || isMemoContextTarget}
+                        onClick={() => {
+                            if (!onMemoCreate || isMemoContextTarget) return;
+                            handleMenuAddMemo();
+                        }}
+                    >
+                        메모 추가
+                    </button>
+                    <div className="h-px w-full bg-white/10" />
+                    <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-[13px] text-red-300 transition hover:bg-red-500/20"
+                        onClick={handleMenuRemoveNode}
+                    >
+                        노드 삭제
+                    </button>
+                </div>
+            )}
+
             {/* AI 대화 패널 */}
             {selectedNodeId && (() => {
-                const selectedNode = simulatedNodes.find(n => n.data.id === selectedNodeId);
+                const selectedNode = simulatedNodes.find((candidate) => getNodeId(candidate) === selectedNodeId);
                 if (!selectedNode) return null;
 
-                // 화면 크기의 95% 사용
-                const panelWidth = dimensions.width * 0.95;
-                const panelHeight = dimensions.height * 0.95;
+                const selectedDatum = getNodeDatum(selectedNode);
+                const isMemoSelection = selectedDatum?.nodeType === 'memo';
+                const panelWidth = isMemoSelection
+                    ? Math.min(Math.max(dimensions.width * 0.45, 360), 520)
+                    : dimensions.width * 0.95;
+                const panelHeight = isMemoSelection
+                    ? Math.min(Math.max(dimensions.height * 0.45, 320), 520)
+                    : dimensions.height * 0.95;
 
                 return (
                     <div
@@ -703,30 +959,41 @@ const ForceDirectedTree = ({
                         data-interactive-zone="true"
                     >
                         <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
-                            <NodeAssistantPanel
-                                node={selectedNode.data}
-                                color={d3.schemeCategory10[0]}
-                                onSizeChange={() => { }}
-                                onSecondQuestion={onSecondQuestion || (() => { })}
-                                onPlaceholderCreate={onPlaceholderCreate || (() => { })}
-                                questionService={questionServiceRef.current}
-                                initialConversation={getInitialConversationForNode(selectedNodeId)}
-                                onConversationChange={(messages) => handleConversationChange(selectedNodeId, messages)}
-                                onRequestAnswer={onRequestAnswer || (() => { })}
-                                onAnswerComplete={onAnswerComplete || (() => { })}
-                                onAnswerError={onAnswerError || (() => { })}
-                                nodeSummary={{
-                                    label: selectedNode.data.keyword || selectedNode.data.id,
-                                    intro: selectedNode.data.fullText || '',
-                                    bullets: []
-                                }}
-                                isRootNode={false}
-                                bootstrapMode={false}
-                                onBootstrapFirstSend={() => { }}
-                                onCloseNode={() => setSelectedNodeId(null)}
-                                onPanZoomGesture={() => { }}
-                                nodeScaleFactor={1}
-                            />
+                            {isMemoSelection ? (
+                                <MemoPanel
+                                    memo={selectedDatum}
+                                    onClose={() => setSelectedNodeId(null)}
+                                    onUpdate={(updates) => {
+                                        if (!onMemoUpdate) return;
+                                        onMemoUpdate(selectedDatum.id, updates);
+                                    }}
+                                />
+                            ) : (
+                                <NodeAssistantPanel
+                                    node={selectedDatum}
+                                    color={d3.schemeCategory10[0]}
+                                    onSizeChange={() => { }}
+                                    onSecondQuestion={onSecondQuestion || (() => { })}
+                                    onPlaceholderCreate={onPlaceholderCreate || (() => { })}
+                                    questionService={questionServiceRef.current}
+                                    initialConversation={getInitialConversationForNode(selectedNodeId)}
+                                    onConversationChange={(messages) => handleConversationChange(selectedNodeId, messages)}
+                                    onRequestAnswer={onRequestAnswer || (() => { })}
+                                    onAnswerComplete={onAnswerComplete || (() => { })}
+                                    onAnswerError={onAnswerError || (() => { })}
+                                    nodeSummary={{
+                                        label: selectedDatum.keyword || selectedDatum.id,
+                                        intro: selectedDatum.fullText || '',
+                                        bullets: []
+                                    }}
+                                    isRootNode={false}
+                                    bootstrapMode={false}
+                                    onBootstrapFirstSend={() => { }}
+                                    onCloseNode={() => setSelectedNodeId(null)}
+                                    onPanZoomGesture={() => { }}
+                                    nodeScaleFactor={1}
+                                />
+                            )}
                         </div>
                     </div>
                 );

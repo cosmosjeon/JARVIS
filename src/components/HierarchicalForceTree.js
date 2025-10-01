@@ -256,6 +256,10 @@ const HierarchicalForceTree = () => {
         return;
       }
 
+      if (node.nodeType === 'memo') {
+        return;
+      }
+
       const baseConversation = sanitizeConversationMessages(node.conversation);
       const fallbackConversation = baseConversation.length
         ? baseConversation
@@ -639,6 +643,7 @@ const HierarchicalForceTree = () => {
       });
 
       const normalizedNodes = data.nodes.map((node) => {
+        const isMemoNode = node.nodeType === 'memo';
         const parentId = parentByChild.get(node.id) || null;
         const createdAt = node.createdAt || Date.now();
         const baseQuestion = typeof node.question === 'string' && node.question.trim()
@@ -647,25 +652,40 @@ const HierarchicalForceTree = () => {
         const baseAnswer = typeof node.answer === 'string' && node.answer.trim()
           ? node.answer.trim()
           : node.questionData?.answer || node.fullText || null;
-        const normalizedConversation = sanitizeConversationMessages(
-          conversationStoreRef.current.get(node.id)
-        );
-        const conversation = normalizedConversation.length
-          ? normalizedConversation
-          : buildFallbackConversation(baseQuestion, baseAnswer);
+        const normalizedConversation = isMemoNode
+          ? []
+          : sanitizeConversationMessages(conversationStoreRef.current.get(node.id));
+        const conversation = isMemoNode
+          ? []
+          : (normalizedConversation.length
+            ? normalizedConversation
+            : buildFallbackConversation(baseQuestion, baseAnswer));
+        const memoPayload = isMemoNode
+          ? {
+            title: node.memo?.title || node.keyword || '',
+            content: node.memo?.content || node.fullText || '',
+          }
+          : null;
 
         return {
           id: node.id,
-          keyword: node.keyword || null,
-          fullText: node.fullText || '',
-          question: baseQuestion,
-          answer: baseAnswer,
-          status: node.status || 'answered',
+          keyword: isMemoNode
+            ? (memoPayload?.title || node.keyword || null)
+            : (node.keyword || null),
+          fullText: isMemoNode
+            ? (memoPayload?.content || '')
+            : (node.fullText || ''),
+          question: isMemoNode ? null : baseQuestion,
+          answer: isMemoNode ? null : baseAnswer,
+          status: isMemoNode ? 'memo' : (node.status || 'answered'),
           createdAt,
           updatedAt: Date.now(),
           parentId,
           conversation,
           questionData: node.questionData,
+          nodeType: node.nodeType || null,
+          memoParentId: node.memoParentId || null,
+          memo: memoPayload,
         };
       });
 
@@ -944,6 +964,12 @@ const HierarchicalForceTree = () => {
   };
 
   const setConversationForNode = useCallback((nodeId, messages) => {
+    const nodeSnapshot = dataRef.current?.nodes?.find((candidate) => candidate.id === nodeId);
+    if (nodeSnapshot && nodeSnapshot.nodeType === 'memo') {
+      conversationStoreRef.current.delete(nodeId);
+      return;
+    }
+
     const normalized = Array.isArray(messages)
       ? messages.map((message) => ({ ...message }))
       : [];
@@ -1422,6 +1448,102 @@ const HierarchicalForceTree = () => {
       collapseAssistantPanel();
     }
   };
+
+  const handleMemoCreate = useCallback((parentNodeId) => {
+    const parentExists = dataRef.current?.nodes?.some((node) => node.id === parentNodeId);
+    if (!parentExists) {
+      return null;
+    }
+
+    const timestamp = Date.now();
+    const memoId = createClientGeneratedId('memo');
+    const parentNode = dataRef.current?.nodes?.find((node) => node.id === parentNodeId);
+    const defaultTitle = parentNode?.keyword
+      ? `${parentNode.keyword} 메모`
+      : '새 메모';
+
+    setData((prev) => ({
+      ...prev,
+      nodes: [
+        ...prev.nodes,
+        {
+          id: memoId,
+          nodeType: 'memo',
+          memoParentId: parentNodeId,
+          keyword: defaultTitle,
+          fullText: '',
+          memo: {
+            title: defaultTitle,
+            content: '',
+          },
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          conversation: [],
+        },
+      ],
+      links: [
+        ...prev.links,
+        {
+          source: parentNodeId,
+          target: memoId,
+          value: 0.6,
+          relationship: 'memo',
+        },
+      ],
+    }));
+
+    return memoId;
+  }, [createClientGeneratedId]);
+
+  const handleMemoUpdate = useCallback((memoId, updates = {}) => {
+    if (!memoId) {
+      return;
+    }
+
+    setData((prev) => {
+      let hasChanged = false;
+
+      const nextNodes = prev.nodes.map((node) => {
+        if (node.id !== memoId) {
+          return node;
+        }
+
+        const currentMemo = node.memo || { title: '', content: '' };
+        const nextTitle = typeof updates.title === 'string' ? updates.title : currentMemo.title;
+        const nextContent = typeof updates.content === 'string' ? updates.content : currentMemo.content;
+
+        if (nextTitle === currentMemo.title && nextContent === currentMemo.content) {
+          return node;
+        }
+
+        hasChanged = true;
+
+        return {
+          ...node,
+          memo: {
+            title: nextTitle,
+            content: nextContent,
+          },
+          keyword: node.nodeType === 'memo'
+            ? (nextTitle || node.keyword || '').slice(0, 48)
+            : node.keyword,
+          fullText: node.nodeType === 'memo'
+            ? (nextContent || '')
+            : node.fullText,
+          updatedAt: Date.now(),
+        };
+      });
+
+      if (!hasChanged) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        nodes: nextNodes,
+      };
+    });
+  }, []);
 
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
@@ -2260,6 +2382,8 @@ const HierarchicalForceTree = () => {
           dimensions={dimensions}
           onNodeClick={handleNodeClickForAssistant}
           onNodeRemove={removeNodeAndDescendants}
+          onMemoCreate={handleMemoCreate}
+          onMemoUpdate={handleMemoUpdate}
           questionService={questionService.current}
           getInitialConversation={getInitialConversationForNode}
           onConversationChange={handleConversationChange}

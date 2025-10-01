@@ -38,16 +38,54 @@ class ForceSimulationService {
         // 기존 simulation 정리
         this.cleanup();
 
+        const resolveDatum = (item) => {
+            if (!item) return {};
+            if (item.data && item.data.data) {
+                return item.data.data;
+            }
+            return item.data || item;
+        };
+
         // Force simulation 생성
+        const linkForce = d3.forceLink(links)
+            .id(d => d.id || d.data.id)
+            .distance((link) => {
+                const targetType = resolveDatum(link?.target)?.nodeType;
+                if (targetType === 'memo') {
+                    return 32; // 메모 노드는 부모와 매우 가까이 유지
+                }
+                return 110;
+            })
+            .strength((link) => {
+                const targetType = resolveDatum(link?.target)?.nodeType;
+                if (targetType === 'memo') {
+                    return 2.2; // 메모 노드는 부모에 강하게 붙음
+                }
+                return 1;
+            });
+
+        const chargeForce = d3.forceManyBody().strength((d) => {
+            const nodeType = resolveDatum(d)?.nodeType;
+            if (nodeType === 'memo') {
+                return -50; // 메모 노드는 다른 노드로부터 덜 밀림
+            }
+            return -320;
+        });
+
+        const collisionForce = d3.forceCollide((d) => {
+            const nodeType = resolveDatum(d)?.nodeType;
+            if (nodeType === 'memo') {
+                return 18; // 메모 노드는 작은 충돌 영역
+            }
+            return 28;
+        }).strength(0.85);
+
         this.simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(links)
-                .id(d => d.id || d.data.id)
-                .distance(100)
-                .strength(1)
-            )
-            .force('charge', d3.forceManyBody().strength(-300))
-            .force('x', d3.forceX(0).strength(0.05))
-            .force('y', d3.forceY(0).strength(0.05))
+            .force('link', linkForce)
+            .force('charge', chargeForce)
+            .force('collide', collisionForce)
+            .force('x', d3.forceX(0).strength((d) => (resolveDatum(d)?.nodeType === 'memo' ? 0.015 : 0.05)))
+            .force('y', d3.forceY(0).strength((d) => (resolveDatum(d)?.nodeType === 'memo' ? 0.015 : 0.05)))
             .force('center', d3.forceCenter(0, 0));
 
         // Tick 콜백 등록
