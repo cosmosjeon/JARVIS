@@ -765,7 +765,7 @@ const ForceDirectedTree = ({
                 }}
             >
                 <defs>
-                    {/* 링크 화살표 - 짝수 depth (흰색) */}
+                    {/* 다크모드 - 링크 화살표 - 짝수 depth (흰색) */}
                     <marker
                         id="arrowhead-even"
                         viewBox="0 -5 10 10"
@@ -777,8 +777,8 @@ const ForceDirectedTree = ({
                     >
                         <path d="M0,-5L10,0L0,5" fill="rgba(255,255,255,0.4)" />
                     </marker>
-
-                    {/* 링크 화살표 - 홀수 depth (검정) */}
+                    
+                    {/* 다크모드 - 링크 화살표 - 홀수 depth (검정) */}
                     <marker
                         id="arrowhead-odd"
                         viewBox="0 -5 10 10"
@@ -789,6 +789,32 @@ const ForceDirectedTree = ({
                         orient="auto"
                     >
                         <path d="M0,-5L10,0L0,5" fill="rgba(0,0,0,0.5)" />
+                    </marker>
+                    
+                    {/* 라이트모드 - 링크 화살표 - 짝수 depth (어두운 회색) */}
+                    <marker
+                        id="arrowhead-dark"
+                        viewBox="0 -5 10 10"
+                        refX={15}
+                        refY={0}
+                        markerWidth={6}
+                        markerHeight={6}
+                        orient="auto"
+                    >
+                        <path d="M0,-5L10,0L0,5" fill="rgba(31, 41, 55, 0.6)" />
+                    </marker>
+                    
+                    {/* 라이트모드 - 링크 화살표 - 홀수 depth (밝은 회색) */}
+                    <marker
+                        id="arrowhead-light"
+                        viewBox="0 -5 10 10"
+                        refX={15}
+                        refY={0}
+                        markerWidth={6}
+                        markerHeight={6}
+                        orient="auto"
+                    >
+                        <path d="M0,-5L10,0L0,5" fill="rgba(156, 163, 175, 0.5)" />
                     </marker>
                 </defs>
 
@@ -803,24 +829,40 @@ const ForceDirectedTree = ({
 
                             const targetDatum = getNodeDatum(link.target);
                             const isMemoLink = targetDatum?.nodeType === 'memo';
-
+                            
                             // target depth로 색상 구분
                             const targetDepth = Number.isFinite(link.target.depth) ? link.target.depth : 0;
                             const isEvenDepth = targetDepth % 2 === 0;
+                            const isLightMode = theme === 'light';
 
-                            const linkStroke = isMemoLink
-                                ? 'rgba(245, 158, 11, 0.5)' // 메모 링크: 노란색
-                                : isEvenDepth
-                                    ? 'rgba(255, 255, 255, 0.4)' // 짝수 depth: 흰색
-                                    : 'rgba(0, 0, 0, 0.5)'; // 홀수 depth: 검정
+                            let linkStroke, arrowMarker;
+                            
+                            if (isMemoLink) {
+                                // 메모 링크
+                                linkStroke = isLightMode 
+                                    ? 'rgba(245, 158, 11, 0.6)' 
+                                    : 'rgba(252, 211, 77, 0.5)';
+                                arrowMarker = undefined;
+                            } else if (isLightMode) {
+                                // 라이트모드 - 일반 링크
+                                linkStroke = isEvenDepth
+                                    ? 'rgba(31, 41, 55, 0.6)'  // 짙은 회색
+                                    : 'rgba(156, 163, 175, 0.5)'; // 밝은 회색
+                                arrowMarker = isEvenDepth 
+                                    ? 'url(#arrowhead-dark)' 
+                                    : 'url(#arrowhead-light)';
+                            } else {
+                                // 다크모드 - 일반 링크
+                                linkStroke = isEvenDepth
+                                    ? 'rgba(255, 255, 255, 0.4)' // 흰색
+                                    : 'rgba(0, 0, 0, 0.5)'; // 검정
+                                arrowMarker = isEvenDepth 
+                                    ? 'url(#arrowhead-even)' 
+                                    : 'url(#arrowhead-odd)';
+                            }
 
                             const linkWidth = isMemoLink ? 1.2 : 1.5;
                             const linkOpacity = isMemoLink ? 0.9 : 1;
-                            const arrowMarker = isMemoLink
-                                ? undefined
-                                : isEvenDepth
-                                    ? 'url(#arrowhead-even)'
-                                    : 'url(#arrowhead-odd)';
 
                             return (
                                 <motion.line
@@ -858,36 +900,56 @@ const ForceDirectedTree = ({
                             const isHovered = hoveredNodeId === nodeId;
                             const isOtherNodeDragging = isDraggingNode && !isBeingDragged;
 
-                            // 노드 크기 (사각형)
-                            const baseSize = isMemoNode
-                                ? 16
-                                : (depth === 0 ? 20 : 16);
-                            const nodeSize = isSelected
-                                ? baseSize + 2
+                            // 텍스트 레이블
+                            const labelText = isMemoNode
+                                ? (datum.memo?.title || datum.keyword || datum.name || datum.id || '')
+                                : (datum.keyword || datum.name || datum.id || '');
+
+                            // 노드 크기 (텍스트 길이에 맞춰 동적 조정)
+                            const fontSize = 7;
+                            const charWidth = fontSize * 0.6; // 글자당 예상 너비
+                            const padding = 8; // 좌우 여백
+                            const minWidth = isMemoNode ? 20 : (depth === 0 ? 24 : 20);
+                            const maxWidth = 80;
+
+                            const textWidth = labelText.length * charWidth + padding * 2;
+                            const baseWidth = Math.max(minWidth, Math.min(maxWidth, textWidth));
+                            const baseHeight = 16;
+
+                            const nodeWidth = isSelected
+                                ? baseWidth + 4
                                 : isHovered
-                                    ? baseSize + 1
-                                    : baseSize;
+                                    ? baseWidth + 2
+                                    : baseWidth;
+
+                            const nodeHeight = isSelected
+                                ? baseHeight + 2
+                                : isHovered
+                                    ? baseHeight + 1
+                                    : baseHeight;
 
                             // 색상 테마
                             const isEvenDepth = depth % 2 === 0;
-
-                            const fillColor = isMemoNode
-                                ? '#FEF3C7' // 노란색 배경 (메모)
-                                : isEvenDepth
-                                    ? '#FFFFFF' // 짝수 depth: 흰색
-                                    : '#000000'; // 홀수 depth: 검정
-
-                            const strokeColor = isMemoNode
-                                ? '#F59E0B' // 노란색 테두리 (메모)
-                                : isEvenDepth
-                                    ? '#000000' // 짝수 depth: 검정 테두리
-                                    : '#FFFFFF'; // 홀수 depth: 흰색 테두리
-
-                            const textColor = isMemoNode
-                                ? '#92400E' // 진한 갈색 텍스트 (메모)
-                                : isEvenDepth
-                                    ? '#000000' // 짝수 depth: 검정 텍스트
-                                    : '#FFFFFF'; // 홀수 depth: 흰색 텍스트
+                            const isLightMode = theme === 'light';
+                            
+                            let fillColor, strokeColor, textColor;
+                            
+                            if (isMemoNode) {
+                                // 메모 노드
+                                fillColor = isLightMode ? '#FEF3C7' : '#92400E';
+                                strokeColor = isLightMode ? '#F59E0B' : '#FCD34D';
+                                textColor = isLightMode ? '#92400E' : '#FEF3C7';
+                            } else if (isLightMode) {
+                                // 라이트모드 - 일반 노드
+                                fillColor = isEvenDepth ? '#1F2937' : '#F3F4F6';
+                                strokeColor = isEvenDepth ? '#111827' : '#9CA3AF';
+                                textColor = isEvenDepth ? '#FFFFFF' : '#1F2937';
+                            } else {
+                                // 다크모드 - 일반 노드
+                                fillColor = isEvenDepth ? '#FFFFFF' : '#000000';
+                                strokeColor = isEvenDepth ? '#000000' : '#FFFFFF';
+                                textColor = isEvenDepth ? '#000000' : '#FFFFFF';
+                            }
 
                             const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
 
@@ -895,11 +957,8 @@ const ForceDirectedTree = ({
                             const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
                             const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
                             const tooltipTranslateX = -tooltipWidth / 2;
-                            const tooltipTranslateY = -(nodeSize / 2 + tooltipHeight + 12);
+                            const tooltipTranslateY = -(nodeHeight / 2 + tooltipHeight + 12);
                             const tooltipLineHeight = 18;
-                            const labelText = isMemoNode
-                                ? (datum.memo?.title || datum.keyword || datum.name || datum.id || '')
-                                : (datum.keyword || datum.name || datum.id || '');
 
                             return (
                                 <g
@@ -930,10 +989,10 @@ const ForceDirectedTree = ({
                                 >
                                     {/* 네모 노드 */}
                                     <motion.rect
-                                        x={-nodeSize / 2}
-                                        y={-nodeSize / 2}
-                                        width={nodeSize}
-                                        height={nodeSize}
+                                        x={-nodeWidth / 2}
+                                        y={-nodeHeight / 2}
+                                        width={nodeWidth}
+                                        height={nodeHeight}
                                         rx={3}
                                         ry={3}
                                         fill={fillColor}
@@ -960,17 +1019,17 @@ const ForceDirectedTree = ({
                                                 textShadow: isMemoNode ? 'none' : '0 1px 2px rgba(0,0,0,0.8)',
                                             }}
                                         >
-                                            {labelText.length > 4 ? labelText.slice(0, 3) + '...' : labelText}
+                                            {labelText}
                                         </motion.text>
                                     )}
 
                                     {/* 선택 효과 */}
                                     {isSelected && (
                                         <motion.rect
-                                            x={-(nodeSize / 2 + 3)}
-                                            y={-(nodeSize / 2 + 3)}
-                                            width={nodeSize + 6}
-                                            height={nodeSize + 6}
+                                            x={-(nodeWidth / 2 + 3)}
+                                            y={-(nodeHeight / 2 + 3)}
+                                            width={nodeWidth + 6}
+                                            height={nodeHeight + 6}
                                             rx={4}
                                             ry={4}
                                             fill="none"
