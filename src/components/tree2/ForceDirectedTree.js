@@ -226,7 +226,7 @@ const ForceDirectedTree = ({
         const svg = d3.select(svgRef.current);
 
         const zoom = d3.zoom()
-            .scaleExtent([0.3, 3])
+            .scaleExtent([0.3, 8])
             .filter((event) => {
                 // 노드 드래그 중에는 줌/팬 비활성화
                 if (isDraggingNode) return false;
@@ -604,6 +604,26 @@ const ForceDirectedTree = ({
                                         animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
                                         transition={{ duration: 0.2, ease: 'easeOut' }}
                                     />
+
+                                    {/* 확대 시 노드 내부에 이름 표시 */}
+                                    {viewTransform.k > 2 && (
+                                        <motion.text
+                                            textAnchor="middle"
+                                            dominantBaseline="middle"
+                                            fill="#ffffff"
+                                            fontSize={Math.min(radius * 0.7, 9)}
+                                            fontWeight={600}
+                                            pointerEvents="none"
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            transition={{ duration: 0.2 }}
+                                            style={{
+                                                textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                                            }}
+                                        >
+                                            {node.data.keyword || node.data.name || ''}
+                                        </motion.text>
+                                    )}
 
                                     {isSelected && (
                                         <motion.circle
