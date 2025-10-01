@@ -213,6 +213,42 @@ const calculateNodeScaleFactor = (dimensions) => {
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('jarvis.theme') || 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('jarvis.theme', next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  // 테마 색상
+  const themeColors = useMemo(() => ({
+    light: {
+      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))',
+      text: '#000000',
+      border: 'rgba(0, 0, 0, 0.1)',
+    },
+    dark: {
+      background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+      text: '#FFFFFF',
+      border: 'rgba(255, 255, 255, 0.1)',
+    },
+  }), []);
+
+  const currentTheme = themeColors[theme];
+
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState(getViewportDimensions());
   const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
@@ -1582,8 +1618,6 @@ const HierarchicalForceTree = () => {
     }
   };
 
-<<<<<<< HEAD
-=======
   const handleMemoCreate = useCallback((parentNodeId) => {
     const parentExists = dataRef.current?.nodes?.some((node) => node.id === parentNodeId);
     if (!parentExists) {
@@ -1681,7 +1715,6 @@ const HierarchicalForceTree = () => {
     });
   }, []);
 
->>>>>>> c36b3d59588159fd59181e1e8edb1c564cf331e3
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
     setSelectedNodeId(nodeId);
@@ -2303,7 +2336,7 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+        background: currentTheme.background,
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         // 창틀 여유 공간까지 완전히 채우기
@@ -2398,13 +2431,32 @@ const HierarchicalForceTree = () => {
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
-        <div className="flex h-8 w-40 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
+        <div className="flex h-8 w-56 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
           {/* 왼쪽: 드래그 점들 */}
           <div className="flex space-x-1">
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
             <div className="h-1 w-1 rounded-full bg-white/60"></div>
           </div>
+
+          {/* 중앙: 테마 토글 버튼 */}
+          <button
+            className="group flex h-5 w-10 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+            style={{ WebkitAppRegion: 'no-drag' }}
+            onClick={toggleTheme}
+            onMouseDown={(e) => e.stopPropagation()}
+            title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+          >
+            {theme === 'dark' ? (
+              <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+              </svg>
+            )}
+          </button>
 
           {/* 오른쪽: 닫기 버튼 */}
           <button
@@ -2550,6 +2602,8 @@ const HierarchicalForceTree = () => {
           dimensions={dimensions}
           onNodeClick={handleNodeClickForAssistant}
           onNodeRemove={removeNodeAndDescendants}
+          onMemoCreate={handleMemoCreate}
+          onMemoUpdate={handleMemoUpdate}
           treeId={activeTreeId}
           userId={user?.id}
           questionService={questionService.current}
@@ -2560,6 +2614,7 @@ const HierarchicalForceTree = () => {
           onAnswerError={handleAnswerError}
           onSecondQuestion={handleSecondQuestion}
           onPlaceholderCreate={handlePlaceholderCreate}
+          theme={theme}
         />
       )}
 
@@ -2607,7 +2662,7 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       )}
-      
+
       {viewMode === 'tree1' && (
         <svg
           ref={svgRef}
@@ -2617,7 +2672,7 @@ const HierarchicalForceTree = () => {
           preserveAspectRatio="none"
           data-interactive-zone="true"
           style={{
-            background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+            background: currentTheme.background,
             // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
             pointerEvents: 'auto',
             // SVG가 창틀 여유 공간까지 완전히 채우도록 설정

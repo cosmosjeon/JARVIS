@@ -528,7 +528,6 @@ export const moveTreeToFolder = async ({ treeId, folderId, userId }) => {
     throw error;
   }
 };
-<<<<<<< HEAD
 
 // ==================== Memos Management ====================
 
@@ -619,5 +618,3 @@ export const deleteMemo = async ({ memoId, userId }) => {
     throw error;
   }
 };
-=======
->>>>>>> c36b3d59588159fd59181e1e8edb1c564cf331e3
