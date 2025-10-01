@@ -86,11 +86,16 @@ class TreeLayoutService {
             const usableHeight = Math.max(baseHeight - 100, 100);
             const orientationSetting = typeof options?.orientation === "string" ? options.orientation : "vertical";
             const isHorizontal = orientationSetting === "horizontal";
-            const LAYOUT_SCALE = 1.6;
-            const layoutWidth = (isHorizontal ? usableHeight : usableWidth) * LAYOUT_SCALE;
-            const layoutHeight = (isHorizontal ? usableWidth : usableHeight) * LAYOUT_SCALE;
+            const LAYOUT_SCALE = 1;
 
-            this.treeLayout.size([layoutWidth, layoutHeight]);
+            // 고정된 층(레벨) 간격 및 형제 간 간격 설정
+            const SIBLING_GAP = 64 * LAYOUT_SCALE;   // 같은 레벨에서 형제 간 좌우 간격
+            const LEVEL_GAP = 140 * LAYOUT_SCALE;     // 레벨(깊이) 간 상하 간격 - '층'을 일정하게 고정
+
+            // nodeSize를 사용하면 size는 무시됨. 깊이 축을 두 번째 값으로 고정하여 층 정렬을 보장
+            this.treeLayout
+                .nodeSize([SIBLING_GAP, LEVEL_GAP])
+                .separation((a, b) => (a.parent === b.parent ? 1 : 1.4));
 
             // 계층 구조로 변환
             const root = this.convertToHierarchy(nodes, links);
@@ -98,21 +103,21 @@ class TreeLayoutService {
             // 트리 레이아웃 계산
             this.treeLayout(root);
 
+            // 여백 정의 (기존 참조 변수 보완)
+            const marginX = 50;
+            const marginY = 50;
+
             // 정렬된 노드 배열 생성
             const layoutNodes = root.descendants()
                 .filter(node => node.data.id !== '__virtual_root__')
                 .map(node => {
-                    const baseX = (node.x || 0) + layoutWidth / 2;
-                    const baseY = (node.y || 0) + layoutHeight / 2;
-                    const angle = (node.x || 0) * 0.004 + (node.depth || 0) * 0.35;
-                    const radius = (node.depth || 0) * 120 + 200;
-                    const projectedX = Math.cos(angle) * radius;
-                    const projectedY = Math.sin(angle) * radius;
+                    const offsetX = (node.x || 0) + marginX;
+                    const offsetY = (node.y || 0) + marginY;
 
                     return {
                         ...node.data,
-                        x: isHorizontal ? baseY : baseX + projectedX,
-                        y: isHorizontal ? (baseX + projectedX) : baseY + projectedY,
+                        x: isHorizontal ? offsetY : offsetX,
+                        y: isHorizontal ? offsetX : offsetY,
                         depth: node.depth,
                         height: node.height,
                     };
@@ -120,12 +125,12 @@ class TreeLayoutService {
 
             // 정렬된 링크 배열 생성
             const layoutLinks = root.links()
-            .filter(link => link.source.data.id !== '__virtual_root__')
-            .map(link => ({
-                source: link.source.data.id,
-                target: link.target.data.id,
-                value: 1
-            }));
+                .filter(link => link.source.data.id !== '__virtual_root__')
+                .map(link => ({
+                    source: link.source.data.id,
+                    target: link.target.data.id,
+                    value: 1
+                }));
 
             return {
                 nodes: layoutNodes,
