@@ -109,7 +109,7 @@ const parseMarkdownBlocks = (text = '') => {
   return blocks;
 };
 
-const parseInlineMarkdown = (text = '') => {
+const parseInlineMarkdown = (text = '', textColor = '') => {
   const parts = [];
   let remaining = text;
   let key = 0;
@@ -133,7 +133,11 @@ const parseInlineMarkdown = (text = '') => {
       parts.push(
         <code
           key={`code-${key++}`}
-          className="bg-slate-700/50 text-emerald-300 px-1 py-0.5 rounded text-xs font-mono"
+          className="px-1 py-0.5 rounded text-xs font-mono"
+          style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.1)',
+            color: textColor || 'rgb(16, 185, 129)'
+          }}
         >
           {codeMatch[1]}
         </code>
@@ -145,7 +149,7 @@ const parseInlineMarkdown = (text = '') => {
     const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
     if (boldMatch) {
       parts.push(
-        <strong key={`bold-${key++}`} className="font-semibold text-slate-50">
+        <strong key={`bold-${key++}`} className="font-semibold" style={{ color: textColor }}>
           {boldMatch[1]}
         </strong>
       );
@@ -156,7 +160,7 @@ const parseInlineMarkdown = (text = '') => {
     const italicMatch = remaining.match(/^\*([^*]+)\*/);
     if (italicMatch) {
       parts.push(
-        <em key={`italic-${key++}`} className="italic text-slate-200">
+        <em key={`italic-${key++}`} className="italic" style={{ color: textColor }}>
           {italicMatch[1]}
         </em>
       );
@@ -193,7 +197,7 @@ const parseInlineMarkdown = (text = '') => {
   return parts;
 };
 
-const MarkdownMessage = ({ text = '', className = '' }) => {
+const MarkdownMessage = ({ text = '', className = '', style = {} }) => {
   const blocks = useMemo(() => parseMarkdownBlocks(text), [text]);
 
   if (!blocks.length) {
@@ -203,7 +207,7 @@ const MarkdownMessage = ({ text = '', className = '' }) => {
   const containerClass = ['markdown-body space-y-4', className].filter(Boolean).join(' ');
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} style={style}>
       {blocks.map((block, blockIndex) => {
         if (block.type === 'heading') {
           const HeadingTag = `h${Math.min(block.level, 6)}`;
@@ -217,8 +221,8 @@ const MarkdownMessage = ({ text = '', className = '' }) => {
           };
 
           return (
-            <HeadingTag key={`md-heading-${blockIndex}`} className={headingClasses[block.level]}>
-              {parseInlineMarkdown(block.content)}
+            <HeadingTag key={`md-heading-${blockIndex}`} className={headingClasses[block.level].replace(/text-slate-\d+/g, '').trim()} style={{ color: style.color }}>
+              {parseInlineMarkdown(block.content, style.color)}
             </HeadingTag>
           );
         }
@@ -253,10 +257,10 @@ const MarkdownMessage = ({ text = '', className = '' }) => {
             : 'list-disc list-outside space-y-2 pl-6 text-slate-100';
 
           return (
-            <ListTag key={`md-list-${blockIndex}`} className={listClasses}>
+            <ListTag key={`md-list-${blockIndex}`} className={listClasses.replace(/text-slate-\d+/g, '').trim()} style={{ color: style.color }}>
               {block.items.map((item, itemIndex) => (
                 <li key={`md-list-item-${blockIndex}-${itemIndex}`} className="leading-relaxed">
-                  {parseInlineMarkdown(item)}
+                  {parseInlineMarkdown(item, style.color)}
                 </li>
               ))}
             </ListTag>
@@ -264,8 +268,8 @@ const MarkdownMessage = ({ text = '', className = '' }) => {
         }
 
         return (
-          <p key={`md-paragraph-${blockIndex}`} className="leading-7 text-slate-100">
-            {parseInlineMarkdown(block.content)}
+          <p key={`md-paragraph-${blockIndex}`} className="leading-7" style={{ color: style.color }}>
+            {parseInlineMarkdown(block.content, style.color)}
           </p>
         );
       })}

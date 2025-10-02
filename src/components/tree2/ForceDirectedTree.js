@@ -1350,15 +1350,15 @@ const ForceDirectedTree = ({
                                 : (datum.keyword || datum.name || datum.id || '');
 
                             // 노드 크기 (텍스트 길이에 맞춰 동적 조정)
-                            const fontSize = 7;
-                            const charWidth = fontSize * 0.6; // 글자당 예상 너비
-                            const padding = isMemoStyledNode ? 9 : 8; // 좌우 여백
-                            const minWidth = isMemoStyledNode ? 24 : 20;
-                            const maxWidth = 80;
+                            const fontSize = isMemoStyledNode ? 10 : 9;
+                            const charWidth = fontSize * 0.58; // 글자당 예상 너비
+                            const padding = isMemoStyledNode ? 10 : 9; // 좌우 여백
+                            const minWidth = isMemoStyledNode ? 28 : 22;
+                            const maxWidth = 96;
 
                             const textWidth = labelText.length * charWidth + padding * 2;
                             const baseWidth = Math.max(minWidth, Math.min(maxWidth, textWidth));
-                            const baseHeight = 16;
+                            const baseHeight = isMemoStyledNode ? 22 : 20;
 
                             const nodeWidth = isSelected
                                 ? baseWidth + 4
@@ -1467,13 +1467,10 @@ const ForceDirectedTree = ({
                                             animate={{ opacity: 1 }}
                                             transition={{ duration: 0.2 }}
                                             style={{
-                                                textShadow: isRootNode
-                                                    ? (isLightMode
-                                                        ? '0 1px 2px rgba(0,0,0,0.35)'
-                                                        : '0 1px 2px rgba(0,0,0,0.8)')
-                                                    : isMemoNode
-                                                        ? 'none'
-                                                        : '0 1px 2px rgba(0,0,0,0.8)',
+                                                textShadow: 'none',
+                                                textRendering: 'geometricPrecision',
+                                                paintOrder: 'stroke fill',
+                                                letterSpacing: isMemoStyledNode ? '0.25px' : '0.2px',
                                             }}
                                         >
                                             {labelText}

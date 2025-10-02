@@ -80,7 +80,7 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
 
             <div className="flex flex-1 flex-col gap-4">
                 <div className="space-y-2">
-                    <label className="text-xs font-medium text-white/60" htmlFor="memo-title-input">
+                    <label className="text-xs font-medium text-white/85" htmlFor="memo-title-input">
                         제목
                     </label>
                     <Input
@@ -93,7 +93,7 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
                 </div>
 
                 <div className="flex-1 space-y-2">
-                    <label className="text-xs font-medium text-white/60" htmlFor="memo-content-input">
+                    <label className="text-xs font-medium text-white/85" htmlFor="memo-content-input">
                         내용
                     </label>
                     <Textarea

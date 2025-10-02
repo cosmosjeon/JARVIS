@@ -3,6 +3,7 @@ import Highlighter from 'web-highlighter';
 import QuestionService from '../services/QuestionService';
 import NodeNavigationService from '../services/NodeNavigationService';
 import { useSettings } from '../hooks/SettingsContext';
+import { useTheme } from './library/ThemeProvider';
 import MarkdownMessage from './common/MarkdownMessage';
 
 export const PANEL_SIZES = {
@@ -94,6 +95,7 @@ const NodeAssistantPanel = ({
   const { autoPasteEnabled } = useSettings();
   const [placeholderNotice, setPlaceholderNotice] = useState(null);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
+  const { theme } = useTheme();
   const typingTimers = useRef([]);
   const questionServiceRef = useRef(externalQuestionService ?? new QuestionService());
   const navigationServiceRef = useRef(new NodeNavigationService());
@@ -595,9 +597,9 @@ const NodeAssistantPanel = ({
     if (!node?.id || !onNodeSelect) {
       return;
     }
-    
+
     const targetNode = navigationServiceRef.current.navigate(node.id, direction);
-    
+
     if (targetNode) {
       onNodeSelect(targetNode);
       // 입력창에 포커스를 유지
@@ -657,16 +659,45 @@ const NodeAssistantPanel = ({
     return () => window.removeEventListener('keydown', handleGlobalEnter, true);
   }, [attemptHighlightPlaceholderCreate, isComposing, isHighlightMode, onPlaceholderCreate]);
 
+  // 테마별 색상 설정
+  const panelStyles = useMemo(() => {
+    switch (theme) {
+      case 'light':
+        return {
+          background: 'rgba(255, 255, 255, 0.9)',
+          borderColor: 'rgba(0, 0, 0, 0.2)',
+          textColor: 'rgba(0, 0, 0, 0.9)',
+        };
+      case 'dark':
+        return {
+          background: 'rgba(0, 0, 0, 0.8)',
+          borderColor: 'rgba(255, 255, 255, 0.2)',
+          textColor: 'rgba(255, 255, 255, 0.9)',
+        };
+      default: // glass
+        return {
+          background: 'rgba(255, 255, 255, 0.25)',
+          borderColor: 'rgba(255, 255, 255, 0.3)',
+          textColor: 'rgba(248, 250, 252, 0.9)',
+        };
+    }
+  }, [theme]);
+
   return (
     <div
       ref={panelRef}
-      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl border border-white/30 bg-white/25 p-6 backdrop-blur-3xl"
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
       style={{
-        fontFamily: 'Arial, sans-serif',
+        fontFamily: 'inherit',
         position: 'relative',
         zIndex: 1001,
         pointerEvents: 'auto',
         WebkitAppRegion: 'no-drag',
+        background: panelStyles.background,
+        borderColor: panelStyles.borderColor,
+        borderWidth: '1px',
+        borderStyle: 'solid',
+        color: panelStyles.textColor,
       }}
       data-interactive-zone="true"
       onWheelCapture={(event) => {
@@ -691,13 +722,32 @@ const NodeAssistantPanel = ({
         }}
       >
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-semibold text-slate-50">
-            {summary.label || node.keyword || node.id}
-          </p>
-          <p className="text-xs text-slate-200/70">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
-          {!disableNavigation && (
-            <p className="text-xs text-slate-200/60">↑↓ 부모/자식 노드 이동 | ←→ 형제 노드 이동</p>
-          )}
+          <div className="flex items-center gap-2">
+            <p
+              className="truncate text-lg font-semibold"
+              style={{ color: panelStyles.textColor }}
+            >
+              {summary.label || node.keyword || node.id}
+            </p>
+            <div className="group relative">
+              <button
+                type="button"
+                className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300/20 bg-slate-100/10 text-xs font-medium text-slate-300 hover:bg-slate-100/20 transition-colors"
+                data-block-pan="true"
+              >
+                ?
+              </button>
+              <div className="absolute left-full top-full ml-2 mt-1 hidden w-64 transform group-hover:block z-50">
+                <div className="rounded-lg bg-slate-800/95 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur-sm border border-slate-600/30">
+                  <p className="mb-1">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
+                  {!disableNavigation && (
+                    <p>↑↓ 부모/자식 노드 이동 | ←→ 형제 노드 이동</p>
+                  )}
+                </div>
+                <div className="absolute right-full top-2 h-0 w-0 transform border-t-4 border-b-4 border-r-4 border-transparent border-r-slate-600/30"></div>
+              </div>
+            </div>
+          </div>
         </div>
         {!bootstrapMode && (
           <div className="flex items-center gap-2" data-block-pan="true">
@@ -708,7 +758,22 @@ const NodeAssistantPanel = ({
                 event.stopPropagation();
                 onCloseNode();
               }}
-              className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
+              className="rounded-lg px-3 py-1 text-xs font-medium transition"
+              style={{
+                borderColor: panelStyles.borderColor,
+                backgroundColor: panelStyles.background,
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                color: panelStyles.textColor,
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = theme === 'light'
+                  ? 'rgba(0, 0, 0, 0.1)'
+                  : 'rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = panelStyles.background;
+              }}
             >
               닫기
             </button>
@@ -735,12 +800,26 @@ const NodeAssistantPanel = ({
                   <div className="w-full">
                     <MarkdownMessage
                       text={message.text}
-                      className="w-full text-base leading-7 text-slate-100"
+                      className="w-full text-base leading-7"
+                      style={{ color: panelStyles.textColor }}
                     />
                   </div>
                 ) : (
-                  <div className="max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm">
-                    <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+                  <div
+                    className="max-w-[240px] break-all rounded-2xl px-4 py-3 text-sm shadow-lg backdrop-blur-sm"
+                    style={{
+                      borderColor: panelStyles.borderColor,
+                      backgroundColor: panelStyles.background,
+                      borderWidth: '1px',
+                      borderStyle: 'solid',
+                    }}
+                  >
+                    <p
+                      className="whitespace-pre-wrap leading-relaxed"
+                      style={{ color: panelStyles.textColor }}
+                    >
+                      {message.text}
+                    </p>
                   </div>
                 )}
               </div>
