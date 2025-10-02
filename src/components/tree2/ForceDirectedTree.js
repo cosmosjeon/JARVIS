@@ -19,6 +19,19 @@ const DEFAULT_CONTEXT_MENU_STATE = {
     sceneY: 0,
 };
 
+const DEFAULT_NODE_SIZE_STATE = {
+    isOpen: false,
+    nodeId: null,
+    sizeValue: 50, // 0-100 범위, 기본값 50
+};
+
+const NODE_SHAPES = {
+    RECTANGLE: 'rectangle',
+    DOT: 'dot',
+    ELLIPSE: 'ellipse',
+    DIAMOND: 'diamond',
+};
+
 const getNodeDatum = (node) => {
     if (!node) {
         return {};
@@ -150,6 +163,7 @@ const ForceDirectedTree = ({
     dimensions,
     onNodeClick,
     onNodeRemove,
+    onNodeUpdate,
     onMemoCreate,
     onMemoUpdate,
     onNodeCreate,
@@ -177,10 +191,16 @@ const ForceDirectedTree = ({
     const [simulatedNodes, setSimulatedNodes] = useState([]);
     const [simulatedLinks, setSimulatedLinks] = useState([]);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
+    const [selectedNodeIds, setSelectedNodeIds] = useState(new Set());
     const [isDraggingNode, setIsDraggingNode] = useState(false);
     const [draggedNodeId, setDraggedNodeId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
     const [contextMenuState, setContextMenuState] = useState(() => ({ ...DEFAULT_CONTEXT_MENU_STATE }));
+    const [nodeSizeState, setNodeSizeState] = useState(() => ({ ...DEFAULT_NODE_SIZE_STATE }));
+    const [isSelectionBoxActive, setIsSelectionBoxActive] = useState(false);
+    const [selectionBox, setSelectionBox] = useState({ startX: 0, startY: 0, endX: 0, endY: 0 });
+    const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const selectionBoxDidDragRef = useRef(false);
     const [linkCreationState, setLinkCreationState] = useState({ active: false, sourceId: null });
     const isLinking = linkCreationState.active;
     const linkingSourceId = linkCreationState.sourceId;
@@ -189,6 +209,7 @@ const ForceDirectedTree = ({
     const draggedMemoSnapshotRef = useRef([]);
     const pendingCenterNodeIdRef = useRef(null);
     const previousPositionsRef = useRef(new Map());
+    const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
 
     // SVG 중심 위치 계산
     const centerX = dimensions.width / 2;
@@ -404,7 +425,8 @@ const ForceDirectedTree = ({
             hierarchyData,
             dimensions,
             handleTick,
-            previousPositions
+            previousPositions,
+            { enableForceSimulation: isForceSimulationEnabled }
         );
 
         if (Array.isArray(nextNodes)) {
@@ -438,6 +460,7 @@ const ForceDirectedTree = ({
                 clearTimeout(saveViewportStateTimeoutRef.current);
             }
         };
+
     }, [data, dimensions, assignFallbackPositions, viewportStateLoaded, treeId, userId]);
 
     // 뷰포트 상태 복원 (컴포넌트 마운트 시)
@@ -453,6 +476,7 @@ const ForceDirectedTree = ({
             debouncedSaveViewportState();
         }
     }, [simulatedNodes, debouncedSaveViewportState, viewportStateLoaded]);
+
 
     // dimensions가 변경될 때 viewTransform 업데이트 (비율 유지)
     const prevCenterRef = useRef({ x: centerX, y: centerY });
@@ -543,8 +567,8 @@ const ForceDirectedTree = ({
         const zoom = d3.zoom()
             .scaleExtent([0.3, 8])
             .filter((event) => {
-                // 노드 드래그 중에는 줌/팬 비활성화
-                if (isDraggingNode) return false;
+                // 노드 드래그 중이거나 선택 박스 드래그 중에는 줌/팬 비활성화
+                if (isDraggingNode || isSelectionBoxActive) return false;
 
                 // foreignObject나 노드 내부에서는 줌/팬 비활성화
                 const target = event.target instanceof Element ? event.target : null;
@@ -556,10 +580,19 @@ const ForceDirectedTree = ({
                 // 더블클릭은 비활성화
                 if (event.type === 'dblclick') return false;
 
-                // 모든 버튼 드래그 허용 (좌클릭, 우클릭, 휠 버튼)
-                if (event.type === 'mousedown' || event.type === 'pointerdown') return true;
-                if (event.type === 'mousemove' || event.type === 'pointermove') return true;
-                if (event.type === 'mouseup' || event.type === 'pointerup') return true;
+                // 유기적 작용이 ON일 때는 기존 방식 (모든 드래그로 패닝)
+                if (isForceSimulationEnabled) {
+                    if (event.type === 'mousedown' || event.type === 'pointerdown') return true;
+                    if (event.type === 'mousemove' || event.type === 'pointermove') return true;
+                    if (event.type === 'mouseup' || event.type === 'pointerup') return true;
+                }
+
+                // 유기적 작용이 OFF일 때는 Space 키가 눌린 상태에서만 패닝 허용
+                if (!isForceSimulationEnabled && isSpacePressed) {
+                    if (event.type === 'mousedown' || event.type === 'pointerdown') return true;
+                    if (event.type === 'mousemove' || event.type === 'pointermove') return true;
+                    if (event.type === 'mouseup' || event.type === 'pointerup') return true;
+                }
 
                 return false;
             })
@@ -621,7 +654,9 @@ const ForceDirectedTree = ({
             svg.on('.zoom', null);
             svg.on('.treepan', null);
         };
-    }, [isDraggingNode, centerX, centerY, hasRenderableNodes]);
+
+    }, [isDraggingNode, isSelectionBoxActive, isSpacePressed, isForceSimulationEnabled, centerX, centerY, hasRenderableNodes]);
+
 
     // 방향키로 캔버스 이동
     useEffect(() => {
@@ -703,12 +738,19 @@ const ForceDirectedTree = ({
         setDraggedNodeId(nodeId);
         setContextMenuState({ ...DEFAULT_CONTEXT_MENU_STATE });
 
+        // 유기적 작용이 OFF일 때만 다중 선택 드래그 활성화
+        const isDraggingSelectedNode = !isForceSimulationEnabled && selectedNodeIds.has(nodeId);
+        const draggedNodesList = isDraggingSelectedNode 
+            ? Array.from(selectedNodeIds)
+            : [nodeId];
+
         if (simulationServiceRef.current) {
             simulationServiceRef.current.handleDragStart(event, nodeData);
         }
 
         const simulation = simulationServiceRef.current?.getSimulation?.();
-        if (simulation && datum?.nodeType !== 'memo') {
+        // Force simulation이 활성화되어 있고 메모가 아닌 노드일 때만 메모를 따라오게 함
+        if (simulation && isForceSimulationEnabled && datum?.nodeType !== 'memo') {
             const memoFollowers = simulation.nodes().filter((candidate) => (
                 getNodeDatum(candidate)?.nodeType === 'memo'
                 && getNodeDatum(candidate)?.memoParentId === nodeId
@@ -722,6 +764,18 @@ const ForceDirectedTree = ({
         } else {
             draggedMemoSnapshotRef.current = [];
         }
+
+        // 다중 선택된 노드들의 초기 오프셋 계산
+        const multiSelectOffsets = draggedNodesList.map(id => {
+            const node = simulatedNodes.find(n => getNodeId(n) === id);
+            if (!node) return null;
+            return {
+                id,
+                node,
+                offsetX: (node.x || 0) - (nodeData.x || 0),
+                offsetY: (node.y || 0) - (nodeData.y || 0),
+            };
+        }).filter(Boolean);
 
         // 전역 드래그 핸들러 (즉시 등록하여 노드 밖으로 나가도 드래그 계속됨)
         const handleGlobalPointerMove = (e) => {
@@ -745,9 +799,43 @@ const ForceDirectedTree = ({
                 y: forceY,
             };
 
+            // 주 노드 드래그
             simulationServiceRef.current.handleDrag(mockEvent, nodeData);
 
-            if (draggedMemoSnapshotRef.current.length > 0) {
+            // 다중 선택된 노드들도 함께 드래그
+            if (multiSelectOffsets.length > 1) {
+                multiSelectOffsets.forEach(({ id, node, offsetX, offsetY }) => {
+                    if (!node || id === nodeId) return;
+                    
+                    const newX = forceX + offsetX;
+                    const newY = forceY + offsetY;
+
+                    if (simulationServiceRef.current.simulation) {
+                        node.fx = newX;
+                        node.fy = newY;
+                    } else {
+                        node.x = newX;
+                        node.y = newY;
+                        node.fx = newX;
+                        node.fy = newY;
+                    }
+
+                    if (!isForceSimulationEnabled) {
+                        previousPositionsRef.current.set(id, { x: newX, y: newY });
+                    }
+                });
+            }
+
+            if (!isForceSimulationEnabled) {
+                const nodeId = getNodeId(nodeData);
+                if (nodeId) {
+                    previousPositionsRef.current.set(nodeId, { x: nodeData.x || 0, y: nodeData.y || 0 });
+                }
+                setSimulatedNodes((prev) => [...prev]);
+            }
+
+            // Force simulation이 활성화되어 있을 때만 메모 노드를 따라오게 함
+            if (isForceSimulationEnabled && draggedMemoSnapshotRef.current.length > 0) {
                 draggedMemoSnapshotRef.current.forEach(({ node: memoNode, offsetX, offsetY }) => {
                     if (!memoNode) return;
                     memoNode.fx = forceX + offsetX;
@@ -761,6 +849,25 @@ const ForceDirectedTree = ({
                 simulationServiceRef.current.handleDragEnd(e, nodeData);
             }
 
+            // 다중 선택된 노드들의 고정 해제
+            if (multiSelectOffsets.length > 1) {
+                multiSelectOffsets.forEach(({ id, node }) => {
+                    if (!node || id === nodeId) return;
+                    
+                    if (simulationServiceRef.current.simulation) {
+                        node.fx = null;
+                        node.fy = null;
+                    } else {
+                        node.fx = node.x;
+                        node.fy = node.y;
+                    }
+
+                    if (!isForceSimulationEnabled) {
+                        previousPositionsRef.current.set(id, { x: node.x || 0, y: node.y || 0 });
+                    }
+                });
+            }
+
             // 드래그 시간 체크 (0.2초 이하면 클릭으로 처리)
             const dragDuration = Date.now() - dragStartTimeRef.current;
             if (dragDuration <= 120) {
@@ -770,13 +877,22 @@ const ForceDirectedTree = ({
             setIsDraggingNode(false);
             setDraggedNodeId(null);
 
-            if (draggedMemoSnapshotRef.current.length > 0) {
+            // Force simulation이 활성화되어 있을 때만 메모 노드 고정 해제
+            if (isForceSimulationEnabled && draggedMemoSnapshotRef.current.length > 0) {
                 draggedMemoSnapshotRef.current.forEach(({ node: memoNode }) => {
                     if (!memoNode) return;
                     memoNode.fx = null;
                     memoNode.fy = null;
                 });
-                draggedMemoSnapshotRef.current = [];
+            }
+            draggedMemoSnapshotRef.current = [];
+
+            if (!isForceSimulationEnabled) {
+                const nodeId = getNodeId(nodeData);
+                if (nodeId) {
+                    previousPositionsRef.current.set(nodeId, { x: nodeData.x || 0, y: nodeData.y || 0 });
+                }
+                setSimulatedNodes((prev) => [...prev]);
             }
 
             // 리스너 제거
@@ -789,7 +905,7 @@ const ForceDirectedTree = ({
         document.addEventListener('pointermove', handleGlobalPointerMove);
         document.addEventListener('pointerup', handleGlobalPointerUp);
         document.addEventListener('pointercancel', handleGlobalPointerUp);
-    }, [centerX, centerY, viewTransform]);
+    }, [centerX, centerY, viewTransform, isForceSimulationEnabled, selectedNodeIds, simulatedNodes]);
 
 
     // 노드를 화면 중앙으로 이동
@@ -1016,15 +1132,102 @@ const ForceDirectedTree = ({
         cancelLinkCreation();
     }, [contextMenuState.nodeId, onNodeRemove, selectedNodeId, cancelLinkCreation]);
 
+
+    // 노드 크기 조절 핸들러 (슬라이더)
+    const handleSizeSliderChange = useCallback((event) => {
+        const newValue = Math.max(5, parseInt(event.target.value)); // 최소값 5로 제한
+        
+        // 현재 컨텍스트 메뉴의 노드 ID 사용
+        const currentNodeId = contextMenuState.nodeId;
+        if (!currentNodeId) return;
+
+        const scaleValue = Math.max(0.1, newValue / 50); // 0-100을 0.1-2.0 스케일로 변환 (50이 기본값 1.0)
+        
+        // 시뮬레이션 노드 업데이트
+        setSimulatedNodes(prev => prev.map(node => {
+            const nodeDatum = getNodeDatum(node);
+            if (nodeDatum?.id === currentNodeId) {
+                return {
+                    ...node,
+                    data: {
+                        ...node.data,
+                        data: {
+                            ...node.data?.data,
+                            sizeValue: newValue,
+                            sizeScale: scaleValue,
+                        }
+                    }
+                };
+            }
+            return node;
+        }));
+    }, [contextMenuState.nodeId]);
+
+    const handleSizeSliderComplete = useCallback(() => {
+        // 최종 크기 조절 값을 부모 컴포넌트에 전달
+        const currentNodeId = contextMenuState.nodeId;
+        if (onNodeUpdate && currentNodeId) {
+            const targetNode = simulatedNodes.find(node => getNodeId(node) === currentNodeId);
+            const currentSizeValue = targetNode ? (getNodeDatum(targetNode)?.sizeValue || 50) : 50;
+            
+            onNodeUpdate(currentNodeId, { 
+                sizeValue: currentSizeValue,
+                sizeScale: Math.max(0.1, currentSizeValue / 50)
+            });
+        }
+    }, [contextMenuState.nodeId, simulatedNodes, onNodeUpdate]);
+
+    // 노드 모양 변경 핸들러
+    const handleNodeShapeChange = useCallback((shape) => {
+        const currentNodeId = contextMenuState.nodeId;
+        if (!currentNodeId) return;
+
+        // 시뮬레이션 노드 업데이트
+        setSimulatedNodes(prev => prev.map(node => {
+            const nodeDatum = getNodeDatum(node);
+            if (nodeDatum?.id === currentNodeId) {
+                return {
+                    ...node,
+                    data: {
+                        ...node.data,
+                        data: {
+                            ...node.data?.data,
+                            nodeShape: shape,
+                        }
+                    }
+                };
+            }
+            return node;
+        }));
+
+        // 부모 컴포넌트에 변경사항 전달
+        if (onNodeUpdate) {
+            onNodeUpdate(currentNodeId, { nodeShape: shape });
+        }
+    }, [contextMenuState.nodeId, onNodeUpdate]);
+
     // 배경 클릭 핸들러 (선택 해제)
     const handleBackgroundClick = useCallback(() => {
         if (isLinking) {
             cancelLinkCreation();
             return;
         }
+
+        if (selectionBoxDidDragRef.current) {
+            selectionBoxDidDragRef.current = false;
+            return;
+        }
+
+        // 크기 조절 모드일 때는 모드만 종료
+        if (nodeSizeState.isOpen) {
+            setNodeSizeState({ ...DEFAULT_NODE_SIZE_STATE });
+            return;
+        }
+
         setSelectedNodeId(null);
+        setSelectedNodeIds(new Set());
         setHoveredNodeId(null);
-    }, [isLinking, cancelLinkCreation]);
+    }, [isLinking, cancelLinkCreation, nodeSizeState.isOpen]);
 
     // Conversation 관리
     const getInitialConversationForNode = useCallback((nodeId) => {
@@ -1036,6 +1239,36 @@ const ForceDirectedTree = ({
             onConversationChange(nodeId, messages);
         }
     }, [onConversationChange]);
+
+    // Space 키 처리
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            // 입력 필드에 포커스가 있으면 무시
+            const target = event.target;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+                return;
+            }
+
+            if (event.code === 'Space' && !isSpacePressed) {
+                event.preventDefault();
+                setIsSpacePressed(true);
+            }
+        };
+
+        const handleKeyUp = (event) => {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                setIsSpacePressed(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+            return () => {
+                window.removeEventListener('keydown', handleKeyDown);
+                window.removeEventListener('keyup', handleKeyUp);
+            };
+        }, [isSpacePressed, isForceSimulationEnabled]);
 
     // ESC 키로 패널 닫기
     useEffect(() => {
@@ -1052,6 +1285,22 @@ const ForceDirectedTree = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedNodeId]);
 
+    // ESC 키로 크기 조절 모드 종료
+    useEffect(() => {
+        if (!nodeSizeState.isOpen) return;
+
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                setNodeSizeState({ ...DEFAULT_NODE_SIZE_STATE });
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [nodeSizeState.isOpen]);
+
+
     useEffect(() => {
         if (!isLinking) {
             return undefined;
@@ -1067,6 +1316,64 @@ const ForceDirectedTree = ({
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isLinking, cancelLinkCreation]);
+
+    // 선택 박스 드래그 처리
+    useEffect(() => {
+        if (!isSelectionBoxActive) return;
+
+        const handlePointerMove = (e) => {
+            const svg = svgRef.current;
+            if (!svg) return;
+
+            selectionBoxDidDragRef.current = true;
+
+            const point = svg.createSVGPoint();
+            point.x = e.clientX;
+            point.y = e.clientY;
+            const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
+            
+            const forceX = (svgPoint.x - viewTransform.x) / viewTransform.k;
+            const forceY = (svgPoint.y - viewTransform.y) / viewTransform.k;
+
+            setSelectionBox((prev) => ({
+                ...prev,
+                endX: forceX,
+                endY: forceY,
+            }));
+
+            // 선택 박스 내 노드 계산 (유기적 작용 OFF일 때만)
+            if (!isForceSimulationEnabled) {
+                const minX = Math.min(selectionBox.startX, forceX);
+                const maxX = Math.max(selectionBox.startX, forceX);
+                const minY = Math.min(selectionBox.startY, forceY);
+                const maxY = Math.max(selectionBox.startY, forceY);
+
+                const selectedIds = new Set();
+                simulatedNodes.forEach((node) => {
+                    const nodeX = node.x || 0;
+                    const nodeY = node.y || 0;
+                    if (nodeX >= minX && nodeX <= maxX && nodeY >= minY && nodeY <= maxY) {
+                        const nodeId = getNodeId(node);
+                        if (nodeId) selectedIds.add(nodeId);
+                    }
+                });
+
+                setSelectedNodeIds(selectedIds);
+            }
+        };
+
+        const handlePointerUp = () => {
+            setIsSelectionBoxActive(false);
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+
+        return () => {
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+        };
+    }, [isSelectionBoxActive, selectionBox.startX, selectionBox.startY, simulatedNodes, viewTransform, isForceSimulationEnabled]);
 
     // 빈 데이터 처리 - bootstrap 패널이 상위에서 표시되므로 빈 배경만 렌더링
     if (!data || !data.nodes || data.nodes.length === 0) {
@@ -1111,6 +1418,20 @@ const ForceDirectedTree = ({
             }}
             onContextMenu={handleBackgroundContextMenu}
         >
+            {/* Force Simulation 토글 버튼 */}
+            <div className="absolute top-4 left-4 z-10">
+                <button
+                    onClick={() => setIsForceSimulationEnabled(!isForceSimulationEnabled)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                        isForceSimulationEnabled
+                            ? 'bg-blue-500 text-white shadow-lg hover:bg-blue-600'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                    title={isForceSimulationEnabled ? '유기적 작용 끄기' : '유기적 작용 켜기'}
+                >
+                    {isForceSimulationEnabled ? '유기적 작용 ON' : '유기적 작용 OFF'}
+                </button>
+            </div>
             <svg
                 ref={svgRef}
                 width="100%"
@@ -1121,12 +1442,43 @@ const ForceDirectedTree = ({
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    cursor: isDraggingNode ? 'grabbing' : 'default',
+                    cursor: (!isForceSimulationEnabled && isSpacePressed) ? 'grab' : (isDraggingNode ? 'grabbing' : 'default'),
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none',
+                    WebkitTouchCallout: 'none', // iOS 터치 콜아웃 방지
+                    WebkitTapHighlightColor: 'transparent', // 터치 하이라이트 제거
                 }}
                 onClick={(e) => {
                     // 배경 클릭 시 선택 해제
                     e.stopPropagation();
                     handleBackgroundClick();
+                }}
+                onPointerDown={(e) => {
+                    // 유기적 작용이 OFF이고, Space 키가 눌려있지 않고, 노드 위가 아닌 배경에서 드래그 시작
+                    if (!isForceSimulationEnabled && !isSpacePressed && e.button === 0) {
+                        const svg = svgRef.current;
+                        if (!svg) return;
+
+                        selectionBoxDidDragRef.current = false;
+
+                        const point = svg.createSVGPoint();
+                        point.x = e.clientX;
+                        point.y = e.clientY;
+                        const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
+                        
+                        const forceX = (svgPoint.x - viewTransform.x) / viewTransform.k;
+                        const forceY = (svgPoint.y - viewTransform.y) / viewTransform.k;
+
+                        setIsSelectionBoxActive(true);
+                        setSelectionBox({
+                            startX: forceX,
+                            startY: forceY,
+                            endX: forceX,
+                            endY: forceY,
+                        });
+                    }
                 }}
             >
                 <defs>
@@ -1256,6 +1608,7 @@ const ForceDirectedTree = ({
                             const isMemoStyledNode = isMemoNode || isRootNode;
                             const isBeingDragged = draggedNodeId === nodeId;
                             const isSelected = selectedNodeId === nodeId;
+                            const isMultiSelected = selectedNodeIds.has(nodeId);
                             const isHovered = hoveredNodeId === nodeId;
                             const isOtherNodeDragging = isDraggingNode && !isBeingDragged;
 
@@ -1265,8 +1618,8 @@ const ForceDirectedTree = ({
                                 : (datum.keyword || datum.name || datum.id || '');
 
                             // 노드 크기 (텍스트 길이에 맞춰 동적 조정)
-                            const fontSize = 7;
-                            const charWidth = fontSize * 0.6; // 글자당 예상 너비
+                            const baseFontSize = 7;
+                            const charWidth = baseFontSize * 0.6; // 글자당 예상 너비
                             const padding = isMemoStyledNode ? 9 : 8; // 좌우 여백
                             const minWidth = isMemoStyledNode ? 24 : 20;
                             const maxWidth = 80;
@@ -1275,17 +1628,53 @@ const ForceDirectedTree = ({
                             const baseWidth = Math.max(minWidth, Math.min(maxWidth, textWidth));
                             const baseHeight = 16;
 
-                            const nodeWidth = isSelected
-                                ? baseWidth + 4
-                                : isHovered
-                                    ? baseWidth + 2
-                                    : baseWidth;
+                            // sizeValue 적용 (0-100을 0.1-2.0 스케일로 변환, 최소 0.1로 제한)
+                            const sizeValue = datum?.sizeValue || 50;
+                            const sizeScale = Math.max(0.1, sizeValue / 50); // 최소 0.1로 제한 (50이 기본값 1.0)
+                            const scaledBaseWidth = baseWidth * sizeScale;
+                            const scaledBaseHeight = baseHeight * sizeScale;
+                            const scaledFontSize = baseFontSize * sizeScale; // 글자 크기도 스케일에 맞춰 조절
 
-                            const nodeHeight = isSelected
-                                ? baseHeight + 2
-                                : isHovered
-                                    ? baseHeight + 1
-                                    : baseHeight;
+                            // 노드 모양에 따른 크기 조정
+                            const nodeShape = datum?.nodeShape || NODE_SHAPES.RECTANGLE;
+                            let nodeWidth, nodeHeight;
+
+                            if (nodeShape === NODE_SHAPES.DOT) {
+                                // 닷 모양: 작은 원형 닷 (크기 고정), 글자는 닷 위에 떠있음
+                                const dotSize = 4; // 진짜 닷처럼 작게 (sizeScale 적용 안함)
+                                nodeWidth = isSelected ? dotSize + 2 : isHovered ? dotSize + 1 : dotSize;
+                                nodeHeight = nodeWidth; // 원형이므로 같음
+                            } else if (nodeShape === NODE_SHAPES.ELLIPSE) {
+                                // 타원 모양: 가로가 더 긴 타원
+                                nodeWidth = isSelected
+                                    ? scaledBaseWidth + 4
+                                    : isHovered
+                                        ? scaledBaseWidth + 2
+                                        : scaledBaseWidth;
+                                nodeHeight = isSelected
+                                    ? scaledBaseHeight + 2
+                                    : isHovered
+                                        ? scaledBaseHeight + 1
+                                        : scaledBaseHeight;
+                            } else if (nodeShape === NODE_SHAPES.DIAMOND) {
+                                // 마름모 모양: 정사각형 크기
+                                const diamondSize = Math.max(scaledBaseWidth, scaledBaseHeight);
+                                nodeWidth = isSelected ? diamondSize + 4 : isHovered ? diamondSize + 2 : diamondSize;
+                                nodeHeight = nodeWidth; // 정사각형
+                            } else {
+                                // 사각형 모양 (기본)
+                                nodeWidth = isSelected
+                                    ? scaledBaseWidth + 4
+                                    : isHovered
+                                        ? scaledBaseWidth + 2
+                                        : scaledBaseWidth;
+
+                                nodeHeight = isSelected
+                                    ? scaledBaseHeight + 2
+                                    : isHovered
+                                        ? scaledBaseHeight + 1
+                                        : scaledBaseHeight;
+                            }
 
                             // 색상 테마
                             const isEvenDepth = depth % 2 === 0;
@@ -1293,53 +1682,85 @@ const ForceDirectedTree = ({
 
                             let fillColor, strokeColor, textColor;
 
-                            if (isRootNode) {
-                                // 최상위 노드 - 황금색 톤으로 강조
-                                fillColor = isLightMode ? '#FDE68A' : '#92400E';
-                                strokeColor = isLightMode ? '#F59E0B' : '#FCD34D';
-                                textColor = isLightMode ? '#78350F' : '#FDE68A';
-                            } else if (isMemoNode) {
-                                // 메모 노드 - 중립적인 톤
-                                fillColor = isLightMode ? '#FFFFFF' : '#1F2937';
-                                strokeColor = isLightMode ? '#D1D5DB' : '#4B5563';
-                                textColor = isLightMode ? '#111827' : '#E5E7EB';
-                            } else if (isLightMode) {
-                                // 라이트모드 - 일반 노드
-                                fillColor = isEvenDepth ? '#1F2937' : '#F3F4F6';
-                                strokeColor = isEvenDepth ? '#111827' : '#9CA3AF';
-                                textColor = isEvenDepth ? '#FFFFFF' : '#1F2937';
+                            if (nodeShape === NODE_SHAPES.DOT) {
+                                // 닷 모양: 테두리와 안쪽 색상 같게 (진짜 닷처럼), 텍스트는 기존 로직 사용
+                                if (isRootNode) {
+                                    fillColor = isLightMode ? '#3B82F6' : '#60A5FA';
+                                    strokeColor = isLightMode ? '#3B82F6' : '#60A5FA'; // 테두리와 안쪽 색상 같게
+                                } else if (isMemoNode) {
+                                    fillColor = isLightMode ? '#10B981' : '#34D399';
+                                    strokeColor = isLightMode ? '#10B981' : '#34D399'; // 테두리와 안쪽 색상 같게
+                                } else {
+                                    fillColor = isLightMode ? '#6B7280' : '#9CA3AF';
+                                    strokeColor = isLightMode ? '#6B7280' : '#9CA3AF'; // 테두리와 안쪽 색상 같게
+                                }
+                                
+                                // 텍스트 색상은 기존 로직 사용 (읽기 쉽게)
+                                if (isRootNode) {
+                                    textColor = isLightMode ? '#78350F' : '#FDE68A';
+                                } else if (isMemoNode) {
+                                    textColor = isLightMode ? '#111827' : '#E5E7EB';
+                                } else if (isLightMode) {
+                                    textColor = isEvenDepth ? '#FFFFFF' : '#1F2937';
+                                } else {
+                                    textColor = isEvenDepth ? '#000000' : '#FFFFFF';
+                                }
                             } else {
-                                // 다크모드 - 일반 노드
-                                fillColor = isEvenDepth ? '#FFFFFF' : '#000000';
-                                strokeColor = isEvenDepth ? '#000000' : '#FFFFFF';
-                                textColor = isEvenDepth ? '#000000' : '#FFFFFF';
+                                // 다른 모양들: 기존 색상 로직
+                                if (isRootNode) {
+                                    // 최상위 노드 - 황금색 톤으로 강조
+                                    fillColor = isLightMode ? '#FDE68A' : '#92400E';
+                                    strokeColor = isLightMode ? '#F59E0B' : '#FCD34D';
+                                    textColor = isLightMode ? '#78350F' : '#FDE68A';
+                                } else if (isMemoNode) {
+                                    // 메모 노드 - 중립적인 톤
+                                    fillColor = isLightMode ? '#FFFFFF' : '#1F2937';
+                                    strokeColor = isLightMode ? '#D1D5DB' : '#4B5563';
+                                    textColor = isLightMode ? '#111827' : '#E5E7EB';
+                                } else if (isLightMode) {
+                                    // 라이트모드 - 일반 노드
+                                    fillColor = isEvenDepth ? '#1F2937' : '#F3F4F6';
+                                    strokeColor = isEvenDepth ? '#111827' : '#9CA3AF';
+                                    textColor = isEvenDepth ? '#FFFFFF' : '#1F2937';
+                                } else {
+                                    // 다크모드 - 일반 노드
+                                    fillColor = isEvenDepth ? '#FFFFFF' : '#000000';
+                                    strokeColor = isEvenDepth ? '#000000' : '#FFFFFF';
+                                    textColor = isEvenDepth ? '#000000' : '#FFFFFF';
+                                }
                             }
 
                             const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
                             const baseStrokeWidth = isRootNode ? 1.8 : 1;
-                            const strokeWidth = isSelected ? baseStrokeWidth + 0.5 : baseStrokeWidth;
+                            const strokeWidth = nodeShape === NODE_SHAPES.DOT 
+                                ? 0 // 닷 모양일 때는 테두리 없음
+                                : (isSelected || isMultiSelected) ? baseStrokeWidth + 0.5 : baseStrokeWidth;
 
-                            const hoverText = isHovered ? extractNodeHoverText(datum) : '';
-                            const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
-                            const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
-                            const tooltipTranslateX = -tooltipWidth / 2;
-                            const tooltipTranslateY = -(nodeHeight / 2 + tooltipHeight + 12);
-                            const tooltipLineHeight = 18;
+                                            const hoverText = isHovered ? extractNodeHoverText(datum) : '';
+                                            const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
+                                            const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
+                                            const scaledTooltipWidth = tooltipWidth * sizeScale;
+                                            const scaledTooltipHeight = tooltipHeight * sizeScale;
+                                            const tooltipTranslateX = -scaledTooltipWidth / 2;
+                                            const tooltipTranslateY = nodeShape === NODE_SHAPES.DOT 
+                                                ? -(nodeHeight / 2 + scaledFontSize + scaledTooltipHeight + 8) // 닷 모양일 때는 글자 위에 툴팁 (거리 좁힘)
+                                                : -(nodeHeight / 2 + scaledTooltipHeight + 12); // 다른 모양일 때는 노드 위에 툴팁
+                                            const tooltipLineHeight = 18 * sizeScale;
 
                             return (
                                 <g
                                     key={nodeId}
                                     transform={`translate(${node.x || 0}, ${node.y || 0})`}
                                     style={{
-                                        cursor: isBeingDragged ? 'grabbing' : (isOtherNodeDragging ? 'default' : 'grab'),
-                                        pointerEvents: isOtherNodeDragging ? 'none' : 'auto',
+                                        cursor: isBeingDragged ? 'grabbing' : (isOtherNodeDragging ? 'default' : (nodeShape === NODE_SHAPES.DOT ? 'default' : 'grab')),
+                                        pointerEvents: isOtherNodeDragging ? 'none' : (nodeShape === NODE_SHAPES.DOT ? 'none' : 'auto'),
                                     }}
-                                    onPointerDown={(event) => {
+                                    onPointerDown={nodeShape === NODE_SHAPES.DOT ? undefined : (event) => {
                                         if (isOtherNodeDragging) return;
                                         setHoveredNodeId(null);
                                         handleDragStart(event, node);
                                     }}
-                                    onClick={(event) => {
+                                    onClick={nodeShape === NODE_SHAPES.DOT ? undefined : (event) => {
                                         if (isOtherNodeDragging) return;
                                         event.stopPropagation();
                                         handleNodeClick(node);
@@ -1353,34 +1774,72 @@ const ForceDirectedTree = ({
                                         setHoveredNodeId((current) => (current === nodeId ? null : current));
                                     }}
                                 >
-                                    {/* 네모 노드 */}
-                                    <motion.rect
-                                        x={-nodeWidth / 2}
-                                        y={-nodeHeight / 2}
-                                        width={nodeWidth}
-                                        height={nodeHeight}
-                                        rx={3}
-                                        ry={3}
-                                        fill={fillColor}
-                                        stroke={strokeColor}
-                                        strokeWidth={strokeWidth}
-                                        initial={{ scale: 0, opacity: 0 }}
-                                        animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
-                                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                                    />
+                                    {/* 노드 모양별 렌더링 */}
+                                    {nodeShape === NODE_SHAPES.DOT ? (
+                                        <motion.circle
+                                            cx={0}
+                                            cy={0}
+                                            r={nodeWidth / 2}
+                                            fill={fillColor}
+                                            stroke={strokeColor}
+                                            strokeWidth={strokeWidth}
+                                            initial={{ scale: 0, opacity: 0 }}
+                                            animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
+                                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                                        />
+                                    ) : nodeShape === NODE_SHAPES.ELLIPSE ? (
+                                        <motion.ellipse
+                                            cx={0}
+                                            cy={0}
+                                            rx={nodeWidth / 2}
+                                            ry={nodeHeight / 2}
+                                            fill={fillColor}
+                                            stroke={strokeColor}
+                                            strokeWidth={strokeWidth}
+                                            initial={{ scale: 0, opacity: 0 }}
+                                            animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
+                                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                                        />
+                                    ) : nodeShape === NODE_SHAPES.DIAMOND ? (
+                                        <motion.polygon
+                                            points={`0,${-nodeHeight / 2} ${nodeWidth / 2},0 0,${nodeHeight / 2} ${-nodeWidth / 2},0`}
+                                            fill={fillColor}
+                                            stroke={strokeColor}
+                                            strokeWidth={strokeWidth}
+                                            initial={{ scale: 0, opacity: 0 }}
+                                            animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
+                                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                                        />
+                                    ) : (
+                                        <motion.rect
+                                            x={-nodeWidth / 2}
+                                            y={-nodeHeight / 2}
+                                            width={nodeWidth}
+                                            height={nodeHeight}
+                                            rx={3}
+                                            ry={3}
+                                            fill={fillColor}
+                                            stroke={strokeColor}
+                                            strokeWidth={strokeWidth}
+                                            initial={{ scale: 0, opacity: 0 }}
+                                            animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
+                                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                                        />
+                                    )}
 
                                     {/* 노드 내부에 이름 표시 */}
                                     {labelText && (
                                         <motion.text
                                             textAnchor="middle"
-                                            dominantBaseline="middle"
+                                            dominantBaseline={nodeShape === NODE_SHAPES.DOT ? "auto" : "middle"}
                                             fill={textColor}
-                                            fontSize={fontSize}
+                                            fontSize={scaledFontSize}
                                             fontWeight={isRootNode ? 700 : 600}
-                                            pointerEvents="none"
+                                            pointerEvents={nodeShape === NODE_SHAPES.DOT ? "auto" : "none"}
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
                                             transition={{ duration: 0.2 }}
+                                            y={nodeShape === NODE_SHAPES.DOT ? -(nodeHeight / 2 + scaledFontSize + 1) : 0}
                                             style={{
                                                 textShadow: isRootNode
                                                     ? (isLightMode
@@ -1389,6 +1848,25 @@ const ForceDirectedTree = ({
                                                     : isMemoNode
                                                         ? 'none'
                                                         : '0 1px 2px rgba(0,0,0,0.8)',
+                                                cursor: nodeShape === NODE_SHAPES.DOT ? 'pointer' : 'default',
+                                                userSelect: 'none', // 텍스트 선택 방지
+                                                WebkitUserSelect: 'none', // Safari 텍스트 선택 방지
+                                                MozUserSelect: 'none', // Firefox 텍스트 선택 방지
+                                                msUserSelect: 'none', // IE 텍스트 선택 방지
+                                            }}
+                                            onClick={nodeShape === NODE_SHAPES.DOT ? (event) => {
+                                                event.stopPropagation();
+                                                handleNodeClick(node);
+                                            } : undefined}
+                                            onPointerDown={nodeShape === NODE_SHAPES.DOT ? (event) => {
+                                                if (isOtherNodeDragging) return;
+                                                event.preventDefault(); // 텍스트 선택 방지
+                                                event.stopPropagation();
+                                                setHoveredNodeId(null);
+                                                handleDragStart(event, node);
+                                            } : undefined}
+                                            onDragStart={(event) => {
+                                                event.preventDefault(); // 드래그 시작 방지
                                             }}
                                         >
                                             {labelText}
@@ -1396,25 +1874,65 @@ const ForceDirectedTree = ({
                                     )}
 
                                     {/* 선택 효과 */}
-                                    {isSelected && (
-                                        <motion.rect
-                                            x={-(nodeWidth / 2 + 3)}
-                                            y={-(nodeHeight / 2 + 3)}
-                                            width={nodeWidth + 6}
-                                            height={nodeHeight + 6}
-                                            rx={4}
-                                            ry={4}
-                                            fill="none"
-                                            stroke={strokeColor}
-                                            strokeWidth={1}
-                                            strokeOpacity={0.5}
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 1 }}
-                                        />
+                                    {(isSelected || isMultiSelected) && (
+                                        <>
+                                            {nodeShape === NODE_SHAPES.DOT ? (
+                                                <motion.circle
+                                                    cx={0}
+                                                    cy={0}
+                                                    r={nodeWidth / 2 + 3}
+                                                    fill="none"
+                                                    stroke={isMultiSelected ? '#60A5FA' : strokeColor}
+                                                    strokeWidth={isMultiSelected ? 1.5 : 1}
+                                                    strokeOpacity={isMultiSelected ? 0.8 : 0.5}
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 1 }}
+                                                />
+                                            ) : nodeShape === NODE_SHAPES.ELLIPSE ? (
+                                                <motion.ellipse
+                                                    cx={0}
+                                                    cy={0}
+                                                    rx={nodeWidth / 2 + 3}
+                                                    ry={nodeHeight / 2 + 3}
+                                                    fill="none"
+                                                    stroke={isMultiSelected ? '#60A5FA' : strokeColor}
+                                                    strokeWidth={isMultiSelected ? 1.5 : 1}
+                                                    strokeOpacity={isMultiSelected ? 0.8 : 0.5}
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 1 }}
+                                                />
+                                            ) : nodeShape === NODE_SHAPES.DIAMOND ? (
+                                                <motion.polygon
+                                                    points={`0,${-(nodeHeight / 2 + 3)} ${nodeWidth / 2 + 3},0 0,${nodeHeight / 2 + 3} ${-(nodeWidth / 2 + 3)},0`}
+                                                    fill="none"
+                                                    stroke={isMultiSelected ? '#60A5FA' : strokeColor}
+                                                    strokeWidth={isMultiSelected ? 1.5 : 1}
+                                                    strokeOpacity={isMultiSelected ? 0.8 : 0.5}
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 1 }}
+                                                />
+                                            ) : (
+                                                <motion.rect
+                                                    x={-(nodeWidth / 2 + 3)}
+                                                    y={-(nodeHeight / 2 + 3)}
+                                                    width={nodeWidth + 6}
+                                                    height={nodeHeight + 6}
+                                                    rx={4}
+                                                    ry={4}
+                                                    fill="none"
+                                                    stroke={isMultiSelected ? '#60A5FA' : strokeColor}
+                                                    strokeWidth={isMultiSelected ? 1.5 : 1}
+                                                    strokeOpacity={isMultiSelected ? 0.8 : 0.5}
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 1 }}
+                                                />
+                                            )}
+                                        </>
                                     )}
 
+
                                     <AnimatePresence>
-                                        {isHovered && hoverLines.length > 0 && tooltipWidth > 0 && tooltipHeight > 0 && (
+                                        {isHovered && hoverLines.length > 0 && scaledTooltipWidth > 0 && scaledTooltipHeight > 0 && (
                                             <motion.g
                                                 key={`tooltip-${nodeId}`}
                                                 initial={{ opacity: 0, y: -4 }}
@@ -1425,22 +1943,22 @@ const ForceDirectedTree = ({
                                                 style={{ pointerEvents: 'none' }}
                                             >
                                                 <rect
-                                                    width={tooltipWidth}
-                                                    height={tooltipHeight}
-                                                    rx={10}
-                                                    ry={10}
+                                                    width={scaledTooltipWidth}
+                                                    height={scaledTooltipHeight}
+                                                    rx={10 * sizeScale}
+                                                    ry={10 * sizeScale}
                                                     fill={theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.8)'}
                                                     stroke={theme === 'light' ? 'rgba(156, 163, 175, 0.5)' : 'rgba(255, 255, 255, 0.35)'}
-                                                    strokeWidth={1}
+                                                    strokeWidth={1 * sizeScale}
                                                 />
                                                 {hoverLines.map((line, index) => (
                                                     <text
                                                         key={`${nodeId}-line-${index}`}
-                                                        x={tooltipWidth / 2}
-                                                        y={14 + index * tooltipLineHeight}
+                                                        x={scaledTooltipWidth / 2}
+                                                        y={14 * sizeScale + index * tooltipLineHeight}
                                                         textAnchor="middle"
                                                         fill={theme === 'light' ? '#1F2937' : '#f5f5f5'}
-                                                        fontSize={12}
+                                                        fontSize={12 * sizeScale}
                                                         fontWeight={500}
                                                     >
                                                         {line}
@@ -1453,6 +1971,21 @@ const ForceDirectedTree = ({
                             );
                         })}
                     </g>
+
+                    {/* 선택 박스 */}
+                    {isSelectionBoxActive && (
+                        <rect
+                            x={Math.min(selectionBox.startX, selectionBox.endX)}
+                            y={Math.min(selectionBox.startY, selectionBox.endY)}
+                            width={Math.abs(selectionBox.endX - selectionBox.startX)}
+                            height={Math.abs(selectionBox.endY - selectionBox.startY)}
+                            fill="rgba(96, 165, 250, 0.1)"
+                            stroke="#60A5FA"
+                            strokeWidth={1.5}
+                            strokeDasharray="4,2"
+                            pointerEvents="none"
+                        />
+                    )}
                 </g>
             </svg>
 
@@ -1514,6 +2047,77 @@ const ForceDirectedTree = ({
                             >
                                 메모 추가
                             </button>
+                            <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
+                            <div className="px-3 py-2">
+                                <div className={`text-[13px] mb-2 font-medium ${theme === 'light' ? 'text-gray-700' : 'text-white/80'}`}>
+                                    노드 모양
+                                </div>
+                                <div className="grid grid-cols-2 gap-1 mb-3">
+                                    {[
+                                        { key: NODE_SHAPES.RECTANGLE, label: '사각형', icon: '⬜' },
+                                        { key: NODE_SHAPES.DOT, label: '닷', icon: '●' },
+                                        { key: NODE_SHAPES.ELLIPSE, label: '타원', icon: '○' },
+                                        { key: NODE_SHAPES.DIAMOND, label: '마름모', icon: '◆' },
+                                    ].map(({ key, label, icon }) => {
+                                        const currentNodeShape = contextMenuState.nodeId ? 
+                                            (simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId) ? 
+                                                (getNodeDatum(simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId))?.nodeShape || NODE_SHAPES.RECTANGLE) : 
+                                                NODE_SHAPES.RECTANGLE) : 
+                                            NODE_SHAPES.RECTANGLE;
+                                        const isSelected = currentNodeShape === key;
+                                        
+                                        return (
+                                            <button
+                                                key={key}
+                                                onClick={() => handleNodeShapeChange(key)}
+                                                className={`flex items-center justify-center space-x-1 px-2 py-1.5 text-[11px] rounded transition ${
+                                                    isSelected
+                                                        ? (theme === 'light' 
+                                                            ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                                                            : 'bg-blue-500/20 text-blue-300 border border-blue-400/30')
+                                                        : (theme === 'light' 
+                                                            ? 'text-gray-600 hover:bg-gray-100' 
+                                                            : 'text-white/70 hover:bg-white/10')
+                                                }`}
+                                            >
+                                                <span className="text-[10px]">{icon}</span>
+                                                <span>{label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
+                            <div className="px-3 py-2">
+                                <div className={`text-[13px] mb-2 font-medium ${theme === 'light' ? 'text-gray-700' : 'text-white/80'}`}>
+                                    노드 크기 조절
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="range"
+                                        min="5"
+                                        max="100"
+                                        value={contextMenuState.nodeId ? (simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId) ? (getNodeDatum(simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId))?.sizeValue || 50) : 50) : 50}
+                                        onChange={handleSizeSliderChange}
+                                        onMouseUp={handleSizeSliderComplete}
+                                        className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
+                                        style={{
+                                            background: (() => {
+                                                const currentValue = contextMenuState.nodeId ? (simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId) ? (getNodeDatum(simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId))?.sizeValue || 50) : 50) : 50;
+                                                const normalizedValue = Math.max(5, Math.min(100, currentValue));
+                                                return theme === 'light' 
+                                                    ? `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${normalizedValue}%, #e5e7eb ${normalizedValue}%, #e5e7eb 100%)`
+                                                    : `linear-gradient(to right, #60a5fa 0%, #60a5fa ${normalizedValue}%, #374151 ${normalizedValue}%, #374151 100%)`;
+                                            })(),
+                                            outline: 'none',
+                                            WebkitAppearance: 'none',
+                                        }}
+                                    />
+                                    <span className={`text-[11px] font-mono ${theme === 'light' ? 'text-gray-500' : 'text-white/60'} min-w-[30px]`}>
+                                        {contextMenuState.nodeId ? (simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId) ? (getNodeDatum(simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId))?.sizeValue || 50) : 50) : 50}
+                                    </span>
+                                </div>
+                            </div>
                             <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
                             <button
                                 type="button"

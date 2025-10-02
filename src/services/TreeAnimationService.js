@@ -100,13 +100,39 @@ class TreeAnimationService extends TreeLayoutService {
      * @param {Array} links - 원본 링크 배열
      * @param {Object} dimensions - 화면 크기
      * @param {Function} onUpdate - 애니메이션 업데이트 콜백
+     * @param {Object} options - 옵션 (enableForceSimulation 등)
      * @returns {Object} 애니메이션 제어 객체
      */
     calculateTreeLayoutWithAnimation(currentNodes, nodes, links, dimensions, onUpdate, options = {}) {
+        // Force simulation 활성화 여부 확인
+        const enableForceSimulation = options.enableForceSimulation !== false;
+        
         // 목표 레이아웃 계산
-        const targetLayout = this.calculateTreeLayout(nodes, links, dimensions, options);
+        const targetLayout = this.calculateTreeLayout(nodes, links, dimensions, {
+            ...options,
+            enableForceSimulation
+        });
 
-        // 애니메이션 실행
+        // Force simulation이 비활성화된 경우 즉시 최종 위치로 설정
+        if (!enableForceSimulation) {
+            // 노드들을 고정된 위치에 배치 (드래그 가능하지만 자동 움직임 없음)
+            const fixedNodes = targetLayout.nodes.map(node => ({
+                ...node,
+                fx: node.x, // 고정된 x 위치
+                fy: node.y  // 고정된 y 위치
+            }));
+            
+            // 즉시 업데이트
+            onUpdate(fixedNodes, targetLayout.links);
+            
+            // 애니메이션 없이 즉시 완료된 상태로 반환
+            return {
+                stop: () => {},
+                isAnimating: () => false
+            };
+        }
+
+        // Force simulation이 활성화된 경우 기존 애니메이션 실행
         return this.animateNodePositions(
             currentNodes,
             targetLayout.nodes,

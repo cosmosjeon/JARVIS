@@ -1820,6 +1820,40 @@ const HierarchicalForceTree = () => {
     }
   }, []);
 
+  const handleNodeUpdate = useCallback(async (nodeId, updates = {}) => {
+    try {
+      const latestData = dataRef.current;
+      if (!latestData || !Array.isArray(latestData.nodes)) {
+        return;
+      }
+
+      const nodeIndex = latestData.nodes.findIndex(node => node.id === nodeId);
+      if (nodeIndex === -1) {
+        return;
+      }
+
+      // 노드 데이터 업데이트
+      const updatedNodes = [...latestData.nodes];
+      updatedNodes[nodeIndex] = {
+        ...updatedNodes[nodeIndex],
+        ...updates,
+      };
+
+      // 상태 업데이트
+      setData(prev => ({
+        ...prev,
+        nodes: updatedNodes,
+      }));
+
+      // Supabase에 저장 (sizeScale 등 노드 속성 업데이트)
+      if (activeTreeId && user?.id) {
+        await upsertTreeNodes(activeTreeId, updatedNodes, user.id);
+      }
+    } catch (error) {
+      console.error('노드 업데이트 실패:', error);
+    }
+  }, [activeTreeId, user?.id]);
+
   const handleManualNodeCreate = useCallback((parentNodeId) => {
     const latestData = dataRef.current;
     if (!latestData || !Array.isArray(latestData.nodes) || latestData.nodes.length === 0) {
@@ -2938,6 +2972,7 @@ const HierarchicalForceTree = () => {
           dimensions={dimensions}
           onNodeClick={handleNodeClickForAssistant}
           onNodeRemove={removeNodeAndDescendants}
+          onNodeUpdate={handleNodeUpdate}
           onMemoCreate={handleMemoCreate}
           onMemoUpdate={handleMemoUpdate}
           onNodeCreate={handleManualNodeCreate}
