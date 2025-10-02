@@ -461,7 +461,7 @@ const ForceDirectedTree = ({
             }
         };
 
-    }, [data, dimensions, assignFallbackPositions, viewportStateLoaded, treeId, userId]);
+    }, [data, dimensions, assignFallbackPositions, viewportStateLoaded, treeId, userId, isForceSimulationEnabled]);
 
     // 뷰포트 상태 복원 (컴포넌트 마운트 시)
     useEffect(() => {
