@@ -1304,7 +1304,7 @@ const ForceDirectedTree = ({
                                 ? (involvesMemo ? 'rgba(16, 185, 129, 0.75)' : 'rgba(59, 130, 246, 0.75)')
                                 : (involvesMemo ? 'rgba(45, 212, 191, 0.82)' : 'rgba(147, 197, 253, 0.88)');
 
-                            const strokeWidth = involvesMemo ? 1.6 : 2.2;
+                            const strokeWidth = involvesMemo ? 0.8 : 1.1;
 
                             return (
                                 <motion.line
@@ -1401,8 +1401,8 @@ const ForceDirectedTree = ({
                             }
 
                             const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
-                            const baseStrokeWidth = isRootNode ? 1.8 : 1;
-                            const strokeWidth = isSelected ? baseStrokeWidth + 0.5 : baseStrokeWidth;
+                            const baseStrokeWidth = isRootNode ? 0.9 : 0.5;
+                            const strokeWidth = isSelected ? baseStrokeWidth + 0.25 : baseStrokeWidth;
 
                             const hoverText = isHovered ? extractNodeHoverText(datum) : '';
                             const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
@@ -1488,7 +1488,7 @@ const ForceDirectedTree = ({
                                             ry={4}
                                             fill="none"
                                             stroke={strokeColor}
-                                            strokeWidth={1}
+                                            strokeWidth={0.5}
                                             strokeOpacity={0.5}
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
@@ -1513,7 +1513,7 @@ const ForceDirectedTree = ({
                                                     ry={10}
                                                     fill={theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.8)'}
                                                     stroke={theme === 'light' ? 'rgba(156, 163, 175, 0.5)' : 'rgba(255, 255, 255, 0.35)'}
-                                                    strokeWidth={1}
+                                                    strokeWidth={0.5}
                                                 />
                                                 {hoverLines.map((line, index) => (
                                                     <text
