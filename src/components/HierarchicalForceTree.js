@@ -9,12 +9,13 @@ import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
-import TreeAnimationService from '../services/TreeAnimationService';
-import QuestionService from '../services/QuestionService';
+import TreeAnimationService from '../services/force-tree/TreeAnimationService';
+import QuestionService from '../services/force-tree/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
 import ChartView from './ChartView';
 import NodeAssistantPanel from './NodeAssistantPanel';
-import ForceDirectedTree from './tree2/ForceDirectedTree';
+import ForceDirectedTree from './force-tree/ForceDirectedTree';
+import ForceTreeViewControls from './force-tree/ForceTreeViewControls';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import { useTheme } from './library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
@@ -26,6 +27,7 @@ import {
   buildFallbackConversation,
 } from '../services/supabaseTrees';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from '../services/treeCreation';
+import useTreeViewOptions from '../hooks/force-tree/useTreeViewOptions';
 
 const WINDOW_CHROME_HEIGHT = 48;
 
@@ -230,8 +232,6 @@ const HierarchicalForceTree = () => {
   const ActiveThemeIcon = activeTheme.icon;
 
   // 뷰 선택 메뉴 상태
-  const [showViewMenu, setShowViewMenu] = useState(false);
-  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
 
   // 테마 순환 함수
   const cycleTheme = useCallback(() => {
@@ -266,31 +266,12 @@ const HierarchicalForceTree = () => {
   const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
-  const [viewMode, setViewMode] = useState(() => {
-    if (typeof window === 'undefined') {
-      return 'tree1';
-    }
-    try {
-      const stored = window.localStorage.getItem('jarvis.view.mode');
-      if (stored === 'tree2' || stored === 'chart') {
-        return stored;
-      }
-      return 'tree1';
-    } catch (error) {
-      return 'tree1';
-    }
-  });
-  const [layoutOrientation, setLayoutOrientation] = useState(() => {
-    if (typeof window === 'undefined') {
-      return 'vertical';
-    }
-    try {
-      const stored = window.localStorage.getItem('jarvis.tree.orientation');
-      return stored === 'horizontal' ? 'horizontal' : 'vertical';
-    } catch (error) {
-      return 'vertical';
-    }
-  });
+  const {
+    viewMode,
+    setViewMode,
+    layoutOrientation,
+    setLayoutOrientation,
+  } = useTreeViewOptions();
   const [linkValidationError, setLinkValidationError] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
@@ -397,28 +378,6 @@ const HierarchicalForceTree = () => {
       }
     }
   }, [sessionInfo.fresh, sessionStorageKey]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem('jarvis.view.mode', viewMode);
-    } catch (error) {
-      // ignore storage errors
-    }
-  }, [viewMode]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem('jarvis.tree.orientation', layoutOrientation);
-    } catch (error) {
-      // ignore storage errors
-    }
-  }, [layoutOrientation]);
 
   useEffect(() => () => {
     if (linkValidationTimeoutRef.current) {
@@ -2858,95 +2817,13 @@ const HierarchicalForceTree = () => {
         </div>
       </div>
 
-      {/* 뷰 선택 버튼 - 상단바 아래 */}
-      <div
-        className="absolute top-12 left-1/2 z-[1300] -translate-x-1/2"
-        style={{ pointerEvents: 'none' }}
-      >
-        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-          {/* 트리1 버튼 - 호버 시 레이아웃 드롭다운 */}
-          <div
-            className="relative"
-            onMouseEnter={() => setShowLayoutMenu(true)}
-            onMouseLeave={() => setShowLayoutMenu(false)}
-          >
-            <button
-              type="button"
-              onClick={() => setViewMode('tree1')}
-              className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={viewMode === 'tree1'}
-            >
-              트리1
-            </button>
-
-            {/* 레이아웃 방향 드롭다운 */}
-            {showLayoutMenu && (
-              <div
-                className="absolute top-full left-0 w-28 z-[1400]"
-                style={{ paddingTop: '8px' }}
-                onMouseEnter={() => setShowLayoutMenu(true)}
-                onMouseLeave={() => setShowLayoutMenu(false)}
-              >
-                <div
-                  className="rounded-lg shadow-2xl backdrop-blur-md border overflow-hidden"
-                  style={{
-                    background: theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.85)',
-                    borderColor: theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.12)',
-                  }}
-                >
-                  <button
-                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
-                      ? 'text-gray-900 hover:bg-gray-100'
-                      : 'text-white/90 hover:bg-white/10'
-                      } ${layoutOrientation === 'vertical' ? 'font-semibold' : ''}`}
-                    onClick={() => {
-                      setViewMode('tree1');
-                      setLayoutOrientation('vertical');
-                      setShowLayoutMenu(false);
-                    }}
-                  >
-                    아래로
-                  </button>
-                  <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
-                  <button
-                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
-                      ? 'text-gray-900 hover:bg-gray-100'
-                      : 'text-white/90 hover:bg-white/10'
-                      } ${layoutOrientation === 'horizontal' ? 'font-semibold' : ''}`}
-                    onClick={() => {
-                      setViewMode('tree1');
-                      setLayoutOrientation('horizontal');
-                      setShowLayoutMenu(false);
-                    }}
-                  >
-                    오른쪽
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 트리2 버튼 */}
-          <button
-            type="button"
-            onClick={() => setViewMode('tree2')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree2'}
-          >
-            트리2
-          </button>
-
-          {/* 차트 버튼 */}
-          <button
-            type="button"
-            onClick={() => setViewMode('chart')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'chart'}
-          >
-            차트
-          </button>
-        </div>
-      </div>
+      <ForceTreeViewControls
+        viewMode={viewMode}
+        onChangeViewMode={setViewMode}
+        layoutOrientation={layoutOrientation}
+        onChangeLayoutOrientation={setLayoutOrientation}
+        theme={theme}
+      />
 
       {isTreeSyncing && !initializingTree ? (
         <div className="pointer-events-none absolute bottom-6 right-6 z-[1200] rounded-full bg-slate-900/80 px-3 py-1 text-[11px] font-medium text-slate-100 shadow-lg">
@@ -2954,7 +2831,7 @@ const HierarchicalForceTree = () => {
         </div>
       ) : null}
 
-      {viewMode === 'tree2' && showBootstrapChat && (
+      {viewMode === 'force-tree' && showBootstrapChat && (
         <div
           className="pointer-events-none absolute"
           style={{
@@ -2988,7 +2865,7 @@ const HierarchicalForceTree = () => {
         </div>
       )}
 
-      {viewMode === 'tree2' && (
+      {viewMode === 'force-tree' && (
         <ForceDirectedTree
           data={data}
           dimensions={dimensions}

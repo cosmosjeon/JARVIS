@@ -79,7 +79,9 @@ class ForceSimulationService {
                     node.vx = 0;
                     node.vy = 0;
                     restoredCount++;
-                    console.log(`노드 위치 복원: ${nodeId} -> (${x}, ${y})`);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.debug('[force] restore position', nodeId, x, y);
+                    }
                 }
             } else if (Number.isFinite(datum?.x) && Number.isFinite(datum?.y)) {
                 node.x = datum.x;
@@ -92,8 +94,8 @@ class ForceSimulationService {
             // (노드들이 독립적으로 드래그 가능하도록 함)
         });
 
-        if (restoredCount > 0) {
-            console.log(`총 ${restoredCount}개 노드 위치 복원 완료`);
+        if (restoredCount > 0 && process.env.NODE_ENV === 'development') {
+            console.debug('[force] restored node positions', restoredCount);
         }
 
         // Force simulation 생성
