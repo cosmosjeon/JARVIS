@@ -5,6 +5,7 @@ import DataTransformService from '../../services/DataTransformService';
 import ForceSimulationService from '../../services/ForceSimulationService';
 import NodeAssistantPanel from '../NodeAssistantPanel';
 import MemoPanel from './MemoPanel';
+import MemoEditor from './MemoEditor';
 import QuestionService from '../../services/QuestionService';
 import { saveTreeViewportState, loadTreeViewportState } from '../../services/supabaseTrees';
 
@@ -203,8 +204,35 @@ const ForceDirectedTree = ({
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
     const [contextMenuState, setContextMenuState] = useState(() => ({ ...DEFAULT_CONTEXT_MENU_STATE }));
     const [linkCreationState, setLinkCreationState] = useState({ active: false, sourceId: null });
+    const [memoEditorState, setMemoEditorState] = useState({ isOpen: false, memo: null });
     const isLinking = linkCreationState.active;
     const linkingSourceId = linkCreationState.sourceId;
+
+    // 메모 클릭 핸들러
+    const handleMemoClick = useCallback((memoData) => {
+        setMemoEditorState({ isOpen: true, memo: memoData });
+        setSelectedNodeId(null); // 기존 선택 해제
+    }, []);
+
+    // 메모 에디터 닫기
+    const handleMemoEditorClose = useCallback(() => {
+        setMemoEditorState({ isOpen: false, memo: null });
+    }, []);
+
+    // 메모 업데이트
+    const handleMemoUpdate = useCallback((memoData) => {
+        if (typeof onMemoUpdate === 'function') {
+            onMemoUpdate(memoData.id, memoData.memo);
+        }
+    }, [onMemoUpdate]);
+
+    // 메모 삭제
+    const handleMemoDelete = useCallback(() => {
+        if (typeof onMemoRemove === 'function' && memoEditorState.memo) {
+            onMemoRemove(memoEditorState.memo.id);
+            setMemoEditorState({ isOpen: false, memo: null });
+        }
+    }, [onMemoRemove, memoEditorState.memo]);
     const dragStartTimeRef = useRef(0);
     const shouldOpenNodeRef = useRef(false);
     const draggedMemoSnapshotRef = useRef([]);
@@ -947,11 +975,17 @@ const ForceDirectedTree = ({
 
         centerNodeOnScreen(node);
 
+        // 메모 노드인 경우 풀스크린 에디터 열기
+        if (datum?.nodeType === 'memo') {
+            handleMemoClick(datum);
+            return;
+        }
+
         setSelectedNodeId(nodeId);
         if (onNodeClick) {
             onNodeClick({ id: nodeId });
         }
-    }, [onNodeClick, isDraggingNode, draggedNodeId, centerNodeOnScreen, isLinking, linkingSourceId, cancelLinkCreation, onLinkCreate]);
+    }, [onNodeClick, isDraggingNode, draggedNodeId, centerNodeOnScreen, isLinking, linkingSourceId, cancelLinkCreation, onLinkCreate, handleMemoClick]);
 
     const handleNodeContextMenu = useCallback((event, node) => {
         event.preventDefault();
@@ -1688,6 +1722,15 @@ const ForceDirectedTree = ({
                     </div>
                 );
             })()}
+
+            {/* 메모 에디터 */}
+            <MemoEditor
+                memo={memoEditorState.memo}
+                isVisible={memoEditorState.isOpen}
+                onClose={handleMemoEditorClose}
+                onUpdate={handleMemoUpdate}
+                onDelete={handleMemoDelete}
+            />
         </div>
     );
 };
