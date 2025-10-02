@@ -892,8 +892,8 @@ const ForceDirectedTree = ({
 
             Promise.resolve(result)
                 .then(() => {
+                    // 링크 생성 후 대상 노드로 화면만 이동 (패널은 열지 않음)
                     pendingCenterNodeIdRef.current = nodeId;
-                    setSelectedNodeId(nodeId);
                 })
                 .finally(() => {
                     cancelLinkCreation();
@@ -952,8 +952,8 @@ const ForceDirectedTree = ({
 
         setContextMenuState({ ...DEFAULT_CONTEXT_MENU_STATE });
         setLinkCreationState({ active: true, sourceId });
+        // 링크 시작 시 소스 노드로 화면만 이동 (패널은 열지 않음)
         pendingCenterNodeIdRef.current = sourceId;
-        setSelectedNodeId(sourceId);
     }, [contextMenuState.nodeId]);
 
     const handleMenuAddRoot = useCallback(() => {
