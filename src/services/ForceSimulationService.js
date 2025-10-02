@@ -18,9 +18,11 @@ class ForceSimulationService {
      * @param {Object} hierarchyData - D3 hierarchy 데이터
      * @param {Object} dimensions - {width, height}
      * @param {Function} onTick - tick 이벤트 콜백
+     * @param {Map} previousPositions - 이전 위치 정보
+     * @param {Object} options - 옵션 (enableForceSimulation 등)
      * @returns {Object} {nodes, links} - simulation 적용된 데이터
      */
-    createSimulation(hierarchyData, dimensions = { width: 928, height: 600 }, onTick = null, previousPositions = new Map()) {
+    createSimulation(hierarchyData, dimensions = { width: 928, height: 600 }, onTick = null, previousPositions = new Map(), options = {}) {
         if (!hierarchyData) {
             return { nodes: [], links: [] };
         }
@@ -43,6 +45,9 @@ class ForceSimulationService {
             node.index = i;
         });
 
+        // Force simulation 활성화 여부 확인
+        const enableForceSimulation = options.enableForceSimulation !== false;
+        
         // 기존 simulation 정리
         this.cleanup();
 
@@ -79,6 +84,9 @@ class ForceSimulationService {
                 node.vx = 0;
                 node.vy = 0;
             }
+
+            // Force simulation이 비활성화된 경우에도 드래그를 위해 고정하지 않음
+            // (노드들이 독립적으로 드래그 가능하도록 함)
         });
 
         // Force simulation 생성
@@ -155,6 +163,15 @@ class ForceSimulationService {
             return 420 + level * 240;
         }, 0, 0).strength(0.02);
 
+        // Force simulation이 비활성화된 경우 simulation을 생성하지 않음
+        if (!enableForceSimulation) {
+            // 즉시 최종 위치로 설정하고 콜백 호출
+            if (onTick && typeof onTick === 'function') {
+                onTick(nodes, links);
+            }
+            return { nodes, links };
+        }
+
         this.simulation = d3.forceSimulation(nodes)
             .force('link', linkForce)
             .force('charge', chargeForce)
@@ -219,8 +236,15 @@ class ForceSimulationService {
      * @param {Object} d - 노드 데이터
      */
     handleDrag(event, d) {
-        d.fx = event.x;
-        d.fy = event.y;
+        if (this.simulation) {
+            d.fx = event.x;
+            d.fy = event.y;
+        } else {
+            d.x = event.x;
+            d.y = event.y;
+            d.fx = event.x;
+            d.fy = event.y;
+        }
     }
 
     /**
@@ -229,11 +253,16 @@ class ForceSimulationService {
      * @param {Object} d - 노드 데이터
      */
     handleDragEnd(event, d) {
-        if (!event.active && this.simulation) {
-            this.simulation.alphaTarget(0);
+        if (this.simulation) {
+            if (!event.active) {
+                this.simulation.alphaTarget(0);
+            }
+            d.fx = null;
+            d.fy = null;
+        } else {
+            d.fx = d.x;
+            d.fy = d.y;
         }
-        d.fx = null;
-        d.fy = null;
     }
 
     /**

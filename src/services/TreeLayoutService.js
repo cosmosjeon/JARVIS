@@ -74,6 +74,7 @@ class TreeLayoutService {
      * @param {Array} nodes - 원본 노드 배열
      * @param {Array} links - 원본 링크 배열
      * @param {Object} dimensions - 화면 크기 {width, height}
+     * @param {Object} options - 옵션 (enableForceSimulation 등)
      * @returns {Object} {nodes, links} - 계산된 위치가 포함된 노드와 링크
      */
     calculateTreeLayout(nodes, links, dimensions, options = {}) {
