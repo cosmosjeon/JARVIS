@@ -40,7 +40,7 @@ function App() {
   return (
     <SupabaseProvider>
       <SettingsProvider>
-        <ThemeProvider>
+        <ThemeProvider defaultTheme="glass" mode={mode}>
           <SupabaseAuthGate mode={mode}>
             {mode === 'library' ? (
               <LibraryApp />

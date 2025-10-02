@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
 import DataTransformService from '../../services/DataTransformService';
@@ -140,6 +140,27 @@ const computeTooltipDimensions = (lines) => {
     return { width, height };
 };
 
+const normalizeLinkEndpoint = (endpoint) => {
+    if (!endpoint) {
+        return null;
+    }
+
+    if (typeof endpoint === 'string' || typeof endpoint === 'number') {
+        return String(endpoint);
+    }
+
+    if (typeof endpoint === 'object') {
+        if (endpoint.id) {
+            return String(endpoint.id);
+        }
+        if (endpoint.data && endpoint.data.id) {
+            return String(endpoint.data.id);
+        }
+    }
+
+    return null;
+};
+
 /**
  * ForceDirectedTree Component
  * 
@@ -190,6 +211,18 @@ const ForceDirectedTree = ({
     const pendingCenterNodeIdRef = useRef(null);
     const previousPositionsRef = useRef(new Map());
 
+    const hierarchicalLinks = useMemo(() => (
+        Array.isArray(data?.links)
+            ? data.links.filter((link) => link?.relationship !== 'connection')
+            : []
+    ), [data?.links]);
+
+    const connectionLinks = useMemo(() => (
+        Array.isArray(data?.links)
+            ? data.links.filter((link) => link?.relationship === 'connection')
+            : []
+    ), [data?.links]);
+
     // SVG 중심 위치 계산
     const centerX = dimensions.width / 2;
     const centerY = dimensions.height / 2;
@@ -199,6 +232,17 @@ const ForceDirectedTree = ({
 
     const hasRenderableNodes = (Array.isArray(data?.nodes) && data.nodes.length > 0)
         || (Array.isArray(simulatedNodes) && simulatedNodes.length > 0);
+
+    const nodePositionMap = useMemo(() => {
+        const map = new Map();
+        simulatedNodes.forEach((node) => {
+            const datum = getNodeDatum(node);
+            if (datum?.id) {
+                map.set(datum.id, node);
+            }
+        });
+        return map;
+    }, [simulatedNodes]);
 
     // 뷰포트 상태 저장/복원 관련
     const [viewportStateLoaded, setViewportStateLoaded] = useState(false);
@@ -364,7 +408,7 @@ const ForceDirectedTree = ({
 
         const hierarchyData = DataTransformService?.transformToHierarchy(
             preparedNodes,
-            data.links
+            hierarchicalLinks
         );
 
         if (!hierarchyData) {
@@ -438,7 +482,7 @@ const ForceDirectedTree = ({
                 clearTimeout(saveViewportStateTimeoutRef.current);
             }
         };
-    }, [data, dimensions, assignFallbackPositions, viewportStateLoaded, treeId, userId]);
+    }, [data, dimensions, assignFallbackPositions, viewportStateLoaded, treeId, userId, hierarchicalLinks]);
 
     // 뷰포트 상태 복원 (컴포넌트 마운트 시)
     useEffect(() => {
@@ -1237,6 +1281,48 @@ const ForceDirectedTree = ({
                                 />
                             );
                         })}
+                        {connectionLinks.map((link, index) => {
+                            const sourceId = normalizeLinkEndpoint(link.source);
+                            const targetId = normalizeLinkEndpoint(link.target);
+
+                            if (!sourceId || !targetId) {
+                                return null;
+                            }
+
+                            const sourceNode = nodePositionMap.get(sourceId);
+                            const targetNode = nodePositionMap.get(targetId);
+
+                            if (!sourceNode || !targetNode) {
+                                return null;
+                            }
+
+                            const sourceDatum = getNodeDatum(sourceNode);
+                            const targetDatum = getNodeDatum(targetNode);
+                            const involvesMemo = sourceDatum?.nodeType === 'memo' || targetDatum?.nodeType === 'memo';
+
+                            const strokeColor = theme === 'light'
+                                ? (involvesMemo ? 'rgba(16, 185, 129, 0.75)' : 'rgba(59, 130, 246, 0.75)')
+                                : (involvesMemo ? 'rgba(45, 212, 191, 0.82)' : 'rgba(147, 197, 253, 0.88)');
+
+                            const strokeWidth = involvesMemo ? 1.6 : 2.2;
+
+                            return (
+                                <motion.line
+                                    key={`connection-${sourceId}-${targetId}-${index}`}
+                                    x1={sourceNode.x || 0}
+                                    y1={sourceNode.y || 0}
+                                    x2={targetNode.x || 0}
+                                    y2={targetNode.y || 0}
+                                    stroke={strokeColor}
+                                    strokeWidth={strokeWidth}
+                                    strokeLinecap="round"
+                                    style={{ pointerEvents: 'none' }}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 0.85 }}
+                                    transition={{ duration: 0.25 }}
+                                />
+                            );
+                        })}
                     </g>
 
                     {/* 노드 렌더링 */}
@@ -1591,7 +1677,7 @@ const ForceDirectedTree = ({
                                     onPanZoomGesture={() => { }}
                                     nodeScaleFactor={1}
                                     treeNodes={data?.nodes || []}
-                                    treeLinks={data?.links || []}
+                                    treeLinks={hierarchicalLinks}
                                     onNodeSelect={(targetNode) => {
                                         const targetNodeId = targetNode?.id;
                                         if (targetNodeId) {

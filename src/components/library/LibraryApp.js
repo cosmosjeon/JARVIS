@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, FolderTree as FolderIcon, ChevronDown, ChevronRight, Monitor, Moon, Sun } from "lucide-react";
+import { Loader2, FolderTree as FolderIcon, ChevronDown, ChevronRight, Monitor, Moon, Sun, Sparkles } from "lucide-react";
 
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
@@ -55,7 +55,8 @@ const LibraryApp = () => {
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
   const [dragOverVoranBox, setDragOverVoranBox] = useState(false);
 
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, mode } = useTheme();
+
 
   const selectedTree = useMemo(
     () => trees.find((tree) => tree.id === selectedId) ?? null,
@@ -199,7 +200,7 @@ const LibraryApp = () => {
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.jarvisAPI?.onLibraryRefresh !== "function") {
-      return () => {};
+      return () => { };
     }
 
     const unsubscribe = window.jarvisAPI.onLibraryRefresh(() => {
@@ -750,18 +751,24 @@ const LibraryApp = () => {
 
   const voranTrees = useMemo(() => trees.filter((tree) => !tree.folderId), [trees]);
 
-  const themeOptions = useMemo(() => ([
-    { label: "라이트", value: "light", icon: Sun },
-    { label: "다크", value: "dark", icon: Moon },
-    { label: "시스템", value: "system", icon: Monitor },
-  ]), []);
+  const themeOptions = useMemo(() => {
+    // 모든 모드에서 반투명/라이트/다크 옵션 제공
+    return [
+      { label: "반투명", value: "glass", icon: Sparkles },
+      { label: "라이트", value: "light", icon: Sun },
+      { label: "다크", value: "dark", icon: Moon },
+    ];
+  }, []);
 
   const activeTheme = themeOptions.find((option) => option.value === theme) || themeOptions[0];
   const ActiveThemeIcon = activeTheme.icon;
 
-  const handleThemeChange = useCallback((value) => {
-    setTheme(value);
-  }, [setTheme]);
+  // 테마 순환 함수
+  const cycleTheme = useCallback(() => {
+    const currentIndex = themeOptions.findIndex(option => option.value === theme);
+    const nextIndex = (currentIndex + 1) % themeOptions.length;
+    setTheme(themeOptions[nextIndex].value);
+  }, [theme, themeOptions, setTheme]);
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
@@ -838,10 +845,10 @@ const LibraryApp = () => {
                     className={cn(
                       "group flex w-full items-center gap-2 rounded-lg border border-transparent bg-card/70 px-3 py-2 text-left text-sm font-medium shadow-sm transition-colors",
                       (isFolderSelected || hasSelectedTreeInFolder) &&
-                        "border-primary/50 bg-primary/10 text-primary-foreground",
+                      "border-primary/50 bg-primary/10 text-primary-foreground",
                       !isFolderSelected &&
-                        !hasSelectedTreeInFolder &&
-                        "text-muted-foreground hover:border-border/70 hover:bg-card",
+                      !hasSelectedTreeInFolder &&
+                      "text-muted-foreground hover:border-border/70 hover:bg-card",
                       isDragTarget && "ring-2 ring-primary/50"
                     )}
                   >
@@ -893,7 +900,7 @@ const LibraryApp = () => {
                               "group flex w-full items-center gap-2 rounded-md border border-transparent bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors",
                               isActive && "border-primary/50 bg-primary/10 text-primary-foreground",
                               !isActive &&
-                                "text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground",
+                              "text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground",
                               isSelectedInNav && "border-primary/40",
                               isDraggingTree && "opacity-60"
                             )}
@@ -962,7 +969,7 @@ const LibraryApp = () => {
                         "group flex w-full items-center gap-2 rounded-md border border-transparent bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors",
                         isActive && "border-primary/50 bg-primary/10 text-primary-foreground",
                         !isActive &&
-                          "text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground",
+                        "text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground",
                         isSelectedInNav && "border-primary/40",
                         isDraggingThisTree && "opacity-60"
                       )}
@@ -997,35 +1004,16 @@ const LibraryApp = () => {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-9 w-9 rounded-full border-border bg-background/30 text-card-foreground"
-                >
-                  <ActiveThemeIcon className="h-4 w-4" />
-                  <span className="sr-only">테마 변경</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuLabel>테마</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {themeOptions.map((option) => {
-                  const Icon = option.icon;
-                  return (
-                    <DropdownMenuItem
-                      key={option.value}
-                      onSelect={() => handleThemeChange(option.value)}
-                      className="flex items-center gap-2"
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span>{option.label}</span>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full border-border bg-background/30 text-card-foreground"
+              onClick={cycleTheme}
+              title={`테마 변경 (현재: ${activeTheme.label})`}
+            >
+              <ActiveThemeIcon className="h-4 w-4" />
+              <span className="sr-only">테마 변경</span>
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -1158,7 +1146,7 @@ const LibraryApp = () => {
         type={createType}
         folders={folders}
         onFolderCreate={(name, parentId) => handleFolderCreate({ name, parentId })}
-        onMemoCreate={() => {}}
+        onMemoCreate={() => { }}
       />
     </div>
   );

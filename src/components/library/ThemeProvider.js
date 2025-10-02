@@ -10,35 +10,49 @@ export const useTheme = () => {
   return context;
 };
 
-const getSystemTheme = () => {
-  if (typeof window === "undefined") return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-};
-
-export const ThemeProvider = ({ children, defaultTheme = "light" }) => {
-  const [theme, setTheme] = useState(defaultTheme);
+export const ThemeProvider = ({ children, defaultTheme = "glass", mode = "widget" }) => {
+  // localStorage에서 테마 상태 복원
+  const [theme, setTheme] = useState(() => {
+    try {
+      const savedTheme = localStorage.getItem('jarvis.theme');
+      return savedTheme || defaultTheme;
+    } catch {
+      return defaultTheme;
+    }
+  });
 
   useEffect(() => {
     const root = window.document.documentElement;
     const applyTheme = (value) => {
-      const nextTheme = value === "system" ? getSystemTheme() : value;
-      root.classList.remove("light", "dark");
-      root.classList.add(nextTheme);
+      // 기존 테마 클래스들 제거
+      root.classList.remove("glass", "light", "dark");
+      // 새로운 테마 클래스 추가
+      root.classList.add(value);
     };
 
     applyTheme(theme);
 
-    if (theme === "system") {
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = () => applyTheme("system");
-      mediaQuery.addEventListener("change", handler);
-      return () => mediaQuery.removeEventListener("change", handler);
+    // localStorage에 테마 상태 저장
+    try {
+      localStorage.setItem('jarvis.theme', theme);
+    } catch {
+      // localStorage 접근 실패 시 무시
     }
-
-    return undefined;
   }, [theme]);
 
-  const value = useMemo(() => ({ theme, setTheme }), [theme]);
+  // localStorage 변경 감지하여 다른 탭/창과 동기화
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'jarvis.theme' && e.newValue && e.newValue !== theme) {
+        setTheme(e.newValue);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [theme]);
+
+  const value = useMemo(() => ({ theme, setTheme, mode }), [theme, mode]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
