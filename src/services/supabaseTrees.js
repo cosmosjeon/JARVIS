@@ -618,3 +618,111 @@ export const deleteMemo = async ({ memoId, userId }) => {
     throw error;
   }
 };
+
+// ==================== Tree Viewport State Management ====================
+
+/**
+ * 트리의 뷰포트 상태를 저장합니다
+ * @param {Object} params
+ * @param {string} params.treeId - 트리 ID
+ * @param {string} params.userId - 사용자 ID
+ * @param {Object} params.viewportData - 뷰포트 데이터 {zoom: {k, x, y}, pan: {x, y}, nodePositions: {nodeId: {x, y}}}
+ */
+export const saveTreeViewportState = async ({ treeId, userId, viewportData }) => {
+  const supabase = ensureSupabase();
+  const now = Date.now();
+
+  // 기존 뷰포트 상태가 있는지 확인
+  const { data: existingState, error: fetchError } = await supabase
+    .from('tree_viewport_states')
+    .select('id')
+    .eq('tree_id', treeId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (fetchError) {
+    throw fetchError;
+  }
+
+  const payload = {
+    tree_id: treeId,
+    user_id: userId,
+    viewport_data: viewportData,
+    updated_at: now,
+  };
+
+  let result;
+  if (existingState) {
+    // 기존 상태 업데이트
+    const { data, error } = await supabase
+      .from('tree_viewport_states')
+      .update(payload)
+      .eq('id', existingState.id)
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+    result = data;
+  } else {
+    // 새 상태 생성
+    payload.created_at = now;
+    const { data, error } = await supabase
+      .from('tree_viewport_states')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+    result = data;
+  }
+
+  return result;
+};
+
+/**
+ * 트리의 뷰포트 상태를 불러옵니다
+ * @param {Object} params
+ * @param {string} params.treeId - 트리 ID
+ * @param {string} params.userId - 사용자 ID
+ * @returns {Object|null} 뷰포트 데이터 또는 null
+ */
+export const loadTreeViewportState = async ({ treeId, userId }) => {
+  const supabase = ensureSupabase();
+
+  const { data, error } = await supabase
+    .from('tree_viewport_states')
+    .select('viewport_data')
+    .eq('tree_id', treeId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.viewport_data || null;
+};
+
+/**
+ * 트리의 뷰포트 상태를 삭제합니다
+ * @param {Object} params
+ * @param {string} params.treeId - 트리 ID
+ * @param {string} params.userId - 사용자 ID
+ */
+export const deleteTreeViewportState = async ({ treeId, userId }) => {
+  const supabase = ensureSupabase();
+
+  const { error } = await supabase
+    .from('tree_viewport_states')
+    .delete()
+    .eq('tree_id', treeId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw error;
+  }
+};

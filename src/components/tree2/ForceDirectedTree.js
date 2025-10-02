@@ -6,6 +6,7 @@ import ForceSimulationService from '../../services/ForceSimulationService';
 import NodeAssistantPanel from '../NodeAssistantPanel';
 import MemoPanel from './MemoPanel';
 import QuestionService from '../../services/QuestionService';
+import { saveTreeViewportState, loadTreeViewportState } from '../../services/supabaseTrees';
 
 const NODE_COLOR_PALETTE = (d3.schemeTableau10 && d3.schemeTableau10.length ? d3.schemeTableau10 : d3.schemeCategory10);
 const DEFAULT_CONTEXT_MENU_STATE = {
@@ -163,6 +164,8 @@ const ForceDirectedTree = ({
     onSecondQuestion,
     onPlaceholderCreate,
     theme = 'dark',
+    treeId,
+    userId,
 }) => {
     const themeBackground = theme === 'light'
         ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))'
@@ -194,12 +197,16 @@ const ForceDirectedTree = ({
     // viewTransform 초기값을 중심으로 설정
     const [viewTransform, setViewTransform] = useState({ x: centerX, y: centerY, k: 1 });
 
-        const assignFallbackPositions = useCallback((nodes = []) => {
-            if (!Array.isArray(nodes)) {
-                return [];
-            }
+    // 뷰포트 상태 저장/복원 관련
+    const [viewportStateLoaded, setViewportStateLoaded] = useState(false);
+    const saveViewportStateTimeoutRef = useRef(null);
 
-            const clonedNodes = nodes.map((node) => ({ ...node }));
+    const assignFallbackPositions = useCallback((nodes = []) => {
+        if (!Array.isArray(nodes)) {
+            return [];
+        }
+
+        const clonedNodes = nodes.map((node) => ({ ...node }));
         const levelMap = new Map();
 
         clonedNodes.forEach((node) => {
@@ -236,12 +243,117 @@ const ForceDirectedTree = ({
         return clonedNodes;
     }, []);
 
-    // Simulation 초기화
+    // 뷰포트 상태 저장 함수
+    const saveViewportState = useCallback(async () => {
+        if (!treeId || !userId || !viewportStateLoaded) {
+            return;
+        }
+
+        try {
+            const nodePositions = {};
+
+            // simulatedNodes에서 노드 위치 수집
+            simulatedNodes.forEach(node => {
+                const datum = getNodeDatum(node);
+                const nodeId = datum?.id || node.id;
+                if (nodeId && Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                    nodePositions[nodeId] = {
+                        x: node.x,
+                        y: node.y
+                    };
+                }
+            });
+
+            // previousPositionsRef에서도 노드 위치 수집 (fallback)
+            if (Object.keys(nodePositions).length === 0 && previousPositionsRef.current.size > 0) {
+                previousPositionsRef.current.forEach((position, nodeId) => {
+                    if (Number.isFinite(position.x) && Number.isFinite(position.y)) {
+                        nodePositions[nodeId] = {
+                            x: position.x,
+                            y: position.y
+                        };
+                    }
+                });
+            }
+
+            const viewportData = {
+                nodePositions
+            };
+
+            console.log('뷰포트 상태 저장:', {
+                treeId,
+                userId,
+                nodeCount: Object.keys(nodePositions).length,
+                simulatedNodesCount: simulatedNodes.length,
+                previousPositionsCount: previousPositionsRef.current.size,
+                viewportData
+            });
+
+            await saveTreeViewportState({
+                treeId,
+                userId,
+                viewportData
+            });
+
+            console.log('뷰포트 상태 저장 완료');
+        } catch (error) {
+            console.warn('뷰포트 상태 저장 실패:', error);
+        }
+    }, [treeId, userId, viewTransform, simulatedNodes, viewportStateLoaded]);
+
+    // 뷰포트 상태 복원 함수
+    const loadViewportState = useCallback(async () => {
+        if (!treeId || !userId || viewportStateLoaded) {
+            return;
+        }
+
+        try {
+            console.log('뷰포트 상태 복원 시작:', { treeId, userId });
+            const savedState = await loadTreeViewportState({ treeId, userId });
+
+            if (savedState) {
+                console.log('저장된 뷰포트 상태:', savedState);
+
+                // 뷰포트 변환은 복원하지 않음 (노드 위치만 복원)
+
+                // 노드 위치 복원을 위한 플래그 설정
+                if (savedState.nodePositions) {
+                    const nodePositionsMap = new Map(Object.entries(savedState.nodePositions));
+                    previousPositionsRef.current = nodePositionsMap;
+                    console.log('노드 위치 복원:', nodePositionsMap.size, '개 노드');
+                    console.log('복원된 노드 위치:', Object.fromEntries(nodePositionsMap));
+                }
+            } else {
+                console.log('저장된 뷰포트 상태 없음');
+            }
+            setViewportStateLoaded(true);
+        } catch (error) {
+            console.warn('뷰포트 상태 복원 실패:', error);
+            setViewportStateLoaded(true);
+        }
+    }, [treeId, userId, centerX, centerY, viewportStateLoaded]);
+
+    // 뷰포트 상태 자동 저장 (디바운스)
+    const debouncedSaveViewportState = useCallback(() => {
+        if (saveViewportStateTimeoutRef.current) {
+            clearTimeout(saveViewportStateTimeoutRef.current);
+        }
+        saveViewportStateTimeoutRef.current = setTimeout(() => {
+            saveViewportState();
+        }, 1000); // 1초 후 저장
+    }, [saveViewportState]);
+
+    // Simulation 초기화 (뷰포트 상태 로드 후)
     useEffect(() => {
         if (!data || !data.nodes || data.nodes.length === 0) {
             previousPositionsRef.current = new Map();
             setSimulatedNodes([]);
             setSimulatedLinks([]);
+            return;
+        }
+
+        // 뷰포트 상태가 아직 로드되지 않았으면 대기
+        if (treeId && userId && !viewportStateLoaded) {
             return;
         }
 
@@ -314,8 +426,30 @@ const ForceDirectedTree = ({
             if (simulationServiceRef.current) {
                 simulationServiceRef.current.cleanup();
             }
+            // 컴포넌트 언마운트 시 뷰포트 상태 저장
+            if (viewportStateLoaded) {
+                saveViewportState();
+            }
+            // 타이머 정리
+            if (saveViewportStateTimeoutRef.current) {
+                clearTimeout(saveViewportStateTimeoutRef.current);
+            }
         };
-    }, [data, dimensions, assignFallbackPositions]);
+    }, [data, dimensions, assignFallbackPositions, viewportStateLoaded, treeId, userId]);
+
+    // 뷰포트 상태 복원 (컴포넌트 마운트 시)
+    useEffect(() => {
+        if (treeId && userId && !viewportStateLoaded) {
+            loadViewportState();
+        }
+    }, [treeId, userId, loadViewportState, viewportStateLoaded]);
+
+    // 노드 위치 변경 시 자동 저장 (뷰포트 변경은 저장하지 않음)
+    useEffect(() => {
+        if (viewportStateLoaded) {
+            debouncedSaveViewportState();
+        }
+    }, [simulatedNodes, debouncedSaveViewportState, viewportStateLoaded]);
 
     // dimensions가 변경될 때 viewTransform 업데이트 (비율 유지)
     const prevCenterRef = useRef({ x: centerX, y: centerY });
