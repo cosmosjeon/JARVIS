@@ -188,6 +188,7 @@ const ForceDirectedTree = ({
     onNodeUpdate,
     onMemoCreate,
     onMemoUpdate,
+    onMemoRemove,
     onNodeCreate,
     onLinkCreate,
     onRootCreate,
@@ -811,7 +812,7 @@ const ForceDirectedTree = ({
 
         // 유기적 작용이 OFF일 때만 다중 선택 드래그 활성화
         const isDraggingSelectedNode = !isForceSimulationEnabled && selectedNodeIds.has(nodeId);
-        const draggedNodesList = isDraggingSelectedNode 
+        const draggedNodesList = isDraggingSelectedNode
             ? Array.from(selectedNodeIds)
             : [nodeId];
 
@@ -877,7 +878,7 @@ const ForceDirectedTree = ({
             if (multiSelectOffsets.length > 1) {
                 multiSelectOffsets.forEach(({ id, node, offsetX, offsetY }) => {
                     if (!node || id === nodeId) return;
-                    
+
                     const newX = forceX + offsetX;
                     const newY = forceY + offsetY;
 
@@ -924,7 +925,7 @@ const ForceDirectedTree = ({
             if (multiSelectOffsets.length > 1) {
                 multiSelectOffsets.forEach(({ id, node }) => {
                     if (!node || id === nodeId) return;
-                    
+
                     if (simulationServiceRef.current.simulation) {
                         node.fx = null;
                         node.fy = null;
@@ -1212,13 +1213,13 @@ const ForceDirectedTree = ({
     // 노드 크기 조절 핸들러 (슬라이더)
     const handleSizeSliderChange = useCallback((event) => {
         const newValue = Math.max(5, parseInt(event.target.value)); // 최소값 5로 제한
-        
+
         // 현재 컨텍스트 메뉴의 노드 ID 사용
         const currentNodeId = contextMenuState.nodeId;
         if (!currentNodeId) return;
 
         const scaleValue = Math.max(0.1, newValue / 50); // 0-100을 0.1-2.0 스케일로 변환 (50이 기본값 1.0)
-        
+
         // 시뮬레이션 노드 업데이트
         setSimulatedNodes(prev => prev.map(node => {
             const nodeDatum = getNodeDatum(node);
@@ -1245,8 +1246,8 @@ const ForceDirectedTree = ({
         if (onNodeUpdate && currentNodeId) {
             const targetNode = simulatedNodes.find(node => getNodeId(node) === currentNodeId);
             const currentSizeValue = targetNode ? (getNodeDatum(targetNode)?.sizeValue || 50) : 50;
-            
-            onNodeUpdate(currentNodeId, { 
+
+            onNodeUpdate(currentNodeId, {
                 sizeValue: currentSizeValue,
                 sizeScale: Math.max(0.1, currentSizeValue / 50)
             });
@@ -1340,11 +1341,11 @@ const ForceDirectedTree = ({
 
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
-            return () => {
-                window.removeEventListener('keydown', handleKeyDown);
-                window.removeEventListener('keyup', handleKeyUp);
-            };
-        }, [isSpacePressed, isForceSimulationEnabled]);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [isSpacePressed, isForceSimulationEnabled]);
 
     // ESC 키로 패널 닫기
     useEffect(() => {
@@ -1407,7 +1408,7 @@ const ForceDirectedTree = ({
             point.x = e.clientX;
             point.y = e.clientY;
             const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
-            
+
             const forceX = (svgPoint.x - viewTransform.x) / viewTransform.k;
             const forceY = (svgPoint.y - viewTransform.y) / viewTransform.k;
 
@@ -1498,11 +1499,10 @@ const ForceDirectedTree = ({
             <div className="absolute top-4 left-4 z-10">
                 <button
                     onClick={() => setIsForceSimulationEnabled(!isForceSimulationEnabled)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
-                        isForceSimulationEnabled
-                            ? 'bg-blue-500 text-white shadow-lg hover:bg-blue-600'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${isForceSimulationEnabled
+                        ? 'bg-blue-500 text-white shadow-lg hover:bg-blue-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
                     title={isForceSimulationEnabled ? '유기적 작용 끄기' : '유기적 작용 켜기'}
                 >
                     {isForceSimulationEnabled ? '유기적 작용 ON' : '유기적 작용 OFF'}
@@ -1543,7 +1543,7 @@ const ForceDirectedTree = ({
                         point.x = e.clientX;
                         point.y = e.clientY;
                         const svgPoint = point.matrixTransform(svg.getScreenCTM().inverse());
-                        
+
                         const forceX = (svgPoint.x - viewTransform.x) / viewTransform.k;
                         const forceY = (svgPoint.y - viewTransform.y) / viewTransform.k;
 
@@ -1751,7 +1751,7 @@ const ForceDirectedTree = ({
                             const sizeScale = Math.max(0.1, sizeValue / 50); // 최소 0.1로 제한 (50이 기본값 1.0)
                             const scaledBaseWidth = baseWidth * sizeScale;
                             const scaledBaseHeight = baseHeight * sizeScale;
-                            const scaledFontSize = baseFontSize * sizeScale; // 글자 크기도 스케일에 맞춰 조절
+                            const scaledFontSize = fontSize * sizeScale; // 글자 크기도 스케일에 맞춰 조절
 
                             // 노드 모양에 따른 크기 조정
                             const nodeShape = datum?.nodeShape || NODE_SHAPES.RECTANGLE;
@@ -1812,7 +1812,7 @@ const ForceDirectedTree = ({
                                     fillColor = isLightMode ? '#6B7280' : '#9CA3AF';
                                     strokeColor = isLightMode ? '#6B7280' : '#9CA3AF'; // 테두리와 안쪽 색상 같게
                                 }
-                                
+
                                 // 텍스트 색상은 기존 로직 사용 (읽기 쉽게)
                                 if (isRootNode) {
                                     textColor = isLightMode ? '#78350F' : '#FDE68A';
@@ -1852,16 +1852,16 @@ const ForceDirectedTree = ({
                             const baseStrokeWidth = isRootNode ? 0.9 : 0.5;
                             const strokeWidth = isSelected ? baseStrokeWidth + 0.25 : baseStrokeWidth;
 
-                                            const hoverText = isHovered ? extractNodeHoverText(datum) : '';
-                                            const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
-                                            const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
-                                            const scaledTooltipWidth = tooltipWidth * sizeScale;
-                                            const scaledTooltipHeight = tooltipHeight * sizeScale;
-                                            const tooltipTranslateX = -scaledTooltipWidth / 2;
-                                            const tooltipTranslateY = nodeShape === NODE_SHAPES.DOT 
-                                                ? -(nodeHeight / 2 + scaledFontSize + scaledTooltipHeight + 8) // 닷 모양일 때는 글자 위에 툴팁 (거리 좁힘)
-                                                : -(nodeHeight / 2 + scaledTooltipHeight + 12); // 다른 모양일 때는 노드 위에 툴팁
-                                            const tooltipLineHeight = 18 * sizeScale;
+                            const hoverText = isHovered ? extractNodeHoverText(datum) : '';
+                            const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
+                            const { width: tooltipWidth, height: tooltipHeight } = computeTooltipDimensions(hoverLines);
+                            const scaledTooltipWidth = tooltipWidth * sizeScale;
+                            const scaledTooltipHeight = tooltipHeight * sizeScale;
+                            const tooltipTranslateX = -scaledTooltipWidth / 2;
+                            const tooltipTranslateY = nodeShape === NODE_SHAPES.DOT
+                                ? -(nodeHeight / 2 + scaledFontSize + scaledTooltipHeight + 8) // 닷 모양일 때는 글자 위에 툴팁 (거리 좁힘)
+                                : -(nodeHeight / 2 + scaledTooltipHeight + 12); // 다른 모양일 때는 노드 위에 툴팁
+                            const tooltipLineHeight = 18 * sizeScale;
 
                             return (
                                 <g
@@ -2113,26 +2113,25 @@ const ForceDirectedTree = ({
                                         { key: NODE_SHAPES.ELLIPSE, label: '타원', icon: '○' },
                                         { key: NODE_SHAPES.DIAMOND, label: '마름모', icon: '◆' },
                                     ].map(({ key, label, icon }) => {
-                                        const currentNodeShape = contextMenuState.nodeId ? 
-                                            (simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId) ? 
-                                                (getNodeDatum(simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId))?.nodeShape || NODE_SHAPES.RECTANGLE) : 
-                                                NODE_SHAPES.RECTANGLE) : 
+                                        const currentNodeShape = contextMenuState.nodeId ?
+                                            (simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId) ?
+                                                (getNodeDatum(simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId))?.nodeShape || NODE_SHAPES.RECTANGLE) :
+                                                NODE_SHAPES.RECTANGLE) :
                                             NODE_SHAPES.RECTANGLE;
                                         const isSelected = currentNodeShape === key;
-                                        
+
                                         return (
                                             <button
                                                 key={key}
                                                 onClick={() => handleNodeShapeChange(key)}
-                                                className={`flex items-center justify-center space-x-1 px-2 py-1.5 text-[11px] rounded transition ${
-                                                    isSelected
-                                                        ? (theme === 'light' 
-                                                            ? 'bg-blue-100 text-blue-700 border border-blue-200' 
-                                                            : 'bg-blue-500/20 text-blue-300 border border-blue-400/30')
-                                                        : (theme === 'light' 
-                                                            ? 'text-gray-600 hover:bg-gray-100' 
-                                                            : 'text-white/70 hover:bg-white/10')
-                                                }`}
+                                                className={`flex items-center justify-center space-x-1 px-2 py-1.5 text-[11px] rounded transition ${isSelected
+                                                    ? (theme === 'light'
+                                                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                                        : 'bg-blue-500/20 text-blue-300 border border-blue-400/30')
+                                                    : (theme === 'light'
+                                                        ? 'text-gray-600 hover:bg-gray-100'
+                                                        : 'text-white/70 hover:bg-white/10')
+                                                    }`}
                                             >
                                                 <span className="text-[10px]">{icon}</span>
                                                 <span>{label}</span>
@@ -2159,7 +2158,7 @@ const ForceDirectedTree = ({
                                             background: (() => {
                                                 const currentValue = contextMenuState.nodeId ? (simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId) ? (getNodeDatum(simulatedNodes.find(node => getNodeId(node) === contextMenuState.nodeId))?.sizeValue || 50) : 50) : 50;
                                                 const normalizedValue = Math.max(5, Math.min(100, currentValue));
-                                                return theme === 'light' 
+                                                return theme === 'light'
                                                     ? `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${normalizedValue}%, #e5e7eb ${normalizedValue}%, #e5e7eb 100%)`
                                                     : `linear-gradient(to right, #60a5fa 0%, #60a5fa ${normalizedValue}%, #374151 ${normalizedValue}%, #374151 100%)`;
                                             })(),
