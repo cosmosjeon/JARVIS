@@ -66,11 +66,11 @@ body.widget-mode {
   left: 0;
   right: 0;
   bottom: 0;
-  border: 8px solid transparent;
+  border: 2px solid var(--widget-border-color, rgba(255, 255, 255, 0.2));
   border-radius: 12px;
   -webkit-app-region: drag;
-  pointer-events: auto;
-  z-index: 1000;
+  pointer-events: none;
+  z-index: 9999;
 }
 
 .App-content {

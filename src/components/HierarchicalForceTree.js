@@ -2557,7 +2557,7 @@ const HierarchicalForceTree = () => {
 
   return (
     <div
-      className="relative flex overflow-hidden bg-transparent"
+      className="relative flex overflow-hidden bg-transparent rounded-xl"
       style={{
         // 투명 창에서 이전 프레임 잔상 방지: 독립 합성 레이어 확보
         willChange: 'transform, opacity, background',
