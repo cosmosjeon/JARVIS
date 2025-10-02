@@ -50,6 +50,10 @@ const TreeNode = ({
   onPanZoomGesture,
   nodeScaleFactor = 1,
   layoutOrientation = 'vertical',
+  // 노드 네비게이션을 위한 새로운 props
+  treeNodes = [],
+  treeLinks = [],
+  onNodeSelect = () => { },
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -346,12 +350,16 @@ const TreeNode = ({
             onCloseNode={handleAssistantPanelClose}
             onPanZoomGesture={onPanZoomGesture}
             nodeScaleFactor={nodeScaleFactor}
+            treeNodes={treeNodes}
+            treeLinks={treeLinks}
+            onNodeSelect={onNodeSelect}
+            disableNavigation={node?.nodeType === 'memo'}
           />
         </div>
       </motion.div>,
       overlayElement,
     );
-  }, [shouldUsePortal, isPositioned, overlayElement, smartPosition, adjustedSize, node, color, handlePanelSizeChange, onSecondQuestion, onPlaceholderCreate, questionService, initialConversation, onConversationChange, memoizedSummary, memoizedIsRoot, onRequestAnswer, onAnswerComplete, onAnswerError]);
+  }, [shouldUsePortal, isPositioned, overlayElement, smartPosition, adjustedSize, node, color, handlePanelSizeChange, onSecondQuestion, onPlaceholderCreate, questionService, initialConversation, onConversationChange, memoizedSummary, memoizedIsRoot, onRequestAnswer, onAnswerComplete, onAnswerError, treeNodes, treeLinks, onNodeSelect]);
 
   return (
     <>

@@ -1912,10 +1912,10 @@ const HierarchicalForceTree = () => {
       const nextState = (!prev || !Array.isArray(prev.nodes) || prev.nodes.length === 0)
         ? { nodes: [newNode], links: [] }
         : {
-            ...prev,
-            nodes: [...prev.nodes, newNode],
-            links: Array.isArray(prev.links) ? prev.links.slice() : [],
-          };
+          ...prev,
+          nodes: [...prev.nodes, newNode],
+          links: Array.isArray(prev.links) ? prev.links.slice() : [],
+        };
 
       dataRef.current = nextState;
       return nextState;
@@ -3165,6 +3165,9 @@ const HierarchicalForceTree = () => {
                       onCloseNode={() => handleCloseNode(node.id)}
                       onPanZoomGesture={forwardPanZoomGesture}
                       nodeScaleFactor={nodeScaleFactor}
+                      treeNodes={nodes}
+                      treeLinks={links}
+                      onNodeSelect={handleNodeClickForAssistant}
                     />
                   </motion.g>
                 );

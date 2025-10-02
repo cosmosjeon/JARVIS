@@ -58,6 +58,7 @@ class ForceSimulationService {
             ? previousPositions
             : new Map();
 
+        let restoredCount = 0;
         nodes.forEach((node) => {
             const datum = resolveDatum(node);
             const nodeId = datum?.id;
@@ -65,13 +66,15 @@ class ForceSimulationService {
                 return;
             }
 
-           if (positionLookup.has(nodeId)) {
-               const { x, y } = positionLookup.get(nodeId);
-               if (Number.isFinite(x) && Number.isFinite(y)) {
-                   node.x = x;
-                   node.y = y;
+            if (positionLookup.has(nodeId)) {
+                const { x, y } = positionLookup.get(nodeId);
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                    node.x = x;
+                    node.y = y;
                     node.vx = 0;
                     node.vy = 0;
+                    restoredCount++;
+                    console.log(`노드 위치 복원: ${nodeId} -> (${x}, ${y})`);
                 }
             } else if (Number.isFinite(datum?.x) && Number.isFinite(datum?.y)) {
                 node.x = datum.x;
@@ -80,6 +83,10 @@ class ForceSimulationService {
                 node.vy = 0;
             }
         });
+
+        if (restoredCount > 0) {
+            console.log(`총 ${restoredCount}개 노드 위치 복원 완료`);
+        }
 
         // Force simulation 생성
         const linkForce = d3.forceLink(links)

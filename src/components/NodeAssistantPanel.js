@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
 import QuestionService from '../services/QuestionService';
+import NodeNavigationService from '../services/NodeNavigationService';
 import { useSettings } from '../hooks/SettingsContext';
 import MarkdownMessage from './common/MarkdownMessage';
 
@@ -53,6 +54,11 @@ const NodeAssistantPanel = ({
   onCloseNode = () => { },
   onPanZoomGesture,
   nodeScaleFactor = 1,
+  // 노드 네비게이션을 위한 새로운 props
+  treeNodes = [],
+  treeLinks = [],
+  onNodeSelect = () => { },
+  disableNavigation = false, // 메모 모드에서 네비게이션 비활성화
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -90,6 +96,7 @@ const NodeAssistantPanel = ({
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const typingTimers = useRef([]);
   const questionServiceRef = useRef(externalQuestionService ?? new QuestionService());
+  const navigationServiceRef = useRef(new NodeNavigationService());
   const isHydratingRef = useRef(true);
   const hasBootstrappedRef = useRef(false);
 
@@ -109,6 +116,11 @@ const NodeAssistantPanel = ({
       questionServiceRef.current = externalQuestionService;
     }
   }, [externalQuestionService]);
+
+  // 노드 네비게이션 서비스에 트리 데이터 설정
+  useEffect(() => {
+    navigationServiceRef.current.setTreeData(treeNodes, treeLinks);
+  }, [treeNodes, treeLinks]);
 
   useEffect(() => {
     if (!placeholderNotice) return undefined;
@@ -578,8 +590,36 @@ const NodeAssistantPanel = ({
     setComposerValue('');
   }, [bootstrapMode, composerValue, messages, onBootstrapFirstSend, sendResponse]);
 
+  // 노드 네비게이션 핸들러
+  const handleNodeNavigation = useCallback((direction) => {
+    if (!node?.id || !onNodeSelect) {
+      return;
+    }
+    
+    const targetNode = navigationServiceRef.current.navigate(node.id, direction);
+    
+    if (targetNode) {
+      onNodeSelect(targetNode);
+      // 입력창에 포커스를 유지
+      setTimeout(() => {
+        composerRef.current?.focus();
+      }, 100);
+    }
+  }, [node?.id, onNodeSelect]);
+
   const handleKeyDown = useCallback(
     (event) => {
+      // 방향키 네비게이션 처리
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        // 텍스트 입력 중이거나 하이라이트 모드가 아니고, 네비게이션이 비활성화되지 않았을 때만 네비게이션 허용
+        if (!isComposing && !isHighlightMode && composerValue === '' && !disableNavigation) {
+          event.preventDefault();
+          handleNodeNavigation(event.key);
+          return;
+        }
+      }
+
+      // Enter 키 처리 (기존 로직)
       if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
         event.preventDefault();
         if (isHighlightMode) {
@@ -592,7 +632,7 @@ const NodeAssistantPanel = ({
         handleSend().catch(() => { });
       }
     },
-    [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode],
+    [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode, handleNodeNavigation, composerValue, disableNavigation],
   );
 
   const handleCompositionStart = useCallback(() => {
@@ -655,6 +695,9 @@ const NodeAssistantPanel = ({
             {summary.label || node.keyword || node.id}
           </p>
           <p className="text-xs text-slate-200/70">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
+          {!disableNavigation && (
+            <p className="text-xs text-slate-200/60">↑↓ 부모/자식 노드 이동 | ←→ 형제 노드 이동</p>
+          )}
         </div>
         {!bootstrapMode && (
           <div className="flex items-center gap-2" data-block-pan="true">
@@ -677,91 +720,90 @@ const NodeAssistantPanel = ({
         ref={highlightRootRef}
         className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
       >
-          <div className="flex h-full flex-col gap-6">
-            {messages.map((message) => {
-              const isAssistant = message.role === 'assistant';
+        <div className="flex h-full flex-col gap-6">
+          {messages.map((message) => {
+            const isAssistant = message.role === 'assistant';
 
-              return (
-                <div
-                  key={message.id}
-                  className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
-                  data-testid={isAssistant ? 'assistant-message' : 'user-message'}
-                  data-status={message.status || 'complete'}
-                >
-                  {isAssistant ? (
-                    <div className="w-full">
-                      <MarkdownMessage
-                        text={message.text}
-                        className="w-full text-base leading-7 text-slate-100"
-                      />
-                    </div>
-                  ) : (
-                    <div className="max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm">
-                      <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+            return (
+              <div
+                key={message.id}
+                className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
+                data-testid={isAssistant ? 'assistant-message' : 'user-message'}
+                data-status={message.status || 'complete'}
+              >
+                {isAssistant ? (
+                  <div className="w-full">
+                    <MarkdownMessage
+                      text={message.text}
+                      className="w-full text-base leading-7 text-slate-100"
+                    />
+                  </div>
+                ) : (
+                  <div className="max-w-[240px] break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-100 shadow-lg backdrop-blur-sm">
+                    <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+      </div>
 
-        {/* 다중 질문 버튼 */}
-        <div className="flex -mb-2 flex-shrink-0 justify-start" data-block-pan="true">
-          <button
-            type="button"
-            onClick={handleHighlightToggle}
-            className={`glass-surface px-3 py-1 rounded-xl border border-white/15 text-xs font-medium transition-all duration-200 ${
-              isHighlightMode
-                ? 'bg-emerald-500/40 text-emerald-100 border-emerald-400/50'
-                : 'text-slate-100 hover:bg-white/20'
+      {/* 다중 질문 버튼 */}
+      <div className="flex -mb-2 flex-shrink-0 justify-start" data-block-pan="true">
+        <button
+          type="button"
+          onClick={handleHighlightToggle}
+          className={`glass-surface px-3 py-1 rounded-xl border border-white/15 text-xs font-medium transition-all duration-200 ${isHighlightMode
+            ? 'bg-emerald-500/40 text-emerald-100 border-emerald-400/50'
+            : 'text-slate-100 hover:bg-white/20'
             }`}
-          >
-            다중 질문
-          </button>
-        </div>
-
-        <form
-          className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            handleSend().catch(() => { });
-          }}
-          style={{ pointerEvents: 'auto', zIndex: 1002 }}
         >
-          <textarea
-            ref={composerRef}
-            value={composerValue}
-            onChange={(event) => setComposerValue(event.target.value)}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={handleCompositionStart}
-            onCompositionEnd={handleCompositionEnd}
-            placeholder="Ask anything..."
-            className="glass-text-primary max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm placeholder:text-slate-200 focus:outline-none"
-            style={{ pointerEvents: 'auto' }}
-            autoFocus={false}
-          />
-          {placeholderNotice && (
-            <span
-              className={`text-xs ${placeholderNotice.type === 'success' ? 'text-emerald-200' : 'text-amber-200'} whitespace-nowrap`}
-            >
-              {placeholderNotice.message}
-            </span>
-          )}
-          <button
-            type="submit"
-            disabled={!composerValue.trim()}
-            className="glass-chip flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg transition-opacity disabled:opacity-40"
-            aria-label="메시지 전송"
-            style={{ pointerEvents: 'auto' }}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleSend();
-            }}
+          다중 질문
+        </button>
+      </div>
+
+      <form
+        className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSend().catch(() => { });
+        }}
+        style={{ pointerEvents: 'auto', zIndex: 1002 }}
+      >
+        <textarea
+          ref={composerRef}
+          value={composerValue}
+          onChange={(event) => setComposerValue(event.target.value)}
+          onKeyDown={handleKeyDown}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
+          placeholder="Ask anything..."
+          className="glass-text-primary max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm placeholder:text-slate-200 focus:outline-none"
+          style={{ pointerEvents: 'auto' }}
+          autoFocus={false}
+        />
+        {placeholderNotice && (
+          <span
+            className={`text-xs ${placeholderNotice.type === 'success' ? 'text-emerald-200' : 'text-amber-200'} whitespace-nowrap`}
           >
-            ↗
-          </button>
-        </form>
+            {placeholderNotice.message}
+          </span>
+        )}
+        <button
+          type="submit"
+          disabled={!composerValue.trim()}
+          className="glass-chip flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg transition-opacity disabled:opacity-40"
+          aria-label="메시지 전송"
+          style={{ pointerEvents: 'auto' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSend();
+          }}
+        >
+          ↗
+        </button>
+      </form>
     </div>
   );
 };

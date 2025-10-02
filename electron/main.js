@@ -207,6 +207,7 @@ let logger;
 let hotkeyManager;
 let tray;
 let broadcastWindowState = () => { };
+let widgetsCurrentlyVisible = false; // 위젯 표시 상태 추적
 let llmService;
 let authServer = null;
 let authServerPort = null;
@@ -333,6 +334,7 @@ const registerPassThroughShortcut = () => {
 };
 
 const handleAllWidgetsToggle = () => {
+  console.log('🔥 Alt+1 hotkey triggered - handleAllWidgetsToggle called');
   logger?.info('Alt+1 hotkey triggered - handleAllWidgetsToggle called');
 
   const allWindows = [];
@@ -368,33 +370,28 @@ const handleAllWidgetsToggle = () => {
     return;
   }
 
-  // 모든 윈도우가 보이는지 확인
-  const allVisible = allWindows.every(win => win.isVisible());
+  // 상태 변수로 토글 결정 (isVisible() 체크로 인한 깜빡임 방지)
 
-  logger?.info('Window visibility check', {
-    allVisible,
-    windowStates: allWindows.map(win => ({ id: win.id, visible: win.isVisible() }))
-  });
-
-  if (allVisible) {
-    // 모든 윈도우가 보이면 숨기기
+  if (widgetsCurrentlyVisible) {
+    // 현재 보이는 상태이면 숨기기
     allWindows.forEach(win => {
       win.hide();
       logger?.info('Window hidden', { id: win.id });
     });
+    widgetsCurrentlyVisible = false;
     logger?.info('All widget windows hidden via hotkey', { count: allWindows.length });
   } else {
-    // 일부 또는 모든 윈도우가 숨겨져 있으면 모두 보이기
+    // 현재 숨겨진 상태이면 보이기
     allWindows.forEach(win => {
-      if (!win.isVisible()) {
-        win.show();
-        logger?.info('Window shown', { id: win.id });
-      }
+      win.show();
       if (win.isMinimized()) {
         win.restore();
         logger?.info('Window restored', { id: win.id });
       }
+      win.focus();
+      logger?.info('Window shown and focused', { id: win.id });
     });
+    widgetsCurrentlyVisible = true;
     logger?.info('All widget windows shown via hotkey', { count: allWindows.length });
   }
 };
@@ -408,6 +405,12 @@ const registerWidgetToggleHotkey = () => {
   logger?.info('Attempting to register Alt+1 hotkey for widget toggle');
 
   // 모든 위젯 토글용 Alt+1 키 등록
+  logger?.info('About to register Alt+1 hotkey', {
+    hotkeyManagerExists: !!hotkeyManager,
+    appReady: app.isReady(),
+    platform: process.platform
+  });
+
   const success = hotkeyManager.registerToggle({
     accelerator: 'Alt+1',
     handler: handleAllWidgetsToggle
@@ -425,6 +428,15 @@ const registerWidgetToggleHotkey = () => {
       platform: process.platform,
       hotkeyManagerStatus: hotkeyManager.status
     });
+
+    // 대안으로 직접 globalShortcut 등록 시도
+    logger?.info('Attempting direct globalShortcut registration as fallback');
+    const directSuccess = globalShortcut.register('Alt+1', handleAllWidgetsToggle);
+    if (directSuccess) {
+      logger?.info('Direct globalShortcut registration successful');
+    } else {
+      logger?.error('Direct globalShortcut registration also failed');
+    }
   }
 
   return success;
@@ -1279,6 +1291,9 @@ app.whenReady().then(() => {
       treeId: requestedTreeId || null,
       fresh: forceFresh,
     });
+
+    // 새 위젯 윈도우가 생성되면 표시 상태로 설정
+    widgetsCurrentlyVisible = true;
 
     logger?.info('New widget window created', {
       windowId: newWindow.id,
