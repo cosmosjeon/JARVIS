@@ -1609,13 +1609,26 @@ const HierarchicalForceTree = () => {
     const answer = typeof payload.answer === 'string' ? payload.answer.trim() : '';
     const nodeSnapshot = dataRef.current.nodes.find((n) => n.id === nodeId);
 
-    let keywordOverride = null;
-    if (nodeSnapshot && nodeSnapshot.status === 'placeholder' && question) {
-      keywordOverride = await extractImportantKeyword(question);
+    if (!nodeSnapshot) {
+      return;
     }
 
+    const resolvedAnswer = answer || nodeSnapshot.answer || '';
     const fallbackToken = question ? question.split(/\s+/).find(Boolean) : '';
-    const resolvedAnswer = answer || nodeSnapshot?.answer || '';
+
+    const isPlaceholderNode = nodeSnapshot.status === 'placeholder';
+    const rawSourceText = typeof nodeSnapshot.placeholder?.sourceText === 'string'
+      ? nodeSnapshot.placeholder.sourceText.trim()
+      : '';
+    const shouldPreserveKeyword = isPlaceholderNode
+      && rawSourceText.length > 0
+      && !/^Placeholder\s+\d+$/i.test(rawSourceText);
+
+    let resolvedKeyword = nodeSnapshot.keyword || '';
+    if (isPlaceholderNode && question && !shouldPreserveKeyword) {
+      const keywordOverride = await extractImportantKeyword(question);
+      resolvedKeyword = keywordOverride || fallbackToken || resolvedKeyword;
+    }
 
     setData((prev) => {
       const nextNodes = prev.nodes.map((node) => {
@@ -1623,13 +1636,9 @@ const HierarchicalForceTree = () => {
           return node;
         }
 
-        const nextKeyword = node.status === 'placeholder' && question
-          ? (keywordOverride || fallbackToken || node.keyword)
-          : node.keyword;
-
         return {
           ...node,
-          keyword: (nextKeyword || node.keyword || '').slice(0, 48),
+          keyword: (resolvedKeyword || node.keyword || '').slice(0, 48),
           fullText: resolvedAnswer || node.fullText || '',
           question: question || node.question || '',
           answer: resolvedAnswer || node.answer || '',
