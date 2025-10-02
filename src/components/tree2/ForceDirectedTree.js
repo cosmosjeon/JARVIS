@@ -1966,7 +1966,7 @@ const ForceDirectedTree = ({
                                         </motion.text>
                                     )}
 
-                                    {/* 선택 효과 */}
+                                    {/* 선택 효과 - 단일 선택 */}
                                     {isSelected && (
                                         <motion.rect
                                             x={-(nodeWidth / 2 + 3)}
@@ -1979,6 +1979,24 @@ const ForceDirectedTree = ({
                                             stroke={strokeColor}
                                             strokeWidth={0.5}
                                             strokeOpacity={0.5}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                        />
+                                    )}
+
+                                    {/* 선택 효과 - 멀티 선택 (단일 선택 아닌 경우 표시) */}
+                                    {!isSelected && isMultiSelected && (
+                                        <motion.rect
+                                            x={-(nodeWidth / 2 + 3)}
+                                            y={-(nodeHeight / 2 + 3)}
+                                            width={nodeWidth + 6}
+                                            height={nodeHeight + 6}
+                                            rx={4}
+                                            ry={4}
+                                            fill="none"
+                                            stroke={theme === 'light' ? 'rgba(59, 130, 246, 0.8)' : 'rgba(96, 165, 250, 0.9)'}
+                                            strokeWidth={0.6}
+                                            strokeDasharray="3,2"
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
                                         />
