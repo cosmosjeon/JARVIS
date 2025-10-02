@@ -197,6 +197,9 @@ const ForceDirectedTree = ({
     // viewTransform 초기값을 중심으로 설정
     const [viewTransform, setViewTransform] = useState({ x: centerX, y: centerY, k: 1 });
 
+    const hasRenderableNodes = (Array.isArray(data?.nodes) && data.nodes.length > 0)
+        || (Array.isArray(simulatedNodes) && simulatedNodes.length > 0);
+
     // 뷰포트 상태 저장/복원 관련
     const [viewportStateLoaded, setViewportStateLoaded] = useState(false);
     const saveViewportStateTimeoutRef = useRef(null);
@@ -533,7 +536,7 @@ const ForceDirectedTree = ({
     const zoomBehaviorRef = useRef(null);
 
     useEffect(() => {
-        if (!svgRef.current) return;
+        if (!svgRef.current || !hasRenderableNodes) return;
 
         const svg = d3.select(svgRef.current);
 
@@ -618,7 +621,7 @@ const ForceDirectedTree = ({
             svg.on('.zoom', null);
             svg.on('.treepan', null);
         };
-    }, [isDraggingNode, centerX, centerY]);
+    }, [isDraggingNode, centerX, centerY, hasRenderableNodes]);
 
     // 방향키로 캔버스 이동
     useEffect(() => {
