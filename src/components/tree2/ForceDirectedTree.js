@@ -953,7 +953,8 @@ const ForceDirectedTree = ({
         setContextMenuState({ ...DEFAULT_CONTEXT_MENU_STATE });
         setLinkCreationState({ active: true, sourceId });
         pendingCenterNodeIdRef.current = sourceId;
-        setSelectedNodeId(sourceId);
+        // Do not open the question panel when entering link creation mode
+        // setSelectedNodeId(sourceId);
     }, [contextMenuState.nodeId]);
 
     const handleMenuAddRoot = useCallback(() => {
