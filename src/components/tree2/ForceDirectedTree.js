@@ -1065,10 +1065,10 @@ const ForceDirectedTree = ({
                             let linkStroke;
 
                             if (isMemoLink) {
-                                // 메모 링크
+                                // 메모 링크 - 중립적인 색상으로 완화
                                 linkStroke = isLightMode
-                                    ? 'rgba(245, 158, 11, 0.6)'
-                                    : 'rgba(252, 211, 77, 0.5)';
+                                    ? 'rgba(209, 213, 219, 0.85)'
+                                    : 'rgba(75, 85, 99, 0.8)';
                             } else if (isLightMode) {
                                 // 라이트모드 - 일반 링크
                                 linkStroke = isEvenDepth
@@ -1081,8 +1081,8 @@ const ForceDirectedTree = ({
                                     : 'rgba(0, 0, 0, 0.5)'; // 검정
                             }
 
-                            const linkWidth = isMemoLink ? 1.2 : 1.5;
-                            const linkOpacity = isMemoLink ? 0.9 : 1;
+                            const linkWidth = isMemoLink ? 1.1 : 1.5;
+                            const linkOpacity = isMemoLink ? 0.75 : 1;
 
                             return (
                                 <motion.line
@@ -1114,6 +1114,8 @@ const ForceDirectedTree = ({
 
                             const depth = Number.isFinite(node.depth) ? node.depth : 0;
                             const isMemoNode = datum?.nodeType === 'memo';
+                            const isRootNode = !isMemoNode && depth === 0;
+                            const isMemoStyledNode = isMemoNode || isRootNode;
                             const isBeingDragged = draggedNodeId === nodeId;
                             const isSelected = selectedNodeId === nodeId;
                             const isHovered = hoveredNodeId === nodeId;
@@ -1127,8 +1129,8 @@ const ForceDirectedTree = ({
                             // 노드 크기 (텍스트 길이에 맞춰 동적 조정)
                             const fontSize = 7;
                             const charWidth = fontSize * 0.6; // 글자당 예상 너비
-                            const padding = 8; // 좌우 여백
-                            const minWidth = isMemoNode ? 20 : (depth === 0 ? 24 : 20);
+                            const padding = isMemoStyledNode ? 9 : 8; // 좌우 여백
+                            const minWidth = isMemoStyledNode ? 24 : 20;
                             const maxWidth = 80;
 
                             const textWidth = labelText.length * charWidth + padding * 2;
@@ -1153,11 +1155,16 @@ const ForceDirectedTree = ({
 
                             let fillColor, strokeColor, textColor;
 
-                            if (isMemoNode) {
-                                // 메모 노드
-                                fillColor = isLightMode ? '#FEF3C7' : '#92400E';
+                            if (isRootNode) {
+                                // 최상위 노드 - 황금색 톤으로 강조
+                                fillColor = isLightMode ? '#FDE68A' : '#92400E';
                                 strokeColor = isLightMode ? '#F59E0B' : '#FCD34D';
-                                textColor = isLightMode ? '#92400E' : '#FEF3C7';
+                                textColor = isLightMode ? '#78350F' : '#FDE68A';
+                            } else if (isMemoNode) {
+                                // 메모 노드 - 중립적인 톤
+                                fillColor = isLightMode ? '#FFFFFF' : '#1F2937';
+                                strokeColor = isLightMode ? '#D1D5DB' : '#4B5563';
+                                textColor = isLightMode ? '#111827' : '#E5E7EB';
                             } else if (isLightMode) {
                                 // 라이트모드 - 일반 노드
                                 fillColor = isEvenDepth ? '#1F2937' : '#F3F4F6';
@@ -1171,6 +1178,8 @@ const ForceDirectedTree = ({
                             }
 
                             const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
+                            const baseStrokeWidth = isRootNode ? 1.8 : 1;
+                            const strokeWidth = isSelected ? baseStrokeWidth + 0.5 : baseStrokeWidth;
 
                             const hoverText = isHovered ? extractNodeHoverText(datum) : '';
                             const hoverLines = isHovered ? computeHoverLines(hoverText) : [];
@@ -1216,7 +1225,7 @@ const ForceDirectedTree = ({
                                         ry={3}
                                         fill={fillColor}
                                         stroke={strokeColor}
-                                        strokeWidth={isSelected ? 1.5 : 1}
+                                        strokeWidth={strokeWidth}
                                         initial={{ scale: 0, opacity: 0 }}
                                         animate={{ scale: isBeingDragged ? 1.02 : 1, opacity }}
                                         transition={{ duration: 0.2, ease: 'easeOut' }}
@@ -1228,14 +1237,20 @@ const ForceDirectedTree = ({
                                             textAnchor="middle"
                                             dominantBaseline="middle"
                                             fill={textColor}
-                                            fontSize={7}
-                                            fontWeight={600}
+                                            fontSize={fontSize}
+                                            fontWeight={isRootNode ? 700 : 600}
                                             pointerEvents="none"
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
                                             transition={{ duration: 0.2 }}
                                             style={{
-                                                textShadow: isMemoNode ? 'none' : '0 1px 2px rgba(0,0,0,0.8)',
+                                                textShadow: isRootNode
+                                                    ? (isLightMode
+                                                        ? '0 1px 2px rgba(0,0,0,0.35)'
+                                                        : '0 1px 2px rgba(0,0,0,0.8)')
+                                                    : isMemoNode
+                                                        ? 'none'
+                                                        : '0 1px 2px rgba(0,0,0,0.8)',
                                             }}
                                         >
                                             {labelText}
