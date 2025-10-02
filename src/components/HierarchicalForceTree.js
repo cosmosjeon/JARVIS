@@ -1306,14 +1306,82 @@ const HierarchicalForceTree = () => {
 
       const nodeId = targetNode?.id;
       const historyMessages = buildContextMessages(nodeId);
-      const messages = [...historyMessages, { role: 'user', content: trimmedQuestion }];
 
-      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', {
+      const focusKeywordSet = new Set();
+      const appendFocusKeyword = (value) => {
+        if (typeof value !== 'string') {
+          return;
+        }
+        const normalized = value.trim();
+        if (!normalized) {
+          return;
+        }
+        focusKeywordSet.add(normalized);
+      };
+
+      appendFocusKeyword(targetNode?.keyword);
+      if (Array.isArray(targetNode?.keywords)) {
+        targetNode.keywords.forEach(appendFocusKeyword);
+      }
+      if (typeof targetNode?.name === 'string') {
+        appendFocusKeyword(targetNode.name);
+      }
+      if (Array.isArray(targetNode?.aliases)) {
+        targetNode.aliases.forEach(appendFocusKeyword);
+      }
+      if (targetNode?.placeholder) {
+        const { keyword: placeholderKeyword, keywords: placeholderKeywords, sourceText } = targetNode.placeholder;
+        appendFocusKeyword(placeholderKeyword);
+        appendFocusKeyword(sourceText);
+        if (Array.isArray(placeholderKeywords)) {
+          placeholderKeywords.forEach(appendFocusKeyword);
+        }
+      }
+
+      const focusKeywords = Array.from(focusKeywordSet);
+
+      const originalQuestion = typeof targetNode?.questionData?.question === 'string'
+        ? targetNode.questionData.question.trim()
+        : '';
+
+      const contextPhrases = [];
+      if (focusKeywords.length === 1) {
+        contextPhrases.push(`현재 노드는 "${focusKeywords[0]}"라는 용어를 설명하기 위해 생성되었습니다. 사용자가 "이 단어" 혹은 "이 표현"이라고 말하면 이 용어를 지칭합니다.`);
+      } else if (focusKeywords.length > 1) {
+        const keywordList = focusKeywords.map((keyword) => `"${keyword}"`).join(', ');
+        contextPhrases.push(`현재 노드는 ${keywordList} 등의 용어를 설명하기 위해 생성되었습니다. 사용자가 "이 단어" 혹은 "이 표현"이라고 말하면 이들 가운데 해당 맥락의 용어를 의미합니다.`);
+      }
+
+      if (originalQuestion) {
+        contextPhrases.push(`이 노드는 처음에 "${originalQuestion}"이라는 질문으로 생성되었습니다.`);
+      }
+
+      const contextNote = contextPhrases.join(' ');
+      const userMessageContent = contextNote
+        ? `${contextNote}\n\n질문: ${trimmedQuestion}`
+        : trimmedQuestion;
+
+      const messages = [
+        ...historyMessages,
+        { role: 'user', content: userMessageContent },
+      ];
+
+      const payload = {
         question: trimmedQuestion,
         messages,
         nodeId,
         isRootNode,
-      });
+      };
+
+      if (focusKeywords.length > 0) {
+        payload.focusKeywords = focusKeywords;
+      }
+
+      if (contextNote) {
+        payload.questionContext = contextNote;
+      }
+
+      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', payload);
 
       return response;
     },
@@ -1503,6 +1571,7 @@ const HierarchicalForceTree = () => {
         placeholder: {
           parentNodeId,
           createdAt: timestamp,
+          sourceText: label,
         },
       };
     });
