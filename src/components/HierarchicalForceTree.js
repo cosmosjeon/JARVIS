@@ -12,8 +12,8 @@ import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
-import NodeAssistantPanel from './NodeAssistantPanel';
 import ChartView from './ChartView';
+import NodeAssistantPanel from './NodeAssistantPanel';
 import ForceDirectedTree from './tree2/ForceDirectedTree';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import {
@@ -232,6 +232,10 @@ const HierarchicalForceTree = () => {
       return next;
     });
   }, []);
+
+  // 뷰 선택 메뉴 상태
+  const [showViewMenu, setShowViewMenu] = useState(false);
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
 
   // 테마 색상
   const themeColors = useMemo(() => ({
@@ -456,8 +460,8 @@ const HierarchicalForceTree = () => {
   const [overlayElement, setOverlayElement] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
   const isIgnoringMouseRef = useRef(false);
-  const [showBootstrapChat, setShowBootstrapChat] = useState(false);
   const treeSyncDebounceRef = useRef(null);
+  const [showBootstrapChat, setShowBootstrapChat] = useState(false);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -1145,6 +1149,21 @@ const HierarchicalForceTree = () => {
     conversationStoreRef.current.set(nodeId, normalized);
   }, []);
 
+  useEffect(() => {
+    const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
+    setShowBootstrapChat(isEmpty);
+
+    if (isEmpty) {
+      setSelectedNodeId(null);
+      setExpandedNodeId(null);
+      if (!conversationStoreRef.current.has('__bootstrap__')) {
+        conversationStoreRef.current.set('__bootstrap__', []);
+      }
+    } else {
+      conversationStoreRef.current.delete('__bootstrap__');
+    }
+  }, [data.nodes]);
+
   const clearPendingExpansion = useCallback(() => {
     pendingFocusNodeIdRef.current = null;
     if (expandTimeoutRef.current) {
@@ -1212,86 +1231,7 @@ const HierarchicalForceTree = () => {
   }, []);
 
   // 부트스트랩 채팅창 위치 (화면 상단 중앙)
-  const rootDragHandlePosition = React.useMemo(() => {
-    const screenX = dimensions.width / 2;
-    const screenY = 20; // 화면 상단에서 20px 떨어진 고정 위치
-    return { x: screenX, y: screenY };
-  }, [dimensions.width]);
-
   // 초기 부팅 시(빈 그래프) 드래그 핸들 바로 아래에 채팅창 표시
-  useEffect(() => {
-    const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
-    setShowBootstrapChat(isEmpty);
-  }, [data.nodes]);
-
-  const handleBootstrapSubmit = async (text) => {
-    if (!text || !text.trim()) return;
-
-    const userQuestion = text.trim();
-    const timestamp = Date.now();
-
-    setConversationForNode('__bootstrap__', [
-      { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
-    ]);
-
-    try {
-      const response = await handleRequestAnswer({
-        node: { id: '__bootstrap__' },
-        question: userQuestion,
-        isRootNode: true,
-      });
-
-      const rootId = `root_${Date.now().toString(36)}`;
-      const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
-      const keyword = await extractImportantKeyword(userQuestion);
-
-      const rawConversation = [
-        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
-      ];
-
-      const sanitizedConversation = sanitizeConversationMessages(rawConversation);
-
-      const rootNode = {
-        id: rootId,
-        keyword: keyword || userQuestion,
-        fullText: answer || userQuestion,
-        level: 0,
-        size: 20,
-        status: 'answered',
-        question: userQuestion,
-        answer,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        conversation: sanitizedConversation,
-      };
-
-      setData({ nodes: [rootNode], links: [] });
-
-
-      setConversationForNode(rootId, [
-        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
-      ]);
-      conversationStoreRef.current.delete('__bootstrap__');
-
-
-      questionService.current.setQuestionCount(rootId, 1);
-      setExpandedNodeId(rootId);
-      setSelectedNodeId(rootId);
-      setShowBootstrapChat(false);
-    } catch (error) {
-      setConversationForNode('__bootstrap__', [
-        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-        { id: `${timestamp}-assistant`, role: 'assistant', text: '⚠️ 루트 노드 생성 중 오류가 발생했습니다.', status: 'error', timestamp: Date.now() },
-      ]);
-      const message = error?.message || '루트 노드 생성 중 오류가 발생했습니다.';
-      window.jarvisAPI?.log?.('error', 'bootstrap_failed', { message });
-      throw error;
-    }
-  };
-
   const handleConversationChange = (nodeId, messages) => {
 
     setConversationForNode(nodeId, messages);
@@ -1379,6 +1319,77 @@ const HierarchicalForceTree = () => {
     },
     [buildContextMessages, invokeAgent],
   );
+
+  const handleBootstrapSubmit = useCallback(async (text) => {
+    const trimmed = typeof text === 'string' ? text.trim() : '';
+    if (!trimmed) {
+      return;
+    }
+
+    const timestamp = Date.now();
+
+    setConversationForNode('__bootstrap__', [
+      { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
+    ]);
+
+    try {
+      const response = await handleRequestAnswer({
+        node: { id: '__bootstrap__' },
+        question: trimmed,
+        isRootNode: true,
+      });
+
+      const rootId = createClientGeneratedId('root');
+      const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
+      const keyword = await extractImportantKeyword(trimmed);
+
+      const rawConversation = [
+        { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
+      ];
+
+      const sanitizedConversation = sanitizeConversationMessages(rawConversation);
+
+      const rootNode = {
+        id: rootId,
+        keyword: keyword || trimmed,
+        fullText: answer || trimmed,
+        level: 0,
+        size: 20,
+        status: 'answered',
+        question: trimmed,
+        answer,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        conversation: sanitizedConversation,
+      };
+
+      setData(() => {
+        const nextState = { nodes: [rootNode], links: [] };
+        dataRef.current = nextState;
+        return nextState;
+      });
+
+      setConversationForNode(rootId, sanitizedConversation);
+      conversationStoreRef.current.delete('__bootstrap__');
+
+      questionService.current.setQuestionCount(rootId, 1);
+      setExpandedNodeId(rootId);
+      setSelectedNodeId(rootId);
+      setShowBootstrapChat(false);
+    } catch (error) {
+      setConversationForNode('__bootstrap__', [
+        { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: '⚠️ 루트 노드 생성 중 오류가 발생했습니다.', status: 'error', timestamp: Date.now() },
+      ]);
+
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('bootstrap_submit_failed', error);
+      }
+    }
+  }, [createClientGeneratedId, extractImportantKeyword, handleRequestAnswer, setConversationForNode, setShowBootstrapChat]);
 
   // 2번째 질문 처리 함수
   const handleSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
@@ -1715,6 +1726,196 @@ const HierarchicalForceTree = () => {
     });
   }, []);
 
+  const requestUserInput = useCallback((message, defaultValue = '') => {
+    if (typeof window === 'undefined' || typeof window.prompt !== 'function') {
+      return { status: 'unavailable', value: null };
+    }
+
+    try {
+      const result = window.prompt(message, defaultValue ?? '');
+      if (result === null) {
+        return { status: 'cancelled', value: null };
+      }
+      return { status: 'ok', value: result };
+    } catch (error) {
+      return { status: 'unavailable', value: null };
+    }
+  }, []);
+
+  const handleManualNodeCreate = useCallback((parentNodeId) => {
+    const latestData = dataRef.current;
+    if (!latestData || !Array.isArray(latestData.nodes) || latestData.nodes.length === 0) {
+      return null;
+    }
+
+    const parentExists = latestData.nodes.some((node) => node.id === parentNodeId);
+    const resolvedParentId = parentExists ? parentNodeId : getRootNodeId();
+
+    if (!resolvedParentId) {
+      showLinkValidationMessage('부모 노드를 찾을 수 없습니다.');
+      return null;
+    }
+
+    const parentNode = latestData.nodes.find((node) => node.id === resolvedParentId);
+
+    const defaultKeywordBase = parentNode?.keyword || parentNode?.id || '새 노드';
+    const defaultKeyword = `${defaultKeywordBase}`;
+
+    const keywordRequest = requestUserInput('추가할 노드의 제목을 입력하세요.', defaultKeyword);
+    if (keywordRequest.status === 'cancelled') {
+      return null;
+    }
+
+    const keyword = (keywordRequest.status === 'ok' ? keywordRequest.value : defaultKeyword).trim() || defaultKeyword;
+
+    const descriptionRequest = requestUserInput('노드 설명을 입력하세요. (선택 사항)', '');
+    if (descriptionRequest.status === 'cancelled') {
+      return null;
+    }
+    const fullText = descriptionRequest.status === 'ok' ? (descriptionRequest.value || '').trim() : '';
+
+    const level = (parentNode?.level ?? 0) + 1;
+    const now = Date.now();
+    const newNodeId = createClientGeneratedId('node');
+
+    if (willCreateCycle(resolvedParentId, newNodeId)) {
+      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
+      return null;
+    }
+
+    const nextNode = {
+      id: newNodeId,
+      keyword,
+      fullText,
+      level,
+      size: typeof parentNode?.size === 'number' ? parentNode.size : 12,
+      status: 'answered',
+      conversation: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setConversationForNode(newNodeId, []);
+
+    setData((prev) => {
+      const next = {
+        ...prev,
+        nodes: [...prev.nodes, nextNode],
+        links: [...prev.links, { source: resolvedParentId, target: newNodeId, value: 1 }],
+      };
+      dataRef.current = next;
+      return next;
+    });
+
+    return newNodeId;
+  }, [createClientGeneratedId, getRootNodeId, requestUserInput, setConversationForNode, showLinkValidationMessage, willCreateCycle]);
+
+  const handleManualRootCreate = useCallback((options = {}) => {
+    const now = Date.now();
+    const newNodeId = createClientGeneratedId('root');
+    const position = options?.position || { x: 0, y: 0 };
+
+    const existingRootCount = Array.isArray(dataRef.current?.nodes)
+      ? dataRef.current.nodes.filter((node) => node?.level === 0).length
+      : 0;
+
+    const defaultKeyword = existingRootCount > 0
+      ? `새 루트 노드 ${existingRootCount + 1}`
+      : '새 루트 노드';
+
+    const newNode = {
+      id: newNodeId,
+      keyword: options?.keyword || defaultKeyword,
+      fullText: options?.fullText || '',
+      level: 0,
+      size: 20,
+      status: 'answered',
+      conversation: [],
+      createdAt: now,
+      updatedAt: now,
+      x: Number.isFinite(position.x) ? position.x : 0,
+      y: Number.isFinite(position.y) ? position.y : 0,
+    };
+
+    setConversationForNode(newNodeId, []);
+
+    setData((prev) => {
+      const nextState = (!prev || !Array.isArray(prev.nodes) || prev.nodes.length === 0)
+        ? { nodes: [newNode], links: [] }
+        : {
+            ...prev,
+            nodes: [...prev.nodes, newNode],
+            links: Array.isArray(prev.links) ? prev.links.slice() : [],
+          };
+
+      dataRef.current = nextState;
+      return nextState;
+    });
+
+    setSelectedNodeId(newNodeId);
+    setExpandedNodeId(null);
+    setShowBootstrapChat(false);
+    return newNodeId;
+  }, [createClientGeneratedId, setConversationForNode]);
+
+  const handleManualLinkCreate = useCallback((sourceNodeId, targetNodeId) => {
+    if (!sourceNodeId || !targetNodeId) {
+      return null;
+    }
+
+    const latestData = dataRef.current;
+    const normalize = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+
+    const availableNodes = latestData?.nodes || [];
+    if (!availableNodes.length) {
+      showLinkValidationMessage('연결할 노드를 찾을 수 없습니다.');
+      return null;
+    }
+
+    if (!availableNodes.some((node) => node.id === sourceNodeId)) {
+      showLinkValidationMessage('선택한 노드를 찾을 수 없습니다.');
+      return null;
+    }
+
+    const targetNode = availableNodes.find((node) => node.id === targetNodeId);
+    if (!targetNode) {
+      showLinkValidationMessage('대상 노드를 찾지 못했습니다.');
+      return null;
+    }
+
+    if (targetNodeId === sourceNodeId) {
+      showLinkValidationMessage('같은 노드를 연결할 수 없습니다.');
+      return null;
+    }
+
+    const existingLink = (latestData?.links || []).some((link) => {
+      const source = normalize(link.source);
+      const target = normalize(link.target);
+      return source === sourceNodeId && target === targetNodeId;
+    });
+
+    if (existingLink) {
+      showLinkValidationMessage('이미 연결된 노드입니다.');
+      return null;
+    }
+
+    if (willCreateCycle(sourceNodeId, targetNodeId)) {
+      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
+      return null;
+    }
+
+    setData((prev) => {
+      const next = {
+        ...prev,
+        links: [...prev.links, { source: sourceNodeId, target: targetNodeId, value: 1 }],
+      };
+      dataRef.current = next;
+      return next;
+    });
+
+    return { sourceId: sourceNodeId, targetId: targetNodeId };
+  }, [showLinkValidationMessage, willCreateCycle]);
+
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
     setSelectedNodeId(nodeId);
@@ -1729,7 +1930,7 @@ const HierarchicalForceTree = () => {
   }, [data.nodes]);
 
   useEffect(() => {
-    if (!svgRef.current) return undefined;
+    if (!svgRef.current || viewMode !== 'tree1') return undefined;
 
     const svgSelection = d3.select(svgRef.current);
     const zoomFactory = typeof d3.zoom === 'function' ? d3.zoom : null;
@@ -1796,7 +1997,7 @@ const HierarchicalForceTree = () => {
     };
 
     const zoomBehaviour = zoomFactory()
-      .scaleExtent([0.3, 4])
+      .scaleExtent([0.3, 8])
       .filter((event) => {
         const target = event.target instanceof Element ? event.target : null;
         const isForeignObject = target && target.closest('foreignObject');
@@ -1865,7 +2066,7 @@ const HierarchicalForceTree = () => {
         const base = typeof defaultWheelDelta === 'function'
           ? defaultWheelDelta(event)
           : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
-        return base * 1.0;
+        return base * 0.3; // 트리2와 동일한 민감도
       }
 
       // Ctrl/Cmd 키가 없으면 패닝 (translate)
@@ -1912,7 +2113,7 @@ const HierarchicalForceTree = () => {
         zoomBehaviourRef.current = null;
       }
     };
-  }, []);
+  }, [viewMode]);
 
   // 과거 생성된 Q2 노드들(및 하위 노드) 정리 - 최초 1회만 수행
   useEffect(() => {
@@ -2365,60 +2566,6 @@ const HierarchicalForceTree = () => {
           <p className="opacity-80">{treeSyncError.message || 'Supabase와 동기화할 수 없습니다.'}</p>
         </div>
       ) : null}
-      <div
-        className="absolute top-4 left-6 z-[1300] flex gap-3"
-        style={{ pointerEvents: 'none' }}
-      >
-        {/* 시각화 모드 토글 (트리1/트리2/차트) */}
-        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-          <button
-            type="button"
-            onClick={() => setViewMode('tree1')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree1'}
-          >
-            트리1
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('tree2')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree2'}
-          >
-            트리2
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('chart')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'chart'}
-          >
-            차트
-          </button>
-        </div>
-
-        {/* 레이아웃 방향 토글 (트리1 모드에서만 표시) */}
-        {viewMode === 'tree1' && (
-          <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-            <button
-              type="button"
-              onClick={() => setLayoutOrientation('vertical')}
-              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'vertical' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={layoutOrientation === 'vertical'}
-            >
-              아래로
-            </button>
-            <button
-              type="button"
-              onClick={() => setLayoutOrientation('horizontal')}
-              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'horizontal' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={layoutOrientation === 'horizontal'}
-            >
-              오른쪽
-            </button>
-          </div>
-        )}
-      </div>
       {linkValidationError ? (
         <div className="pointer-events-none absolute top-4 right-6 z-[1300]">
           <div className="pointer-events-auto rounded-lg border border-red-400/60 bg-red-900/80 px-3 py-2 text-xs font-medium text-red-100 shadow-lg">
@@ -2431,127 +2578,238 @@ const HierarchicalForceTree = () => {
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
-        <div className="flex h-8 w-56 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
-          {/* 왼쪽: 드래그 점들 */}
-          <div className="flex space-x-1">
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+        <div className="flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3" style={{ width: '224px' }}>
+          {/* 왼쪽: 드래그 점들 & 테마 버튼 */}
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* 드래그 점들 */}
+            <div className="flex space-x-1">
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+            </div>
+
+            {/* 테마 토글 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+              onClick={toggleTheme}
+              onMouseDown={(e) => e.stopPropagation()}
+              title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+            >
+              {theme === 'dark' ? (
+                <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                </svg>
+              )}
+            </button>
           </div>
 
-          {/* 중앙: 테마 토글 버튼 */}
-          <button
-            className="group flex h-5 w-10 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            onClick={toggleTheme}
-            onMouseDown={(e) => e.stopPropagation()}
-            title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
-          >
-            {theme === 'dark' ? (
-              <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+          {/* 오른쪽: 전체화면 & 닫기 버튼 */}
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* 전체화면 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+              onClick={() => {
+                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
+                if (api?.windowControls?.maximize) {
+                  api.windowControls.maximize();
+                }
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="전체화면"
+            >
+              <svg className="h-3 w-3 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
               </svg>
-            ) : (
-              <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-            )}
-          </button>
+            </button>
 
-          {/* 오른쪽: 닫기 버튼 */}
-          <button
-            className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            onClick={() => {
-              if (process.env.NODE_ENV === 'development') {
-                // 개발 중 동작 여부 확인용
-                // eslint-disable-next-line no-console
-                console.log('[Jarvis] Drag handle close requested');
-              }
-
-              const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
-
-              const hideWindow = () => {
+            {/* 닫기 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
+              onClick={() => {
                 if (process.env.NODE_ENV === 'development') {
+                  // 개발 중 동작 여부 확인용
                   // eslint-disable-next-line no-console
-                  console.log('[Jarvis] hideWindow fallback triggered');
-                }
-                try {
-                  if (api && typeof api.toggleWindow === 'function') {
-                    api.toggleWindow();
-                    return;
-                  }
-                } catch (toggleError) {
-                  // Ignore toggle errors and fall through to window.close fallback.
+                  console.log('[Jarvis] Drag handle close requested');
                 }
 
-                if (typeof window !== 'undefined' && typeof window.close === 'function') {
-                  window.close();
-                }
-              };
+                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
 
-              try {
-                const closeFn = api?.windowControls?.close;
-                if (typeof closeFn === 'function') {
-                  const maybeResult = closeFn();
+                const hideWindow = () => {
                   if (process.env.NODE_ENV === 'development') {
-                    const tag = '[Jarvis] windowControls.close result';
-                    if (maybeResult && typeof maybeResult.then === 'function') {
-                      maybeResult.then((response) => {
-                        // eslint-disable-next-line no-console
-                        console.log(tag, response);
-                      }).catch((err) => {
-                        // eslint-disable-next-line no-console
-                        console.log(`${tag} (rejected)`, err);
-                      });
-                    } else {
-                      // eslint-disable-next-line no-console
-                      console.log(tag, maybeResult);
+                    // eslint-disable-next-line no-console
+                    console.log('[Jarvis] hideWindow fallback triggered');
+                  }
+                  try {
+                    if (api && typeof api.toggleWindow === 'function') {
+                      api.toggleWindow();
+                      return;
                     }
+                  } catch (toggleError) {
+                    // Ignore toggle errors and fall through to window.close fallback.
                   }
 
-                  if (maybeResult && typeof maybeResult.then === 'function') {
-                    maybeResult
-                      .then((response) => {
-                        if (process.env.NODE_ENV === 'development') {
+                  if (typeof window !== 'undefined' && typeof window.close === 'function') {
+                    window.close();
+                  }
+                };
+
+                try {
+                  const closeFn = api?.windowControls?.close;
+                  if (typeof closeFn === 'function') {
+                    const maybeResult = closeFn();
+                    if (process.env.NODE_ENV === 'development') {
+                      const tag = '[Jarvis] windowControls.close result';
+                      if (maybeResult && typeof maybeResult.then === 'function') {
+                        maybeResult.then((response) => {
                           // eslint-disable-next-line no-console
-                          console.log('[Jarvis] close response (async)', response, response?.error);
-                        }
-                        if (!response?.success) {
-                          hideWindow();
-                        }
-                      })
-                      .catch(() => hideWindow());
+                          console.log(tag, response);
+                        }).catch((err) => {
+                          // eslint-disable-next-line no-console
+                          console.log(`${tag} (rejected)`, err);
+                        });
+                      } else {
+                        // eslint-disable-next-line no-console
+                        console.log(tag, maybeResult);
+                      }
+                    }
+
+                    if (maybeResult && typeof maybeResult.then === 'function') {
+                      maybeResult
+                        .then((response) => {
+                          if (process.env.NODE_ENV === 'development') {
+                            // eslint-disable-next-line no-console
+                            console.log('[Jarvis] close response (async)', response, response?.error);
+                          }
+                          if (!response?.success) {
+                            hideWindow();
+                          }
+                        })
+                        .catch(() => hideWindow());
+                      return;
+                    }
+
+                    if (!maybeResult?.success) {
+                      hideWindow();
+                    }
                     return;
                   }
-
-                  if (!maybeResult?.success) {
-                    hideWindow();
-                  }
+                } catch (error) {
+                  hideWindow();
                   return;
                 }
-              } catch (error) {
-                hideWindow();
-                return;
-              }
 
-              hideWindow();
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <svg
-              className="h-3 w-3 text-white group-hover:text-black"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+                hideWindow();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+              <svg
+                className="h-3 w-3 text-white group-hover:text-black"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 뷰 선택 버튼 - 상단바 아래 */}
+      <div
+        className="absolute top-12 left-1/2 z-[1300] -translate-x-1/2"
+        style={{ pointerEvents: 'none' }}
+      >
+        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
+          {/* 트리1 버튼 - 호버 시 레이아웃 드롭다운 */}
+          <div
+            className="relative"
+            onMouseEnter={() => setShowLayoutMenu(true)}
+            onMouseLeave={() => setShowLayoutMenu(false)}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode('tree1')}
+              className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+              aria-pressed={viewMode === 'tree1'}
+            >
+              트리1
+            </button>
+
+            {/* 레이아웃 방향 드롭다운 */}
+            {showLayoutMenu && (
+              <div
+                className="absolute top-full left-0 w-28 z-[1400]"
+                style={{ paddingTop: '8px' }}
+                onMouseEnter={() => setShowLayoutMenu(true)}
+                onMouseLeave={() => setShowLayoutMenu(false)}
+              >
+                <div
+                  className="rounded-lg shadow-2xl backdrop-blur-md border overflow-hidden"
+                  style={{
+                    background: theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.85)',
+                    borderColor: theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.12)',
+                  }}
+                >
+                  <button
+                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                      ? 'text-gray-900 hover:bg-gray-100'
+                      : 'text-white/90 hover:bg-white/10'
+                      } ${layoutOrientation === 'vertical' ? 'font-semibold' : ''}`}
+                    onClick={() => {
+                      setViewMode('tree1');
+                      setLayoutOrientation('vertical');
+                      setShowLayoutMenu(false);
+                    }}
+                  >
+                    아래로
+                  </button>
+                  <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
+                  <button
+                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                      ? 'text-gray-900 hover:bg-gray-100'
+                      : 'text-white/90 hover:bg-white/10'
+                      } ${layoutOrientation === 'horizontal' ? 'font-semibold' : ''}`}
+                    onClick={() => {
+                      setViewMode('tree1');
+                      setLayoutOrientation('horizontal');
+                      setShowLayoutMenu(false);
+                    }}
+                  >
+                    오른쪽
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 트리2 버튼 */}
+          <button
+            type="button"
+            onClick={() => setViewMode('tree2')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'tree2'}
+          >
+            트리2
+          </button>
+
+          {/* 차트 버튼 */}
+          <button
+            type="button"
+            onClick={() => setViewMode('chart')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'chart'}
+          >
+            차트
           </button>
         </div>
       </div>
@@ -2562,7 +2820,6 @@ const HierarchicalForceTree = () => {
         </div>
       ) : null}
 
-      {/* 트리2 뷰 (Force-Directed) */}
       {viewMode === 'tree2' && showBootstrapChat && (
         <div
           className="pointer-events-none absolute"
@@ -2596,6 +2853,7 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       )}
+
       {viewMode === 'tree2' && (
         <ForceDirectedTree
           data={data}
@@ -2604,6 +2862,9 @@ const HierarchicalForceTree = () => {
           onNodeRemove={removeNodeAndDescendants}
           onMemoCreate={handleMemoCreate}
           onMemoUpdate={handleMemoUpdate}
+          onNodeCreate={handleManualNodeCreate}
+          onLinkCreate={handleManualLinkCreate}
+          onRootCreate={handleManualRootCreate}
           treeId={activeTreeId}
           userId={user?.id}
           questionService={questionService.current}
@@ -2628,14 +2889,13 @@ const HierarchicalForceTree = () => {
         />
       )}
 
-      {/* 트리1 뷰 */}
-      {viewMode === 'tree1' && showBootstrapChat && rootDragHandlePosition && overlayElement && (
+      {viewMode === 'tree1' && showBootstrapChat && (
         <div
           className="pointer-events-none absolute"
           style={{
-            left: `${rootDragHandlePosition.x}px`,
-            top: `${rootDragHandlePosition.y}px`,
-            transform: 'translate(-50%, 48px)',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
             width: 600,
             height: 640,
             zIndex: 1000,
@@ -2721,8 +2981,12 @@ const HierarchicalForceTree = () => {
                     if (!sourceNode || !targetNode) return null;
 
                     const isHorizontalLayout = layoutOrientation === 'horizontal';
-                    const sourceX = sourceNode.x;
-                    const sourceY = isHorizontalLayout ? sourceNode.y : sourceNode.y + 14 + 20;
+                    // 토글 버튼 위치에서 연결선 시작
+                    // horizontal: 버튼이 노드 오른쪽(x축)에 있으므로 sourceX 증가
+                    // vertical: 버튼이 노드 아래(y축)에 있으므로 sourceY 증가
+                    const toggleButtonOffset = 50 * nodeScaleFactor;
+                    const sourceX = isHorizontalLayout ? sourceNode.x + toggleButtonOffset : sourceNode.x;
+                    const sourceY = isHorizontalLayout ? sourceNode.y : sourceNode.y + toggleButtonOffset;
                     const targetX = targetNode.x;
                     const targetY = targetNode.y;
 

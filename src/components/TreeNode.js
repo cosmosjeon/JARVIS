@@ -49,6 +49,7 @@ const TreeNode = ({
   onCloseNode = () => { },
   onPanZoomGesture,
   nodeScaleFactor = 1,
+  layoutOrientation = 'vertical',
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -356,8 +357,8 @@ const TreeNode = ({
     <>
       <g
         transform={`translate(${nodePosition.x || 0}, ${nodePosition.y || 0})`}
-        style={{ 
-          cursor: isExpanded ? 'default' : 'pointer', 
+        style={{
+          cursor: isExpanded ? 'default' : 'pointer',
           pointerEvents: 'auto',
           zIndex: isExpanded ? 9999 : 1002, // 확장된 노드는 최상위
           isolation: 'isolate' // 새로운 stacking context 생성
@@ -375,240 +376,270 @@ const TreeNode = ({
           onNodeClick && onNodeClick(node);
         }}
       >
-      {/* Hide background rectangle when node is expanded (chat mode) */}
-      {displayMode !== 'chat' && (
-        <g>
-          {/* Neumorphism shadow effects - scaled for small nodes */}
-          {/* Dark shadow (bottom right) */}
-          <motion.rect
-            width={currentWidth}
-            height={currentHeight}
-            rx={borderRadius}
-            ry={borderRadius}
-            fill="#bebebe"
-            style={{
-              filter: 'blur(3px)',
-              opacity: 0.6,
-            }}
-            animate={{
-              x: -currentWidth / 2 + 3,
-              y: -currentHeight / 2 + 23,
-              width: currentWidth,
-              height: currentHeight,
-            }}
-            transition={{
-              type: 'spring',
-              stiffness: 260,
-              damping: 24,
-              duration: 0.25,
-            }}
-          />
-          
-          {/* Light shadow (top left) */}
-          <motion.rect
-            width={currentWidth}
-            height={currentHeight}
-            rx={borderRadius}
-            ry={borderRadius}
-            fill="#ffffff"
-            style={{
-              filter: 'blur(3px)',
-              opacity: 0.8,
-            }}
-            animate={{
-              x: -currentWidth / 2 - 3,
-              y: -currentHeight / 2 + 17,
-              width: currentWidth,
-              height: currentHeight,
-            }}
-            transition={{
-              type: 'spring',
-              stiffness: 260,
-              damping: 24,
-              duration: 0.25,
-            }}
-          />
-          
-          {/* Main neumorphism card */}
-          <motion.rect
-            width={currentWidth}
-            height={currentHeight}
-            rx={borderRadius}
-            ry={borderRadius}
-            fill="#e0e0e0"
-            style={{
-              cursor: 'pointer',
-              mixBlendMode: 'normal',
-              pointerEvents: 'auto',
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              if (isExpanded) {
-                return;
-              }
-              onNodeClick && onNodeClick(node);
-            }}
-            animate={{
-              x: -currentWidth / 2,
-              y: -currentHeight / 2 + 20,
-              width: currentWidth,
-              height: currentHeight,
-            }}
-            transition={{
-              type: 'spring',
-              stiffness: 260,
-              damping: 24,
-              duration: 0.25,
-            }}
-          />
-        </g>
-      )}
+        {/* Hide background rectangle when node is expanded (chat mode) */}
+        {displayMode !== 'chat' && (
+          <g>
+            {/* Neumorphism shadow effects - scaled for small nodes */}
+            {/* Dark shadow (bottom right) */}
+            <motion.rect
+              width={currentWidth}
+              height={currentHeight}
+              rx={borderRadius}
+              ry={borderRadius}
+              fill="#bebebe"
+              style={{
+                filter: 'blur(3px)',
+                opacity: 0.6,
+              }}
+              animate={{
+                x: -currentWidth / 2 + 3,
+                y: -currentHeight / 2 + 23,
+                width: currentWidth,
+                height: currentHeight,
+              }}
+              transition={{
+                type: 'spring',
+                stiffness: 260,
+                damping: 24,
+                duration: 0.25,
+              }}
+            />
 
-      {displayMode === 'chat' ? (
-        shouldUsePortal ? null : (
-        <foreignObject
-          x={-currentWidth / 2}
-          y={-currentHeight / 2}
-          width={currentWidth}
-          height={currentHeight}
-          style={{
-            overflow: 'hidden',
-            position: 'relative',
-            pointerEvents: 'auto',
-            zIndex: 1000
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              height: '100%',
-              pointerEvents: 'auto',
-              position: 'relative',
-              zIndex: 1000
-            }}
-            data-interactive-zone="true"
-            onClick={(e) => {
-              // foreignObject 내부 클릭 이벤트가 제대로 전파되도록 함
-              e.stopPropagation();
-            }}
-          >
-            <NodeAssistantPanel
-              node={node}
-              color={color}
-              onSizeChange={handlePanelSizeChange}
-              onSecondQuestion={onSecondQuestion}
-              onPlaceholderCreate={onPlaceholderCreate}
-              questionService={questionService}
-              initialConversation={initialConversation}
-              onConversationChange={onConversationChange}
-              nodeSummary={memoizedSummary}
-              isRootNode={memoizedIsRoot}
-              onRequestAnswer={onRequestAnswer}
-            onAnswerComplete={onAnswerComplete}
-            onAnswerError={onAnswerError}
-            onCloseNode={handleAssistantPanelClose}
-            onPanZoomGesture={onPanZoomGesture}
-            nodeScaleFactor={nodeScaleFactor}
-          />
-          </div>
-        </foreignObject>
-        )
-      ) : (
-        <motion.text
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={fontSize}
-          fontFamily="Arial, sans-serif"
-          fontWeight="bold"
-          fill="#666666"
-          style={{ pointerEvents: 'none' }}
-          transition={{ duration: 0.15 }}
-          y={20 * nodeScaleFactor}
-        >
-          {displayMode === 'hover' ? displayHoverText : displayKeywordText}
-        </motion.text>
-      )}
+            {/* Light shadow (top left) */}
+            <motion.rect
+              width={currentWidth}
+              height={currentHeight}
+              rx={borderRadius}
+              ry={borderRadius}
+              fill="#ffffff"
+              style={{
+                filter: 'blur(3px)',
+                opacity: 0.8,
+              }}
+              animate={{
+                x: -currentWidth / 2 - 3,
+                y: -currentHeight / 2 + 17,
+                width: currentWidth,
+                height: currentHeight,
+              }}
+              transition={{
+                type: 'spring',
+                stiffness: 260,
+                damping: 24,
+                duration: 0.25,
+              }}
+            />
 
-      {isHovered && !isExpanded && typeof onRemoveNode === 'function' && (
-        <g
-          transform={`translate(${currentWidth / 2 - 12}, 0)`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemoveNode(node.id);
-          }}
-          style={{ cursor: 'pointer', pointerEvents: 'auto' }}
-        >
-          <circle
-            r={deleteIconRadius}
-            fill="rgba(239, 68, 68, 0.95)"
-            stroke="rgba(255, 255, 255, 0.9)"
-            strokeWidth={deleteIconStrokeWidth}
-          />
-          <text
+            {/* Main neumorphism card */}
+            <motion.rect
+              width={currentWidth}
+              height={currentHeight}
+              rx={borderRadius}
+              ry={borderRadius}
+              fill="#e0e0e0"
+              style={{
+                cursor: 'pointer',
+                mixBlendMode: 'normal',
+                pointerEvents: 'auto',
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (isExpanded) {
+                  return;
+                }
+                onNodeClick && onNodeClick(node);
+              }}
+              animate={{
+                x: -currentWidth / 2,
+                y: -currentHeight / 2 + 20,
+                width: currentWidth,
+                height: currentHeight,
+              }}
+              transition={{
+                type: 'spring',
+                stiffness: 260,
+                damping: 24,
+                duration: 0.25,
+              }}
+            />
+          </g>
+        )}
+
+        {displayMode === 'chat' ? (
+          shouldUsePortal ? null : (
+            <foreignObject
+              x={-currentWidth / 2}
+              y={-currentHeight / 2}
+              width={currentWidth}
+              height={currentHeight}
+              style={{
+                overflow: 'hidden',
+                position: 'relative',
+                pointerEvents: 'auto',
+                zIndex: 1000
+              }}
+            >
+              <div
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'auto',
+                  position: 'relative',
+                  zIndex: 1000
+                }}
+                data-interactive-zone="true"
+                onClick={(e) => {
+                  // foreignObject 내부 클릭 이벤트가 제대로 전파되도록 함
+                  e.stopPropagation();
+                }}
+              >
+                <NodeAssistantPanel
+                  node={node}
+                  color={color}
+                  onSizeChange={handlePanelSizeChange}
+                  onSecondQuestion={onSecondQuestion}
+                  onPlaceholderCreate={onPlaceholderCreate}
+                  questionService={questionService}
+                  initialConversation={initialConversation}
+                  onConversationChange={onConversationChange}
+                  nodeSummary={memoizedSummary}
+                  isRootNode={memoizedIsRoot}
+                  onRequestAnswer={onRequestAnswer}
+                  onAnswerComplete={onAnswerComplete}
+                  onAnswerError={onAnswerError}
+                  onCloseNode={handleAssistantPanelClose}
+                  onPanZoomGesture={onPanZoomGesture}
+                  nodeScaleFactor={nodeScaleFactor}
+                />
+              </div>
+            </foreignObject>
+          )
+        ) : (
+          <motion.text
             textAnchor="middle"
             dominantBaseline="central"
+            fontSize={fontSize}
             fontFamily="Arial, sans-serif"
-            fontSize={deleteIconFontSize}
             fontWeight="bold"
-            fill="#000"
+            fill="#666666"
+            style={{ pointerEvents: 'none' }}
+            transition={{ duration: 0.15 }}
+            y={20 * nodeScaleFactor}
           >
-            ×
-          </text>
-          <title>노드 제거</title>
-        </g>
-      )}
+            {displayMode === 'hover' ? displayHoverText : displayKeywordText}
+          </motion.text>
+        )}
 
-      {/* Subtree collapse/expand toggle */}
-      {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
-        <g
-          transform={`translate(0, ${currentHeight / 2 + 35 * nodeScaleFactor})`}
-          onClick={handleTogglePointer}
-          onMouseDown={handleTogglePointer}
-          onPointerDown={handleTogglePointer}
-          onTouchStart={handleTogglePointer}
-          style={{ cursor: 'pointer', pointerEvents: 'auto' }}
-          role="button"
-          aria-label={isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}
-          data-node-toggle="true"
-        >
-          <rect
-            x={-10 * nodeScaleFactor}
-            y={-10 * nodeScaleFactor}
-            width={20 * nodeScaleFactor}
-            height={20 * nodeScaleFactor}
-            rx={4 * nodeScaleFactor}
-            ry={4 * nodeScaleFactor}
-            fill="rgba(0, 0, 0, 0.3)"
-            stroke="rgba(255,255,255,0.6)"
-            strokeWidth={1 * nodeScaleFactor}
+        {isHovered && !isExpanded && typeof onRemoveNode === 'function' && (
+          <g
+            transform={`translate(${currentWidth / 2 - 12}, 0)`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveNode(node.id);
+            }}
+            style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+          >
+            <circle
+              r={deleteIconRadius}
+              fill="rgba(239, 68, 68, 0.95)"
+              stroke="rgba(255, 255, 255, 0.9)"
+              strokeWidth={deleteIconStrokeWidth}
+            />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontFamily="Arial, sans-serif"
+              fontSize={deleteIconFontSize}
+              fontWeight="bold"
+              fill="#000"
+            >
+              ×
+            </text>
+            <title>노드 제거</title>
+          </g>
+        )}
+
+        {/* Subtree collapse/expand toggle */}
+        {hasChildren && !isExpanded && typeof onToggleCollapse === 'function' && (
+          <g
+            transform={
+              layoutOrientation === 'horizontal'
+                ? `translate(${currentWidth / 2 + 35 * nodeScaleFactor}, 0)`
+                : `translate(0, ${currentHeight / 2 + 35 * nodeScaleFactor})`
+            }
+            onClick={handleTogglePointer}
+            onMouseDown={handleTogglePointer}
+            onPointerDown={handleTogglePointer}
+            onTouchStart={handleTogglePointer}
+            style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+            role="button"
+            aria-label={isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}
             data-node-toggle="true"
-          />
-          {/* Icon: collapsed => vertical chevron (˅), expanded => vertical chevron (˄) */}
-          {isCollapsed ? (
-            <path
-              d={`M ${-4 * nodeScaleFactor} ${-1 * nodeScaleFactor} L 0 ${3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${-1 * nodeScaleFactor}`}
-              fill="none"
-              stroke="rgba(255,255,255,0.95)"
-              strokeWidth={2 * nodeScaleFactor}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          >
+            <rect
+              x={-10 * nodeScaleFactor}
+              y={-10 * nodeScaleFactor}
+              width={20 * nodeScaleFactor}
+              height={20 * nodeScaleFactor}
+              rx={4 * nodeScaleFactor}
+              ry={4 * nodeScaleFactor}
+              fill="rgba(0, 0, 0, 0.3)"
+              stroke="rgba(255,255,255,0.6)"
+              strokeWidth={1 * nodeScaleFactor}
               data-node-toggle="true"
             />
-          ) : (
-            <path
-              d={`M ${-4 * nodeScaleFactor} ${1 * nodeScaleFactor} L 0 ${-3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${1 * nodeScaleFactor}`}
-              fill="none"
-              stroke="rgba(255,255,255,0.95)"
-              strokeWidth={2 * nodeScaleFactor}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              data-node-toggle="true"
-            />
-          )}
-          <title>{isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}</title>
-        </g>
-      )}
+            {/* Icon: horizontal 모드에서는 chevron을 오른쪽(>)으로, vertical에서는 아래(v)로 */}
+            {layoutOrientation === 'horizontal' ? (
+              // 오른쪽 모드: > 또는 < 모양
+              isCollapsed ? (
+                <path
+                  d={`M ${-1 * nodeScaleFactor} ${-4 * nodeScaleFactor} L ${3 * nodeScaleFactor} 0 L ${-1 * nodeScaleFactor} ${4 * nodeScaleFactor}`}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.95)"
+                  strokeWidth={2 * nodeScaleFactor}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  data-node-toggle="true"
+                />
+              ) : (
+                <path
+                  d={`M ${1 * nodeScaleFactor} ${-4 * nodeScaleFactor} L ${-3 * nodeScaleFactor} 0 L ${1 * nodeScaleFactor} ${4 * nodeScaleFactor}`}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.95)"
+                  strokeWidth={2 * nodeScaleFactor}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  data-node-toggle="true"
+                />
+              )
+            ) : (
+              // 아래로 모드: v 또는 ^ 모양
+              isCollapsed ? (
+                <path
+                  d={`M ${-4 * nodeScaleFactor} ${-1 * nodeScaleFactor} L 0 ${3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${-1 * nodeScaleFactor}`}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.95)"
+                  strokeWidth={2 * nodeScaleFactor}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  data-node-toggle="true"
+                />
+              ) : (
+                <path
+                  d={`M ${-4 * nodeScaleFactor} ${1 * nodeScaleFactor} L 0 ${-3 * nodeScaleFactor} L ${4 * nodeScaleFactor} ${1 * nodeScaleFactor}`}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.95)"
+                  strokeWidth={2 * nodeScaleFactor}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  data-node-toggle="true"
+                />
+              )
+            )}
+            <title>{isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}</title>
+          </g>
+        )}
       </g>
       {portalContent}
     </>
