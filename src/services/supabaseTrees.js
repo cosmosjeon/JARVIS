@@ -79,6 +79,10 @@ const parseConversationField = (value) => {
 };
 
 const mapRowConversation = (row) => {
+  if (row?.node_type === 'memo') {
+    return [];
+  }
+
   const parsed = parseConversationField(row?.conversation);
   const sanitized = sanitizeConversationMessages(parsed);
   if (sanitized.length) {
@@ -119,31 +123,78 @@ const normalizeTimestamp = (value) => {
 };
 
 const mapNodeRow = (row, level = 0) => {
-  const conversation = mapRowConversation(row);
+  const nodeType = row.node_type || 'question';
+  const resolveMemoMetadata = () => {
+    const value = row.memo_metadata;
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === 'object') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return typeof parsed === 'object' && parsed !== null ? parsed : null;
+      } catch (error) {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const memo = nodeType === 'memo'
+    ? {
+      title: row.memo_title || row.keyword || row.question || '메모',
+      content: row.memo_content || '',
+      metadata: resolveMemoMetadata(),
+    }
+    : null;
+
+  const conversation = nodeType === 'memo'
+    ? []
+    : mapRowConversation(row);
+
+  const keyword = nodeType === 'memo'
+    ? (memo?.title || row.keyword || row.question || '메모')
+    : (row.keyword || row.question || '신규 노드');
+
+  const fullText = nodeType === 'memo'
+    ? (memo?.content || '')
+    : (row.answer || '');
+
   return {
     id: row.id,
-    keyword: row.keyword || row.question || '신규 노드',
-    fullText: row.answer || '',
-    status: row.status || 'answered',
+    keyword,
+    fullText,
+    status: row.status || (nodeType === 'memo' ? 'memo' : 'answered'),
     level,
-    size: level === 0 ? 20 : 14,
-    parentId: row.parent_id,
-    question: row.question || null,
-    answer: row.answer || null,
+    size: nodeType === 'memo' ? 8 : (level === 0 ? 20 : 14),
+    parentId: row.parent_id || row.memo_parent_id || null,
+    memoParentId: row.memo_parent_id || null,
+    nodeType,
+    memo: memo || undefined,
+    memoMetadata: memo?.metadata || null,
+    question: nodeType === 'memo' ? null : (row.question || null),
+    answer: nodeType === 'memo' ? null : (row.answer || null),
     conversation: conversation.map((message) => ({ ...message })),
-    questionData: row.question ? {
+    questionData: nodeType === 'memo' ? undefined : (row.question ? {
       question: row.question,
       answer: row.answer || '',
-    } : undefined,
+    } : undefined),
     createdAt: normalizeTimestamp(row.created_at),
     updatedAt: normalizeTimestamp(row.updated_at),
   };
 };
 
 const buildLinks = (nodeRows) => nodeRows
-  .filter((node) => node.parent_id)
   .map((node) => ({
-    source: node.parent_id,
+    parent: node.parent_id || node.memo_parent_id,
+    id: node.id,
+  }))
+  .filter((entry) => entry.parent)
+  .map((node) => ({
+    source: node.parent,
     target: node.id,
     value: 1,
   }));
@@ -218,7 +269,7 @@ export const fetchTreesWithNodes = async (userId) => {
 
   const nodeQuery = supabase
     .from('nodes')
-    .select('id, tree_id, parent_id, keyword, question, answer, status, created_at, updated_at, deleted_at, conversation')
+    .select('id, tree_id, parent_id, keyword, question, answer, status, node_type, memo_parent_id, memo_title, memo_content, memo_metadata, created_at, updated_at, deleted_at, conversation')
     .in('tree_id', treeIds)
     .is('deleted_at', null);
 
@@ -239,6 +290,7 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
   const supabase = ensureSupabase();
 
   const formattedNodes = nodes.map((node) => {
+    const nodeType = node.nodeType || node.node_type || (node.memo ? 'memo' : 'question');
     const question = typeof node.question === 'string' && node.question.trim()
       ? node.question.trim()
       : (node.questionData?.question || null);
@@ -246,19 +298,32 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
       ? node.answer.trim()
       : (node.fullText || node.questionData?.answer || null);
     const normalizedConversation = sanitizeConversationMessages(node.conversation);
-    const conversation = normalizedConversation.length
-      ? normalizedConversation
-      : buildFallbackConversation(question, answer);
+    const conversation = nodeType === 'memo'
+      ? []
+      : (normalizedConversation.length
+        ? normalizedConversation
+        : buildFallbackConversation(question, answer));
+
+    const memo = node.memo || (nodeType === 'memo' ? {
+      title: node.keyword || null,
+      content: node.fullText || null,
+    } : null);
+    const memoMetadata = node.memoMetadata || node.memo_metadata || memo?.metadata || null;
 
     return {
       id: node.id,
       user_id: userId,
       tree_id: treeId,
-      parent_id: node.parentId || null,
-      keyword: node.keyword || null,
-      question,
-      answer,
-      status: node.status || 'answered',
+      parent_id: node.parentId || node.memoParentId || null,
+      keyword: node.keyword || (memo?.title ?? null),
+      question: nodeType === 'memo' ? null : question,
+      answer: nodeType === 'memo' ? null : answer,
+      status: node.status || (nodeType === 'memo' ? 'memo' : 'answered'),
+      node_type: nodeType,
+      memo_parent_id: node.memoParentId || node.parentId || null,
+      memo_title: memo?.title ?? null,
+      memo_content: memo?.content ?? null,
+      memo_metadata: memoMetadata || null,
       created_at: normalizeTimestamp(node.createdAt) || Date.now(),
       updated_at: Date.now(),
       conversation,
@@ -457,6 +522,96 @@ export const moveTreeToFolder = async ({ treeId, folderId, userId }) => {
       updated_at: now
     })
     .eq('id', treeId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+// ==================== Memos Management ====================
+
+/**
+ * 트리의 메모들을 가져옵니다
+ */
+export const fetchMemosForTree = async ({ treeId, userId }) => {
+  const supabase = ensureSupabase();
+
+  const { data, error } = await supabase
+    .from('memos')
+    .select('*')
+    .eq('tree_id', treeId)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  // 데이터 변환 (DB 형식 → 앱 형식)
+  return (data || []).map(memo => ({
+    id: memo.id,
+    nodeId: memo.node_id,
+    content: memo.content,
+    position: {
+      x: memo.position_x || 0,
+      y: memo.position_y || 0,
+    },
+    createdAt: normalizeTimestamp(memo.created_at),
+    updatedAt: normalizeTimestamp(memo.updated_at),
+  }));
+};
+
+/**
+ * 메모를 생성하거나 업데이트합니다
+ */
+export const upsertMemo = async ({ memo, treeId, userId }) => {
+  const supabase = ensureSupabase();
+  const now = Date.now();
+
+  const payload = {
+    id: memo.id,
+    user_id: userId,
+    tree_id: treeId,
+    node_id: memo.nodeId,
+    content: memo.content,
+    position_x: memo.position?.x || 0,
+    position_y: memo.position?.y || 0,
+    updated_at: now,
+  };
+
+  // 새 메모인 경우 created_at 추가
+  if (!memo.createdAt) {
+    payload.created_at = now;
+  } else {
+    payload.created_at = normalizeTimestamp(memo.createdAt);
+  }
+
+  const { data, error } = await supabase
+    .from('memos')
+    .upsert(payload, { onConflict: 'id' })
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+};
+
+/**
+ * 메모를 삭제합니다 (soft delete)
+ */
+export const deleteMemo = async ({ memoId, userId }) => {
+  const supabase = ensureSupabase();
+  const now = Date.now();
+
+  const { error } = await supabase
+    .from('memos')
+    .update({ deleted_at: now })
+    .eq('id', memoId)
     .eq('user_id', userId);
 
   if (error) {

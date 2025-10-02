@@ -12,8 +12,8 @@ import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import { markNewLinks } from '../utils/linkAnimationUtils';
-import NodeAssistantPanel from './NodeAssistantPanel';
 import ChartView from './ChartView';
+import NodeAssistantPanel from './NodeAssistantPanel';
 import ForceDirectedTree from './tree2/ForceDirectedTree';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import {
@@ -30,6 +30,150 @@ const WINDOW_CHROME_HEIGHT = 48;
 const DOM_DELTA_PIXEL = 0;
 const DOM_DELTA_LINE = 1;
 const DOM_DELTA_PAGE = 2;
+
+const ORTHO_PATH_DEFAULTS = {
+  cornerRadius: 20,
+  nodePadding: 18,
+};
+
+const buildRoundedPath = (rawPoints, radius) => {
+  if (!Array.isArray(rawPoints) || rawPoints.length < 2) {
+    return '';
+  }
+
+  const points = rawPoints.map((point) => ({
+    x: Number(point?.x) || 0,
+    y: Number(point?.y) || 0,
+  }));
+
+  let command = `M ${points[0].x} ${points[0].y}`;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const current = { ...points[index] };
+    const previous = points[index - 1];
+
+    if (index === points.length - 1) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const next = points[index + 1];
+    const prevVector = { x: current.x - previous.x, y: current.y - previous.y };
+    const nextVector = { x: next.x - current.x, y: next.y - current.y };
+    const prevLength = Math.hypot(prevVector.x, prevVector.y);
+    const nextLength = Math.hypot(nextVector.x, nextVector.y);
+
+    if (prevLength === 0 || nextLength === 0) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const corner = Math.min(radius, prevLength / 2, nextLength / 2);
+
+    if (corner <= 0) {
+      command += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+
+    const startX = current.x - (prevVector.x / prevLength) * corner;
+    const startY = current.y - (prevVector.y / prevLength) * corner;
+    const endX = current.x + (nextVector.x / nextLength) * corner;
+    const endY = current.y + (nextVector.y / nextLength) * corner;
+
+    command += ` L ${startX} ${startY}`;
+    command += ` Q ${current.x} ${current.y} ${endX} ${endY}`;
+
+    points[index] = { x: endX, y: endY };
+  }
+
+  return command;
+};
+
+const buildOrthogonalPath = (source, target, orientation = 'vertical', overrides = {}) => {
+  if (!source || !target) {
+    return '';
+  }
+
+  const { cornerRadius, nodePadding } = { ...ORTHO_PATH_DEFAULTS, ...overrides };
+  const resolvedPadding = Math.min(Math.max(nodePadding, 16), 20);
+  const baseMargin = resolvedPadding;
+
+  const sx = Number(source.x) || 0;
+  const sy = Number(source.y) || 0;
+  const tx = Number(target.x) || 0;
+  const ty = Number(target.y) || 0;
+
+  const dx = tx - sx;
+  const dy = ty - sy;
+
+  const isHorizontal = orientation === 'horizontal';
+  const primaryDistance = isHorizontal ? Math.abs(dx) : Math.abs(dy);
+  const secondaryDistance = isHorizontal ? Math.abs(dy) : Math.abs(dx);
+
+  const primaryDirection = (isHorizontal ? dx : dy) >= 0 ? 1 : -1;
+  const secondaryDirection = (isHorizontal ? dy : dx) >= 0 ? 1 : -1;
+
+  let points;
+
+  if (primaryDistance < baseMargin * 2) {
+    const lateralOffset = Math.max(baseMargin * 1.35, secondaryDistance / 2 || baseMargin * 1.35);
+    const advanceOffset = baseMargin;
+
+    if (isHorizontal) {
+      points = [
+        { x: sx, y: sy },
+        { x: sx + primaryDirection * advanceOffset, y: sy },
+        { x: sx + primaryDirection * advanceOffset, y: sy + secondaryDirection * lateralOffset },
+        { x: tx - primaryDirection * advanceOffset, y: sy + secondaryDirection * lateralOffset },
+        { x: tx - primaryDirection * advanceOffset, y: ty },
+        { x: tx, y: ty },
+      ];
+    } else {
+      points = [
+        { x: sx, y: sy },
+        { x: sx, y: sy + primaryDirection * advanceOffset },
+        { x: sx + secondaryDirection * lateralOffset, y: sy + primaryDirection * advanceOffset },
+        { x: sx + secondaryDirection * lateralOffset, y: ty - primaryDirection * advanceOffset },
+        { x: tx, y: ty - primaryDirection * advanceOffset },
+        { x: tx, y: ty },
+      ];
+    }
+  } else {
+    if (isHorizontal) {
+      let midX = sx + dx / 2;
+      if (Math.abs(midX - sx) < baseMargin) {
+        midX = sx + primaryDirection * baseMargin;
+      }
+      if (Math.abs(tx - midX) < baseMargin) {
+        midX = tx - primaryDirection * baseMargin;
+      }
+
+      points = [
+        { x: sx, y: sy },
+        { x: midX, y: sy },
+        { x: midX, y: ty },
+        { x: tx, y: ty },
+      ];
+    } else {
+      let midY = sy + dy / 2;
+      if (Math.abs(midY - sy) < baseMargin) {
+        midY = sy + primaryDirection * baseMargin;
+      }
+      if (Math.abs(ty - midY) < baseMargin) {
+        midY = ty - primaryDirection * baseMargin;
+      }
+
+      points = [
+        { x: sx, y: sy },
+        { x: sx, y: midY },
+        { x: tx, y: midY },
+        { x: tx, y: ty },
+      ];
+    }
+  }
+
+  return buildRoundedPath(points, cornerRadius);
+};
 
 const normalizeWheelDelta = (value, mode) => {
   if (!Number.isFinite(value)) return 0;
@@ -69,6 +213,46 @@ const calculateNodeScaleFactor = (dimensions) => {
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('jarvis.theme') || 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('jarvis.theme', next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  // 뷰 선택 메뉴 상태
+  const [showViewMenu, setShowViewMenu] = useState(false);
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
+
+  // 테마 색상
+  const themeColors = useMemo(() => ({
+    light: {
+      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))',
+      text: '#000000',
+      border: 'rgba(0, 0, 0, 0.1)',
+    },
+    dark: {
+      background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+      text: '#FFFFFF',
+      border: 'rgba(255, 255, 255, 0.1)',
+    },
+  }), []);
+
+  const currentTheme = themeColors[theme];
+
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState(getViewportDimensions());
   const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
@@ -108,6 +292,7 @@ const HierarchicalForceTree = () => {
   const [initializingTree, setInitializingTree] = useState(false);
   const [treeSyncError, setTreeSyncError] = useState(null);
   const [isTreeSyncing, setIsTreeSyncing] = useState(false);
+  const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(treeData);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
@@ -275,8 +460,8 @@ const HierarchicalForceTree = () => {
   const [overlayElement, setOverlayElement] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
   const isIgnoringMouseRef = useRef(false);
-  const [showBootstrapChat, setShowBootstrapChat] = useState(false);
   const treeSyncDebounceRef = useRef(null);
+  const [showBootstrapChat, setShowBootstrapChat] = useState(false);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -647,12 +832,22 @@ const HierarchicalForceTree = () => {
         const baseAnswer = typeof node.answer === 'string' && node.answer.trim()
           ? node.answer.trim()
           : node.questionData?.answer || node.fullText || null;
-        const normalizedConversation = sanitizeConversationMessages(
-          conversationStoreRef.current.get(node.id)
-        );
-        const conversation = normalizedConversation.length
-          ? normalizedConversation
-          : buildFallbackConversation(baseQuestion, baseAnswer);
+        const isMemoNode = node.nodeType === 'memo';
+        const normalizedConversation = isMemoNode
+          ? []
+          : sanitizeConversationMessages(conversationStoreRef.current.get(node.id));
+        const conversation = isMemoNode
+          ? []
+          : (normalizedConversation.length
+            ? normalizedConversation
+            : buildFallbackConversation(baseQuestion, baseAnswer));
+        const memoPayload = isMemoNode
+          ? {
+            title: node.memo?.title || node.keyword || '',
+            content: node.memo?.content || node.fullText || '',
+            metadata: node.memo?.metadata || node.memoMetadata || null,
+          }
+          : null;
 
         return {
           id: node.id,
@@ -666,6 +861,10 @@ const HierarchicalForceTree = () => {
           parentId,
           conversation,
           questionData: node.questionData,
+          nodeType: node.nodeType || null,
+          memoParentId: node.memoParentId || null,
+          memo: memoPayload,
+          memoMetadata: memoPayload?.metadata || null,
         };
       });
 
@@ -950,6 +1149,21 @@ const HierarchicalForceTree = () => {
     conversationStoreRef.current.set(nodeId, normalized);
   }, []);
 
+  useEffect(() => {
+    const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
+    setShowBootstrapChat(isEmpty);
+
+    if (isEmpty) {
+      setSelectedNodeId(null);
+      setExpandedNodeId(null);
+      if (!conversationStoreRef.current.has('__bootstrap__')) {
+        conversationStoreRef.current.set('__bootstrap__', []);
+      }
+    } else {
+      conversationStoreRef.current.delete('__bootstrap__');
+    }
+  }, [data.nodes]);
+
   const clearPendingExpansion = useCallback(() => {
     pendingFocusNodeIdRef.current = null;
     if (expandTimeoutRef.current) {
@@ -1017,86 +1231,7 @@ const HierarchicalForceTree = () => {
   }, []);
 
   // 부트스트랩 채팅창 위치 (화면 상단 중앙)
-  const rootDragHandlePosition = React.useMemo(() => {
-    const screenX = dimensions.width / 2;
-    const screenY = 20; // 화면 상단에서 20px 떨어진 고정 위치
-    return { x: screenX, y: screenY };
-  }, [dimensions.width]);
-
   // 초기 부팅 시(빈 그래프) 드래그 핸들 바로 아래에 채팅창 표시
-  useEffect(() => {
-    const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
-    setShowBootstrapChat(isEmpty);
-  }, [data.nodes]);
-
-  const handleBootstrapSubmit = async (text) => {
-    if (!text || !text.trim()) return;
-
-    const userQuestion = text.trim();
-    const timestamp = Date.now();
-
-    setConversationForNode('__bootstrap__', [
-      { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
-    ]);
-
-    try {
-      const response = await handleRequestAnswer({
-        node: { id: '__bootstrap__' },
-        question: userQuestion,
-        isRootNode: true,
-      });
-
-      const rootId = `root_${Date.now().toString(36)}`;
-      const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
-      const keyword = await extractImportantKeyword(userQuestion);
-
-      const rawConversation = [
-        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
-      ];
-
-      const sanitizedConversation = sanitizeConversationMessages(rawConversation);
-
-      const rootNode = {
-        id: rootId,
-        keyword: keyword || userQuestion,
-        fullText: answer || userQuestion,
-        level: 0,
-        size: 20,
-        status: 'answered',
-        question: userQuestion,
-        answer,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        conversation: sanitizedConversation,
-      };
-
-      setData({ nodes: [rootNode], links: [] });
-
-
-      setConversationForNode(rootId, [
-        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
-      ]);
-      conversationStoreRef.current.delete('__bootstrap__');
-
-
-      questionService.current.setQuestionCount(rootId, 1);
-      setExpandedNodeId(rootId);
-      setSelectedNodeId(rootId);
-      setShowBootstrapChat(false);
-    } catch (error) {
-      setConversationForNode('__bootstrap__', [
-        { id: `${timestamp}-user`, role: 'user', text: userQuestion, timestamp },
-        { id: `${timestamp}-assistant`, role: 'assistant', text: '⚠️ 루트 노드 생성 중 오류가 발생했습니다.', status: 'error', timestamp: Date.now() },
-      ]);
-      const message = error?.message || '루트 노드 생성 중 오류가 발생했습니다.';
-      window.jarvisAPI?.log?.('error', 'bootstrap_failed', { message });
-      throw error;
-    }
-  };
-
   const handleConversationChange = (nodeId, messages) => {
 
     setConversationForNode(nodeId, messages);
@@ -1184,6 +1319,77 @@ const HierarchicalForceTree = () => {
     },
     [buildContextMessages, invokeAgent],
   );
+
+  const handleBootstrapSubmit = useCallback(async (text) => {
+    const trimmed = typeof text === 'string' ? text.trim() : '';
+    if (!trimmed) {
+      return;
+    }
+
+    const timestamp = Date.now();
+
+    setConversationForNode('__bootstrap__', [
+      { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
+    ]);
+
+    try {
+      const response = await handleRequestAnswer({
+        node: { id: '__bootstrap__' },
+        question: trimmed,
+        isRootNode: true,
+      });
+
+      const rootId = createClientGeneratedId('root');
+      const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
+      const keyword = await extractImportantKeyword(trimmed);
+
+      const rawConversation = [
+        { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
+      ];
+
+      const sanitizedConversation = sanitizeConversationMessages(rawConversation);
+
+      const rootNode = {
+        id: rootId,
+        keyword: keyword || trimmed,
+        fullText: answer || trimmed,
+        level: 0,
+        size: 20,
+        status: 'answered',
+        question: trimmed,
+        answer,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        conversation: sanitizedConversation,
+      };
+
+      setData(() => {
+        const nextState = { nodes: [rootNode], links: [] };
+        dataRef.current = nextState;
+        return nextState;
+      });
+
+      setConversationForNode(rootId, sanitizedConversation);
+      conversationStoreRef.current.delete('__bootstrap__');
+
+      questionService.current.setQuestionCount(rootId, 1);
+      setExpandedNodeId(rootId);
+      setSelectedNodeId(rootId);
+      setShowBootstrapChat(false);
+    } catch (error) {
+      setConversationForNode('__bootstrap__', [
+        { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+        { id: `${timestamp}-assistant`, role: 'assistant', text: '⚠️ 루트 노드 생성 중 오류가 발생했습니다.', status: 'error', timestamp: Date.now() },
+      ]);
+
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('bootstrap_submit_failed', error);
+      }
+    }
+  }, [createClientGeneratedId, extractImportantKeyword, handleRequestAnswer, setConversationForNode, setShowBootstrapChat]);
 
   // 2번째 질문 처리 함수
   const handleSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
@@ -1423,6 +1629,293 @@ const HierarchicalForceTree = () => {
     }
   };
 
+  const handleMemoCreate = useCallback((parentNodeId) => {
+    const parentExists = dataRef.current?.nodes?.some((node) => node.id === parentNodeId);
+    if (!parentExists) {
+      return null;
+    }
+
+    const timestamp = Date.now();
+    const memoId = createClientGeneratedId('memo');
+    const parentNode = dataRef.current?.nodes?.find((node) => node.id === parentNodeId);
+    const defaultTitle = parentNode?.keyword
+      ? `${parentNode.keyword} 메모`
+      : '새 메모';
+
+    setData((prev) => ({
+      ...prev,
+      nodes: [
+        ...prev.nodes,
+        {
+          id: memoId,
+          nodeType: 'memo',
+          memoParentId: parentNodeId,
+          parentId: parentNodeId,
+          keyword: defaultTitle,
+          fullText: '',
+          memo: {
+            title: defaultTitle,
+            content: '',
+          },
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          conversation: [],
+        },
+      ],
+      links: [
+        ...prev.links,
+        {
+          source: parentNodeId,
+          target: memoId,
+          value: 0.6,
+          relationship: 'memo',
+        },
+      ],
+    }));
+
+    return memoId;
+  }, [createClientGeneratedId]);
+
+  const handleMemoUpdate = useCallback((memoId, updates = {}) => {
+    if (!memoId) {
+      return;
+    }
+
+    setData((prev) => {
+      let hasChanged = false;
+
+      const nextNodes = prev.nodes.map((node) => {
+        if (node.id !== memoId) {
+          return node;
+        }
+
+        const currentMemo = node.memo || { title: '', content: '' };
+        const nextTitle = typeof updates.title === 'string' ? updates.title : currentMemo.title;
+        const nextContent = typeof updates.content === 'string' ? updates.content : currentMemo.content;
+
+        if (nextTitle === currentMemo.title && nextContent === currentMemo.content) {
+          return node;
+        }
+
+        hasChanged = true;
+
+        return {
+          ...node,
+          memo: {
+            title: nextTitle,
+            content: nextContent,
+          },
+          keyword: node.nodeType === 'memo'
+            ? (nextTitle || node.keyword || '').slice(0, 48)
+            : node.keyword,
+          fullText: node.nodeType === 'memo'
+            ? (nextContent || '')
+            : node.fullText,
+          updatedAt: Date.now(),
+        };
+      });
+
+      if (!hasChanged) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        nodes: nextNodes,
+      };
+    });
+  }, []);
+
+  const requestUserInput = useCallback((message, defaultValue = '') => {
+    if (typeof window === 'undefined' || typeof window.prompt !== 'function') {
+      return { status: 'unavailable', value: null };
+    }
+
+    try {
+      const result = window.prompt(message, defaultValue ?? '');
+      if (result === null) {
+        return { status: 'cancelled', value: null };
+      }
+      return { status: 'ok', value: result };
+    } catch (error) {
+      return { status: 'unavailable', value: null };
+    }
+  }, []);
+
+  const handleManualNodeCreate = useCallback((parentNodeId) => {
+    const latestData = dataRef.current;
+    if (!latestData || !Array.isArray(latestData.nodes) || latestData.nodes.length === 0) {
+      return null;
+    }
+
+    const parentExists = latestData.nodes.some((node) => node.id === parentNodeId);
+    const resolvedParentId = parentExists ? parentNodeId : getRootNodeId();
+
+    if (!resolvedParentId) {
+      showLinkValidationMessage('부모 노드를 찾을 수 없습니다.');
+      return null;
+    }
+
+    const parentNode = latestData.nodes.find((node) => node.id === resolvedParentId);
+
+    const defaultKeywordBase = parentNode?.keyword || parentNode?.id || '새 노드';
+    const defaultKeyword = `${defaultKeywordBase}`;
+
+    const keywordRequest = requestUserInput('추가할 노드의 제목을 입력하세요.', defaultKeyword);
+    if (keywordRequest.status === 'cancelled') {
+      return null;
+    }
+
+    const keyword = (keywordRequest.status === 'ok' ? keywordRequest.value : defaultKeyword).trim() || defaultKeyword;
+
+    const descriptionRequest = requestUserInput('노드 설명을 입력하세요. (선택 사항)', '');
+    if (descriptionRequest.status === 'cancelled') {
+      return null;
+    }
+    const fullText = descriptionRequest.status === 'ok' ? (descriptionRequest.value || '').trim() : '';
+
+    const level = (parentNode?.level ?? 0) + 1;
+    const now = Date.now();
+    const newNodeId = createClientGeneratedId('node');
+
+    if (willCreateCycle(resolvedParentId, newNodeId)) {
+      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
+      return null;
+    }
+
+    const nextNode = {
+      id: newNodeId,
+      keyword,
+      fullText,
+      level,
+      size: typeof parentNode?.size === 'number' ? parentNode.size : 12,
+      status: 'answered',
+      conversation: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setConversationForNode(newNodeId, []);
+
+    setData((prev) => {
+      const next = {
+        ...prev,
+        nodes: [...prev.nodes, nextNode],
+        links: [...prev.links, { source: resolvedParentId, target: newNodeId, value: 1 }],
+      };
+      dataRef.current = next;
+      return next;
+    });
+
+    return newNodeId;
+  }, [createClientGeneratedId, getRootNodeId, requestUserInput, setConversationForNode, showLinkValidationMessage, willCreateCycle]);
+
+  const handleManualRootCreate = useCallback((options = {}) => {
+    const now = Date.now();
+    const newNodeId = createClientGeneratedId('root');
+    const position = options?.position || { x: 0, y: 0 };
+
+    const existingRootCount = Array.isArray(dataRef.current?.nodes)
+      ? dataRef.current.nodes.filter((node) => node?.level === 0).length
+      : 0;
+
+    const defaultKeyword = existingRootCount > 0
+      ? `새 루트 노드 ${existingRootCount + 1}`
+      : '새 루트 노드';
+
+    const newNode = {
+      id: newNodeId,
+      keyword: options?.keyword || defaultKeyword,
+      fullText: options?.fullText || '',
+      level: 0,
+      size: 20,
+      status: 'answered',
+      conversation: [],
+      createdAt: now,
+      updatedAt: now,
+      x: Number.isFinite(position.x) ? position.x : 0,
+      y: Number.isFinite(position.y) ? position.y : 0,
+    };
+
+    setConversationForNode(newNodeId, []);
+
+    setData((prev) => {
+      const nextState = (!prev || !Array.isArray(prev.nodes) || prev.nodes.length === 0)
+        ? { nodes: [newNode], links: [] }
+        : {
+            ...prev,
+            nodes: [...prev.nodes, newNode],
+            links: Array.isArray(prev.links) ? prev.links.slice() : [],
+          };
+
+      dataRef.current = nextState;
+      return nextState;
+    });
+
+    setSelectedNodeId(newNodeId);
+    setExpandedNodeId(null);
+    setShowBootstrapChat(false);
+    return newNodeId;
+  }, [createClientGeneratedId, setConversationForNode]);
+
+  const handleManualLinkCreate = useCallback((sourceNodeId, targetNodeId) => {
+    if (!sourceNodeId || !targetNodeId) {
+      return null;
+    }
+
+    const latestData = dataRef.current;
+    const normalize = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+
+    const availableNodes = latestData?.nodes || [];
+    if (!availableNodes.length) {
+      showLinkValidationMessage('연결할 노드를 찾을 수 없습니다.');
+      return null;
+    }
+
+    if (!availableNodes.some((node) => node.id === sourceNodeId)) {
+      showLinkValidationMessage('선택한 노드를 찾을 수 없습니다.');
+      return null;
+    }
+
+    const targetNode = availableNodes.find((node) => node.id === targetNodeId);
+    if (!targetNode) {
+      showLinkValidationMessage('대상 노드를 찾지 못했습니다.');
+      return null;
+    }
+
+    if (targetNodeId === sourceNodeId) {
+      showLinkValidationMessage('같은 노드를 연결할 수 없습니다.');
+      return null;
+    }
+
+    const existingLink = (latestData?.links || []).some((link) => {
+      const source = normalize(link.source);
+      const target = normalize(link.target);
+      return source === sourceNodeId && target === targetNodeId;
+    });
+
+    if (existingLink) {
+      showLinkValidationMessage('이미 연결된 노드입니다.');
+      return null;
+    }
+
+    if (willCreateCycle(sourceNodeId, targetNodeId)) {
+      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
+      return null;
+    }
+
+    setData((prev) => {
+      const next = {
+        ...prev,
+        links: [...prev.links, { source: sourceNodeId, target: targetNodeId, value: 1 }],
+      };
+      dataRef.current = next;
+      return next;
+    });
+
+    return { sourceId: sourceNodeId, targetId: targetNodeId };
+  }, [showLinkValidationMessage, willCreateCycle]);
+
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
     setSelectedNodeId(nodeId);
@@ -1437,7 +1930,7 @@ const HierarchicalForceTree = () => {
   }, [data.nodes]);
 
   useEffect(() => {
-    if (!svgRef.current) return undefined;
+    if (!svgRef.current || viewMode !== 'tree1') return undefined;
 
     const svgSelection = d3.select(svgRef.current);
     const zoomFactory = typeof d3.zoom === 'function' ? d3.zoom : null;
@@ -1504,7 +1997,7 @@ const HierarchicalForceTree = () => {
     };
 
     const zoomBehaviour = zoomFactory()
-      .scaleExtent([0.3, 4])
+      .scaleExtent([0.3, 8])
       .filter((event) => {
         const target = event.target instanceof Element ? event.target : null;
         const isForeignObject = target && target.closest('foreignObject');
@@ -1573,7 +2066,7 @@ const HierarchicalForceTree = () => {
         const base = typeof defaultWheelDelta === 'function'
           ? defaultWheelDelta(event)
           : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
-        return base * 1.0;
+        return base * 0.3; // 트리2와 동일한 민감도
       }
 
       // Ctrl/Cmd 키가 없으면 패닝 (translate)
@@ -1620,7 +2113,7 @@ const HierarchicalForceTree = () => {
         zoomBehaviourRef.current = null;
       }
     };
-  }, []);
+  }, [viewMode]);
 
   // 과거 생성된 Q2 노드들(및 하위 노드) 정리 - 최초 1회만 수행
   useEffect(() => {
@@ -1835,44 +2328,75 @@ const HierarchicalForceTree = () => {
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
   const handleDrag = (nodeId) => {
+    let dragStart = null;
+
+    const isInteractiveTarget = (target) => {
+      if (!target) return false;
+      const interactiveSelector = '[data-node-toggle],button,a,input,textarea,select,[contenteditable="true"]';
+      return Boolean(target.closest && target.closest(interactiveSelector));
+    };
+
+    const resolveAxisLock = (rawEvent) => {
+      if (!rawEvent) return null;
+      if (rawEvent.shiftKey) {
+        return 'horizontal'; // lock vertical movement, allow X changes
+      }
+      if (rawEvent.altKey || rawEvent.metaKey) {
+        return 'vertical'; // lock horizontal movement, allow Y changes
+      }
+      return null;
+    };
+
     return d3.drag()
       .filter((event) => {
-        // 노드 드래그: Ctrl/Cmd 키를 누른 상태에서만 드래그 허용
-        return event.ctrlKey || event.metaKey;
+        const rawEvent = event?.sourceEvent || event;
+        if (!rawEvent) return false;
+        if (typeof rawEvent.button === 'number' && rawEvent.button !== 0) {
+          return false;
+        }
+        if (isInteractiveTarget(rawEvent.target)) {
+          return false;
+        }
+        return true;
       })
       .on('start', (event) => {
-        // 드래그 시작 시 애니메이션 일시 정지
         if (animationRef.current) {
           animationRef.current.stop();
         }
-      })
-      .on('drag', (event) => {
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-          // 현재 줌/팬이 적용된 컨테이너 좌표계에서 포인터 좌표를 계산
-          const container = contentGroupRef.current || svgRef.current;
-          const pointer = d3.pointer(event, container);
-          node.x = pointer[0];
-          node.y = pointer[1];
-          setNodes([...nodes]);
+
+        const targetNode = nodes.find((candidate) => candidate.id === nodeId);
+        if (targetNode) {
+          dragStart = { x: targetNode.x || 0, y: targetNode.y || 0 };
         }
       })
-      .on('end', (event) => {
-        // 드래그 종료 시 tree layout으로 다시 정렬
-        const animation = treeAnimationService.current.calculateTreeLayoutWithAnimation(
-          nodes,
-          visibleGraph.nodes,
-          visibleGraph.links,
-          dimensions,
-          (animatedNodes, animatedLinks) => {
-            setNodes(animatedNodes);
-            const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
-            linkKeysRef.current = nextKeys;
-            setLinks(annotatedLinks);
-          },
-          { orientation: layoutOrientation }
-        );
-        animationRef.current = animation;
+      .on('drag', (event) => {
+        const container = contentGroupRef.current || svgRef.current;
+        if (!container) {
+          return;
+        }
+
+        const rawEvent = event?.sourceEvent || event;
+        const pointer = d3.pointer(event, container);
+        const axisLock = resolveAxisLock(rawEvent);
+
+        setNodes((currentNodes) => {
+          const existing = currentNodes.find((candidate) => candidate.id === nodeId);
+          if (!existing) {
+            return currentNodes;
+          }
+
+          const lockedX = axisLock === 'vertical' && dragStart ? dragStart.x : pointer[0];
+          const lockedY = axisLock === 'horizontal' && dragStart ? dragStart.y : pointer[1];
+
+          return currentNodes.map((node) => (
+            node.id === nodeId
+              ? { ...node, x: lockedX, y: lockedY }
+              : node
+          ));
+        });
+      })
+      .on('end', () => {
+        dragStart = null;
       });
   };
 
@@ -2013,7 +2537,7 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+        background: currentTheme.background,
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         // 창틀 여유 공간까지 완전히 채우기
@@ -2042,60 +2566,6 @@ const HierarchicalForceTree = () => {
           <p className="opacity-80">{treeSyncError.message || 'Supabase와 동기화할 수 없습니다.'}</p>
         </div>
       ) : null}
-      <div
-        className="absolute top-4 left-6 z-[1300] flex gap-3"
-        style={{ pointerEvents: 'none' }}
-      >
-        {/* 시각화 모드 토글 (트리1/트리2/차트) */}
-        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-          <button
-            type="button"
-            onClick={() => setViewMode('tree1')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree1'}
-          >
-            트리1
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('tree2')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree2'}
-          >
-            트리2
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('chart')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'chart'}
-          >
-            차트
-          </button>
-        </div>
-
-        {/* 레이아웃 방향 토글 (트리1 모드에서만 표시) */}
-        {viewMode === 'tree1' && (
-          <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-            <button
-              type="button"
-              onClick={() => setLayoutOrientation('vertical')}
-              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'vertical' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={layoutOrientation === 'vertical'}
-            >
-              아래로
-            </button>
-            <button
-              type="button"
-              onClick={() => setLayoutOrientation('horizontal')}
-              className={`rounded-full px-3 py-1 transition ${layoutOrientation === 'horizontal' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={layoutOrientation === 'horizontal'}
-            >
-              오른쪽
-            </button>
-          </div>
-        )}
-      </div>
       {linkValidationError ? (
         <div className="pointer-events-none absolute top-4 right-6 z-[1300]">
           <div className="pointer-events-auto rounded-lg border border-red-400/60 bg-red-900/80 px-3 py-2 text-xs font-medium text-red-100 shadow-lg">
@@ -2108,108 +2578,238 @@ const HierarchicalForceTree = () => {
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
-        <div className="flex h-8 w-40 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3">
-          {/* 왼쪽: 드래그 점들 */}
-          <div className="flex space-x-1">
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
-            <div className="h-1 w-1 rounded-full bg-white/60"></div>
+        <div className="flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3" style={{ width: '224px' }}>
+          {/* 왼쪽: 드래그 점들 & 테마 버튼 */}
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* 드래그 점들 */}
+            <div className="flex space-x-1">
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+              <div className="h-1 w-1 rounded-full bg-white/60"></div>
+            </div>
+
+            {/* 테마 토글 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+              onClick={toggleTheme}
+              onMouseDown={(e) => e.stopPropagation()}
+              title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+            >
+              {theme === 'dark' ? (
+                <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                </svg>
+              )}
+            </button>
           </div>
 
-          {/* 오른쪽: 닫기 버튼 */}
-          <button
-            className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            onClick={() => {
-              if (process.env.NODE_ENV === 'development') {
-                // 개발 중 동작 여부 확인용
-                // eslint-disable-next-line no-console
-                console.log('[Jarvis] Drag handle close requested');
-              }
+          {/* 오른쪽: 전체화면 & 닫기 버튼 */}
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* 전체화면 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+              onClick={() => {
+                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
+                if (api?.windowControls?.maximize) {
+                  api.windowControls.maximize();
+                }
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="전체화면"
+            >
+              <svg className="h-3 w-3 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            </button>
 
-              const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
-
-              const hideWindow = () => {
+            {/* 닫기 버튼 */}
+            <button
+              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
+              onClick={() => {
                 if (process.env.NODE_ENV === 'development') {
+                  // 개발 중 동작 여부 확인용
                   // eslint-disable-next-line no-console
-                  console.log('[Jarvis] hideWindow fallback triggered');
-                }
-                try {
-                  if (api && typeof api.toggleWindow === 'function') {
-                    api.toggleWindow();
-                    return;
-                  }
-                } catch (toggleError) {
-                  // Ignore toggle errors and fall through to window.close fallback.
+                  console.log('[Jarvis] Drag handle close requested');
                 }
 
-                if (typeof window !== 'undefined' && typeof window.close === 'function') {
-                  window.close();
-                }
-              };
+                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
 
-              try {
-                const closeFn = api?.windowControls?.close;
-                if (typeof closeFn === 'function') {
-                  const maybeResult = closeFn();
+                const hideWindow = () => {
                   if (process.env.NODE_ENV === 'development') {
-                    const tag = '[Jarvis] windowControls.close result';
-                    if (maybeResult && typeof maybeResult.then === 'function') {
-                      maybeResult.then((response) => {
-                        // eslint-disable-next-line no-console
-                        console.log(tag, response);
-                      }).catch((err) => {
-                        // eslint-disable-next-line no-console
-                        console.log(`${tag} (rejected)`, err);
-                      });
-                    } else {
-                      // eslint-disable-next-line no-console
-                      console.log(tag, maybeResult);
+                    // eslint-disable-next-line no-console
+                    console.log('[Jarvis] hideWindow fallback triggered');
+                  }
+                  try {
+                    if (api && typeof api.toggleWindow === 'function') {
+                      api.toggleWindow();
+                      return;
                     }
+                  } catch (toggleError) {
+                    // Ignore toggle errors and fall through to window.close fallback.
                   }
 
-                  if (maybeResult && typeof maybeResult.then === 'function') {
-                    maybeResult
-                      .then((response) => {
-                        if (process.env.NODE_ENV === 'development') {
+                  if (typeof window !== 'undefined' && typeof window.close === 'function') {
+                    window.close();
+                  }
+                };
+
+                try {
+                  const closeFn = api?.windowControls?.close;
+                  if (typeof closeFn === 'function') {
+                    const maybeResult = closeFn();
+                    if (process.env.NODE_ENV === 'development') {
+                      const tag = '[Jarvis] windowControls.close result';
+                      if (maybeResult && typeof maybeResult.then === 'function') {
+                        maybeResult.then((response) => {
                           // eslint-disable-next-line no-console
-                          console.log('[Jarvis] close response (async)', response, response?.error);
-                        }
-                        if (!response?.success) {
-                          hideWindow();
-                        }
-                      })
-                      .catch(() => hideWindow());
+                          console.log(tag, response);
+                        }).catch((err) => {
+                          // eslint-disable-next-line no-console
+                          console.log(`${tag} (rejected)`, err);
+                        });
+                      } else {
+                        // eslint-disable-next-line no-console
+                        console.log(tag, maybeResult);
+                      }
+                    }
+
+                    if (maybeResult && typeof maybeResult.then === 'function') {
+                      maybeResult
+                        .then((response) => {
+                          if (process.env.NODE_ENV === 'development') {
+                            // eslint-disable-next-line no-console
+                            console.log('[Jarvis] close response (async)', response, response?.error);
+                          }
+                          if (!response?.success) {
+                            hideWindow();
+                          }
+                        })
+                        .catch(() => hideWindow());
+                      return;
+                    }
+
+                    if (!maybeResult?.success) {
+                      hideWindow();
+                    }
                     return;
                   }
-
-                  if (!maybeResult?.success) {
-                    hideWindow();
-                  }
+                } catch (error) {
+                  hideWindow();
                   return;
                 }
-              } catch (error) {
-                hideWindow();
-                return;
-              }
 
-              hideWindow();
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <svg
-              className="h-3 w-3 text-white group-hover:text-black"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+                hideWindow();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+              <svg
+                className="h-3 w-3 text-white group-hover:text-black"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 뷰 선택 버튼 - 상단바 아래 */}
+      <div
+        className="absolute top-12 left-1/2 z-[1300] -translate-x-1/2"
+        style={{ pointerEvents: 'none' }}
+      >
+        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
+          {/* 트리1 버튼 - 호버 시 레이아웃 드롭다운 */}
+          <div
+            className="relative"
+            onMouseEnter={() => setShowLayoutMenu(true)}
+            onMouseLeave={() => setShowLayoutMenu(false)}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode('tree1')}
+              className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+              aria-pressed={viewMode === 'tree1'}
+            >
+              트리1
+            </button>
+
+            {/* 레이아웃 방향 드롭다운 */}
+            {showLayoutMenu && (
+              <div
+                className="absolute top-full left-0 w-28 z-[1400]"
+                style={{ paddingTop: '8px' }}
+                onMouseEnter={() => setShowLayoutMenu(true)}
+                onMouseLeave={() => setShowLayoutMenu(false)}
+              >
+                <div
+                  className="rounded-lg shadow-2xl backdrop-blur-md border overflow-hidden"
+                  style={{
+                    background: theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.85)',
+                    borderColor: theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.12)',
+                  }}
+                >
+                  <button
+                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                      ? 'text-gray-900 hover:bg-gray-100'
+                      : 'text-white/90 hover:bg-white/10'
+                      } ${layoutOrientation === 'vertical' ? 'font-semibold' : ''}`}
+                    onClick={() => {
+                      setViewMode('tree1');
+                      setLayoutOrientation('vertical');
+                      setShowLayoutMenu(false);
+                    }}
+                  >
+                    아래로
+                  </button>
+                  <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
+                  <button
+                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
+                      ? 'text-gray-900 hover:bg-gray-100'
+                      : 'text-white/90 hover:bg-white/10'
+                      } ${layoutOrientation === 'horizontal' ? 'font-semibold' : ''}`}
+                    onClick={() => {
+                      setViewMode('tree1');
+                      setLayoutOrientation('horizontal');
+                      setShowLayoutMenu(false);
+                    }}
+                  >
+                    오른쪽
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 트리2 버튼 */}
+          <button
+            type="button"
+            onClick={() => setViewMode('tree2')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'tree2'}
+          >
+            트리2
+          </button>
+
+          {/* 차트 버튼 */}
+          <button
+            type="button"
+            onClick={() => setViewMode('chart')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'chart'}
+          >
+            차트
           </button>
         </div>
       </div>
@@ -2220,7 +2820,6 @@ const HierarchicalForceTree = () => {
         </div>
       ) : null}
 
-      {/* 트리2 뷰 (Force-Directed) */}
       {viewMode === 'tree2' && showBootstrapChat && (
         <div
           className="pointer-events-none absolute"
@@ -2254,12 +2853,20 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       )}
+
       {viewMode === 'tree2' && (
         <ForceDirectedTree
           data={data}
           dimensions={dimensions}
           onNodeClick={handleNodeClickForAssistant}
           onNodeRemove={removeNodeAndDescendants}
+          onMemoCreate={handleMemoCreate}
+          onMemoUpdate={handleMemoUpdate}
+          onNodeCreate={handleManualNodeCreate}
+          onLinkCreate={handleManualLinkCreate}
+          onRootCreate={handleManualRootCreate}
+          treeId={activeTreeId}
+          userId={user?.id}
           questionService={questionService.current}
           getInitialConversation={getInitialConversationForNode}
           onConversationChange={handleConversationChange}
@@ -2268,6 +2875,7 @@ const HierarchicalForceTree = () => {
           onAnswerError={handleAnswerError}
           onSecondQuestion={handleSecondQuestion}
           onPlaceholderCreate={handlePlaceholderCreate}
+          theme={theme}
         />
       )}
 
@@ -2281,14 +2889,13 @@ const HierarchicalForceTree = () => {
         />
       )}
 
-      {/* 트리1 뷰 */}
-      {viewMode === 'tree1' && showBootstrapChat && rootDragHandlePosition && overlayElement && (
+      {viewMode === 'tree1' && showBootstrapChat && (
         <div
           className="pointer-events-none absolute"
           style={{
-            left: `${rootDragHandlePosition.x}px`,
-            top: `${rootDragHandlePosition.y}px`,
-            transform: 'translate(-50%, 48px)',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
             width: 600,
             height: 640,
             zIndex: 1000,
@@ -2315,6 +2922,7 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       )}
+
       {viewMode === 'tree1' && (
         <svg
           ref={svgRef}
@@ -2324,7 +2932,7 @@ const HierarchicalForceTree = () => {
           preserveAspectRatio="none"
           data-interactive-zone="true"
           style={{
-            background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+            background: currentTheme.background,
             // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
             pointerEvents: 'auto',
             // SVG가 창틀 여유 공간까지 완전히 채우도록 설정
@@ -2373,8 +2981,12 @@ const HierarchicalForceTree = () => {
                     if (!sourceNode || !targetNode) return null;
 
                     const isHorizontalLayout = layoutOrientation === 'horizontal';
-                    const sourceX = sourceNode.x;
-                    const sourceY = isHorizontalLayout ? sourceNode.y : sourceNode.y + 14 + 20;
+                    // 토글 버튼 위치에서 연결선 시작
+                    // horizontal: 버튼이 노드 오른쪽(x축)에 있으므로 sourceX 증가
+                    // vertical: 버튼이 노드 아래(y축)에 있으므로 sourceY 증가
+                    const toggleButtonOffset = 50 * nodeScaleFactor;
+                    const sourceX = isHorizontalLayout ? sourceNode.x + toggleButtonOffset : sourceNode.x;
+                    const sourceY = isHorizontalLayout ? sourceNode.y : sourceNode.y + toggleButtonOffset;
                     const targetX = targetNode.x;
                     const targetY = targetNode.y;
 
