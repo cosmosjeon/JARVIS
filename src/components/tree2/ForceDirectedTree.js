@@ -1590,6 +1590,15 @@ const ForceDirectedTree = ({
                                     onCloseNode={() => setSelectedNodeId(null)}
                                     onPanZoomGesture={() => { }}
                                     nodeScaleFactor={1}
+                                    treeNodes={data?.nodes || []}
+                                    treeLinks={data?.links || []}
+                                    onNodeSelect={(targetNode) => {
+                                        const targetNodeId = targetNode?.id;
+                                        if (targetNodeId) {
+                                            setSelectedNodeId(targetNodeId);
+                                        }
+                                    }}
+                                    disableNavigation={isMemoSelection}
                                 />
                             )}
                         </div>

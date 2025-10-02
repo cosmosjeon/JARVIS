@@ -58,6 +58,7 @@ const NodeAssistantPanel = ({
   treeNodes = [],
   treeLinks = [],
   onNodeSelect = () => { },
+  disableNavigation = false, // 메모 모드에서 네비게이션 비활성화
 }) => {
   const summary = useMemo(() => {
     // 새로 생성된 노드인 경우 (questionData가 있는 경우) 특별 처리
@@ -591,9 +592,12 @@ const NodeAssistantPanel = ({
 
   // 노드 네비게이션 핸들러
   const handleNodeNavigation = useCallback((direction) => {
-    if (!node?.id || !onNodeSelect) return;
-
+    if (!node?.id || !onNodeSelect) {
+      return;
+    }
+    
     const targetNode = navigationServiceRef.current.navigate(node.id, direction);
+    
     if (targetNode) {
       onNodeSelect(targetNode);
       // 입력창에 포커스를 유지
@@ -607,8 +611,8 @@ const NodeAssistantPanel = ({
     (event) => {
       // 방향키 네비게이션 처리
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
-        // 텍스트 입력 중이거나 하이라이트 모드가 아닐 때만 네비게이션 허용
-        if (!isComposing && !isHighlightMode && composerValue === '') {
+        // 텍스트 입력 중이거나 하이라이트 모드가 아니고, 네비게이션이 비활성화되지 않았을 때만 네비게이션 허용
+        if (!isComposing && !isHighlightMode && composerValue === '' && !disableNavigation) {
           event.preventDefault();
           handleNodeNavigation(event.key);
           return;
@@ -628,7 +632,7 @@ const NodeAssistantPanel = ({
         handleSend().catch(() => { });
       }
     },
-    [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode, handleNodeNavigation, composerValue],
+    [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode, handleNodeNavigation, composerValue, disableNavigation],
   );
 
   const handleCompositionStart = useCallback(() => {
@@ -691,7 +695,9 @@ const NodeAssistantPanel = ({
             {summary.label || node.keyword || node.id}
           </p>
           <p className="text-xs text-slate-200/70">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
-          <p className="text-xs text-slate-200/60">↑↓ 부모/자식 노드 이동 | ←→ 형제 노드 이동</p>
+          {!disableNavigation && (
+            <p className="text-xs text-slate-200/60">↑↓ 부모/자식 노드 이동 | ←→ 형제 노드 이동</p>
+          )}
         </div>
         {!bootstrapMode && (
           <div className="flex items-center gap-2" data-block-pan="true">
