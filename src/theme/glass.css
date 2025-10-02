@@ -5,8 +5,8 @@
   --glass-highlight: rgba(255, 255, 255, 0.32);
   --glass-blur: 20px;
   --glass-shadow: 0 22px 48px rgba(0, 0, 0, 0.45);
-  --glass-text-primary: rgba(248, 250, 252, 0.92);
-  --glass-text-secondary: rgba(226, 232, 240, 0.72);
+  --glass-text-primary: rgba(248, 250, 252, 0.98);
+  --glass-text-secondary: rgba(226, 232, 240, 0.88);
   --glass-surface: rgba(0, 0, 0, 0.55);
   --glass-outline: rgba(0, 0, 0, 0.35);
   --glass-inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.12);

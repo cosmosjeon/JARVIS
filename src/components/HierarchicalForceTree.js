@@ -16,6 +16,8 @@ import ChartView from './ChartView';
 import NodeAssistantPanel from './NodeAssistantPanel';
 import ForceDirectedTree from './tree2/ForceDirectedTree';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
+import { useTheme } from './library/ThemeProvider';
+import { Sun, Moon, Sparkles } from 'lucide-react';
 import {
   fetchTreesWithNodes,
   upsertTreeMetadata,
@@ -213,45 +215,51 @@ const calculateNodeScaleFactor = (dimensions) => {
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem('jarvis.theme') || 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
+  const { theme, setTheme, mode } = useTheme();
 
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark';
-      try {
-        localStorage.setItem('jarvis.theme', next);
-      } catch {
-        // ignore
-      }
-      return next;
-    });
+  // 테마 옵션 정의
+  const themeOptions = useMemo(() => {
+    return [
+      { label: "반투명", value: "glass", icon: Sparkles },
+      { label: "라이트", value: "light", icon: Sun },
+      { label: "다크", value: "dark", icon: Moon },
+    ];
   }, []);
+
+  const activeTheme = themeOptions.find((option) => option.value === theme) || themeOptions[0];
+  const ActiveThemeIcon = activeTheme.icon;
 
   // 뷰 선택 메뉴 상태
   const [showViewMenu, setShowViewMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
 
-  // 테마 색상
+  // 테마 순환 함수
+  const cycleTheme = useCallback(() => {
+    const currentIndex = themeOptions.findIndex(option => option.value === theme);
+    const nextIndex = (currentIndex + 1) % themeOptions.length;
+    setTheme(themeOptions[nextIndex].value);
+  }, [theme, themeOptions, setTheme]);
+
+  // 테마 색상 (새로운 CSS 변수 시스템 사용)
   const themeColors = useMemo(() => ({
+    glass: {
+      background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.12), rgba(30, 41, 59, 0.18))',
+      text: 'rgba(226, 232, 240, 0.9)',
+      border: 'rgba(51, 65, 85, 0.1)',
+    },
     light: {
       background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))',
       text: '#000000',
       border: 'rgba(0, 0, 0, 0.1)',
     },
     dark: {
-      background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.18))',
+      background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(20, 20, 20, 0.95))',
       text: '#FFFFFF',
       border: 'rgba(255, 255, 255, 0.1)',
     },
   }), []);
 
-  const currentTheme = themeColors[theme];
+  const currentTheme = themeColors[theme] || themeColors.glass;
 
   const svgRef = useRef(null);
   const [dimensions, setDimensions] = useState(getViewportDimensions());
@@ -506,17 +514,23 @@ const HierarchicalForceTree = () => {
 
 
 
+  const hierarchicalLinks = useMemo(() => (
+    Array.isArray(data?.links)
+      ? data.links.filter((link) => link?.relationship !== 'connection')
+      : []
+  ), [data?.links]);
+
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
 
   // 현재 데이터에서 루트 노드 ID 계산 (부모 링크의 타겟이 아닌 노드)
   const getRootNodeId = useCallback(() => {
-    const targetIds = new Set(data.links.map((l) => (
+    const targetIds = new Set(hierarchicalLinks.map((l) => (
       typeof l.target === 'object' && l.target !== null ? l.target.id : l.target
     )));
     const rootNode = data.nodes.find((n) => !targetIds.has(n.id));
     return rootNode ? rootNode.id : null;
-  }, [data.links, data.nodes]);
+  }, [hierarchicalLinks, data.nodes]);
 
   const normalizeLinkEndpoint = useCallback((endpoint) => (
     typeof endpoint === 'object' && endpoint !== null ? endpoint.id : endpoint
@@ -815,7 +829,7 @@ const HierarchicalForceTree = () => {
 
     try {
       const parentByChild = new Map();
-      data.links.forEach((link) => {
+      hierarchicalLinks.forEach((link) => {
         const sourceId = normalizeLinkEndpoint(link.source);
         const targetId = normalizeLinkEndpoint(link.target);
         if (sourceId && targetId) {
@@ -946,7 +960,7 @@ const HierarchicalForceTree = () => {
     } finally {
       setIsTreeSyncing(false);
     }
-  }, [user, initializingTree, data, normalizeLinkEndpoint, getRootNodeId, activeTreeId, writeSessionTreeId]);
+  }, [user, initializingTree, data, normalizeLinkEndpoint, hierarchicalLinks, getRootNodeId, activeTreeId, writeSessionTreeId]);
 
   useEffect(() => {
     if (!user || initializingTree) {
@@ -1004,25 +1018,25 @@ const HierarchicalForceTree = () => {
   const childrenByParent = React.useMemo(() => {
     const map = new Map();
     const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
-    data.links.forEach((l) => {
+    hierarchicalLinks.forEach((l) => {
       const sourceId = normalizeId(l.source);
       const targetId = normalizeId(l.target);
       if (!map.has(sourceId)) map.set(sourceId, []);
       map.get(sourceId).push(targetId);
     });
     return map;
-  }, [data.links]);
+  }, [hierarchicalLinks]);
 
   const parentByChild = React.useMemo(() => {
     const map = new Map();
     const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
-    data.links.forEach((link) => {
+    hierarchicalLinks.forEach((link) => {
       const sourceId = normalizeId(link.source);
       const targetId = normalizeId(link.target);
       map.set(targetId, sourceId);
     });
     return map;
-  }, [data.links]);
+  }, [hierarchicalLinks]);
 
   // 접힘 토글
   const toggleCollapse = (nodeId) => {
@@ -1071,12 +1085,15 @@ const HierarchicalForceTree = () => {
       adjacency.get(from).add(to);
     };
 
-    const baseLinks = Array.isArray(data?.links) ? data.links : [];
+    const baseLinks = Array.isArray(hierarchicalLinks) ? hierarchicalLinks : [];
     baseLinks.forEach((link) => {
       appendEdge(normalize(link.source), normalize(link.target));
     });
 
     additionalLinks.forEach((link) => {
+      if (link?.relationship === 'connection') {
+        return;
+      }
       appendEdge(normalize(link.source), normalize(link.target));
     });
 
@@ -1106,14 +1123,18 @@ const HierarchicalForceTree = () => {
     }
 
     return false;
-  }, [data.links]);
+  }, [hierarchicalLinks]);
 
   // 접힘 상태에 따른 보이는 노드/링크 계산
   const visibleGraph = React.useMemo(() => {
     const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
     const rootId = getRootNodeId();
     if (!rootId) {
-      return { nodes: data.nodes.slice(), links: data.links.slice(), visibleSet: new Set(data.nodes.map(n => n.id)) };
+      return {
+        nodes: data.nodes.slice(),
+        links: hierarchicalLinks.slice(),
+        visibleSet: new Set(data.nodes.map((n) => n.id)),
+      };
     }
 
     const visible = new Set();
@@ -1128,14 +1149,14 @@ const HierarchicalForceTree = () => {
     }
 
     const filteredNodes = data.nodes.filter((n) => visible.has(n.id));
-    const filteredLinks = data.links.filter((l) => {
+    const filteredLinks = hierarchicalLinks.filter((l) => {
       const s = normalizeId(l.source);
       const t = normalizeId(l.target);
       return visible.has(s) && visible.has(t) && !collapsedNodeIds.has(s);
     });
 
     return { nodes: filteredNodes, links: filteredLinks, visibleSet: visible };
-  }, [data, collapsedNodeIds, childrenByParent]);
+  }, [data, collapsedNodeIds, childrenByParent, hierarchicalLinks, getRootNodeId]);
 
   const getInitialConversationForNode = (nodeId) => {
     const stored = conversationStoreRef.current.get(nodeId);
@@ -1675,7 +1696,7 @@ const HierarchicalForceTree = () => {
       toRemove.add(current);
 
       // 현재 노드의 자식 노드들을 스택에 추가
-      data.links.forEach((link) => {
+      hierarchicalLinks.forEach((link) => {
         const sourceId = normalizeId(link.source);
         const targetId = normalizeId(link.target);
         if (sourceId === current) {
@@ -2000,33 +2021,41 @@ const HierarchicalForceTree = () => {
       return null;
     }
 
-    const existingLink = (latestData?.links || []).some((link) => {
+    const existingConnection = (latestData?.links || []).some((link) => {
+      if (link?.relationship !== 'connection') {
+        return false;
+      }
       const source = normalize(link.source);
       const target = normalize(link.target);
-      return source === sourceNodeId && target === targetNodeId;
+      const isSameDirection = source === sourceNodeId && target === targetNodeId;
+      const isReverse = source === targetNodeId && target === sourceNodeId;
+      return isSameDirection || isReverse;
     });
 
-    if (existingLink) {
+    if (existingConnection) {
       showLinkValidationMessage('이미 연결된 노드입니다.');
-      return null;
-    }
-
-    if (willCreateCycle(sourceNodeId, targetNodeId)) {
-      showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
       return null;
     }
 
     setData((prev) => {
       const next = {
         ...prev,
-        links: [...prev.links, { source: sourceNodeId, target: targetNodeId, value: 1 }],
+        links: [
+          ...(Array.isArray(prev.links) ? prev.links : []),
+          {
+            source: sourceNodeId,
+            target: targetNodeId,
+            value: 1,
+            relationship: 'connection',
+          },
+        ],
       };
       dataRef.current = next;
       return next;
     });
 
     return { sourceId: sourceNodeId, targetId: targetNodeId };
-  }, [showLinkValidationMessage, willCreateCycle]);
+  }, [showLinkValidationMessage]);
 
   // 노드 클릭 핸들러
   const handleNodeClick = (nodeId) => {
@@ -2249,7 +2278,7 @@ const HierarchicalForceTree = () => {
 
     while (stack.length > 0) {
       const current = stack.pop();
-      data.links.forEach((link) => {
+      hierarchicalLinks.forEach((link) => {
         const sourceId = normalizeId(link.source);
         const targetId = normalizeId(link.target);
         if (sourceId === current && !toRemove.has(targetId)) {
@@ -2277,7 +2306,7 @@ const HierarchicalForceTree = () => {
     if (expandedNodeId && toRemove.has(expandedNodeId)) collapseAssistantPanel();
 
     hasCleanedQ2Ref.current = true;
-  }, [data, selectedNodeId, expandedNodeId]);
+  }, [data, selectedNodeId, expandedNodeId, hierarchicalLinks]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -2640,7 +2669,7 @@ const HierarchicalForceTree = () => {
 
   return (
     <div
-      className="relative flex overflow-hidden bg-transparent"
+      className="relative flex overflow-hidden bg-transparent rounded-xl"
       style={{
         // 투명 창에서 이전 프레임 잔상 방지: 독립 합성 레이어 확보
         willChange: 'transform, opacity, background',
@@ -2700,22 +2729,15 @@ const HierarchicalForceTree = () => {
               <div className="h-1 w-1 rounded-full bg-white/60"></div>
             </div>
 
+            {/* 테마 드롭다운 버튼 */}
             {/* 테마 토글 버튼 */}
             <button
               className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
-              onClick={toggleTheme}
+              onClick={cycleTheme}
               onMouseDown={(e) => e.stopPropagation()}
-              title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+              title={`테마 변경 (현재: ${activeTheme.label})`}
             >
-              {theme === 'dark' ? (
-                <svg className="h-3 w-3 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                </svg>
-              ) : (
-                <svg className="h-3 w-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                </svg>
-              )}
+              <ActiveThemeIcon className="h-3 w-3 text-white/90" />
             </button>
           </div>
 

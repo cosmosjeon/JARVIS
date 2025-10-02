@@ -3,30 +3,9 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: 42 20% 96%;
-    --foreground: 220 15% 20%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 15% 20%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 20%;
-    --primary: 213 74% 47%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 36 20% 90%;
-    --secondary-foreground: 30 20% 25%;
-    --muted: 45 12% 90%;
-    --muted-foreground: 30 9% 45%;
-    --accent: 210 35% 88%;
-    --accent-foreground: 220 40% 25%;
-    --destructive: 358 78% 62%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 40 15% 80%;
-    --input: 40 15% 80%;
-    --ring: 213 74% 47%;
-    --radius: 0.75rem;
-  }
 
-  .dark {
+  /* 반투명 모드 (기본값) - 아까 다크모드와 똑같은 색상 */
+  .glass {
     --background: 218 22% 12%;
     --foreground: 48 22% 90%;
     --card: 220 18% 16%;
@@ -46,6 +25,64 @@
     --border: 220 15% 26%;
     --input: 220 15% 26%;
     --ring: 213 70% 62%;
+    --radius: 0.75rem;
+    --backdrop-blur: 20px;
+    --glass-shadow: 0 22px 48px rgba(0, 0, 0, 0.45);
+    --widget-border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* 라이트 모드 */
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 220 15% 20%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 20%;
+    --primary: 213 74% 47%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 36 20% 90%;
+    --secondary-foreground: 30 20% 25%;
+    --muted: 45 12% 90%;
+    --muted-foreground: 30 9% 45%;
+    --accent: 210 35% 88%;
+    --accent-foreground: 220 40% 25%;
+    --destructive: 358 78% 62%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 15% 80%;
+    --input: 40 15% 80%;
+    --ring: 213 74% 47%;
+    --radius: 0.75rem;
+    --backdrop-blur: 0px;
+    --glass-shadow: none;
+    --widget-border-color: rgba(0, 0, 0, 0.15);
+  }
+
+  /* 다크 모드 - 진짜 어두운 모드 */
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 213 70% 62%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 85%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 88%;
+    --destructive: 354 65% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 213 70% 62%;
+    --radius: 0.75rem;
+    --backdrop-blur: 0px;
+    --glass-shadow: none;
+    --widget-border-color: rgba(255, 255, 255, 0.15);
   }
 
   * {
@@ -58,5 +95,61 @@
 
   body.admin-panel-mode {
     background-color: transparent;
+  }
+
+  /* 반투명 모드에서만 backdrop-filter 적용 */
+  .glass body {
+    backdrop-filter: blur(var(--backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--backdrop-blur));
+  }
+
+  .glass .glass-shell {
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.55));
+    backdrop-filter: blur(var(--backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--backdrop-blur));
+    border: 1px solid rgba(0, 0, 0, 0.5);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass .glass-surface {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(calc(var(--backdrop-blur) * 0.7));
+    -webkit-backdrop-filter: blur(calc(var(--backdrop-blur) * 0.7));
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+  }
+
+  /* 라이트/다크 모드에서는 반투명 효과 제거 */
+  .light .glass-shell,
+  .dark .glass-shell {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  .light .glass-surface,
+  .dark .glass-surface {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  /* 위젯 테두리 직접 스타일링 */
+  .light .App::before {
+    border-color: rgba(0, 0, 0, 0.3) !important;
+    border-radius: 12px !important;
+    border-width: 1px !important;
+  }
+
+  .dark .App::before {
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    border-radius: 12px !important;
+    border-width: 1px !important;
+  }
+
+  .glass .App::before {
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    border-radius: 12px !important;
+    border-width: 1px !important;
   }
 }
