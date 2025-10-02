@@ -64,6 +64,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
   const [dimensions, setDimensions] = useState(DEFAULT_DIMENSIONS);
   const [layoutNodes, setLayoutNodes] = useState([]);
   const [layoutLinks, setLayoutLinks] = useState([]);
+  const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
 
   // 접힘 토글 함수
   const toggleCollapse = (nodeId) => {
@@ -323,7 +324,8 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
         const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, nextLinks);
         linkKeysRef.current = nextKeys;
         setLayoutLinks(annotatedLinks);
-      }
+      },
+      { enableForceSimulation: isForceSimulationEnabled }
     );
 
     animationRef.current = animation;
@@ -333,7 +335,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
         animation.stop();
       }
     };
-  }, [filteredData, dimensions]);
+  }, [filteredData, dimensions, isForceSimulationEnabled]);
 
   useEffect(() => () => {
     if (animationRef.current) {
@@ -395,6 +397,21 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
         <div className="bg-white text-gray-800 text-sm px-3 py-1 rounded-full shadow-lg">
           더블클릭으로 한눈에 보기
         </div>
+      </div>
+
+      {/* Force Simulation 토글 버튼 */}
+      <div className="absolute top-4 left-4 z-10">
+        <button
+          onClick={() => setIsForceSimulationEnabled(!isForceSimulationEnabled)}
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
+            isForceSimulationEnabled
+              ? 'bg-blue-500 text-white shadow-lg hover:bg-blue-600'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+          title={isForceSimulationEnabled ? '유기적 작용 끄기' : '유기적 작용 켜기'}
+        >
+          {isForceSimulationEnabled ? '유기적 작용 ON' : '유기적 작용 OFF'}
+        </button>
       </div>
 
       <svg ref={svgRef} className="h-full w-full">
