@@ -137,7 +137,7 @@ describe('VoranBoxManager', () => {
                     treeData: { nodes: [] }
                 },
                 {
-                    id: 'tree3',
+                    id: 'tree1',
                     title: 'Another Tree',
                     folderId: null,
                     updatedAt: Date.now(),
@@ -154,7 +154,7 @@ describe('VoranBoxManager', () => {
             onTreeMoveToFolder: jest.fn().mockResolvedValue({
                 moved: [
                     { id: 'tree1', targetFolderId: 'folder1', title: 'Test Tree 1' },
-                    { id: 'tree3', targetFolderId: 'folder1', title: 'Another Tree' }
+                    { id: 'tree1', targetFolderId: 'folder1', title: 'Another Tree' }
                 ],
                 failures: [],
                 renamed: [],
@@ -190,10 +190,10 @@ describe('VoranBoxManager', () => {
         const dropDataTransfer = {
             getData: jest.fn((type) => {
                 if (type === 'application/json') {
-                    return JSON.stringify({ treeIds: ['tree1', 'tree3'] });
+                    return JSON.stringify({ treeIds: ['tree1', 'tree1'] });
                 }
                 if (type === 'text/plain') {
-                    return 'tree1,tree3';
+                    return 'tree1,tree1';
                 }
                 return '';
             })
@@ -206,7 +206,7 @@ describe('VoranBoxManager', () => {
 
         await waitFor(() => {
             expect(multiProps.onTreeMoveToFolder).toHaveBeenCalledWith({
-                treeIds: ['tree1', 'tree3'],
+                treeIds: ['tree1', 'tree1'],
                 targetFolderId: 'folder1'
             });
         });

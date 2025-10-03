@@ -117,9 +117,10 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
           if (target && target.closest('foreignObject')) return false;
           if (target && target.closest('[data-node-id]')) return false;
           if (event.type === 'dblclick') return false;
-          const isModifierPressed = event.ctrlKey || event.metaKey;
-          if (event.type === 'wheel') return isModifierPressed;
-          return isModifierPressed;
+          // 휠 줌만 수정키 필요, 드래그 패닝은 허용
+          if (event.type === 'wheel') return event.ctrlKey || event.metaKey;
+          if (event.type === 'mousedown' && event.button === 1) return true;
+          return true;
         })
         .on('zoom', (event) => {
           setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
@@ -191,10 +192,10 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
           if (target && target.closest('foreignObject')) return false;
           if (target && target.closest('[data-node-id]')) return false;
           if (event.type === 'dblclick') return false;
-          const isModifierPressed = event.ctrlKey || event.metaKey;
-          // 휠 이벤트는 Ctrl(또는 Cmd) 키를 누른 상태에서만 허용
-          if (event.type === 'wheel') return isModifierPressed;
-          return isModifierPressed;
+          // 휠 줌만 수정키 필요, 드래그 패닝은 허용
+          if (event.type === 'wheel') return event.ctrlKey || event.metaKey;
+          if (event.type === 'mousedown' && event.button === 1) return true;
+          return true;
         })
         .on('zoom', (event) => {
           setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
@@ -361,11 +362,10 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
         if (target && target.closest('[data-node-id]')) return false;
         // 더블클릭 이벤트는 비활성화
         if (event.type === 'dblclick') return false;
-        const isModifierPressed = event.ctrlKey || event.metaKey;
-        // 휠 클릭(마우스 휠 버튼)은 수정키 없이도 허용
+        // 휠 줌만 수정키 필요, 드래그 패닝은 허용
+        if (event.type === 'wheel') return event.ctrlKey || event.metaKey;
         if (event.type === 'mousedown' && event.button === 1) return true;
-        // 다른 모든 이벤트는 Ctrl(또는 Cmd) 키를 누른 상태에서만 허용
-        return isModifierPressed;
+        return true;
       })
       .on('zoom', (event) => {
         setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
@@ -405,11 +405,10 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
         <button
           onClick={() => setIsForceSimulationEnabled(!isForceSimulationEnabled)}
-          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
-            isForceSimulationEnabled
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${isForceSimulationEnabled
               ? 'bg-blue-500 text-white shadow-lg hover:bg-blue-600'
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
+            }`}
           title={isForceSimulationEnabled ? '유기적 작용 끄기' : '유기적 작용 켜기'}
         >
           {isForceSimulationEnabled ? '유기적 작용 ON' : '유기적 작용 OFF'}

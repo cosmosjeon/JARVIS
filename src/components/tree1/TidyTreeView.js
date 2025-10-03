@@ -78,9 +78,12 @@ const TidyTreeView = ({
     [],
   );
 
+  // Zoom behavior 초기화 및 관리
   useEffect(() => {
     const svgElement = svgRef.current;
-    if (!svgElement) {
+
+    // SVG와 layout이 모두 준비될 때까지 대기
+    if (!svgElement || !layout) {
       return;
     }
 
@@ -90,7 +93,6 @@ const TidyTreeView = ({
       .scaleExtent([MIN_SCALE, MAX_SCALE])
       .wheelDelta((event) => {
         const modeFactor = event.deltaMode === 1 ? 0.33 : event.deltaMode ? 33 : 1;
-        // Increase wheel sensitivity a bit more.
         return (-event.deltaY * modeFactor) / 600;
       })
       .on("start", () => setIsZooming(true))
@@ -99,31 +101,20 @@ const TidyTreeView = ({
       })
       .on("end", () => setIsZooming(false));
 
+    // Zoom behavior 적용
     selection.call(zoom);
     selection.on("dblclick.zoom", null);
     zoomBehaviorRef.current = zoom;
+
+    // Layout 변경 시 transform을 identity로 리셋
+    const identity = d3.zoomIdentity;
+    selection.call(zoom.transform, identity);
+    setViewTransform(identity);
 
     return () => {
       selection.on(".zoom", null);
       zoomBehaviorRef.current = null;
     };
-  }, []);
-
-  useEffect(() => {
-    if (!layout) {
-      return;
-    }
-
-    const svgElement = svgRef.current;
-    const zoom = zoomBehaviorRef.current;
-    if (!svgElement || !zoom) {
-      return;
-    }
-
-    const selection = d3.select(svgElement);
-    const identity = d3.zoomIdentity;
-    selection.call(zoom.transform, identity);
-    setViewTransform(identity);
   }, [layout]);
 
   const isLightTheme = theme === "light";
@@ -165,7 +156,7 @@ const TidyTreeView = ({
         width={layout.width}
         height={layout.height}
         viewBox={`${layout.viewBox[0]} ${layout.viewBox[1]} ${layout.viewBox[2]} ${layout.viewBox[3]}`}
-        preserveAspectRatio="xMinYMin meet"
+        preserveAspectRatio="xMidYMid meet"
         style={{
           width: "100%",
           height: "100%",
