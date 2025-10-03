@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as d3 from "d3";
 import { AnimatePresence, motion } from "framer-motion";
 import TreeNode from "components/TreeNode";
-import TreeAnimationService from "services/TreeAnimationService";
-import QuestionService from "services/QuestionService";
+import TreeAnimationService from "services/force-tree/TreeAnimationService";
+import QuestionService from "services/force-tree/QuestionService";
 import { markNewLinks } from "utils/linkAnimationUtils";
 
 const DEFAULT_DIMENSIONS = { width: 800, height: 600 };

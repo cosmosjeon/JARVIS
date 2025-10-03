@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
-import QuestionService from '../services/QuestionService';
-import NodeNavigationService from '../services/NodeNavigationService';
+import QuestionService from '../services/force-tree/QuestionService';
+import NodeNavigationService from '../services/force-tree/NodeNavigationService';
 import { useSettings } from '../hooks/SettingsContext';
 import { useTheme } from './library/ThemeProvider';
 import MarkdownMessage from './common/MarkdownMessage';
