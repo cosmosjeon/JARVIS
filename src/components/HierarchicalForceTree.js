@@ -2730,6 +2730,68 @@ const HierarchicalForceTree = () => {
           background={currentTheme.background}
           onNodeClick={handleNodeClickForAssistant}
           selectedNodeId={selectedNodeId}
+          onReorderSiblings={(parentId, orderedChildIds) => {
+            if (!parentId || !Array.isArray(orderedChildIds)) return;
+
+            const normalize = (v) => (typeof v === 'object' && v !== null ? v.id : v);
+
+            // 가상 루트인 경우: 루트 노드들의 순서 변경
+            if (parentId === '__virtual_root__') {
+              // 루트 노드들 찾기 (링크의 target이 아닌 노드들)
+              const targetIds = new Set(hierarchicalLinks.map(l => normalize(l.target)));
+              const rootNodes = (data.nodes || []).filter(n => !targetIds.has(n.id));
+
+              if (rootNodes.length <= 1) return;
+
+              // orderedChildIds 순서로 노드 배열 재정렬
+              const orderedRoots = orderedChildIds
+                .map(id => rootNodes.find(n => n.id === id))
+                .filter(Boolean);
+
+              const nonRootNodes = (data.nodes || []).filter(n => targetIds.has(n.id));
+
+              // 루트 노드들을 앞에, 나머지 노드들을 뒤에 배치
+              setData((prev) => ({
+                ...prev,
+                nodes: [...orderedRoots, ...nonRootNodes]
+              }));
+              return;
+            }
+
+            // 일반 노드의 자식 순서 변경
+            const currentChildIds = (hierarchicalLinks
+              .filter((l) => normalize(l.source) === parentId)
+              .map((l) => normalize(l.target)));
+
+            if (currentChildIds.length <= 1) return;
+
+            // orderedChildIds 순서로 재배열된 링크 구성
+            const nextLinks = (data.links || []).map((l) => ({ ...l }));
+            // 부모의 자식 링크 인덱스 수집
+            const indices = [];
+            for (let i = 0; i < nextLinks.length; i++) {
+              const s = normalize(nextLinks[i].source);
+              const t = normalize(nextLinks[i].target);
+              if (s === parentId && currentChildIds.includes(t) && nextLinks[i].relationship !== 'connection') {
+                indices.push(i);
+              }
+            }
+            if (indices.length <= 1) return;
+
+            // 기존 자식 링크를 제거 후 새 순서로 다시 삽입
+            const childLinkObjs = indices.map((idx) => nextLinks[idx]);
+            // 뒤에서부터 제거
+            indices.sort((a, b) => b - a).forEach((idx) => nextLinks.splice(idx, 1));
+
+            const template = childLinkObjs[0] || { value: 1 };
+            const rebuilt = orderedChildIds.map((cid) => ({ source: parentId, target: cid, value: template.value }));
+
+            // 부모 인접한 위치에 삽입: 처음 제거된 위치 앞쪽에 삽입
+            const insertAt = Math.min(...indices);
+            nextLinks.splice(insertAt, 0, ...rebuilt);
+
+            setData((prev) => ({ ...prev, links: nextLinks }));
+          }}
         />
       )}
       {/* 차트 뷰 */}
