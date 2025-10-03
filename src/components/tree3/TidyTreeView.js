@@ -28,6 +28,33 @@ const TidyTreeView = ({
   const zoomBehaviorRef = useRef(null);
   const [viewTransform, setViewTransform] = useState(() => d3.zoomIdentity);
   const [isZooming, setIsZooming] = useState(false);
+  const textMeasureCacheRef = useRef(new Map());
+
+  // Measure text width using canvas (fallback to estimate when unavailable)
+  const getTextWidth = (text) => {
+    if (typeof text !== "string") {
+      return 0;
+    }
+    const cache = textMeasureCacheRef.current;
+    if (cache.has(text)) {
+      return cache.get(text);
+    }
+    if (!getTextWidth.ctx) {
+      const canvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
+      getTextWidth.ctx = canvas ? canvas.getContext("2d") : null;
+    }
+    const ctx = getTextWidth.ctx;
+    if (!ctx) {
+      const approx = estimateLabelWidth(text);
+      cache.set(text, approx);
+      return approx;
+    }
+    // Keep in sync with SVG font style below
+    ctx.font = "10px sans-serif";
+    const measured = Math.ceil(ctx.measureText(text).width);
+    cache.set(text, measured);
+    return measured;
+  };
 
   const normalizedData = useMemo(
     () => ({
@@ -106,7 +133,7 @@ const TidyTreeView = ({
   const parentFill = isLightTheme ? "#1f2937" : "rgba(226, 232, 240, 0.85)";
   const leafFill = isLightTheme ? "#64748b" : "rgba(148, 163, 184, 0.82)";
   const baseStroke = isLightTheme ? "rgba(15, 23, 42, 0.3)" : "rgba(255, 255, 255, 0.25)";
-  const selectedHighlight = isLightTheme ? "#f97316" : "#facc15";
+  const selectionStroke = isLightTheme ? "rgba(30, 64, 175, 0.7)" : "rgba(226, 232, 240, 0.75)";
 
   const handleNodeActivate = (node) => {
     if (typeof onNodeClick === "function" && node?.data?.id) {
@@ -155,6 +182,15 @@ const TidyTreeView = ({
                 key={`${link.source.data.id}->${link.target.data.id}`}
                 d={linkGenerator(link)}
                 vectorEffect="non-scaling-stroke"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleNodeActivate(link.target);
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  handleNodeActivate(link.target);
+                }}
+                style={{ cursor: "pointer" }}
               />
             ))}
           </g>
@@ -163,14 +199,23 @@ const TidyTreeView = ({
               const hasChildren = Array.isArray(node.children) && node.children.length > 0;
               const isSelected = selectedNodeId && node.data.id === selectedNodeId;
               const labelText = typeof node.data?.name === "string" ? node.data.name : "";
-              const estimatedWidth = estimateLabelWidth(labelText);
-              const hitboxPaddingX = 14;
-              const hitboxPaddingY = 12;
-              const hitboxWidth = estimatedWidth + hitboxPaddingX * 2 + 8;
-              const hitboxHeight = 18 + hitboxPaddingY;
-              const hitboxX = hasChildren ? -hitboxWidth + hitboxPaddingX : -hitboxPaddingX;
-              const hitboxY = -hitboxHeight / 2;
-              const hitboxStroke = isSelected ? selectedHighlight : "transparent";
+              const measuredWidth = getTextWidth(labelText);
+              const hitboxPaddingY = 6;
+              const baseRadius = isSelected ? 4 : 3;
+              const interactiveRadius = baseRadius + 3;
+              const labelSpacing = 8;
+              const textWidth = Math.max(0, measuredWidth);
+              const leftExtent = hasChildren
+                ? -(textWidth + labelSpacing + interactiveRadius)
+                : -interactiveRadius;
+              const rightExtent = hasChildren
+                ? interactiveRadius
+                : textWidth + labelSpacing + interactiveRadius;
+              const hitboxWidth = Math.max(interactiveRadius * 2, rightExtent - leftExtent);
+              const hitboxHeight = (baseRadius + hitboxPaddingY) * 2;
+              const hitboxX = leftExtent;
+              const hitboxY = -(hitboxHeight / 2);
+              const hitboxStroke = isSelected ? selectionStroke : "transparent";
 
               return (
                 <g
@@ -199,9 +244,16 @@ const TidyTreeView = ({
                     style={{ pointerEvents: "all" }}
                   />
                   <circle
+                    r={interactiveRadius}
+                    fill="transparent"
+                    stroke="transparent"
+                    vectorEffect="non-scaling-stroke"
+                    style={{ pointerEvents: "all" }}
+                  />
+                  <circle
                     fill={hasChildren ? parentFill : leafFill}
-                    r={isSelected ? 4 : 3}
-                    stroke={isSelected ? selectedHighlight : baseStroke}
+                    r={baseRadius}
+                    stroke={isSelected ? selectionStroke : baseStroke}
                     strokeWidth={isSelected ? 2 : 1}
                     vectorEffect="non-scaling-stroke"
                   />
@@ -213,7 +265,6 @@ const TidyTreeView = ({
                     stroke={labelStroke}
                     strokeWidth={2}
                     paintOrder="stroke"
-                    style={{ pointerEvents: "none" }}
                   >
                     {labelText}
                   </text>
