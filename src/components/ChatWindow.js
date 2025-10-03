@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 
 import MarkdownMessage from './common/MarkdownMessage';
+import useChat from 'features/chat/hooks/useChat';
+import ChatMessageList from 'features/chat/components/ChatMessageList';
+import ChatComposer from 'features/chat/components/ChatComposer';
 import { Dialog, DialogContent } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
@@ -53,14 +56,11 @@ import { cn } from 'lib/utils';
 // anchorPosition: { x, y }가 전달되면 해당 좌표 기준으로 고정 렌더링
 // onSubmit 이 전달되면 첫 전송 시 상위에서 처리하도록 콜백 호출
 const ChatWindow = ({ isOpen, onClose, nodeData, anchorPosition, onSubmit }) => {
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
+  const { messages, isThinking, endRef, send } = useChat();
   const [isComposing, setIsComposing] = useState(false);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
-  const [isThinking, setIsThinking] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
 
-  const messagesEndRef = useRef(null);
   const composerRef = useRef(null);
   const pendingReplyRef = useRef();
   const copyTimeoutRef = useRef();
@@ -114,11 +114,7 @@ const ChatWindow = ({ isOpen, onClose, nodeData, anchorPosition, onSubmit }) => 
   useEffect(() => () => window.clearTimeout(pendingReplyRef.current), []);
   useEffect(() => () => window.clearTimeout(copyTimeoutRef.current), []);
 
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
+  // 스크롤은 useChat 내부에서 처리됨
 
   useEffect(() => {
     if (isOpen && composerRef.current) {
@@ -128,42 +124,14 @@ const ChatWindow = ({ isOpen, onClose, nodeData, anchorPosition, onSubmit }) => 
 
   if (!isOpen) return null;
 
-  const appendAssistantReply = (content) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: prev.length + 1,
-        sender: 'assistant',
-        text: content,
-        timestamp: new Date().toLocaleTimeString(),
-      },
-    ]);
-    setIsThinking(false);
-  };
-
   const handleSendMessage = (overrideText) => {
-    const value = (overrideText ?? newMessage).trim();
+    const value = (overrideText || '').trim();
     if (!value) return;
-
-    const userMessage = {
-      id: messages.length + 1,
-      sender: 'user',
-      text: value,
-      timestamp: new Date().toLocaleTimeString(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setNewMessage('');
-
     if (typeof onSubmit === 'function') {
-      onSubmit(userMessage.text);
+      onSubmit(value);
       return;
     }
-
-    setIsThinking(true);
-    pendingReplyRef.current = window.setTimeout(() => {
-      appendAssistantReply('답변을 준비 중입니다. 잠시만 기다려주세요.');
-    }, 900);
+    send(value, { channel: 'askRoot', streaming: true });
   };
 
   const handleKeyDown = (event) => {
@@ -193,91 +161,21 @@ const ChatWindow = ({ isOpen, onClose, nodeData, anchorPosition, onSubmit }) => 
 
   const showCloseButton = !anchorPosition;
 
+  const handleRetry = useCallback((message) => {
+    const content = message?.text || '';
+    if (!content) return;
+    send(content, { channel: 'askRoot', streaming: true });
+  }, [send]);
+
+  const handleCopy = useCallback((message) => {
+    if (!message?.text) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(message.text).catch(() => undefined);
+    }
+  }, []);
+
   const messageList = (
-    <div className="flex flex-col gap-5 p-6">
-      {messages.map((message) => {
-        const isUser = message.sender === 'user';
-        const isSystem = message.sender === 'system';
-
-        return (
-          <div
-            key={message.id}
-            className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}
-          >
-            {!isUser && (
-              <Avatar className="mt-1 h-10 w-10 border border-border/80 bg-background/40">
-                <AvatarImage alt={`${title} avatar`} />
-                <AvatarFallback className="bg-muted text-xs font-semibold uppercase tracking-wide">
-                  {avatarInitial}
-                </AvatarFallback>
-              </Avatar>
-            )}
-
-            <div className={cn('flex max-w-[560px] flex-col gap-3', isUser && 'items-end')}>
-              <div
-                className={cn(
-                  'group relative w-full rounded-2xl border border-border/80 bg-card/90 p-4 text-sm shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-colors',
-                  isUser && 'border-primary/50 bg-primary text-primary-foreground',
-                  isSystem && 'border-muted/50 bg-muted text-muted-foreground'
-                )}
-              >
-                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground/80">
-                  <span>{isUser ? 'You' : isSystem ? 'System' : title}</span>
-                  <span>{message.timestamp}</span>
-                </div>
-                <Separator className="my-3 bg-border/60" />
-                <div className="leading-relaxed">
-                  {isUser ? (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {message.text}
-                    </p>
-                  ) : (
-                    <MarkdownMessage
-                      text={message.text}
-                      className="w-full text-sm leading-relaxed"
-                    />
-                  )}
-                </div>
-
-                <div className="mt-3 flex items-center justify-end gap-2 text-[11px] text-muted-foreground/80">
-                  {!isUser && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => handleCopyMessage(message)}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-background/20 text-muted-foreground transition hover:bg-muted hover:text-card-foreground"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">복사하기</TooltipContent>
-                    </Tooltip>
-                  )}
-                  {copiedMessageId === message.id && <Badge variant="secondary">Copied</Badge>}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-
-      {isThinking && (
-        <div className="flex items-start gap-3">
-          <Avatar className="mt-1 h-10 w-10 border border-border/80 bg-background/40">
-            <AvatarFallback className="bg-muted text-xs font-semibold uppercase tracking-wide">
-              {avatarInitial}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex w-full max-w-[420px] flex-col gap-2 rounded-2xl border border-border/70 bg-card/80 p-4">
-            <Skeleton className="h-3 w-32 rounded-full" />
-            <Skeleton className="h-3 w-56 rounded-full" />
-          </div>
-        </div>
-      )}
-
-      <div ref={messagesEndRef} />
-    </div>
+    <ChatMessageList title={title} messages={messages} endRef={endRef} onRetry={handleRetry} onCopy={handleCopy} />
   );
 
   const composer = (
@@ -465,7 +363,7 @@ const ChatWindow = ({ isOpen, onClose, nodeData, anchorPosition, onSubmit }) => 
             <ScrollArea className="h-full">{messageList}</ScrollArea>
           </div>
 
-          {composer}
+          <ChatComposer onSend={(text) => handleSendMessage(text)} />
         </section>
       </div>
 

@@ -154,3 +154,47 @@
     border-width: 1px !important;
   }
 }
+
+@layer components {
+  /* 공통 마크다운 타이포그래피 */
+  .markdown-body {
+    line-height: 1.75;
+  }
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6 {
+    letter-spacing: -0.01em;
+  }
+  .markdown-body h1 { margin-top: 0.75rem; margin-bottom: 0.5rem; }
+  .markdown-body h2 { margin-top: 0.75rem; margin-bottom: 0.5rem; }
+  .markdown-body h3 { margin-top: 0.75rem; margin-bottom: 0.5rem; }
+  .markdown-body p { margin: 0.25rem 0; }
+  .markdown-body ul,
+  .markdown-body ol { margin: 0.25rem 0 0.25rem 0; padding-left: 1.25rem; }
+  .markdown-body li { margin: 0.125rem 0; }
+  .markdown-body hr { border-color: var(--border); }
+  .markdown-body blockquote {
+    background: rgba(255,255,255,0.04);
+    border-left-width: 2px;
+    border-left-color: rgba(148,163,184,0.4);
+    padding: 0.25rem 0.75rem;
+    margin: 0.5rem 0;
+  }
+  .markdown-body code {
+    background: rgba(0,0,0,0.08);
+    border-radius: 0.25rem;
+    padding: 0.125rem 0.375rem;
+  }
+  .markdown-body pre code {
+    background: transparent;
+    padding: 0;
+  }
+  .markdown-body a {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-style: dotted;
+  }
+}
