@@ -3,6 +3,7 @@ import * as d3 from "d3";
 import { AnimatePresence, motion } from "framer-motion";
 import TreeNode from "components/TreeNode";
 import TreeAnimationService from "services/TreeAnimationService";
+import WidgetTidyTreeChart from "./WidgetTidyTreeChart";
 import QuestionService from "services/QuestionService";
 import { markNewLinks } from "utils/linkAnimationUtils";
 
@@ -65,6 +66,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
   const [layoutNodes, setLayoutNodes] = useState([]);
   const [layoutLinks, setLayoutLinks] = useState([]);
   const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
+  const [showTidyView, setShowTidyView] = useState(false);
 
   // 접힘 토글 함수
   const toggleCollapse = (nodeId) => {
@@ -400,7 +402,7 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
       </div>
 
       {/* Force Simulation 토글 버튼 */}
-      <div className="absolute top-4 left-4 z-10">
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
         <button
           onClick={() => setIsForceSimulationEnabled(!isForceSimulationEnabled)}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
@@ -411,6 +413,12 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
           title={isForceSimulationEnabled ? '유기적 작용 끄기' : '유기적 작용 켜기'}
         >
           {isForceSimulationEnabled ? '유기적 작용 ON' : '유기적 작용 OFF'}
+        </button>
+        <button
+          onClick={() => setShowTidyView(true)}
+          className="px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 bg-emerald-500 text-white shadow-lg hover:bg-emerald-600"
+        >
+          정렬 트리 보기
         </button>
       </div>
 
@@ -527,6 +535,11 @@ const WidgetTreeViewer = ({ treeData, onNodeSelect, onRemoveNode }) => {
       </svg>
 
       <div ref={overlayRef} className="pointer-events-none absolute inset-0 overflow-hidden" />
+      {showTidyView && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/95 p-6">
+          <WidgetTidyTreeChart data={filteredData} onClose={() => setShowTidyView(false)} />
+        </div>
+      )}
     </div>
   );
 };

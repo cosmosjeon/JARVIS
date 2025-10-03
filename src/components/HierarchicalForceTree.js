@@ -11,10 +11,12 @@ import { treeData } from '../data/treeData';
 import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
+import WidgetTidyTreeChart from './library/WidgetTidyTreeChart';
 import { markNewLinks } from '../utils/linkAnimationUtils';
 import ChartView from './ChartView';
 import NodeAssistantPanel from './NodeAssistantPanel';
 import ForceDirectedTree from './tree2/ForceDirectedTree';
+import TidyTreeView from './tree3/TidyTreeView';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import { useTheme } from './library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
@@ -519,6 +521,7 @@ const HierarchicalForceTree = () => {
       ? data.links.filter((link) => link?.relationship !== 'connection')
       : []
   ), [data?.links]);
+  // tidyTreeData는 visibleGraph가 계산된 이후에 의존하도록 아래로 이동했습니다.
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -1157,6 +1160,23 @@ const HierarchicalForceTree = () => {
 
     return { nodes: filteredNodes, links: filteredLinks, visibleSet: visible };
   }, [data, collapsedNodeIds, childrenByParent, hierarchicalLinks, getRootNodeId]);
+
+  // visibleGraph 이후에 의존하여 계산되는 tidyTreeData
+  const tidyTreeData = useMemo(() => {
+    const normalize = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+
+    const safeNodes = Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : [];
+    const safeLinks = Array.isArray(visibleGraph.links) ? visibleGraph.links : [];
+
+    return {
+      nodes: safeNodes.map((node) => ({ ...node })),
+      links: safeLinks.map((link) => ({
+        source: normalize(link.source),
+        target: normalize(link.target),
+        relationship: link.relationship || 'hierarchy',
+      })),
+    };
+  }, [visibleGraph.nodes, visibleGraph.links]);
 
   const getInitialConversationForNode = (nodeId) => {
     const stored = conversationStoreRef.current.get(nodeId);
@@ -2936,7 +2956,17 @@ const HierarchicalForceTree = () => {
             트리2
           </button>
 
-          {/* 차트 버튼 */}
+          {/* 트리3 버튼 */}
+          <button
+            type="button"
+            onClick={() => setViewMode('tree3')}
+            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree3' ? 'bg-amber-300/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
+            aria-pressed={viewMode === 'tree3'}
+          >
+            트리3
+          </button>
+
+          {/* 트리 차트 버튼 */}
           <button
             type="button"
             onClick={() => setViewMode('chart')}
@@ -3014,6 +3044,16 @@ const HierarchicalForceTree = () => {
         />
       )}
 
+      {viewMode === 'tree3' && (
+        <TidyTreeView
+          data={data}
+          dimensions={dimensions}
+          theme={theme}
+          background={currentTheme.background}
+          onNodeClick={handleNodeClickForAssistant}
+          selectedNodeId={selectedNodeId}
+        />
+      )}
       {/* 차트 뷰 */}
       {viewMode === 'chart' && (
         <ChartView
@@ -3298,3 +3338,4 @@ const HierarchicalForceTree = () => {
 };
 
 export default HierarchicalForceTree;
+

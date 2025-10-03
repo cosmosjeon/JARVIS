@@ -1,0 +1,10 @@
+export const NODE_HEIGHT = 64;
+export const NODE_VERTICAL_GAP = 12;
+export const NODE_WIDTH = 220;
+export const NODE_HORIZONTAL_GAP = 32;
+export const DEFAULT_BATCH_SIZE = 80;
+export const MIN_BATCH_SIZE = 20;
+export const MAX_BATCH_SIZE = 160;
+export const FRAME_TARGET_MS = 16;
+export const FRAME_UPPER_BOUND_MS = 30;
+export const CACHE_SIZE = 2;
