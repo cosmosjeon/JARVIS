@@ -2212,12 +2212,8 @@ const ForceDirectedTree = ({
 
                 const selectedDatum = getNodeDatum(selectedNode);
                 const isMemoSelection = selectedDatum?.nodeType === 'memo';
-                const panelWidth = isMemoSelection
-                    ? Math.min(Math.max(dimensions.width * 0.45, 360), 520)
-                    : dimensions.width * 0.95;
-                const panelHeight = isMemoSelection
-                    ? Math.min(Math.max(dimensions.height * 0.45, 320), 520)
-                    : dimensions.height * 0.95;
+                const panelWidth = dimensions.width * 0.95;
+                const panelHeight = dimensions.height * 0.95;
 
                 return (
                     <div
