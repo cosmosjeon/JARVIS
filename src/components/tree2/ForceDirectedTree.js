@@ -203,6 +203,8 @@ const ForceDirectedTree = ({
     theme = 'dark',
     treeId,
     userId,
+    // 라이브러리에서 우측 패널 사용 시, 캔버스 위젯 어시스턴트 패널 숨김
+    hideAssistantPanel = false,
 }) => {
     const themeBackground = theme === 'light'
         ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))'
@@ -1058,18 +1060,23 @@ const ForceDirectedTree = ({
     }, [isLinking, viewTransform.x, viewTransform.y, viewTransform.k]);
 
     const handleNodeClick = useCallback((node) => {
-        // 드래그 중이거나 다른 노드가 드래그 중일 때는 클릭 무시
+        // 라이브러리 모드(hideAssistantPanel)에서는 즉시 선택만 수행하고 패널/컨텍스트 영향 제거
+        if (hideAssistantPanel) {
+            const nodeId = getNodeId(node);
+            setSelectedNodeId(nodeId || null);
+            if (typeof onNodeClick === 'function') onNodeClick(getNodeDatum(node));
+            return;
+        }
+
         if (isDraggingNode || draggedNodeId) {
             return;
         }
 
-        // 드래그 시간이 0.1초 초과였으면 클릭 무시
         if (!shouldOpenNodeRef.current) {
             shouldOpenNodeRef.current = false;
             return;
         }
 
-        // 플래그 리셋
         shouldOpenNodeRef.current = false;
 
         setContextMenuState({ ...DEFAULT_CONTEXT_MENU_STATE });
@@ -2221,8 +2228,16 @@ const ForceDirectedTree = ({
 
                 const selectedDatum = getNodeDatum(selectedNode);
                 const isMemoSelection = selectedDatum?.nodeType === 'memo';
-                const panelWidth = dimensions.width * 0.95;
-                const panelHeight = dimensions.height * 0.95;
+                // 패널을 숨겨야 하는 경우(메모 선택이 아니고, 보조 패널 숨김 옵션이 켜진 경우) 전체 컨테이너 자체를 렌더링하지 않음
+                if (!isMemoSelection && hideAssistantPanel) {
+                    return null;
+                }
+                const panelWidth = isMemoSelection
+                    ? Math.min(Math.max(dimensions.width * 0.45, 360), 520)
+                    : dimensions.width * 0.95;
+                const panelHeight = isMemoSelection
+                    ? Math.min(Math.max(dimensions.height * 0.45, 320), 520)
+                    : dimensions.height * 0.95;
 
                 return (
                     <div

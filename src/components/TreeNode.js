@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
@@ -535,19 +535,21 @@ const TreeNode = ({
             </foreignObject>
           )
         ) : (
-          <motion.text
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={fontSize}
-            fontFamily="Arial, sans-serif"
-            fontWeight="bold"
-            fill="#666666"
-            style={{ pointerEvents: 'none' }}
-            transition={{ duration: 0.15 }}
-            y={20 * nodeScaleFactor}
-          >
-            {displayMode === 'hover' ? displayHoverText : displayKeywordText}
-          </motion.text>
+          !isMinimalCard && (
+            <motion.text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={fontSize}
+              fontFamily="Arial, sans-serif"
+              fontWeight="bold"
+              fill="#666666"
+              style={{ pointerEvents: 'none' }}
+              transition={{ duration: 0.15 }}
+              y={20 * nodeScaleFactor}
+            >
+              {displayMode === 'hover' ? displayHoverText : displayKeywordText}
+            </motion.text>
+          )
         )}
 
         {isHovered && !isExpanded && typeof onRemoveNode === 'function' && (

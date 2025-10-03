@@ -14,6 +14,74 @@ class TreeLayoutService {
      */
     convertToHierarchy(nodes, links) {
         const nodeMap = new Map();
+        nodes.forEach((node) => {
+            const rawId = node?.id;
+            if (rawId === undefined || rawId === null) {
+                return;
+            }
+            const id = typeof rawId === 'string' ? rawId : String(rawId);
+            if (!nodeMap.has(id)) {
+                nodeMap.set(id, {
+                    ...node,
+                    id,
+                    children: [],
+                });
+            }
+        });
+
+        links.forEach((link) => {
+            const sourceId = (link?.source && link.source.id) || link?.source;
+            const targetId = (link?.target && link.target.id) || link?.target;
+            if (!sourceId || !targetId) {
+                return;
+            }
+
+            const sourceNode = nodeMap.get(sourceId);
+            const targetNode = nodeMap.get(targetId);
+
+            if (sourceNode && targetNode && !sourceNode.children.includes(targetNode)) {
+                sourceNode.children.push(targetNode);
+            }
+        });
+
+        const rootNodes = Array.from(nodeMap.values()).filter((node) =>
+            !links.some((link) => {
+                const targetId = (link?.target && link.target.id) || link?.target;
+                return targetId === node.id;
+            })
+        );
+
+        if (rootNodes.length === 0) {
+            const fallbackNode = nodeMap.values().next().value;
+            if (!fallbackNode) {
+                return d3.hierarchy({ id: '__virtual_root__', children: [] }, (d) => d.children);
+            }
+
+            return d3.hierarchy({
+                id: '__virtual_root__',
+                keyword: '__virtual_root__',
+                fullText: '__virtual_root__',
+                children: [fallbackNode],
+            }, (d) => d.children);
+        }
+
+        const hasMultipleRoots = rootNodes.length > 1;
+        const rootNode = hasMultipleRoots
+            ? {
+                id: '__virtual_root__',
+                keyword: '__virtual_root__',
+                fullText: '__virtual_root__',
+                children: rootNodes,
+            }
+            : rootNodes[0];
+
+        return d3.hierarchy(rootNode, (d) => d.children);
+    }
+    /**
+     * Converts a flat node/link graph into a nested d3.hierarchy structure.
+     */
+    convertToHierarchy(nodes, links) {
+        const nodeMap = new Map();
         nodes.forEach(node => {
             nodeMap.set(node.id, {
                 ...node,
@@ -41,7 +109,17 @@ class TreeLayoutService {
         );
 
         if (rootNodes.length === 0) {
-            throw new Error('No root node found in the hierarchy');
+            if (nodeMap.size === 0) {
+                return d3.hierarchy({ id: '__virtual_root__', children: [] }, d => d.children);
+            }
+
+            const [firstNode] = nodeMap.values();
+            return d3.hierarchy({
+                id: '__virtual_root__',
+                keyword: '__virtual_root__',
+                fullText: '__virtual_root__',
+                children: [firstNode],
+            }, d => d.children);
         }
 
         const hasMultipleRoots = rootNodes.length > 1;
@@ -161,3 +239,7 @@ class TreeLayoutService {
 }
 
 export default TreeLayoutService;
+
+
+
+

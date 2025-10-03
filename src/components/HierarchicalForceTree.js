@@ -8,13 +8,15 @@
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from '../data/treeData';
-import TreeNode from './TreeNode';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
+import useTreeViewMode from '../controllers/useTreeViewMode';
 import { markNewLinks } from '../utils/linkAnimationUtils';
 import ChartView from './ChartView';
 import NodeAssistantPanel from './NodeAssistantPanel';
 import ForceDirectedTree from './tree2/ForceDirectedTree';
+import TidyTreeView from './tree1/TidyTreeView';
+import TreeWorkspaceToolbar from './TreeWorkspaceToolbar';
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import { useTheme } from './library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
@@ -231,7 +233,6 @@ const HierarchicalForceTree = () => {
 
   // 뷰 선택 메뉴 상태
   const [showViewMenu, setShowViewMenu] = useState(false);
-  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
 
   // 테마 순환 함수
   const cycleTheme = useCallback(() => {
@@ -266,31 +267,7 @@ const HierarchicalForceTree = () => {
   const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
-  const [viewMode, setViewMode] = useState(() => {
-    if (typeof window === 'undefined') {
-      return 'tree1';
-    }
-    try {
-      const stored = window.localStorage.getItem('jarvis.view.mode');
-      if (stored === 'tree2' || stored === 'chart') {
-        return stored;
-      }
-      return 'tree1';
-    } catch (error) {
-      return 'tree1';
-    }
-  });
-  const [layoutOrientation, setLayoutOrientation] = useState(() => {
-    if (typeof window === 'undefined') {
-      return 'vertical';
-    }
-    try {
-      const stored = window.localStorage.getItem('jarvis.tree.orientation');
-      return stored === 'horizontal' ? 'horizontal' : 'vertical';
-    } catch (error) {
-      return 'vertical';
-    }
-  });
+  const [viewMode, setViewMode] = useTreeViewMode('tree1');
   const [linkValidationError, setLinkValidationError] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
@@ -398,27 +375,7 @@ const HierarchicalForceTree = () => {
     }
   }, [sessionInfo.fresh, sessionStorageKey]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem('jarvis.view.mode', viewMode);
-    } catch (error) {
-      // ignore storage errors
-    }
-  }, [viewMode]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem('jarvis.tree.orientation', layoutOrientation);
-    } catch (error) {
-      // ignore storage errors
-    }
-  }, [layoutOrientation]);
 
   useEffect(() => () => {
     if (linkValidationTimeoutRef.current) {
@@ -519,6 +476,7 @@ const HierarchicalForceTree = () => {
       ? data.links.filter((link) => link?.relationship !== 'connection')
       : []
   ), [data?.links]);
+  // tidyTreeData는 visibleGraph가 계산된 이후에 의존하도록 아래로 이동했습니다.
 
   // Color scheme for different levels
   const colorScheme = d3.scaleOrdinal(d3.schemeCategory10);
@@ -1157,6 +1115,23 @@ const HierarchicalForceTree = () => {
 
     return { nodes: filteredNodes, links: filteredLinks, visibleSet: visible };
   }, [data, collapsedNodeIds, childrenByParent, hierarchicalLinks, getRootNodeId]);
+
+  // visibleGraph 이후에 의존하여 계산되는 tidyTreeData
+  const tidyTreeData = useMemo(() => {
+    const normalize = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+
+    const safeNodes = Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : [];
+    const safeLinks = Array.isArray(visibleGraph.links) ? visibleGraph.links : [];
+
+    return {
+      nodes: safeNodes.map((node) => ({ ...node })),
+      links: safeLinks.map((link) => ({
+        source: normalize(link.source),
+        target: normalize(link.target),
+        relationship: link.relationship || 'hierarchy',
+      })),
+    };
+  }, [visibleGraph.nodes, visibleGraph.links]);
 
   const getInitialConversationForNode = (nodeId) => {
     const stored = conversationStoreRef.current.get(nodeId);
@@ -2070,191 +2045,6 @@ const HierarchicalForceTree = () => {
     });
   }, [data.nodes]);
 
-  useEffect(() => {
-    if (!svgRef.current || viewMode !== 'tree1') return undefined;
-
-    const svgSelection = d3.select(svgRef.current);
-    const zoomFactory = typeof d3.zoom === 'function' ? d3.zoom : null;
-    if (!zoomFactory) {
-      return undefined;
-    }
-
-    const isSecondaryButtonDrag = (evt) => {
-      if (typeof evt.button === 'number' && (evt.button === 1 || evt.button === 2)) return true;
-      if (typeof evt.buttons === 'number') {
-        const mask = evt.buttons;
-        return (mask & 4) === 4 || (mask & 2) === 2;
-      }
-      return false;
-    };
-
-    const isPrimaryButtonDrag = (evt) => {
-      if (typeof evt.buttons === 'number') {
-        return (evt.buttons & 1) === 1;
-      }
-      if (typeof evt.button === 'number') {
-        return evt.button === 0;
-      }
-      return false;
-    };
-
-    const allowTouchGesture = (evt) => {
-      if (evt.type.startsWith('touch')) {
-        const touches = evt.touches || (evt.originalEvent && evt.originalEvent.touches);
-        return Boolean(touches && touches.length > 1);
-      }
-      if (evt.type.startsWith('pointer') && evt.pointerType === 'touch') {
-        return true;
-      }
-      return false;
-    };
-
-    const isPinchZoomWheel = (evt) => {
-      if (!evt) return false;
-      if (evt.ctrlKey || evt.metaKey) return true;
-      if (typeof evt.deltaZ === 'number' && evt.deltaZ !== 0) return true;
-      const capabilities = evt.sourceCapabilities;
-      if (capabilities && capabilities.firesTouchEvents) {
-        const absDelta = Math.abs(evt.deltaY || 0) + Math.abs(evt.deltaX || 0);
-        if (absDelta > 0 && absDelta < 1.25) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    const isTrackpadScrollWheel = (evt) => {
-      if (!evt) return false;
-      if (evt.ctrlKey || evt.metaKey) return false;
-      const mode = typeof evt.deltaMode === 'number' ? evt.deltaMode : DOM_DELTA_PIXEL;
-      if (mode !== DOM_DELTA_PIXEL) return false;
-      const capabilities = evt.sourceCapabilities;
-      if (capabilities && capabilities.firesTouchEvents) return true;
-      const absX = Math.abs(evt.deltaX || 0);
-      const absY = Math.abs(evt.deltaY || 0);
-      const magnitude = Math.max(absX, absY);
-      if (magnitude === 0) return false;
-      return magnitude <= 200;
-    };
-
-    const zoomBehaviour = zoomFactory()
-      .scaleExtent([0.3, 8])
-      .filter((event) => {
-        const target = event.target instanceof Element ? event.target : null;
-        const isForeignObject = target && target.closest('foreignObject');
-        if (isForeignObject) return false;
-
-        const panHandleElement = target && target.closest('[data-pan-handle="true"]');
-        const panBlocked = target && target.closest('[data-block-pan="true"]');
-        const withinNode = target && target.closest('[data-node-id]');
-
-        if (panHandleElement && !panBlocked) {
-          if (event.type === 'wheel') {
-            return isPinchZoomWheel(event);
-          }
-          if (allowTouchGesture(event)) {
-            return true;
-          }
-          if (event.type === 'pointerdown' || event.type === 'mousedown') {
-            return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
-          }
-          if (event.type === 'pointermove' || event.type === 'mousemove') {
-            return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
-          }
-          if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') {
-            return true;
-          }
-        }
-
-        if (withinNode) {
-          if (event.type === 'wheel') {
-            if (isPinchZoomWheel(event)) return true;
-            return false;
-          }
-          if (allowTouchGesture(event)) {
-            return true;
-          }
-          if (event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'mousedown' || event.type === 'mousemove') {
-            return isSecondaryButtonDrag(event);
-          }
-          if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') {
-            return true;
-          }
-          return false;
-        }
-
-        if (event.type === 'wheel') {
-          // 트랙패드 핀치 줌과 스크롤 모두 허용
-          return true;
-        }
-        if (event.type === 'dblclick') return false;
-        if (allowTouchGesture(event)) return true;
-        if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'mouseup') return true;
-        if (event.type === 'pointerdown' || event.type === 'pointermove' || event.type === 'mousedown' || event.type === 'mousemove') {
-          // 일반 배경에서는 좌클릭/우클릭 드래그 모두 패닝 허용
-          return isPrimaryButtonDrag(event) || isSecondaryButtonDrag(event);
-        }
-        return false;
-      })
-      .on('zoom', (event) => {
-        setViewTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
-      });
-
-    const defaultWheelDelta = zoomBehaviour.wheelDelta();
-    zoomBehaviour.wheelDelta((event) => {
-      // Ctrl/Cmd 키가 있으면 줌 (핀치 줌)
-      if (event.ctrlKey || event.metaKey) {
-        const base = typeof defaultWheelDelta === 'function'
-          ? defaultWheelDelta(event)
-          : (-event.deltaY * (event.deltaMode ? 120 : 1) / 500);
-        return base * 0.3; // 트리2와 동일한 민감도
-      }
-
-      // Ctrl/Cmd 키가 없으면 패닝 (translate)
-      // deltaY와 deltaX를 사용하여 패닝 처리
-      // wheelDelta에서 0을 반환하면 줌이 일어나지 않고,
-      // 대신 zoom 이벤트에서 translate만 적용됨
-      return 0;
-    });
-
-    svgSelection
-      .style('touch-action', 'none')
-      .call(zoomBehaviour)
-      .on('dblclick.zoom', null);
-
-    zoomBehaviourRef.current = zoomBehaviour;
-
-    svgSelection.on('pointerdown.background', null);
-    svgSelection.on('wheel.treepan', (event) => {
-      // Ctrl/Cmd 키가 있으면 핀치 줌 (zoom behavior가 처리)
-      if (event.ctrlKey || event.metaKey) {
-        return;
-      }
-
-      // Ctrl/Cmd 키가 없으면 패닝
-      event.preventDefault();
-      const mode = typeof event.deltaMode === 'number' ? event.deltaMode : DOM_DELTA_PIXEL;
-      const deltaX = normalizeWheelDelta(event.deltaX || 0, mode);
-      const deltaY = normalizeWheelDelta(event.deltaY || 0, mode);
-      if (deltaX === 0 && deltaY === 0) {
-        return;
-      }
-
-      const currentTransform = d3.zoomTransform(svgSelection.node());
-      const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
-      const panX = -deltaX / scale;
-      const panY = -deltaY / scale;
-      zoomBehaviour.translateBy(svgSelection, panX, panY);
-    });
-
-    return () => {
-      svgSelection.on('.zoom', null);
-      svgSelection.on('.treepan', null);
-      if (zoomBehaviourRef.current === zoomBehaviour) {
-        zoomBehaviourRef.current = null;
-      }
-    };
-  }, [viewMode]);
 
   // 과거 생성된 Q2 노드들(및 하위 노드) 정리 - 최초 1회만 수행
   useEffect(() => {
@@ -2340,7 +2130,7 @@ const HierarchicalForceTree = () => {
         linkKeysRef.current = nextKeys;
         setLinks(annotatedLinks);
       },
-      { orientation: layoutOrientation }
+      { orientation: 'vertical' }
     );
 
     animationRef.current = animation;
@@ -2355,7 +2145,7 @@ const HierarchicalForceTree = () => {
         animationRef.current.stop();
       }
     };
-  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links, layoutOrientation]);
+  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
 
   const focusNodeToCenter = useCallback((node, options = {}) => {
     if (!node || !svgRef.current) {
@@ -2863,89 +2653,7 @@ const HierarchicalForceTree = () => {
         className="absolute top-12 left-1/2 z-[1300] -translate-x-1/2"
         style={{ pointerEvents: 'none' }}
       >
-        <div className="pointer-events-auto flex gap-2 rounded-full border border-white/15 bg-black/55 px-2 py-1 text-xs font-medium text-white/80 shadow-lg backdrop-blur-sm">
-          {/* 트리1 버튼 - 호버 시 레이아웃 드롭다운 */}
-          <div
-            className="relative"
-            onMouseEnter={() => setShowLayoutMenu(true)}
-            onMouseLeave={() => setShowLayoutMenu(false)}
-          >
-            <button
-              type="button"
-              onClick={() => setViewMode('tree1')}
-              className={`rounded-full px-3 py-1 transition ${viewMode === 'tree1' ? 'bg-blue-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-              aria-pressed={viewMode === 'tree1'}
-            >
-              트리1
-            </button>
-
-            {/* 레이아웃 방향 드롭다운 */}
-            {showLayoutMenu && (
-              <div
-                className="absolute top-full left-0 w-28 z-[1400]"
-                style={{ paddingTop: '8px' }}
-                onMouseEnter={() => setShowLayoutMenu(true)}
-                onMouseLeave={() => setShowLayoutMenu(false)}
-              >
-                <div
-                  className="rounded-lg shadow-2xl backdrop-blur-md border overflow-hidden"
-                  style={{
-                    background: theme === 'light' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.85)',
-                    borderColor: theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.12)',
-                  }}
-                >
-                  <button
-                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
-                      ? 'text-gray-900 hover:bg-gray-100'
-                      : 'text-white/90 hover:bg-white/10'
-                      } ${layoutOrientation === 'vertical' ? 'font-semibold' : ''}`}
-                    onClick={() => {
-                      setViewMode('tree1');
-                      setLayoutOrientation('vertical');
-                      setShowLayoutMenu(false);
-                    }}
-                  >
-                    아래로
-                  </button>
-                  <div className={`h-px w-full ${theme === 'light' ? 'bg-gray-200' : 'bg-white/10'}`} />
-                  <button
-                    className={`w-full px-3 py-2 text-left text-[13px] transition ${theme === 'light'
-                      ? 'text-gray-900 hover:bg-gray-100'
-                      : 'text-white/90 hover:bg-white/10'
-                      } ${layoutOrientation === 'horizontal' ? 'font-semibold' : ''}`}
-                    onClick={() => {
-                      setViewMode('tree1');
-                      setLayoutOrientation('horizontal');
-                      setShowLayoutMenu(false);
-                    }}
-                  >
-                    오른쪽
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 트리2 버튼 */}
-          <button
-            type="button"
-            onClick={() => setViewMode('tree2')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'tree2' ? 'bg-purple-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'tree2'}
-          >
-            트리2
-          </button>
-
-          {/* 차트 버튼 */}
-          <button
-            type="button"
-            onClick={() => setViewMode('chart')}
-            className={`rounded-full px-3 py-1 transition ${viewMode === 'chart' ? 'bg-emerald-400/90 text-black shadow-lg' : 'hover:bg-white/10 hover:text-white'}`}
-            aria-pressed={viewMode === 'chart'}
-          >
-            차트
-          </button>
-        </div>
+        <TreeWorkspaceToolbar viewMode={viewMode} onChange={setViewMode} showChart />
       </div>
 
       {isTreeSyncing && !initializingTree ? (
@@ -3014,6 +2722,78 @@ const HierarchicalForceTree = () => {
         />
       )}
 
+      {viewMode === 'tree1' && (
+        <TidyTreeView
+          data={data}
+          dimensions={dimensions}
+          theme={theme}
+          background={currentTheme.background}
+          onNodeClick={handleNodeClickForAssistant}
+          selectedNodeId={selectedNodeId}
+          onReorderSiblings={(parentId, orderedChildIds) => {
+            if (!parentId || !Array.isArray(orderedChildIds)) return;
+
+            const normalize = (v) => (typeof v === 'object' && v !== null ? v.id : v);
+
+            // 가상 루트인 경우: 루트 노드들의 순서 변경
+            if (parentId === '__virtual_root__') {
+              // 루트 노드들 찾기 (링크의 target이 아닌 노드들)
+              const targetIds = new Set(hierarchicalLinks.map(l => normalize(l.target)));
+              const rootNodes = (data.nodes || []).filter(n => !targetIds.has(n.id));
+
+              if (rootNodes.length <= 1) return;
+
+              // orderedChildIds 순서로 노드 배열 재정렬
+              const orderedRoots = orderedChildIds
+                .map(id => rootNodes.find(n => n.id === id))
+                .filter(Boolean);
+
+              const nonRootNodes = (data.nodes || []).filter(n => targetIds.has(n.id));
+
+              // 루트 노드들을 앞에, 나머지 노드들을 뒤에 배치
+              setData((prev) => ({
+                ...prev,
+                nodes: [...orderedRoots, ...nonRootNodes]
+              }));
+              return;
+            }
+
+            // 일반 노드의 자식 순서 변경
+            const currentChildIds = (hierarchicalLinks
+              .filter((l) => normalize(l.source) === parentId)
+              .map((l) => normalize(l.target)));
+
+            if (currentChildIds.length <= 1) return;
+
+            // orderedChildIds 순서로 재배열된 링크 구성
+            const nextLinks = (data.links || []).map((l) => ({ ...l }));
+            // 부모의 자식 링크 인덱스 수집
+            const indices = [];
+            for (let i = 0; i < nextLinks.length; i++) {
+              const s = normalize(nextLinks[i].source);
+              const t = normalize(nextLinks[i].target);
+              if (s === parentId && currentChildIds.includes(t) && nextLinks[i].relationship !== 'connection') {
+                indices.push(i);
+              }
+            }
+            if (indices.length <= 1) return;
+
+            // 기존 자식 링크를 제거 후 새 순서로 다시 삽입
+            const childLinkObjs = indices.map((idx) => nextLinks[idx]);
+            // 뒤에서부터 제거
+            indices.sort((a, b) => b - a).forEach((idx) => nextLinks.splice(idx, 1));
+
+            const template = childLinkObjs[0] || { value: 1 };
+            const rebuilt = orderedChildIds.map((cid) => ({ source: parentId, target: cid, value: template.value }));
+
+            // 부모 인접한 위치에 삽입: 처음 제거된 위치 앞쪽에 삽입
+            const insertAt = Math.min(...indices);
+            nextLinks.splice(insertAt, 0, ...rebuilt);
+
+            setData((prev) => ({ ...prev, links: nextLinks }));
+          }}
+        />
+      )}
       {/* 차트 뷰 */}
       {viewMode === 'chart' && (
         <ChartView
@@ -3022,269 +2802,6 @@ const HierarchicalForceTree = () => {
           viewTransform={viewTransform}
           nodeScaleFactor={nodeScaleFactor}
         />
-      )}
-
-      {viewMode === 'tree1' && showBootstrapChat && (
-        <div
-          className="pointer-events-none absolute"
-          style={{
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 600,
-            height: 640,
-            zIndex: 1000,
-          }}
-          data-interactive-zone="true"
-        >
-          <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
-            <NodeAssistantPanel
-              node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
-              color={d3.schemeCategory10[0]}
-              onSizeChange={() => { }}
-              onSecondQuestion={() => { }}
-              onPlaceholderCreate={() => { }}
-              questionService={questionService.current}
-              initialConversation={getInitialConversationForNode('__bootstrap__')}
-              onConversationChange={(messages) => handleConversationChange('__bootstrap__', messages)}
-              nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
-              isRootNode={true}
-              bootstrapMode={true}
-              onBootstrapFirstSend={handleBootstrapSubmit}
-              onPanZoomGesture={forwardPanZoomGesture}
-              nodeScaleFactor={nodeScaleFactor}
-            />
-          </div>
-        </div>
-      )}
-
-      {viewMode === 'tree1' && (
-        <svg
-          ref={svgRef}
-          width="100%"
-          height="100%"
-          viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
-          preserveAspectRatio="none"
-          data-interactive-zone="true"
-          style={{
-            background: currentTheme.background,
-            // 줌/팬 입력을 받기 위해 SVG에는 포인터 이벤트 활성화
-            pointerEvents: 'auto',
-            // SVG가 창틀 여유 공간까지 완전히 채우도록 설정
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: '100vw',
-            height: '100vh',
-            margin: 0,
-            padding: 0,
-          }}
-        >
-          {/* Arrow marker definition */}
-          {/* Links */}
-
-          <g
-            ref={contentGroupRef}
-            key={`${dimensions.width}x${dimensions.height}`}
-            transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}
-            style={{ opacity: isResizing ? 0.999 : 1 }}
-          >
-            <g className="links" style={{ pointerEvents: 'none' }}>
-              <AnimatePresence>
-                {links
-                  // TreeLayoutService에서 이미 정렬된 링크 사용
-                  .map((link, index) => {
-                    const sourceNode = nodes.find(n => n.id === link.source);
-                    const targetNode = nodes.find(n => n.id === link.target);
-
-                    if (!sourceNode || !targetNode) return null;
-
-                    const isHorizontalLayout = layoutOrientation === 'horizontal';
-                    // 토글 버튼 위치에서 연결선 시작
-                    // horizontal: 버튼이 노드 오른쪽(x축)에 있으므로 sourceX 증가
-                    // vertical: 버튼이 노드 아래(y축)에 있으므로 sourceY 증가
-                    const toggleButtonOffset = 50 * nodeScaleFactor;
-                    const sourceX = isHorizontalLayout ? sourceNode.x + toggleButtonOffset : sourceNode.x;
-                    const sourceY = isHorizontalLayout ? sourceNode.y : sourceNode.y + toggleButtonOffset;
-                    const targetX = targetNode.x;
-                    const targetY = targetNode.y;
-
-                    const shouldAnimate = link.isNew;
-                    const linkGenerator = (isHorizontalLayout
-                      ? d3.linkHorizontal().x((point) => point.x).y((point) => point.y)
-                      : d3.linkVertical().x((point) => point.x).y((point) => point.y)
-                    );
-
-                    const pathString = linkGenerator({
-                      source: { x: sourceX, y: sourceY },
-                      target: { x: targetX, y: targetY },
-                    });
-
-                    if (!pathString) {
-                      return null;
-                    }
-
-                    return (
-                      <g key={`${String(link.source)}->${String(link.target)}`}>
-                        {/* Neumorphism shadow for line */}
-                        <motion.path
-                          d={pathString}
-                          stroke="#bebebe"
-                          strokeOpacity={0.4}
-                          strokeWidth={Math.sqrt(link.value || 1) * 1.5 + 2}
-                          fill="none"
-                          style={{
-                            filter: 'blur(2px)',
-                          }}
-                          initial={{ pathLength: 0, opacity: 0 }}
-                          animate={{ pathLength: 1, opacity: 1 }}
-                          exit={{ pathLength: 0, opacity: 0 }}
-                          transition={{
-                            duration: 0.45,
-                            ease: "easeInOut",
-                            delay: index * 0.06
-                          }}
-                        />
-                        {/* Main neumorphism line */}
-                        <motion.path
-                          d={pathString}
-                          stroke="#e0e0e0"
-                          strokeOpacity={0.9}
-                          strokeWidth={Math.sqrt(link.value || 1) * 1.5}
-                          fill="none"
-                          style={{
-                            filter: 'drop-shadow(1px 1px 2px #bebebe) drop-shadow(-1px -1px 2px #ffffff)',
-                          }}
-                          initial={{ pathLength: 0, opacity: 0 }}
-                          animate={{ pathLength: 1, opacity: 1 }}
-                          exit={{ pathLength: 0, opacity: 0 }}
-                          transition={{
-                            duration: 0.45,
-                            ease: "easeInOut",
-                            delay: index * 0.06
-                          }}
-                        />
-                      </g>
-                    );
-                  })}
-              </AnimatePresence>
-            </g>
-
-            <g
-              className="node-labels"
-              style={{ pointerEvents: 'none' }}
-            >
-              {nodes.map((node) => {
-                const labelText = node.keyword || node.name || node.id;
-                if (!labelText) {
-                  return null;
-                }
-
-                const hasChildren = (childrenByParent.get(node.id) || []).length > 0;
-                const labelRadius = Math.max(3, 3.6 * nodeScaleFactor);
-                const spacingBase = Math.max(6, 4 * nodeScaleFactor);
-                const labelSpacing = labelRadius + spacingBase;
-                const textOffset = hasChildren ? -labelSpacing : labelSpacing;
-                const textAnchor = hasChildren ? 'end' : 'start';
-                const fontSize = Math.min(16, Math.max(10, 11 * nodeScaleFactor));
-                const textColor = currentTheme.text || '#f8fafc';
-                const strokeColor = theme === 'light' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.6)';
-                const circleStroke = theme === 'light' ? 'rgba(15, 23, 42, 0.25)' : 'rgba(255, 255, 255, 0.35)';
-                const circleFill = hasChildren ? '#64748b' : '#94a3b8';
-
-                return (
-                  <g key={`label-${node.id}`} transform={`translate(${node.x},${node.y})`}>
-                    <circle
-                      r={labelRadius}
-                      fill={circleFill}
-                      stroke={circleStroke}
-                      strokeWidth={0.6}
-                    />
-                    <text
-                      x={textOffset}
-                      textAnchor={textAnchor}
-                      alignmentBaseline="middle"
-                      fontSize={fontSize}
-                      fontFamily="Inter, 'Noto Sans KR', sans-serif"
-                      fill={textColor}
-                      style={{ paintOrder: 'stroke', stroke: strokeColor, strokeWidth: 1.2 }}
-                    >
-                      {labelText}
-                    </text>
-                  </g>
-                );
-              })}
-            </g>
-
-            {/* Nodes - 최상위 레이어 */}
-            <g
-              className="nodes"
-              style={{
-                pointerEvents: 'auto',
-                zIndex: 1000,
-                isolation: 'isolate' // 새로운 stacking context 생성
-              }}
-            >
-              {nodes.map((node, index) => {
-                // Tree layout에서는 depth를 사용
-                const nodeDepth = node.depth || 0;
-
-                return (
-                  <motion.g
-                    key={node.id}
-                    data-node-id={node.id}
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{
-                      delay: index * 0.1,
-                      type: "spring",
-                      stiffness: 300,
-                      damping: 25
-                    }}
-                    style={{
-                      pointerEvents: 'auto',
-                      zIndex: expandedNodeId === node.id ? 9999 : 1001 + index, // 확장된 노드는 최상위
-                      position: 'relative'
-                    }}
-                    data-interactive-zone="true"
-                  >
-                    <TreeNode
-                      node={node}
-                      position={{ x: node.x || 0, y: node.y || 0 }}
-                      color={colorScheme(nodeDepth)}
-                      onDrag={handleDrag}
-                      isMinimalCard
-                      onNodeClick={handleNodeClickForAssistant}
-                      isExpanded={expandedNodeId === node.id}
-                      onSecondQuestion={handleSecondQuestion}
-                      onPlaceholderCreate={handlePlaceholderCreate}
-                      questionService={questionService.current}
-                      initialConversation={getInitialConversationForNode(node.id)}
-                      onConversationChange={(messages) => handleConversationChange(node.id, messages)}
-                      onRequestAnswer={handleRequestAnswer}
-                      onAnswerComplete={handleAnswerComplete}
-                      onAnswerError={handleAnswerError}
-                      onRemoveNode={removeNodeAndDescendants}
-                      hasChildren={(childrenByParent.get(node.id) || []).length > 0}
-                      isCollapsed={collapsedNodeIds.has(node.id)}
-                      onToggleCollapse={toggleCollapse}
-                      viewTransform={viewTransform}
-                      overlayElement={overlayElement}
-                      onCloseNode={() => handleCloseNode(node.id)}
-                      onPanZoomGesture={forwardPanZoomGesture}
-                      nodeScaleFactor={nodeScaleFactor}
-                      treeNodes={nodes}
-                      treeLinks={links}
-                      onNodeSelect={handleNodeClickForAssistant}
-                    />
-                  </motion.g>
-                );
-              })}
-            </g>
-          </g>
-        </svg>
       )}
 
       {/* 디버그 패널 제거됨 */}
@@ -3298,3 +2815,5 @@ const HierarchicalForceTree = () => {
 };
 
 export default HierarchicalForceTree;
+
+
