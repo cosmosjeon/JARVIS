@@ -48,5 +48,3 @@ cap/
 # Local AI assistant data
 .serena/
 
-# Local docs to ignore
-AGENTS.md

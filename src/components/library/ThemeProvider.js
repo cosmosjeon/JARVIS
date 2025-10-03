@@ -11,10 +11,13 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children, defaultTheme = "glass", mode = "widget" }) => {
+  // mode별 독립적인 localStorage 키 생성
+  const themeKey = `jarvis.theme.${mode}`;
+  
   // localStorage에서 테마 상태 복원
   const [theme, setTheme] = useState(() => {
     try {
-      const savedTheme = localStorage.getItem('jarvis.theme');
+      const savedTheme = localStorage.getItem(themeKey);
       return savedTheme || defaultTheme;
     } catch {
       return defaultTheme;
@@ -32,25 +35,25 @@ export const ThemeProvider = ({ children, defaultTheme = "glass", mode = "widget
 
     applyTheme(theme);
 
-    // localStorage에 테마 상태 저장
+    // localStorage에 테마 상태 저장 (mode별 키 사용)
     try {
-      localStorage.setItem('jarvis.theme', theme);
+      localStorage.setItem(themeKey, theme);
     } catch {
       // localStorage 접근 실패 시 무시
     }
-  }, [theme]);
+  }, [theme, themeKey]);
 
-  // localStorage 변경 감지하여 다른 탭/창과 동기화
+  // localStorage 변경 감지하여 다른 탭/창과 동기화 (mode별 키만 감지)
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === 'jarvis.theme' && e.newValue && e.newValue !== theme) {
+      if (e.key === themeKey && e.newValue && e.newValue !== theme) {
         setTheme(e.newValue);
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [theme]);
+  }, [theme, themeKey]);
 
   const value = useMemo(() => ({ theme, setTheme, mode }), [theme, mode]);
 

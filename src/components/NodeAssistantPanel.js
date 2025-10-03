@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
 import QuestionService from '../services/QuestionService';
 import NodeNavigationService from '../services/NodeNavigationService';
@@ -92,6 +92,7 @@ const NodeAssistantPanel = ({
   const [messages, setMessages] = useState(() => normalizedInitialConversation);
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
+  const [hasFocusedComposer, setHasFocusedComposer] = useState(false);
   const { autoPasteEnabled } = useSettings();
   const [placeholderNotice, setPlaceholderNotice] = useState(null);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
@@ -101,11 +102,27 @@ const NodeAssistantPanel = ({
   const navigationServiceRef = useRef(new NodeNavigationService());
   const isHydratingRef = useRef(true);
   const hasBootstrappedRef = useRef(false);
+  const composerValueRef = useRef('');
+
+  useLayoutEffect(() => {
+    const timer = setTimeout(() => {
+      if (composerRef.current && !hasFocusedComposer) {
+        composerRef.current.focus();
+        const length = composerRef.current.value.length;
+        composerRef.current.setSelectionRange(length, length);
+        setHasFocusedComposer(true);
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [node, hasFocusedComposer]);
 
   // initialConversation이 변경되면 messages 업데이트
   useEffect(() => {
     setMessages(normalizedInitialConversation);
   }, [normalizedInitialConversation]);
+  useEffect(() => {
+    composerValueRef.current = composerValue;
+  }, [composerValue]);
   const panelRef = useRef(null);
   const highlightRootRef = useRef(null);
   const highlighterRef = useRef(null);
@@ -135,16 +152,16 @@ const NodeAssistantPanel = ({
     if (node && composerRef.current) {
       // 약간의 지연을 두어 DOM이 업데이트된 후 포커스
       const timer = setTimeout(() => {
-        if (composerRef.current && !isComposing) {
+        if (composerRef.current) {
           composerRef.current.focus();
           // 커서를 텍스트 끝으로 이동
           const length = composerRef.current.value.length;
           composerRef.current.setSelectionRange(length, length);
         }
-      }, 150);
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [node, isComposing]);
+  }, [node]);
 
   const getHighlightTexts = useCallback(() => {
     const uniqueTexts = new Set();
@@ -361,10 +378,16 @@ const NodeAssistantPanel = ({
   useEffect(() => {
     clearTypingTimers();
     setMessages(normalizedInitialConversation);
-    setComposerValue('');
+    if (!composerValueRef.current || composerValueRef.current.length === 0) {
+      setComposerValue('');
+    }
     isHydratingRef.current = true;
     hasBootstrappedRef.current = false;
   }, [clearTypingTimers, normalizedInitialConversation]);
+
+  useEffect(() => {
+    setHasFocusedComposer(false);
+  }, [node?.id]);
 
   const assistantMessageCount = useMemo(
     () => messages.filter((message) => message.role === 'assistant').length,
@@ -581,15 +604,18 @@ const NodeAssistantPanel = ({
             ),
           );
           throw error;
-        } finally {
-          setComposerValue('');
         }
         return;
       }
     }
 
-    await sendResponse(trimmed);
-    setComposerValue('');
+    try {
+      await sendResponse(trimmed);
+    } catch (error) {
+      console.error('메시지 전송 오류:', error);
+      // 오류 발생 시 사용자에게 알림 (이미 setComposerValue에서 처리됨)
+      throw error;
+    }
   }, [bootstrapMode, composerValue, messages, onBootstrapFirstSend, sendResponse]);
 
   // 노드 네비게이션 핸들러
@@ -611,19 +637,11 @@ const NodeAssistantPanel = ({
 
   const handleKeyDown = useCallback(
     (event) => {
-      // 방향키 네비게이션 처리
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
-        // 텍스트 입력 중이거나 하이라이트 모드가 아니고, 네비게이션이 비활성화되지 않았을 때만 네비게이션 허용
-        if (!isComposing && !isHighlightMode && composerValue === '' && !disableNavigation) {
-          event.preventDefault();
-          handleNodeNavigation(event.key);
-          return;
-        }
-      }
-
-      // Enter 키 처리 (기존 로직)
-      if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
+      // Enter 키 처리
+      if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
+        event.stopPropagation();
+        
         if (isHighlightMode) {
           const created = attemptHighlightPlaceholderCreate();
           if (!created) {
@@ -631,7 +649,27 @@ const NodeAssistantPanel = ({
           }
           return;
         }
-        handleSend().catch(() => { });
+        
+        // 텍스트가 있을 때만 전송
+        if (composerValue.trim()) {
+          // 입력창 즉시 비우기
+          setComposerValue('');
+          const latestValue = composerValueRef.current;
+          handleSend().catch(() => {
+            // 오류 발생 시 입력값 복원
+            setComposerValue(latestValue);
+          });
+        }
+        return;
+      }
+
+      // 방향키 네비게이션 처리 (텍스트 입력 중이 아닐 때만)
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        if (!isComposing && !isHighlightMode && composerValue === '' && !disableNavigation) {
+          event.preventDefault();
+          handleNodeNavigation(event.key);
+          return;
+        }
       }
     },
     [attemptHighlightPlaceholderCreate, handleSend, isComposing, isHighlightMode, handleNodeNavigation, composerValue, disableNavigation],
@@ -659,26 +697,26 @@ const NodeAssistantPanel = ({
     return () => window.removeEventListener('keydown', handleGlobalEnter, true);
   }, [attemptHighlightPlaceholderCreate, isComposing, isHighlightMode, onPlaceholderCreate]);
 
-  // 테마별 색상 설정
+  // 테마별 색상 설정 - 테마에 맞는 색상 적용
   const panelStyles = useMemo(() => {
     switch (theme) {
       case 'light':
         return {
           background: 'rgba(255, 255, 255, 0.9)',
-          borderColor: 'rgba(0, 0, 0, 0.2)',
+          borderColor: 'rgba(0, 0, 0, 0.15)',
           textColor: 'rgba(0, 0, 0, 0.9)',
         };
       case 'dark':
         return {
-          background: 'rgba(0, 0, 0, 0.8)',
-          borderColor: 'rgba(255, 255, 255, 0.2)',
+          background: 'rgba(32, 33, 35, 0.95)', // GPT 다크모드 색상
+          borderColor: 'rgba(255, 255, 255, 0.1)',
           textColor: 'rgba(255, 255, 255, 0.9)',
         };
       default: // glass
         return {
-          background: 'rgba(255, 255, 255, 0.25)',
-          borderColor: 'rgba(255, 255, 255, 0.3)',
-          textColor: 'rgba(248, 250, 252, 0.9)',
+          background: 'rgba(255, 255, 255, 0.85)',
+          borderColor: 'rgba(0, 0, 0, 0.2)',
+          textColor: 'rgba(0, 0, 0, 0.9)',
         };
     }
   }, [theme]);
@@ -688,7 +726,7 @@ const NodeAssistantPanel = ({
       ref={panelRef}
       className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
       style={{
-        fontFamily: 'inherit',
+        fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         position: 'relative',
         zIndex: 1001,
         pointerEvents: 'auto',
@@ -767,9 +805,9 @@ const NodeAssistantPanel = ({
                 color: panelStyles.textColor,
               }}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = theme === 'light'
-                  ? 'rgba(0, 0, 0, 0.1)'
-                  : 'rgba(255, 255, 255, 0.2)';
+                e.target.style.backgroundColor = theme === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.1)' 
+                  : 'rgba(0, 0, 0, 0.1)';
               }}
               onMouseLeave={(e) => {
                 e.target.style.backgroundColor = panelStyles.background;
@@ -809,14 +847,20 @@ const NodeAssistantPanel = ({
                     className="max-w-[240px] break-all rounded-2xl px-4 py-3 text-sm shadow-lg backdrop-blur-sm"
                     style={{
                       borderColor: panelStyles.borderColor,
-                      backgroundColor: panelStyles.background,
+                      backgroundColor: theme === 'light' || theme === 'glass'
+                        ? 'rgba(0, 0, 0, 0.05)' // 흰색 배경일 때는 어두운 배경 사용
+                        : 'rgba(255, 255, 255, 0.1)', // 다크모드일 때는 밝은 배경 사용
                       borderWidth: '1px',
                       borderStyle: 'solid',
                     }}
                   >
                     <p
                       className="whitespace-pre-wrap leading-relaxed"
-                      style={{ color: panelStyles.textColor }}
+                      style={{ 
+                        color: theme === 'light' || theme === 'glass'
+                          ? 'rgba(0, 0, 0, 0.9)' // 흰색 배경일 때는 어두운 텍스트
+                          : 'rgba(255, 255, 255, 0.9)' // 다크모드일 때는 밝은 텍스트
+                      }}
                     >
                       {message.text}
                     </p>
@@ -833,34 +877,92 @@ const NodeAssistantPanel = ({
         <button
           type="button"
           onClick={handleHighlightToggle}
-          className={`glass-surface px-3 py-1 rounded-xl border border-white/15 text-xs font-medium transition-all duration-200 ${isHighlightMode
-            ? 'bg-emerald-500/40 text-emerald-100 border-emerald-400/50'
-            : 'text-slate-100 hover:bg-white/20'
+          className={`px-3 py-1 rounded-xl border text-xs font-medium transition-all duration-200 ${isHighlightMode
+            ? 'bg-emerald-500/60 text-emerald-100 border-emerald-400/60'
+            : 'hover:bg-white/20'
             }`}
+          style={{
+            backgroundColor: isHighlightMode 
+              ? 'rgba(16, 185, 129, 0.6)' 
+              : theme === 'dark' 
+                ? 'rgba(64, 65, 79, 0.8)' // GPT 다크모드 버튼 색상
+                : 'rgba(255, 255, 255, 0.8)',
+            borderColor: isHighlightMode 
+              ? 'rgba(16, 185, 129, 0.6)' 
+              : panelStyles.borderColor,
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            color: panelStyles.textColor
+          }}
         >
           다중 질문
         </button>
       </div>
 
       <form
-        className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border border-white/15 px-3 py-2"
+        className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border px-3 py-2"
         onSubmit={(event) => {
           event.preventDefault();
-          handleSend().catch(() => { });
+          // 입력창 즉시 비우기
+          if (composerValue.trim()) {
+            setComposerValue('');
+            const latestValue = composerValueRef.current;
+            handleSend().catch(() => {
+              // 오류 발생 시 입력값 복원
+              setComposerValue(latestValue);
+            });
+          }
         }}
-        style={{ pointerEvents: 'auto', zIndex: 1002 }}
+        style={{ 
+          pointerEvents: 'auto', 
+          zIndex: 1002,
+          backgroundColor: theme === 'dark' 
+            ? 'rgba(64, 65, 79, 0.8)' // GPT 다크모드 입력창 색상
+            : 'rgba(255, 255, 255, 0.8)',
+          borderColor: panelStyles.borderColor,
+          borderWidth: '1px',
+          borderStyle: 'solid'
+        }}
       >
         <textarea
           ref={composerRef}
           value={composerValue}
-          onChange={(event) => setComposerValue(event.target.value)}
+          onChange={(event) => {
+            setComposerValue(event.target.value);
+          }}
           onKeyDown={handleKeyDown}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
+          onInput={(event) => {
+            // 입력 이벤트를 명시적으로 처리하여 타이핑 반응성 개선
+            const value = event.target.value;
+            setComposerValue(value);
+          }}
+          onPaste={(event) => {
+            // 붙여넣기 시에도 정상적으로 처리
+            setTimeout(() => {
+              setComposerValue(event.target.value);
+            }, 0);
+          }}
           placeholder="Ask anything..."
-          className="glass-text-primary max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm placeholder:text-slate-200 focus:outline-none"
-          style={{ pointerEvents: 'auto' }}
+          className={`max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm focus:outline-none ${
+            theme === 'light' || theme === 'glass'
+              ? 'placeholder:text-gray-500'
+              : 'placeholder:text-gray-400'
+          }`}
+          style={{
+            pointerEvents: 'auto',
+            color: theme === 'light' || theme === 'glass'
+              ? 'rgba(0, 0, 0, 0.9)' // 흰색 배경일 때는 어두운 텍스트
+              : 'rgba(255, 255, 255, 0.9)', // 다크모드일 때는 밝은 텍스트
+            fontFamily: 'inherit',
+            outline: 'none',
+            border: 'none',
+            resize: 'none'
+          }}
           autoFocus={false}
+          autoComplete="off"
+          spellCheck="false"
         />
         {placeholderNotice && (
           <span
@@ -872,12 +974,27 @@ const NodeAssistantPanel = ({
         <button
           type="submit"
           disabled={!composerValue.trim()}
-          className="glass-chip flex h-9 w-9 items-center justify-center rounded-full text-white shadow-lg transition-opacity disabled:opacity-40"
+          className="flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-opacity disabled:opacity-40"
           aria-label="메시지 전송"
-          style={{ pointerEvents: 'auto' }}
+          style={{ 
+            pointerEvents: 'auto',
+            backgroundColor: theme === 'dark' 
+              ? 'rgba(64, 65, 79, 0.9)' // GPT 다크모드 전송 버튼 색상
+              : 'rgba(255, 255, 255, 0.8)',
+            color: panelStyles.textColor,
+            border: `1px solid ${panelStyles.borderColor}`
+          }}
           onClick={(e) => {
             e.stopPropagation();
-            handleSend();
+            // 입력창 즉시 비우기
+            if (composerValue.trim()) {
+              setComposerValue('');
+              const latestValue = composerValueRef.current;
+              handleSend().catch(() => {
+                // 오류 발생 시 입력값 복원
+                setComposerValue(latestValue);
+              });
+            }
           }}
         >
           ↗
