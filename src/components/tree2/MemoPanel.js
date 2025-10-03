@@ -84,7 +84,7 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
 
     return (
         <div
-            className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-5 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
+            className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
             style={{
                 fontFamily: 'inherit',
                 pointerEvents: 'auto',
@@ -121,83 +121,105 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
                         </p>
                     )}
                 </div>
-                <button
-                    type="button"
-                    onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onClose();
-                    }}
-                    className="rounded-full px-3 py-1 text-xs font-medium transition"
-                    style={{
-                        borderColor: panelStyles.borderColor,
-                        backgroundColor: panelStyles.background,
-                        borderWidth: '1px',
-                        borderStyle: 'solid',
-                        color: panelStyles.textColor,
-                    }}
-                    data-block-pan="true"
-                >
-                    닫기
-                </button>
+                <div className="flex items-center gap-2" data-block-pan="true">
+                    <div className="group relative">
+                        <button
+                            type="button"
+                            className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300/20 bg-slate-100/10 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-100/20"
+                        >
+                            ?
+                        </button>
+                        <div className="absolute left-full top-full ml-2 mt-1 hidden w-64 transform group-hover:block z-50">
+                            <div className="rounded-lg border border-slate-600/30 bg-slate-800/95 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur-sm">
+                                <p className="mb-1">메모는 연결된 노드의 문맥을 확장하는 용도로 사용합니다.</p>
+                                <p>자동 저장되며, Ctrl/⌘ + Enter로 줄바꿈 입력이 가능합니다.</p>
+                            </div>
+                            <div className="absolute right-full top-2 h-0 w-0 transform border-t-4 border-b-4 border-r-4 border-transparent border-r-slate-600/30" />
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onClose();
+                        }}
+                        className="rounded-full px-3 py-1 text-xs font-medium transition"
+                        style={{
+                            borderColor: panelStyles.borderColor,
+                            backgroundColor: panelStyles.background,
+                            borderWidth: '1px',
+                            borderStyle: 'solid',
+                            color: panelStyles.textColor,
+                        }}
+                    >
+                        닫기
+                    </button>
+                </div>
             </div>
 
-            <div className="flex flex-1 flex-col gap-4">
-                <div
-                    className="glass-surface flex flex-col gap-2 rounded-xl border px-4 py-3"
-                    style={{
-                        backgroundColor: theme === 'light' ? 'rgba(255, 255, 255, 0.45)' : 'rgba(15, 23, 42, 0.35)',
-                        borderColor: panelStyles.borderColor,
-                    }}
-                >
-                    <label
-                        className="text-xs font-medium"
-                        htmlFor="memo-title-input"
-                        style={{ color: panelStyles.accentColor }}
+            <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+                <div className="flex h-full flex-col gap-4">
+                    <div
+                        className="glass-surface flex flex-col gap-2 rounded-xl border px-4 py-3"
+                        style={{
+                            backgroundColor: theme === 'light' ? 'rgba(255, 255, 255, 0.45)' : 'rgba(15, 23, 42, 0.35)',
+                            borderColor: panelStyles.borderColor,
+                        }}
                     >
-                        제목
-                    </label>
-                    <Input
-                        id="memo-title-input"
-                        value={title}
-                        onChange={(event) => setTitle(event.target.value)}
-                        placeholder="메모 제목"
-                        className="h-11 border-0 bg-transparent px-0 text-base focus-visible:ring-0"
-                        style={{ color: panelStyles.textColor }}
-                    />
-                </div>
+                        <label
+                            className="text-xs font-medium"
+                            htmlFor="memo-title-input"
+                            style={{ color: panelStyles.accentColor }}
+                        >
+                            제목
+                        </label>
+                        <Input
+                            id="memo-title-input"
+                            value={title}
+                            onChange={(event) => setTitle(event.target.value)}
+                            placeholder="메모 제목"
+                            className="h-11 border-0 bg-transparent px-0 text-base focus-visible:ring-0"
+                            style={{ color: panelStyles.textColor }}
+                        />
+                    </div>
 
-                <div
-                    className="glass-surface flex flex-1 flex-col gap-2 rounded-xl border px-4 py-3"
-                    style={{
-                        backgroundColor: theme === 'light' ? 'rgba(255, 255, 255, 0.45)' : 'rgba(15, 23, 42, 0.35)',
-                        borderColor: panelStyles.borderColor,
-                    }}
-                >
-                    <label
-                        className="text-xs font-medium"
-                        htmlFor="memo-content-input"
-                        style={{ color: panelStyles.accentColor }}
+                    <div
+                        className="glass-surface flex flex-1 flex-col gap-2 rounded-xl border px-4 py-3"
+                        style={{
+                            backgroundColor: theme === 'light' ? 'rgba(255, 255, 255, 0.45)' : 'rgba(15, 23, 42, 0.35)',
+                            borderColor: panelStyles.borderColor,
+                        }}
                     >
-                        내용
-                    </label>
-                    <Textarea
-                        id="memo-content-input"
-                        value={content}
-                        onChange={(event) => setContent(event.target.value)}
-                        placeholder="메모 내용을 입력하세요"
-                        className="min-h-[220px] flex-1 resize-none border-0 bg-transparent px-0 py-0 text-sm focus-visible:ring-0"
-                        style={{ color: panelStyles.textColor }}
-                    />
-                    <div className="flex items-center justify-between text-xs" style={{ color: panelStyles.accentColor }}>
-                        <span>Ctrl/⌘ + Enter 로 줄바꿈</span>
-                        <span>{content.length.toLocaleString()}자</span>
+                        <label
+                            className="text-xs font-medium"
+                            htmlFor="memo-content-input"
+                            style={{ color: panelStyles.accentColor }}
+                        >
+                            내용
+                        </label>
+                        <Textarea
+                            id="memo-content-input"
+                            value={content}
+                            onChange={(event) => setContent(event.target.value)}
+                            placeholder="메모 내용을 입력하세요"
+                            className="min-h-[220px] flex-1 resize-none border-0 bg-transparent px-0 py-0 text-sm focus-visible:ring-0"
+                            style={{ color: panelStyles.textColor }}
+                        />
+                        <div className="flex items-center justify-between text-xs" style={{ color: panelStyles.accentColor }}>
+                            <span>Ctrl/⌘ + Enter 로 줄바꿈</span>
+                            <span>{content.length.toLocaleString()}자</span>
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                <p className="mt-auto text-right text-xs" style={{ color: panelStyles.accentColor }}>
-                    변경 사항은 자동으로 저장됩니다.
-                </p>
+            <div
+                className="glass-surface flex flex-shrink-0 items-center justify-between rounded-xl border border-white/15 px-3 py-2 text-xs"
+                style={{ color: panelStyles.accentColor }}
+            >
+                <span>작성 내용은 240ms 지연 후 자동으로 저장됩니다.</span>
+                <span>메모 ID: {memo?.id || 'N/A'}</span>
             </div>
         </div>
     );
