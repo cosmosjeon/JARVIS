@@ -226,6 +226,15 @@ const ForceDirectedTree = ({
     const selectionBoxDidDragRef = useRef(false);
     const [linkCreationState, setLinkCreationState] = useState({ active: false, sourceId: null });
     const [memoEditorState, setMemoEditorState] = useState({ isOpen: false, memo: null });
+    const memoEditorSize = useMemo(() => {
+        const baseWidth = Math.max(dimensions?.width || 0, 640);
+        const baseHeight = Math.max(dimensions?.height || 0, 480);
+
+        return {
+            width: baseWidth * 0.95,
+            height: baseHeight * 0.95,
+        };
+    }, [dimensions?.width, dimensions?.height]);
     const isLinking = linkCreationState.active;
     const linkingSourceId = linkCreationState.sourceId;
 
@@ -2279,13 +2288,30 @@ const ForceDirectedTree = ({
             })()}
 
             {/* 메모 에디터 */}
-            <MemoEditor
-                memo={memoEditorState.memo}
-                isVisible={memoEditorState.isOpen}
-                onClose={handleMemoEditorClose}
-                onUpdate={handleMemoUpdate}
-                onDelete={handleMemoDelete}
-            />
+            {memoEditorState.isOpen && memoEditorState.memo && (
+                <div
+                    className="pointer-events-none absolute"
+                    style={{
+                        left: '50%',
+                        top: '52%',
+                        transform: 'translate(-50%, -50%)',
+                        width: memoEditorSize.width,
+                        height: memoEditorSize.height,
+                        zIndex: 1100,
+                    }}
+                    data-interactive-zone="true"
+                >
+                    <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
+                        <MemoEditor
+                            memo={memoEditorState.memo}
+                            isVisible={memoEditorState.isOpen}
+                            onClose={handleMemoEditorClose}
+                            onUpdate={handleMemoUpdate}
+                            onDelete={handleMemoDelete}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -131,8 +131,8 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
                         </button>
                         <div className="absolute left-full top-full ml-2 mt-1 hidden w-64 transform group-hover:block z-50">
                             <div className="rounded-lg border border-slate-600/30 bg-slate-800/95 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur-sm">
-                                <p className="mb-1">메모는 연결된 노드의 문맥을 확장하는 용도로 사용합니다.</p>
-                                <p>자동 저장되며, Ctrl/⌘ + Enter로 줄바꿈 입력이 가능합니다.</p>
+                                <p className="mb-1">이 메모는 선택한 노드에 대한 보조 설명입니다.</p>
+                                <p>입력 후 240ms 이내 자동 저장되며, Ctrl/⌘ + Enter로 줄바꿈이 가능합니다.</p>
                             </div>
                             <div className="absolute right-full top-2 h-0 w-0 transform border-t-4 border-b-4 border-r-4 border-transparent border-r-slate-600/30" />
                         </div>
@@ -158,7 +158,9 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
                 </div>
             </div>
 
-            <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+            <div
+                className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
+            >
                 <div className="flex h-full flex-col gap-4">
                     <div
                         className="glass-surface flex flex-col gap-2 rounded-xl border px-4 py-3"
@@ -178,7 +180,7 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
                             id="memo-title-input"
                             value={title}
                             onChange={(event) => setTitle(event.target.value)}
-                            placeholder="메모 제목"
+                            placeholder="메모 제목을 입력하세요"
                             className="h-11 border-0 bg-transparent px-0 text-base focus-visible:ring-0"
                             style={{ color: panelStyles.textColor }}
                         />
@@ -214,12 +216,17 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
                 </div>
             </div>
 
+            <div className="flex -mb-2 flex-shrink-0 justify-between text-[11px] text-white/60" style={{ color: panelStyles.accentColor }}>
+                <span>최근 변경 즉시 저장</span>
+                <span>제목 {title.trim() ? '작성됨' : '미입력'}</span>
+            </div>
+
             <div
                 className="glass-surface flex flex-shrink-0 items-center justify-between rounded-xl border border-white/15 px-3 py-2 text-xs"
                 style={{ color: panelStyles.accentColor }}
             >
-                <span>작성 내용은 240ms 지연 후 자동으로 저장됩니다.</span>
                 <span>메모 ID: {memo?.id || 'N/A'}</span>
+                <span>자동 저장 지연: 240ms</span>
             </div>
         </div>
     );
