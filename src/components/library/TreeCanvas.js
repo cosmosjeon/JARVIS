@@ -71,7 +71,7 @@ const TreeCanvas = ({
       <div className="flex h-full items-center justify-center bg-muted/10">
         <div className="space-y-3 text-center text-muted-foreground">
           <FileText className="mx-auto h-14 w-14" />
-          <p className="text-sm">ÁÂÃø ¸ñ·Ï¿¡¼­ Æ®¸®¸¦ ¼±ÅÃÇÏ¸é ³»¿ëÀÌ Ç¥½ÃµË´Ï´Ù.</p>
+          <p className="text-sm">ë©”ëª¨ë¥¼ ì„ íƒí•˜ë©´ íŠ¸ë¦¬ê°€ í‘œì‹œë©ë‹ˆë‹¤.</p>
         </div>
       </div>
     );
@@ -85,35 +85,17 @@ const TreeCanvas = ({
             <h1 className="text-lg font-semibold text-foreground">
               {selectedMemo.title}
             </h1>
-            {nodeCount > 0 && (
-              <button
-                type="button"
-                onClick={handleRendererToggle}
-                className="rounded border border-slate-600/60 px-3 py-1 text-xs font-medium text-slate-200 transition hover:border-slate-400 hover:bg-slate-800/60"
-              >
-                {useLightweightRenderer ? "ÀüÃ¼ ±â´É ¸ğµå" : "°£¼ÒÈ­ ¸ğµå"}
-              </button>
-            )}
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" /> »ı¼º {formatDate(selectedMemo.createdAt)}
+              <Calendar className="h-3.5 w-3.5" /> ìƒì„± {formatDate(selectedMemo.createdAt)}
             </span>
             <span className="flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" /> ¼öÁ¤ {formatDate(selectedMemo.updatedAt)}
+              <Calendar className="h-3.5 w-3.5" /> ìˆ˜ì • {formatDate(selectedMemo.updatedAt)}
             </span>
-            <span>{nodeCount}°³ ³ëµå</span>
-            {useLightweightRenderer && (
-              <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-300">
-                {autoLightweight ? "ÀÚµ¿ °£¼ÒÈ­" : "°£¼ÒÈ­ È°¼º"}
-              </span>
-            )}
+            <span>{nodeCount}ê°œ ë…¸ë“œ</span>
           </div>
-          {useLightweightRenderer && (
-            <p className="text-[11px] text-slate-300/80">
-              ³ëµå ¼ö°¡ ¸¹¾Æ ·»´õ¸µ Áö¿¬À» ÁÙÀÌ±â À§ÇØ Äµ¹ö½º¸¦ ´Ü¼øÈ­Çß½À´Ï´Ù. ÇÊ¿äÇÑ °æ¿ì »ó´Ü ¹öÆ°À¸·Î ÀüÃ¼ ±â´É ¸ğµå·Î ÀüÈ¯ÇÒ ¼ö ÀÖ½À´Ï´Ù.
-            </p>
-          )}
+          {/* ê²½ëŸ‰í™” ë°°ì§€/ì„¤ëª… ìˆ¨ê¹€ */}
         </div>
       </header>
 
@@ -160,7 +142,7 @@ const TreeCanvas = ({
           )
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-            ¾ÆÁ÷ ³ëµå°¡ ¾ø½À´Ï´Ù.
+            í‘œì‹œí•  ë…¸ë“œê°€ ì—†ìŠµë‹ˆë‹¤.
           </div>
         )}
       </div>
