@@ -1,86 +1,255 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from '../library/ThemeProvider';
+import memoEditorTokens from './editor/tokens';
+import {
+    BLOCK_TYPES,
+    BLOCK_DEFINITIONS,
+    SLASH_PALETTE_CATEGORIES,
+    RECENT_SLASH_LIMIT,
+} from './editor/blockTypes';
+import {
+    createBlock,
+    deserializeBlocks,
+    findBlockById,
+    getBlockAtPath,
+    indentBlock,
+    insertSiblingAfter,
+    outdentBlock,
+    removeBlockAtPath,
+    serializeBlocks,
+    setBlockAtPath,
+    transformBlockType,
+    updateBlockHtml,
+    updateBlockProps,
+} from './editor/blockUtils';
+import SlashCommandPalette from './editor/SlashCommandPalette';
+import InlineFormatToolbar from './editor/InlineFormatToolbar';
 
-const BLOCK_TYPES = {
-    HEADING1: 'heading1',
-    HEADING2: 'heading2',
-    HEADING3: 'heading3',
-    BULLET: 'bullet',
-    PARAGRAPH: 'paragraph',
+const defaultSlashState = {
+    open: false,
+    blockPath: [],
+    anchor: { top: 0, left: 0 },
+    query: '',
+    category: 'recent',
+    activeIndex: 0,
 };
 
-const createBlock = (type = BLOCK_TYPES.PARAGRAPH, text = '') => ({
-    id: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-        ? crypto.randomUUID()
-        : `block-${Math.random().toString(36).slice(2, 10)}`,
-    type,
-    text,
-});
-
-const detectBlock = (rawLine) => {
-    if (!rawLine || typeof rawLine !== 'string') {
-        return { type: BLOCK_TYPES.PARAGRAPH, text: '' };
-    }
-
-    if (rawLine.startsWith('# ')) {
-        return { type: BLOCK_TYPES.HEADING1, text: rawLine.slice(2) };
-    }
-    if (rawLine.startsWith('## ')) {
-        return { type: BLOCK_TYPES.HEADING2, text: rawLine.slice(3) };
-    }
-    if (rawLine.startsWith('### ')) {
-        return { type: BLOCK_TYPES.HEADING3, text: rawLine.slice(4) };
-    }
-    if (rawLine.startsWith('- ')) {
-        return { type: BLOCK_TYPES.BULLET, text: rawLine.slice(2) };
-    }
-
-    return { type: BLOCK_TYPES.PARAGRAPH, text: rawLine };
+const sanitizeHtmlInput = (html) => {
+    if (!html) return '';
+    return html
+        .replace(/<div><br><\/div>/g, '<br>')
+        .replace(/<div>/g, '<br>')
+        .replace(/<\/div>/g, '')
+        .replace(/\u00a0/g, ' ');
 };
 
-const parseContent = (rawContent = '') => {
-    if (!rawContent.trim()) {
-        return [createBlock()];
-    }
-
-    return rawContent.split(/\r?\n/).map((line) => {
-        const { type, text } = detectBlock(line);
-        return createBlock(type, text);
-    });
+const stripHtml = (html) => {
+    if (!html) return '';
+    return html
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 };
 
-const serializeBlocks = (blocks) => {
-    if (!Array.isArray(blocks) || blocks.length === 0) {
-        return '';
+const decodeHtml = (value) => {
+    if (!value) return '';
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return value
+            .replace(/&gt;/g, '>')
+            .replace(/&lt;/g, '<')
+            .replace(/&amp;/g, '&');
     }
+    const div = document.createElement('div');
+    div.innerHTML = value;
+    return div.textContent || div.innerText || '';
+};
 
+const blocksToPlainText = (blocks, depth = 0) => {
     return blocks
         .map((block) => {
-            switch (block.type) {
-                case BLOCK_TYPES.HEADING1:
-                    return `# ${block.text}`;
-                case BLOCK_TYPES.HEADING2:
-                    return `## ${block.text}`;
-                case BLOCK_TYPES.HEADING3:
-                    return `### ${block.text}`;
-                case BLOCK_TYPES.BULLET:
-                    return `- ${block.text}`;
-                default:
-                    return block.text;
-            }
+            const definition = BLOCK_DEFINITIONS[block.type];
+            const indent = depth > 0 ? `${' '.repeat(depth * 2)}- ` : '';
+            const text = stripHtml(block.html || '');
+            const childrenText = block.children?.length
+                ? `\n${blocksToPlainText(block.children, depth + 1)}`
+                : '';
+            return `${indent}${definition?.label || ''}${text ? `: ${text}` : ''}${childrenText}`;
         })
         .join('\n');
 };
 
-/**
- * MemoEditor Component
- *
- * NodeAssistantPanel과 동일한 오버레이 스타일을 사용하는 메모 편집 패널.
- * - 제목/내용을 분리하여 편집
- * - 테마에 따른 글래스 효과 적용
- * - 자동 저장(디바운스) 및 단축키 지원
- */
+const getThemePalette = (theme) => {
+    if (theme === 'dark') {
+        return {
+            canvas: '#1c1d20',
+            card: 'rgba(28, 29, 32, 0.92)',
+            border: 'rgba(255, 255, 255, 0.06)',
+            text: 'rgba(240, 242, 245, 0.95)',
+            secondary: 'rgba(161, 167, 175, 0.85)',
+            hint: 'rgba(120, 126, 135, 0.8)',
+        };
+    }
+    return {
+        canvas: '#f6f6f4',
+        card: '#ffffff',
+        border: 'rgba(17, 24, 39, 0.08)',
+        text: memoEditorTokens.color.text.primary,
+        secondary: memoEditorTokens.color.text.secondary,
+        hint: memoEditorTokens.color.text.hint,
+    };
+};
+
+const getCaretRect = () => {
+    if (typeof window === 'undefined') return null;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+        return null;
+    }
+    const range = selection.getRangeAt(0).cloneRange();
+    if (range.getClientRects().length === 0) {
+        const span = document.createElement('span');
+        span.textContent = '\u200b';
+        range.insertNode(span);
+        const rect = span.getBoundingClientRect();
+        span.parentNode?.removeChild(span);
+        return rect;
+    }
+    return range.getBoundingClientRect();
+};
+
+const findDeepestDescendantId = (block) => {
+    if (!block?.children || block.children.length === 0) {
+        return block?.id || null;
+    }
+    return findDeepestDescendantId(block.children[block.children.length - 1]);
+};
+
+const getPreviousBlockId = (blocks, path) => {
+    if (!Array.isArray(path) || path.length === 0) {
+        return null;
+    }
+    const index = path[path.length - 1];
+    if (index > 0) {
+        const prevPath = [...path];
+        prevPath[prevPath.length - 1] = index - 1;
+        let prevBlock = getBlockAtPath(blocks, prevPath);
+        return findDeepestDescendantId(prevBlock);
+    }
+    if (path.length > 1) {
+        return getPreviousBlockId(blocks, path.slice(0, -1));
+    }
+    return null;
+};
+
+const getNextBlockId = (blocks, path) => {
+    if (!Array.isArray(path) || path.length === 0) {
+        return null;
+    }
+    const index = path[path.length - 1];
+    const nextPath = [...path];
+    nextPath[nextPath.length - 1] = index + 1;
+    const sibling = getBlockAtPath(blocks, nextPath);
+    if (sibling) {
+        return sibling.id;
+    }
+    if (path.length > 1) {
+        return getNextBlockId(blocks, path.slice(0, -1));
+    }
+    return null;
+};
+
+const QUOTE_MARKERS = new Set(["'", '‘', '’']);
+
+const MARKER_MAP = new Map([
+    ['#', BLOCK_TYPES.HEADING_1],
+    ['##', BLOCK_TYPES.HEADING_2],
+    ['###', BLOCK_TYPES.HEADING_3],
+    ['-', BLOCK_TYPES.BULLETED_LIST],
+    ['1.', BLOCK_TYPES.NUMBERED_LIST],
+    ['[]', BLOCK_TYPES.TODO],
+    ['>', BLOCK_TYPES.TOGGLE],
+]);
+
+const LIST_TYPES = new Set([
+    BLOCK_TYPES.BULLETED_LIST,
+    BLOCK_TYPES.NUMBERED_LIST,
+    BLOCK_TYPES.TODO,
+]);
+
+const isCaretAtBlockStart = (element) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+        return false;
+    }
+    const { anchorNode } = selection;
+    if (!anchorNode || !element.contains(anchorNode)) {
+        return false;
+    }
+    try {
+        const range = selection.getRangeAt(0).cloneRange();
+        const startRange = document.createRange();
+        startRange.selectNodeContents(element);
+        startRange.collapse(true);
+        return (
+            range.compareBoundaryPoints(Range.START_TO_START, startRange) === 0
+            && range.compareBoundaryPoints(Range.END_TO_START, startRange) === 0
+        );
+    } catch (error) {
+        return false;
+    }
+};
+
+const toAlphaLabel = (index) => {
+    let n = index;
+    let result = '';
+    while (n >= 0) {
+        result = String.fromCharCode(97 + (n % 26)) + result;
+        n = Math.floor(n / 26) - 1;
+    }
+    return `${result}.`;
+};
+
+const toRomanLabel = (index) => {
+    const numerals = [
+        ['M', 1000], ['CM', 900], ['D', 500], ['CD', 400],
+        ['C', 100], ['XC', 90], ['L', 50], ['XL', 40],
+        ['X', 10], ['IX', 9], ['V', 5], ['IV', 4], ['I', 1],
+    ];
+    let num = index + 1;
+    let result = '';
+    numerals.forEach(([symbol, value]) => {
+        while (num >= value) {
+            result += symbol;
+            num -= value;
+        }
+    });
+    return `${result.toLowerCase()}.`;
+};
+
+const getOrderedLabel = (index, depth) => {
+    if (depth === 0) {
+        return `${index + 1}.`;
+    }
+    if (depth === 1) {
+        return toAlphaLabel(index);
+    }
+    if (depth === 2) {
+        return toRomanLabel(index);
+    }
+    return `${index + 1}.`;
+};
+
+const getIndentStyle = (level) => ({ marginLeft: `${level * 22}px` });
+
 const MemoEditor = ({
     memo,
     isVisible = false,
@@ -88,644 +257,999 @@ const MemoEditor = ({
     onUpdate,
     onDelete,
 }) => {
-    const [title, setTitle] = useState('');
-    const [content, setContent] = useState('');
-    const [blocks, setBlocks] = useState(() => parseContent(''));
     const { theme } = useTheme();
-    const titleRef = useRef(null);
-    const debounceRef = useRef(null);
-    const blockRefs = useRef(new Map());
+    const palette = useMemo(() => getThemePalette(theme), [theme]);
     const editorRef = useRef(null);
-    const [slashMenu, setSlashMenu] = useState({ open: false, blockId: null, index: -1, anchor: { top: 0, left: 0 }, activeIndex: 0 });
+    const titleRef = useRef(null);
+    const blockRefs = useRef(new Map());
+    const autosaveRef = useRef(null);
+    const pendingFocusRef = useRef(null);
+    const [title, setTitle] = useState('');
+    const [blocks, setBlocks] = useState(() => [createBlock(BLOCK_TYPES.TEXT)]);
+    const [slashState, setSlashState] = useState(defaultSlashState);
+    const [recentSlash, setRecentSlash] = useState([]);
+    const [formatState, setFormatState] = useState({ visible: false, position: { top: 0, left: 0 }, active: {} });
+
+    useEffect(() => {
+        if (!isVisible || !memo) {
+            return;
+        }
+        const initialTitle = memo.memo?.title || memo.keyword || '제목 없음';
+        const initialContent = memo.memo?.content || '';
+        const normalizedBlocks = deserializeBlocks(initialContent);
+        setTitle(initialTitle);
+        setBlocks(normalizedBlocks.length ? normalizedBlocks : [createBlock(BLOCK_TYPES.TEXT)]);
+        requestAnimationFrame(() => {
+            if (titleRef.current) {
+                titleRef.current.focus();
+                titleRef.current.select();
+            }
+        });
+    }, [memo, isVisible]);
+
+    useEffect(() => {
+        if (!memo || !isVisible || typeof onUpdate !== 'function') {
+            return () => undefined;
+        }
+        if (autosaveRef.current) {
+            clearTimeout(autosaveRef.current);
+        }
+        autosaveRef.current = setTimeout(() => {
+            const payload = serializeBlocks(blocks);
+            onUpdate({
+                id: memo.id,
+                memo: {
+                    title: title.trim(),
+                    content: payload,
+                    plainText: blocksToPlainText(blocks),
+                },
+            });
+        }, 420);
+
+        return () => {
+            if (autosaveRef.current) {
+                clearTimeout(autosaveRef.current);
+            }
+        };
+    }, [memo, isVisible, blocks, title, onUpdate]);
+
+    useEffect(() => () => {
+        if (autosaveRef.current) {
+            clearTimeout(autosaveRef.current);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!isVisible) return () => undefined;
+        const handleGlobalKey = (event) => {
+            if (slashState.open) {
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                onClose();
+            }
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('keydown', handleGlobalKey);
+        return () => window.removeEventListener('keydown', handleGlobalKey);
+    }, [isVisible, onClose, slashState.open]);
+
+    useEffect(() => {
+        const syncBlockContent = (items) => {
+            items.forEach((item) => {
+                const node = blockRefs.current.get(item.id);
+                if (node && node.innerHTML !== (item.html || '')) {
+                    node.innerHTML = item.html || '';
+                }
+                if (item.children && item.children.length > 0) {
+                    syncBlockContent(item.children);
+                }
+            });
+        };
+        syncBlockContent(blocks);
+    }, [blocks]);
+
+    const slashOptions = useMemo(() => {
+        return Object.keys(BLOCK_DEFINITIONS).map((type) => {
+            const definition = BLOCK_DEFINITIONS[type];
+            return {
+                id: type,
+                type,
+                label: definition.label,
+                description: definition.description,
+                icon: definition.icon,
+                category: definition.category,
+            };
+        });
+    }, []);
+
+    const setBlockRef = useCallback((block) => (node) => {
+        if (node) {
+            blockRefs.current.set(block.id, node);
+            if (node.innerHTML !== (block.html || '')) {
+                node.innerHTML = block.html || '';
+            }
+        } else {
+            blockRefs.current.delete(block.id);
+        }
+    }, []);
 
     const focusBlock = useCallback((blockId, position = 'end') => {
-        const node = blockRefs.current.get(blockId);
-        if (!node) return;
-
-        node.focus();
-
+        const element = blockRefs.current.get(blockId);
+        if (!element) return;
+        element.focus();
         const selection = window.getSelection();
         if (!selection) return;
-
         const range = document.createRange();
-        range.selectNodeContents(node);
+        range.selectNodeContents(element);
         range.collapse(position === 'start');
         selection.removeAllRanges();
         selection.addRange(range);
     }, []);
 
-    // 메모 데이터 초기화
-    useEffect(() => {
-        if (memo && isVisible) {
-            const initialTitle = memo.memo?.title || memo.keyword || '제목 없음';
-            const initialContent = typeof memo.memo?.content === 'string' ? memo.memo.content : '';
-            const initialBlocks = parseContent(initialContent);
-
-            setTitle(initialTitle);
-            setBlocks(initialBlocks);
-            setContent(serializeBlocks(initialBlocks));
-        }
-    }, [memo, isVisible]);
-
-    useEffect(() => {
-        const serialized = serializeBlocks(blocks);
-        setContent((prev) => (prev === serialized ? prev : serialized));
-    }, [blocks]);
-
-    const slashOptions = useMemo(() => ([
-        {
-            id: 'heading1',
-            label: '제목 1',
-            description: '큰 제목을 추가합니다',
-            type: BLOCK_TYPES.HEADING1,
-        },
-        {
-            id: 'heading2',
-            label: '제목 2',
-            description: '중간 크기의 제목',
-            type: BLOCK_TYPES.HEADING2,
-        },
-        {
-            id: 'heading3',
-            label: '제목 3',
-            description: '작은 제목',
-            type: BLOCK_TYPES.HEADING3,
-        },
-        {
-            id: 'bullet',
-            label: '글머리 기호 목록',
-            description: '항목 목록을 작성합니다',
-            type: BLOCK_TYPES.BULLET,
-        },
-        {
-            id: 'text',
-            label: '텍스트',
-            description: '기본 단락을 입력합니다',
-            type: BLOCK_TYPES.PARAGRAPH,
-        },
-    ]), []);
-
-    // 자동 저장 (디바운싱)
-    useEffect(() => {
-        if (!memo || !isVisible) return;
-
-        if (debounceRef.current) {
-            clearTimeout(debounceRef.current);
-        }
-
-        debounceRef.current = setTimeout(() => {
-            if (typeof onUpdate === 'function') {
-                onUpdate({
-                    id: memo.id,
-                    memo: {
-                        title: title.trim(),
-                        content: content.trim(),
-                    },
-                });
-            }
-        }, 300);
-
-        return () => {
-            if (debounceRef.current) {
-                clearTimeout(debounceRef.current);
-            }
-        };
-    }, [title, content, memo, isVisible, onUpdate]);
-
-    useEffect(() => () => {
-        if (debounceRef.current) {
-            clearTimeout(debounceRef.current);
-        }
+    const closeSlashPalette = useCallback(() => {
+        setSlashState(defaultSlashState);
     }, []);
 
-    const themeStyles = useMemo(() => {
-        switch (theme) {
-            case 'dark':
-                return {
-                    canvas: '#1f1f24',
-                    card: 'rgba(255, 255, 255, 0.05)',
-                    cardBorder: 'rgba(255, 255, 255, 0.06)',
-                    text: 'rgba(248, 250, 252, 0.95)',
-                    muted: 'rgba(148, 163, 184, 0.7)',
-                    accent: '#38bdf8',
-                    iconBg: 'rgba(255, 255, 255, 0.08)',
-                    pillBg: 'rgba(148, 163, 184, 0.15)',
-                    pillText: 'rgba(226, 232, 240, 0.85)',
-                    divider: 'rgba(148, 163, 184, 0.25)',
-                };
-            case 'light':
-            default:
-                return {
-                    canvas: '#f7f6f3',
-                    card: '#ffffff',
-                    cardBorder: 'rgba(15, 23, 42, 0.08)',
-                    text: 'rgba(15, 23, 42, 0.92)',
-                    muted: 'rgba(100, 116, 139, 0.9)',
-                    accent: '#2563eb',
-                    iconBg: '#ffffff',
-                    pillBg: 'rgba(148, 163, 184, 0.16)',
-                    pillText: 'rgba(71, 85, 105, 0.85)',
-                    divider: 'rgba(148, 163, 184, 0.25)',
-                };
-        }
-    }, [theme]);
-
-    const openSlashMenu = useCallback((blockId, index) => {
-        const node = blockRefs.current.get(blockId);
-        if (!node || !editorRef.current || slashOptions.length === 0) {
+    const openSlashPalette = useCallback((blockPath) => {
+        const caretRect = getCaretRect();
+        const editorRect = editorRef.current?.getBoundingClientRect();
+        if (!caretRect || !editorRect) {
             return;
         }
-
-        const blockRect = node.getBoundingClientRect();
-        const editorRect = editorRef.current.getBoundingClientRect();
-
-        setSlashMenu({
+        setSlashState({
             open: true,
-            blockId,
-            index,
+            blockPath,
             anchor: {
-                top: blockRect.bottom - editorRect.top + 8,
-                left: blockRect.left - editorRect.left,
+                top: caretRect.bottom - editorRect.top + memoEditorTokens.spacing.sm,
+                left: caretRect.left - editorRect.left,
             },
+            query: '',
+            category: 'recent',
             activeIndex: 0,
         });
-    }, [slashOptions.length]);
-
-    const closeSlashMenu = useCallback(() => {
-        setSlashMenu({ open: false, blockId: null, index: -1, anchor: { top: 0, left: 0 }, activeIndex: 0 });
     }, []);
 
-
-
-    useEffect(() => {
-        blocks.forEach((block) => {
-            const node = blockRefs.current.get(block.id);
-            if (node && node.textContent !== block.text) {
-                node.textContent = block.text || '';
-            }
-        });
-    }, [blocks]);
-
-    // 키보드 단축키 처리
-    useEffect(() => {
-        if (!isVisible) return;
-
-        const handleKeyDown = (event) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                onClose();
-            } else if ((event.metaKey || event.ctrlKey) && event.key === 's') {
-                event.preventDefault();
-            } else if (event.key === 'Tab' && event.target === titleRef.current) {
-                event.preventDefault();
-                const firstBlock = blocks[0];
-                if (firstBlock) {
-                    requestAnimationFrame(() => focusBlock(firstBlock.id, 'start'));
-                }
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [blocks, focusBlock, isVisible, onClose]);
-
-    const setBlockRef = useCallback((block) => (
-        (node) => {
-            if (node) {
-                blockRefs.current.set(block.id, node);
-                if (node.textContent !== (block.text || '')) {
-                    node.textContent = block.text || '';
-                }
-            } else {
-                blockRefs.current.delete(block.id);
-            }
-        }
-    ), []);
-
-    const getCaretOffset = (element) => {
+    const syncRangeBlockHtml = useCallback(() => {
         const selection = window.getSelection();
-        if (!selection || !selection.anchorNode) {
-            return (element.textContent || '').length;
+        if (!selection || selection.rangeCount === 0) {
+            return;
         }
-
-        if (!element.contains(selection.anchorNode)) {
-            return (element.textContent || '').length;
+        let anchorNode = selection.anchorNode;
+        if (!anchorNode) return;
+        if (anchorNode.nodeType === Node.TEXT_NODE) {
+            anchorNode = anchorNode.parentElement;
         }
-
-        return selection.anchorOffset ?? (element.textContent || '').length;
-    };
-
-    const updateBlockText = (blockId, index, nextText) => {
-        const sanitized = nextText.replace(/\u00a0/g, ' ');
+        if (!anchorNode) return;
+        const blockRoot = anchorNode.closest('[data-block-id]');
+        if (!blockRoot) return;
+        const blockId = blockRoot.getAttribute('data-block-id');
         setBlocks((prev) => {
-            const draft = [...prev];
-            const targetIndex = index < draft.length && draft[index].id === blockId
-                ? index
-                : draft.findIndex((item) => item.id === blockId);
+            const located = findBlockById(prev, blockId);
+            if (!located) return prev;
+            return updateBlockHtml(prev, located.path, sanitizeHtmlInput(blockRoot.innerHTML));
+        });
+    }, []);
 
-            if (targetIndex === -1) {
-                return prev;
+    const handleInlineFormat = useCallback((command) => {
+        if (typeof document === 'undefined') return;
+        if (command === 'code') {
+            document.execCommand('formatBlock', false, 'pre');
+        } else {
+            document.execCommand(command, false, null);
+        }
+        syncRangeBlockHtml();
+    }, [syncRangeBlockHtml]);
+
+    const handleLinkCreate = useCallback(() => {
+        if (typeof document === 'undefined') return;
+        const url = window.prompt('링크 주소를 입력하세요');
+        if (!url) return;
+        document.execCommand('createLink', false, url);
+        syncRangeBlockHtml();
+    }, [syncRangeBlockHtml]);
+
+    const handleLinkRemove = useCallback(() => {
+        if (typeof document === 'undefined') return;
+        document.execCommand('unlink');
+        syncRangeBlockHtml();
+    }, [syncRangeBlockHtml]);
+
+    const handleColor = useCallback((color) => {
+        if (typeof document === 'undefined') return;
+        document.execCommand('foreColor', false, color);
+        syncRangeBlockHtml();
+    }, [syncRangeBlockHtml]);
+
+    const handleHighlight = useCallback((color) => {
+        if (typeof document === 'undefined') return;
+        document.execCommand('hiliteColor', false, color);
+        syncRangeBlockHtml();
+    }, [syncRangeBlockHtml]);
+
+    useEffect(() => {
+        if (!isVisible) return () => undefined;
+        const handleSelectionChange = () => {
+            const selection = window.getSelection();
+            if (!editorRef.current || !selection || selection.rangeCount === 0) {
+                setFormatState((prev) => ({ ...prev, visible: false }));
+                return;
             }
-
-            draft[targetIndex] = {
-                ...draft[targetIndex],
-                text: sanitized,
+            if (selection.isCollapsed) {
+                setFormatState((prev) => ({ ...prev, visible: false }));
+                return;
+            }
+            const anchorNode = selection.anchorNode;
+            if (!anchorNode) {
+                setFormatState((prev) => ({ ...prev, visible: false }));
+                return;
+            }
+            const editorNode = editorRef.current;
+            if (!editorNode.contains(anchorNode)) {
+                setFormatState((prev) => ({ ...prev, visible: false }));
+                return;
+            }
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const editorRect = editorNode.getBoundingClientRect();
+            const position = {
+                top: rect.top - editorRect.top - 48,
+                left: rect.left - editorRect.left + rect.width / 2 - 120,
             };
-            return draft;
-        });
+            const active = {
+                bold: document.queryCommandState('bold'),
+                italic: document.queryCommandState('italic'),
+                strike: document.queryCommandState('strikeThrough'),
+                code: document.queryCommandState('formatBlock'),
+                link: document.queryCommandState('createLink'),
+            };
+            setFormatState({ visible: true, position, active });
+        };
+        document.addEventListener('selectionchange', handleSelectionChange);
+        return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    }, [isVisible]);
 
-        if (sanitized === '/' && slashOptions.length > 0) {
-            requestAnimationFrame(() => openSlashMenu(blockId, index));
-        } else if (slashMenu.open && slashMenu.blockId === blockId && sanitized !== '/') {
-            closeSlashMenu();
-        }
-    };
+    const ensureBlockCount = useCallback((nextBlocks) => {
+        return nextBlocks.length ? nextBlocks : [createBlock(BLOCK_TYPES.TEXT)];
+    }, []);
 
-    const convertBlockType = (index, block, nextType) => {
-        setBlocks((prev) => {
-            const draft = [...prev];
-            const targetIndex = draft[index] && draft[index].id === block.id
-                ? index
-                : draft.findIndex((item) => item.id === block.id);
-            if (targetIndex === -1) {
-                return prev;
-            }
-            draft[targetIndex] = { ...draft[targetIndex], type: nextType, text: '' };
-            return draft;
-        });
-        requestAnimationFrame(() => focusBlock(block.id, 'start'));
-    };
+    const handleInsertBlockAfter = useCallback((path, type = BLOCK_TYPES.TEXT) => {
+        const newBlock = createBlock(type);
+        setBlocks((prev) => ensureBlockCount(insertSiblingAfter(prev, path, newBlock)));
+        requestAnimationFrame(() => focusBlock(newBlock.id, 'start'));
+    }, [ensureBlockCount, focusBlock]);
 
-    const selectSlashOption = useCallback((option, blockId, index) => {
-        const target = blocks[index] && blocks[index].id === blockId
-            ? blocks[index]
-            : blocks.find((item) => item.id === blockId);
-        if (!target) {
-            closeSlashMenu();
+    const handleBlockInput = useCallback((path, html) => {
+        setBlocks((prev) => updateBlockHtml(prev, path, sanitizeHtmlInput(html)));
+    }, []);
+
+    const handleDeleteBlock = useCallback((path, fallbackBlockId = null) => {
+        const currentBlock = getBlockAtPath(blocks, path);
+        const currentBlockId = currentBlock?.id;
+        const previousId = getPreviousBlockId(blocks, path);
+        const nextId = getNextBlockId(blocks, path);
+
+        const isOnlyBlock = previousId === null && nextId === null;
+        if (isOnlyBlock) {
+            setBlocks((prev) => setBlockAtPath(prev, path, (current) => transformBlockType(current, BLOCK_TYPES.TEXT)));
+            requestAnimationFrame(() => focusBlock(currentBlockId || blocks[0]?.id, 'start'));
             return;
         }
 
-        switch (option.type) {
-            case BLOCK_TYPES.HEADING1:
-            case BLOCK_TYPES.HEADING2:
-            case BLOCK_TYPES.HEADING3:
-            case BLOCK_TYPES.BULLET:
-            case BLOCK_TYPES.PARAGRAPH:
-                convertBlockType(index, target, option.type);
-                break;
-            default:
-                break;
-        }
-        closeSlashMenu();
-    }, [blocks, closeSlashMenu, convertBlockType]);
+        let resolvedFocusId = fallbackBlockId || previousId || nextId;
+        setBlocks((prev) => {
+            const updated = ensureBlockCount(removeBlockAtPath(prev, path));
+            if (!resolvedFocusId && updated.length > 0) {
+                const targetIndex = Math.min(path[0], updated.length - 1);
+                resolvedFocusId = updated[targetIndex].id;
+            }
+            pendingFocusRef.current = resolvedFocusId;
+            return updated;
+        });
 
-    const handleBlockInput = (blockId, index, value) => {
-        updateBlockText(blockId, index, value);
-    };
+        requestAnimationFrame(() => {
+            if (pendingFocusRef.current) {
+                focusBlock(pendingFocusRef.current, 'end');
+                pendingFocusRef.current = null;
+            }
+        });
+    }, [blocks, ensureBlockCount, focusBlock]);
 
-    const handleBlockKeyDown = (event, index) => {
-        const block = blocks[index];
-        if (!block) return;
+    const handleToggleExpanded = useCallback((path, expanded) => {
+        setBlocks((prev) => updateBlockProps(prev, path, { expanded }));
+    }, []);
+
+    const handleTodoCheck = useCallback((path, checked) => {
+        setBlocks((prev) => updateBlockProps(prev, path, { checked }));
+    }, []);
+
+    const handleBlockKeyDown = useCallback((event, block, path) => {
+        if (event.defaultPrevented) return;
 
         const element = blockRefs.current.get(block.id);
-        if (!element) return;
 
-        const textContent = element.textContent || '';
-        const caretOffset = getCaretOffset(element);
+        if (event.key === ' ' && !event.metaKey && !event.ctrlKey && block.type === BLOCK_TYPES.TEXT) {
+            const markerText = decodeHtml(stripHtml(block.html || '')).trim();
+            const normalizedMarker = markerText.replace(/\s+/g, '');
+            const targetType = MARKER_MAP.get(normalizedMarker) || (QUOTE_MARKERS.has(normalizedMarker) ? BLOCK_TYPES.QUOTE : null);
 
-        if (slashMenu.open && slashMenu.blockId === block.id) {
-            if (event.key === 'ArrowDown') {
+            if (targetType) {
                 event.preventDefault();
-                setSlashMenu((prev) => ({
-                    ...prev,
-                    activeIndex: (prev.activeIndex + 1) % slashOptions.length,
+                setBlocks((prev) => setBlockAtPath(prev, path, (current) => {
+                    const transformed = transformBlockType(current, targetType);
+                    return { ...transformed, html: '' };
                 }));
+                requestAnimationFrame(() => {
+                    focusBlock(block.id, 'start');
+                    const node = blockRefs.current.get(block.id);
+                    if (node) {
+                        node.textContent = '';
+                    }
+                });
                 return;
             }
-            if (event.key === 'ArrowUp') {
+        }
+
+        if (slashState.open && event.key === 'Escape') {
+            event.preventDefault();
+            closeSlashPalette();
+            return;
+        }
+
+        if (event.key === '/' && !event.metaKey && !event.ctrlKey) {
+            event.preventDefault();
+            openSlashPalette(path);
+            return;
+        }
+
+        if (event.key === 'Tab') {
+            event.preventDefault();
+            setBlocks((prev) => ensureBlockCount(
+                event.shiftKey ? outdentBlock(prev, path) : indentBlock(prev, path),
+            ));
+            return;
+        }
+
+        if (event.key === 'Backspace') {
+            if (!element) return;
+            if (block.type !== BLOCK_TYPES.TEXT && isCaretAtBlockStart(element)) {
                 event.preventDefault();
-                setSlashMenu((prev) => ({
-                    ...prev,
-                    activeIndex: (prev.activeIndex - 1 + slashOptions.length) % slashOptions.length,
-                }));
+                const restoredHtml = sanitizeHtmlInput(element.innerHTML);
+                setBlocks((prev) => setBlockAtPath(prev, path, (current) => ({
+                    ...transformBlockType(current, BLOCK_TYPES.TEXT),
+                    html: restoredHtml,
+                })));
+                requestAnimationFrame(() => focusBlock(block.id, 'start'));
                 return;
             }
-            if (event.key === 'Enter') {
+            const text = stripHtml(element.innerHTML);
+            if (!text) {
                 event.preventDefault();
-                const option = slashOptions[slashMenu.activeIndex];
-                if (option) {
-                    selectSlashOption(option, block.id, index);
+                const previousId = getPreviousBlockId(blocks, path);
+                const nextId = getNextBlockId(blocks, path);
+                const isOnlyBlock = previousId === null && nextId === null;
+
+                if (isOnlyBlock) {
+                    setBlocks((prev) => setBlockAtPath(prev, path, (current) => transformBlockType(current, BLOCK_TYPES.TEXT)));
+                    requestAnimationFrame(() => focusBlock(block.id, 'start'));
+                    return;
+                }
+
+                if (block.type !== BLOCK_TYPES.TEXT) {
+                    setBlocks((prev) => setBlockAtPath(prev, path, (current) => transformBlockType(current, BLOCK_TYPES.TEXT)));
+                    requestAnimationFrame(() => focusBlock(block.id, 'start'));
+                } else {
+                    handleDeleteBlock(path);
                 }
                 return;
             }
-            if (event.key === 'Escape') {
+            if (LIST_TYPES.has(block.type) && isCaretAtBlockStart(element) && path.length > 0) {
                 event.preventDefault();
-                closeSlashMenu();
-                return;
+                const currentId = block.id;
+                setBlocks((prev) => {
+                    const updated = ensureBlockCount(outdentBlock(prev, path));
+                    pendingFocusRef.current = currentId;
+                    return updated;
+                });
+                requestAnimationFrame(() => {
+                    if (pendingFocusRef.current) {
+                        focusBlock(pendingFocusRef.current, 'end');
+                        pendingFocusRef.current = null;
+                    }
+                });
             }
-        } else if (slashMenu.open && slashMenu.blockId !== block.id) {
-            closeSlashMenu();
-        }
-
-        if (event.key === ' ' && caretOffset === textContent.length) {
-            if (textContent === '#' && block.type === BLOCK_TYPES.PARAGRAPH) {
-                event.preventDefault();
-                element.textContent = '';
-                convertBlockType(index, block, BLOCK_TYPES.HEADING1);
-                return;
-            }
-            if (textContent === '##' && block.type === BLOCK_TYPES.PARAGRAPH) {
-                event.preventDefault();
-                element.textContent = '';
-                convertBlockType(index, block, BLOCK_TYPES.HEADING2);
-                return;
-            }
-            if (textContent === '###' && block.type === BLOCK_TYPES.PARAGRAPH) {
-                event.preventDefault();
-                element.textContent = '';
-                convertBlockType(index, block, BLOCK_TYPES.HEADING3);
-                return;
-            }
-            if (textContent === '-' && block.type === BLOCK_TYPES.PARAGRAPH) {
-                event.preventDefault();
-                element.textContent = '';
-                convertBlockType(index, block, BLOCK_TYPES.BULLET);
-                return;
-            }
+            return;
         }
 
         if (event.key === 'Enter' && !event.shiftKey) {
-            const trimmed = textContent.trim();
-
-            if (block.type === BLOCK_TYPES.PARAGRAPH) {
-                if (trimmed === '#') {
+            if (block.type === BLOCK_TYPES.TEXT) {
+                const marker = decodeHtml(stripHtml(block.html || '')).trim();
+                if (marker === '---') {
                     event.preventDefault();
-                    element.textContent = '';
-                    setBlocks((prev) => {
-                        const draft = [...prev];
-                        if (draft[index] && draft[index].id === block.id) {
-                            draft[index] = { ...draft[index], type: BLOCK_TYPES.HEADING1, text: '' };
-                        }
-                        return draft;
-                    });
-                    requestAnimationFrame(() => focusBlock(block.id, 'start'));
-                    return;
-                }
-                if (trimmed === '##') {
-                    event.preventDefault();
-                    element.textContent = '';
-                    setBlocks((prev) => {
-                        const draft = [...prev];
-                        if (draft[index] && draft[index].id === block.id) {
-                            draft[index] = { ...draft[index], type: BLOCK_TYPES.HEADING2, text: '' };
-                        }
-                        return draft;
-                    });
-                    requestAnimationFrame(() => focusBlock(block.id, 'start'));
-                    return;
-                }
-                if (trimmed === '###') {
-                    event.preventDefault();
-                    element.textContent = '';
-                    setBlocks((prev) => {
-                        const draft = [...prev];
-                        if (draft[index] && draft[index].id === block.id) {
-                            draft[index] = { ...draft[index], type: BLOCK_TYPES.HEADING3, text: '' };
-                        }
-                        return draft;
-                    });
-                    requestAnimationFrame(() => focusBlock(block.id, 'start'));
-                    return;
-                }
-                if (trimmed === '-') {
-                    event.preventDefault();
-                    element.textContent = '';
-                    setBlocks((prev) => {
-                        const draft = [...prev];
-                        if (draft[index] && draft[index].id === block.id) {
-                            draft[index] = { ...draft[index], type: BLOCK_TYPES.BULLET, text: '' };
-                        }
-                        return draft;
-                    });
-                    requestAnimationFrame(() => focusBlock(block.id, 'start'));
-                    return;
-                }
-            }
-
-            event.preventDefault();
-            const before = textContent.slice(0, caretOffset);
-            const after = textContent.slice(caretOffset);
-
-            if (block.type === BLOCK_TYPES.BULLET && !before && !after) {
-                setBlocks((prev) => {
-                    const draft = [...prev];
-                    const target = draft[index];
-                    if (!target) {
-                        return prev;
+                    if (element) {
+                        element.textContent = '';
                     }
-                    draft[index] = { ...target, type: BLOCK_TYPES.PARAGRAPH, text: '' };
-                    return draft;
-                });
-                requestAnimationFrame(() => focusBlock(block.id, 'start'));
-                return;
-            }
-
-            const newBlockType = block.type === BLOCK_TYPES.BULLET ? BLOCK_TYPES.BULLET : BLOCK_TYPES.PARAGRAPH;
-            const newBlock = createBlock(newBlockType, after);
-
-            setBlocks((prev) => {
-                const draft = [...prev];
-                const target = draft[index];
-                if (!target) {
-                    return prev;
+                    setBlocks((prev) => setBlockAtPath(prev, path, (current) => transformBlockType(current, BLOCK_TYPES.DIVIDER)));
+                    requestAnimationFrame(() => handleInsertBlockAfter(path));
+                    return;
                 }
+            }
+            event.preventDefault();
+            const persistType = [
+                BLOCK_TYPES.BULLETED_LIST,
+                BLOCK_TYPES.NUMBERED_LIST,
+                BLOCK_TYPES.TODO,
+            ].includes(block.type) ? block.type : BLOCK_TYPES.TEXT;
+            handleInsertBlockAfter(path, persistType);
+            return;
+        }
+    }, [slashState.open, closeSlashPalette, openSlashPalette, setBlocks, ensureBlockCount, indentBlock, outdentBlock, blockRefs, blocks, focusBlock, handleInsertBlockAfter]);
 
-                draft[index] = { ...target, text: before };
-                draft.splice(index + 1, 0, newBlock);
-                return draft;
-            });
-
-            requestAnimationFrame(() => focusBlock(newBlock.id, 'start'));
+    const handleSlashSelect = useCallback((option) => {
+        if (!slashState.open) return;
+        const { blockPath } = slashState;
+        if (!Array.isArray(blockPath) || blockPath.length === 0) {
+            closeSlashPalette();
             return;
         }
 
-        if (event.key === 'Backspace' && caretOffset === 0) {
-            if (!textContent && block.type !== BLOCK_TYPES.PARAGRAPH) {
-                event.preventDefault();
-                setBlocks((prev) => {
-                    const draft = [...prev];
-                    if (draft[index] && draft[index].id === block.id) {
-                        draft[index] = { ...draft[index], type: BLOCK_TYPES.PARAGRAPH };
-                    }
-                    return draft;
-                });
-                requestAnimationFrame(() => focusBlock(block.id, 'start'));
-                return;
+        let focusId = null;
+
+        setBlocks((prev) => {
+            const current = getBlockAtPath(prev, blockPath);
+            if (!current) {
+                return prev;
             }
 
-            if (!textContent && index > 0) {
-                event.preventDefault();
-                const prevBlock = blocks[index - 1];
-                setBlocks((prev) => {
-                    const draft = [...prev];
-                    const removed = draft.splice(index, 1)[0];
-                    const target = draft[index - 1];
-                    if (target && removed) {
-                        draft[index - 1] = { ...target, text: `${target.text}${removed.text}` };
-                    }
-                    return draft.length ? draft : [createBlock()];
-                });
-                if (prevBlock) {
-                    requestAnimationFrame(() => focusBlock(prevBlock.id, 'end'));
-                }
+            const definition = BLOCK_DEFINITIONS[option.type];
+            if (definition?.isVoid) {
+                const voidBlock = { ...transformBlockType(current, option.type), html: '' };
+                const replaced = setBlockAtPath(prev, blockPath, () => voidBlock);
+                const nextBlock = createBlock(BLOCK_TYPES.TEXT);
+                focusId = nextBlock.id;
+                return ensureBlockCount(insertSiblingAfter(replaced, blockPath, nextBlock));
             }
+
+            const transformed = transformBlockType(current, option.type);
+            focusId = transformed.id;
+            return setBlockAtPath(prev, blockPath, () => transformed);
+        });
+
+        setRecentSlash((prev) => {
+            const next = [option.id, ...prev.filter((id) => id !== option.id)];
+            return next.slice(0, RECENT_SLASH_LIMIT);
+        });
+
+        closeSlashPalette();
+
+        if (focusId) {
+            requestAnimationFrame(() => focusBlock(focusId, 'end'));
         }
-    };
+    }, [slashState, closeSlashPalette, setBlocks, ensureBlockCount, focusBlock]);
 
-    const blockStyles = {
-        [BLOCK_TYPES.HEADING1]: 'text-3xl font-semibold tracking-tight my-2',
-        [BLOCK_TYPES.HEADING2]: 'text-2xl font-semibold my-2',
-        [BLOCK_TYPES.HEADING3]: 'text-xl font-semibold my-1',
-        [BLOCK_TYPES.BULLET]: 'text-base my-1',
-        [BLOCK_TYPES.PARAGRAPH]: 'text-base my-1',
-    };
+    const renderBlock = useCallback((block, path, level = 0) => {
+        const definition = BLOCK_DEFINITIONS[block.type] || BLOCK_DEFINITIONS[BLOCK_TYPES.TEXT];
+        const commonClass = 'outline-none focus-visible:outline-none text-[16px] leading-relaxed';
+        const placeholder = definition.placeholder;
+        const handleKeyDown = (event) => handleBlockKeyDown(event, block, path);
+        const onInput = (event) => handleBlockInput(path, event.currentTarget.innerHTML);
 
-    const placeholders = {
-        [BLOCK_TYPES.HEADING1]: '제목 1',
-        [BLOCK_TYPES.HEADING2]: '제목 2',
-        [BLOCK_TYPES.HEADING3]: '제목 3',
-        [BLOCK_TYPES.BULLET]: '항목',
-        [BLOCK_TYPES.PARAGRAPH]: '내용을 입력하세요',
-    };
-
-    const baseBlockClass = 'relative min-h-[1.75rem] whitespace-pre-wrap break-words outline-none empty:before:absolute empty:before:left-0 empty:before:top-0 empty:before:text-slate-400 empty:before:pointer-events-none empty:before:select-none empty:before:content-[attr(data-placeholder)]';
-
-    const renderBlock = (block, index) => {
-        const className = `${baseBlockClass} ${blockStyles[block.type] || blockStyles[BLOCK_TYPES.PARAGRAPH]}`;
-        const placeholder = placeholders[block.type] || placeholders[BLOCK_TYPES.PARAGRAPH];
-        const editableProps = {
+        const createEditableProps = (className, extra = {}) => ({
             ref: setBlockRef(block),
+            'data-block-id': block.id,
             contentEditable: true,
             suppressContentEditableWarning: true,
-            onInput: (event) => handleBlockInput(block.id, index, event.currentTarget.textContent || ''),
-            onKeyDown: (event) => handleBlockKeyDown(event, index),
-            'data-block-id': block.id,
             'data-placeholder': placeholder,
+            onInput,
+            onKeyDown: handleKeyDown,
             className,
-        };
+            ...extra,
+        });
 
-        if (block.type === BLOCK_TYPES.BULLET) {
-            return (
-                <div key={block.id} className="flex items-start gap-3">
-                    <span className="mt-1 text-base text-slate-400">•</span>
-                    <div {...editableProps} />
+        const blockBody = (() => {
+            switch (block.type) {
+                case BLOCK_TYPES.HEADING_1:
+                    return (
+                        <div
+                            {...createEditableProps(`${commonClass} text-[32px] leading-[1.25] font-semibold tracking-tight empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                        />
+                    );
+                case BLOCK_TYPES.HEADING_2:
+                    return (
+                        <div
+                            {...createEditableProps(`${commonClass} text-[26px] leading-[1.3] font-semibold empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                        />
+                    );
+                case BLOCK_TYPES.HEADING_3:
+                    return (
+                        <div
+                            {...createEditableProps(`${commonClass} text-[22px] leading-[1.35] font-semibold empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                        />
+                    );
+                case BLOCK_TYPES.TODO:
+                    return (
+                        <div className="flex items-start gap-3" style={getIndentStyle(level)}>
+                            <input
+                                type="checkbox"
+                                checked={!!block.props?.checked}
+                                onChange={(event) => handleTodoCheck(path, event.target.checked)}
+                                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-2 focus:ring-offset-0"
+                            />
+                            <div
+                                {...createEditableProps(`${commonClass} empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)] ${block.props?.checked ? 'text-slate-400 line-through' : ''}`)}
+                            />
+                        </div>
+                    );
+                case BLOCK_TYPES.BULLETED_LIST:
+                    return (
+                        <div className="flex items-start gap-3" style={getIndentStyle(level)}>
+                            <span className="mt-2 h-2 w-2 rounded-full bg-slate-400"></span>
+                            <div
+                                {...createEditableProps(`${commonClass} empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                            />
+                        </div>
+                    );
+                case BLOCK_TYPES.NUMBERED_LIST:
+                    return (
+                        <div className="flex items-start gap-3" style={getIndentStyle(level)}>
+                            <span className="mt-1 min-w-[28px] text-right text-sm font-semibold text-slate-500">
+                                {getOrderedLabel(path[path.length - 1], level)}
+                            </span>
+                            <div
+                                {...createEditableProps(`${commonClass} empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                            />
+                        </div>
+                    );
+                case BLOCK_TYPES.TOGGLE:
+                    return (
+                        <div className="flex flex-col gap-2" style={getIndentStyle(level)}>
+                            <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[16px] font-medium text-slate-600 hover:bg-slate-100/70"
+                                onClick={() => handleToggleExpanded(path, !block.props?.expanded)}
+                            >
+                                <span className="text-sm text-slate-400 transition-transform" style={{ transform: block.props?.expanded === false ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                                    ▾
+                                </span>
+                                <div
+                                    {...createEditableProps(`${commonClass} empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                                />
+                            </button>
+                            {block.props?.expanded !== false && block.children?.length > 0 && (
+                                <div className="ml-6 border-l border-slate-200 pl-4">
+                                    {block.children.map((child, index) => renderBlock(child, [...path, index], level + 1))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                case BLOCK_TYPES.QUOTE:
+                    return (
+                        <div className="border-l-4 border-slate-300/80 pl-4 text-slate-600">
+                            <div
+                                {...createEditableProps(`${commonClass} italic empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                            />
+                        </div>
+                    );
+                case BLOCK_TYPES.DIVIDER:
+                    return <div className="my-4 h-px w-full bg-slate-200" />;
+                case BLOCK_TYPES.CALLOUT:
+                    return (
+                        <div
+                            className="flex gap-3 rounded-xl border px-4 py-3 text-[15px]"
+                            style={{
+                                backgroundColor: memoEditorTokens.color.tint[block.props?.tint || 'blue'],
+                                borderColor: palette.border,
+                            }}
+                        >
+                            <button
+                                type="button"
+                                className="text-lg"
+                                onClick={() => {
+                                    const icon = window.prompt('아이콘을 입력하세요', block.props?.icon || '💡');
+                                    if (!icon) return;
+                                    setBlocks((prev) => updateBlockProps(prev, path, { icon }));
+                                }}
+                            >
+                                {block.props?.icon || '💡'}
+                            </button>
+                            <div
+                                {...createEditableProps(`${commonClass} empty:before:text-slate-500 empty:before:content-[attr(data-placeholder)]`)}
+                            />
+                        </div>
+                    );
+                case BLOCK_TYPES.CODE:
+                    return (
+                        <pre className="overflow-auto rounded-lg border border-slate-200 bg-slate-900/90 p-4 text-[13px] text-slate-100">
+                            <code
+                                ref={setBlockRef(block.id)}
+                                data-block-id={block.id}
+                                contentEditable
+                                suppressContentEditableWarning
+                                className="whitespace-pre"
+                                onInput={onInput}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Tab') {
+                                        event.preventDefault();
+                                        document.execCommand('insertText', false, '    ');
+                                    }
+                                }}
+                            >
+                                {block.html}
+                            </code>
+                        </pre>
+                    );
+                case BLOCK_TYPES.IMAGE:
+                    return (
+                        <div className="flex flex-col items-center gap-2">
+                            {block.props?.url ? (
+                                <img
+                                    src={block.props.url}
+                                    alt={block.props?.caption || 'image'}
+                                    className="max-h-80 w-full rounded-lg object-cover"
+                                />
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="flex h-40 w-full items-center justify-center rounded-lg border border-dashed border-slate-300 text-slate-500"
+                                    onClick={() => {
+                                        const url = window.prompt('이미지 URL을 입력하세요');
+                                        if (!url) return;
+                                        setBlocks((prev) => updateBlockProps(prev, path, { url }));
+                                    }}
+                                >
+                                    이미지를 추가하려면 클릭하세요
+                                </button>
+                            )}
+                            <div
+                                {...createEditableProps('w-full text-center text-sm text-slate-500', {
+                                    'data-placeholder': '캡션을 입력하세요',
+                                })}
+                            />
+                        </div>
+                    );
+                case BLOCK_TYPES.FILE:
+                    return (
+                        <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-slate-700">{block.props?.name || '파일 이름'}</span>
+                                <span className="text-xs text-slate-400">{block.props?.size || '크기 정보 없음'}</span>
+                            </div>
+                            <button
+                                type="button"
+                                className="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-600"
+                                onClick={() => {
+                                    const name = window.prompt('파일 이름', block.props?.name || '');
+                                    const size = window.prompt('파일 크기', block.props?.size || '');
+                                    const url = window.prompt('파일 URL(선택)', block.props?.url || '');
+                                    setBlocks((prev) => updateBlockProps(prev, path, { name, size, url }));
+                                }}
+                            >
+                                정보 수정
+                            </button>
+                        </div>
+                    );
+                case BLOCK_TYPES.BOOKMARK:
+                    return (
+                        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <input
+                                type="url"
+                                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                placeholder="링크 URL을 입력하세요"
+                                value={block.props?.url || ''}
+                                onChange={(event) => setBlocks((prev) => updateBlockProps(prev, path, { url: event.target.value }))}
+                            />
+                            <div
+                                {...createEditableProps(`${commonClass} text-sm text-slate-600 empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`, {
+                                    'data-placeholder': '설명을 입력하세요',
+                                })}
+                            />
+                            {block.props?.url && (
+                                <a
+                                    href={block.props.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-slate-500 underline"
+                                >
+                                    {block.props.url}
+                                </a>
+                            )}
+                        </div>
+                    );
+                case BLOCK_TYPES.TABLE:
+                    return (
+                        <div className="overflow-x-auto">
+                            <table className="w-full table-fixed border-collapse rounded-lg border border-slate-200">
+                                <tbody>
+                                    {(block.props?.data || []).map((row, rowIndex) => (
+                                        <tr key={`row-${rowIndex}`} className="border-b border-slate-200 last:border-none">
+                                            {row.map((cell, cellIndex) => (
+                                                <td key={`cell-${cellIndex}`} className="border-r border-slate-200 last:border-none">
+                                                    <div
+                                                        contentEditable
+                                                        suppressContentEditableWarning
+                                                        className="min-h-[40px] px-3 py-2 text-sm text-slate-600 focus:outline-none"
+                                                        onInput={(event) => {
+                                                            const value = event.currentTarget.textContent || '';
+                                                            setBlocks((prev) => {
+                                                                const next = [...prev];
+                                                                const target = findBlockById(next, block.id);
+                                                                if (!target) return prev;
+                                                                const table = target.block;
+                                                                const updated = table.props?.data?.map((r, ri) => r.map((c, ci) => ({
+                                                                    ...c,
+                                                                    value: ri === rowIndex && ci === cellIndex ? value : c.value,
+                                                                })));
+                                                                return updateBlockProps(prev, target.path, { data: updated });
+                                                            });
+                                                        }}
+                                                    >
+                                                        {cell.value}
+                                                    </div>
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                case BLOCK_TYPES.KANBAN:
+                    return (
+                        <div className="flex gap-4 overflow-x-auto">
+                            {(block.props?.columns || []).map((column, columnIndex) => (
+                                <div key={column.id} className="min-w-[200px] flex-1 rounded-xl border border-slate-200 bg-white/70 p-3">
+                                    <div className="mb-2 flex items-center justify-between">
+                                        <h4 className="text-sm font-semibold text-slate-600">{column.title}</h4>
+                                        <button
+                                            type="button"
+                                            className="text-xs text-slate-400"
+                                            onClick={() => {
+                                                const title = window.prompt('컬럼 이름', column.title);
+                                                if (!title) return;
+                                                setBlocks((prev) => {
+                                                    const located = findBlockById(prev, block.id);
+                                                    if (!located) return prev;
+                                                    const nextColumns = located.block.props.columns.map((col, idx) => (
+                                                        idx === columnIndex ? { ...col, title } : col
+                                                    ));
+                                                    return updateBlockProps(prev, located.path, { columns: nextColumns });
+                                                });
+                                            }}
+                                        >
+                                            이름 변경
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        {(column.cards || []).map((card, cardIndex) => (
+                                            <div key={card.id || cardIndex} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                                                {card.title}
+                                            </div>
+                                        ))}
+                                        <button
+                                            type="button"
+                                            className="rounded-lg border border-dashed border-slate-300 px-3 py-1 text-xs text-slate-500"
+                                            onClick={() => {
+                                                const title = window.prompt('카드 제목을 입력하세요');
+                                                if (!title) return;
+                                                setBlocks((prev) => {
+                                                    const located = findBlockById(prev, block.id);
+                                                    if (!located) return prev;
+                                                    const nextColumns = located.block.props.columns.map((col, idx) => {
+                                                        if (idx !== columnIndex) return col;
+                                                        return {
+                                                            ...col,
+                                                            cards: [...(col.cards || []), { id: `${Date.now()}`, title }],
+                                                        };
+                                                    });
+                                                    return updateBlockProps(prev, located.path, { columns: nextColumns });
+                                                });
+                                            }}
+                                        >
+                                            + 카드 추가
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                case BLOCK_TYPES.SNIPPET:
+                    return (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] text-slate-700">
+                            <div
+                                {...createEditableProps(`${commonClass} empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`)}
+                            />
+                            <div className="mt-3 flex gap-2 text-xs text-slate-400">
+                                <button
+                                    type="button"
+                                    onClick={() => setBlocks((prev) => updateBlockProps(prev, path, { snippetId: `${Date.now()}` }))}
+                                >
+                                    스니펫 저장
+                                </button>
+                                {block.props?.snippetId && <span>#{block.props.snippetId}</span>}
+                            </div>
+                        </div>
+                    );
+                case BLOCK_TYPES.REMINDER:
+                    return (
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+                                onClick={() => {
+                                    const date = window.prompt('YYYY-MM-DD 형식의 날짜를 입력하세요', block.props?.date || '');
+                                    const time = window.prompt('HH:MM 형식의 시간을 입력하세요', block.props?.time || '');
+                                    setBlocks((prev) => updateBlockProps(prev, path, { date, time }));
+                                }}
+                            >
+                                {block.props?.date || '날짜'} {block.props?.time ? `· ${block.props.time}` : ''}
+                            </button>
+                            <label className="flex items-center gap-2 text-xs text-slate-500">
+                                완료
+                                <input
+                                    type="checkbox"
+                                    checked={!!block.props?.completed}
+                                    onChange={(event) => setBlocks((prev) => updateBlockProps(prev, path, { completed: event.target.checked }))}
+                                />
+                            </label>
+                        </div>
+                    );
+                default:
+                    return (
+                        <div
+                            {...createEditableProps(`${commonClass} empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]`, {
+                                'data-placeholder': placeholder || '텍스트를 입력하세요',
+                            })}
+                        />
+                    );
+            }
+        })();
+
+        return (
+            <div key={block.id} className="relative flex flex-col gap-2 px-6">
+                <div className="flex-1" data-block-wrapper="true">
+                    {blockBody}
+                    {block.children && block.children.length > 0 && block.type !== BLOCK_TYPES.TOGGLE && (
+                        <div className="mt-2 flex flex-col gap-2 border-l border-slate-100 pl-4">
+                            {block.children.map((child, index) => renderBlock(child, [...path, index], level + 1))}
+                        </div>
+                    )}
                 </div>
-            );
-        }
+            </div>
+        );
+    }, [handleBlockInput, handleBlockKeyDown, handleTodoCheck, handleToggleExpanded, handleInsertBlockAfter, handleDeleteBlock, openSlashPalette, focusBlock, setBlockRef, ensureBlockCount]);
 
-        return <div key={block.id} {...editableProps} />;
-    };
+    const filteredOptions = useMemo(() => {
+        let items = slashOptions;
+        if (slashState.category && slashState.category !== 'recent') {
+            items = items.filter((item) => item.category === slashState.category);
+        }
+        if (slashState.category === 'recent' && recentSlash.length > 0) {
+            items = recentSlash
+                .map((id) => slashOptions.find((option) => option.id === id))
+                .filter(Boolean);
+        }
+        if (slashState.query) {
+            const lowered = slashState.query.toLowerCase();
+            items = items.filter((item) => (
+                item.label.toLowerCase().includes(lowered)
+                || item.description?.toLowerCase().includes(lowered)
+            ));
+        }
+        return items.slice(0, 8);
+    }, [slashOptions, slashState.category, slashState.query, recentSlash]);
+
+    useEffect(() => {
+        if (!slashState.open) return;
+        if (filteredOptions.length === 0) {
+            if (slashState.activeIndex !== 0) {
+                setSlashState((prev) => ({ ...prev, activeIndex: 0 }));
+            }
+            return;
+        }
+        if (slashState.activeIndex >= filteredOptions.length) {
+            setSlashState((prev) => ({ ...prev, activeIndex: filteredOptions.length - 1 }));
+        }
+    }, [slashState.open, slashState.activeIndex, filteredOptions.length]);
 
     return (
         <AnimatePresence>
             {isVisible && memo && (
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                    initial={{ opacity: 0, scale: 0.98, y: 16 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.98, y: 8 }}
+                    exit={{ opacity: 0, scale: 0.98, y: 12 }}
                     transition={{ duration: 0.2, ease: 'easeOut' }}
-                    className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-3xl py-12"
+                    className="relative flex h-full w-full flex-col overflow-hidden rounded-3xl"
                     style={{
-                        background: themeStyles.canvas,
+                        background: palette.canvas,
+                        color: palette.text,
                         fontFamily: '"Inter", "Pretendard", sans-serif',
-                        pointerEvents: 'auto',
-                        WebkitAppRegion: 'no-drag',
-                        color: themeStyles.text,
                     }}
-                    data-interactive-zone="true"
                     ref={editorRef}
+                    data-interactive-zone="true"
                 >
-                    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 overflow-y-auto px-8">
-                        <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center justify-between border-b border-slate-200/70 px-24 py-10">
+                        <div className="flex flex-1 flex-col gap-2">
                             <input
                                 ref={titleRef}
                                 value={title}
                                 onChange={(event) => setTitle(event.target.value)}
                                 placeholder="제목 없는 페이지"
-                                className="flex-1 border-none bg-transparent text-3xl font-semibold leading-tight tracking-tight outline-none placeholder:text-slate-400 focus:outline-none"
-                                style={{ color: themeStyles.text }}
+                                className="text-3xl font-semibold tracking-tight text-slate-900 outline-none placeholder:text-slate-400"
+                                style={{ backgroundColor: 'transparent' }}
                             />
-                            <div className="flex items-center gap-3" data-block-pan="true">
-                                {typeof onDelete === 'function' && (
-                                    <button
-                                        type="button"
-                                        onClick={(event) => {
-                                            event.preventDefault();
-                                            onDelete();
-                                        }}
-                                        className="rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-red-500/10"
-                                        style={{
-                                            borderColor: themeStyles.cardBorder,
-                                            color: '#dc2626',
-                                        }}
-                                    >
-                                        삭제
-                                    </button>
-                                )}
+                            <p className="text-xs text-slate-400">생각을 빠르게 적고, 가볍게 구조화하세요.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {typeof onDelete === 'function' && (
                                 <button
                                     type="button"
                                     onClick={(event) => {
                                         event.preventDefault();
-                                        onClose();
+                                        onDelete();
                                     }}
-                                    className="rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-slate-200/50"
-                                    style={{
-                                        borderColor: themeStyles.cardBorder,
-                                        color: themeStyles.text,
-                                    }}
+                                    className="rounded-full border border-red-200 px-3 py-1 text-xs font-medium text-red-500 transition hover:bg-red-50"
                                 >
-                                    닫기
+                                    삭제
                                 </button>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                            {blocks.map((block, index) => renderBlock(block, index))}
-                        </div>
-
-                        <div className="mt-auto border-t pt-3 text-xs" style={{ borderColor: themeStyles.divider, color: themeStyles.muted }}>
-                            ESC로 닫기 · 변경 사항은 300ms 후 자동 저장됩니다.
+                            )}
+                            <button
+                                type="button"
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    onClose();
+                                }}
+                                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
+                            >
+                                닫기
+                            </button>
                         </div>
                     </div>
 
-                    {slashMenu.open && slashOptions.length > 0 && (
-                        <div
-                            className="pointer-events-auto absolute z-[1200] w-72 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 shadow-xl"
-                            style={{ top: slashMenu.anchor.top, left: slashMenu.anchor.left }}
-                        >
-                            <ul className="max-h-64 overflow-y-auto py-2 text-sm text-slate-100">
-                                {slashOptions.map((option, optionIndex) => {
-                                    const isActive = slashMenu.activeIndex === optionIndex;
-                                    return (
-                                        <li
-                                            key={option.id}
-                                            className={`cursor-pointer px-3 py-2 transition ${isActive ? 'bg-slate-700 text-white' : 'hover:bg-slate-800/80'}`}
-                                            onMouseDown={(event) => {
-                                                event.preventDefault();
-                                                selectSlashOption(option, slashMenu.blockId, slashMenu.index);
-                                            }}
-                                            onMouseEnter={() => setSlashMenu((prev) => ({ ...prev, activeIndex: optionIndex }))}
-                                        >
-                                            <p className="mt-1 text-sm font-medium text-slate-100">{option.label}</p>
-                                            {option.description && (
-                                                <p className="text-[11px] text-slate-400">{option.description}</p>
-                                            )}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
+                    <div className="flex-1 overflow-y-auto px-24 py-12">
+                        <div className="flex flex-col gap-4">
+                            {blocks.map((block, index) => renderBlock(block, [index], 0))}
                         </div>
-                    )}
+                    </div>
+
+                    <SlashCommandPalette
+                        isOpen={slashState.open}
+                        anchor={slashState.anchor}
+                        categories={SLASH_PALETTE_CATEGORIES}
+                        options={slashOptions}
+                        recentOptionIds={recentSlash}
+                        activeIndex={slashState.activeIndex}
+                        searchQuery={slashState.query}
+                        activeCategory={slashState.category}
+                        onSearchChange={(value) => setSlashState((prev) => ({ ...prev, query: value }))}
+                        onCategoryChange={(category) => setSlashState((prev) => ({ ...prev, category }))}
+                        onSelect={handleSlashSelect}
+                        onHover={(index) => setSlashState((prev) => ({ ...prev, activeIndex: index }))}
+                        onClose={closeSlashPalette}
+                        onMove={(delta) => setSlashState((prev) => ({
+                            ...prev,
+                            activeIndex: Math.max(0, Math.min(filteredOptions.length - 1, prev.activeIndex + delta)),
+                        }))}
+                        onConfirm={() => {
+                            const option = filteredOptions[slashState.activeIndex];
+                            if (option) {
+                                handleSlashSelect(option);
+                            }
+                        }}
+                    />
+                    <InlineFormatToolbar
+                        visible={formatState.visible}
+                        position={formatState.position}
+                        activeFormats={formatState.active}
+                        onFormat={handleInlineFormat}
+                        onLink={handleLinkCreate}
+                        onRemoveLink={handleLinkRemove}
+                        onColor={handleColor}
+                        onHighlight={handleHighlight}
+                    />
                 </motion.div>
             )}
         </AnimatePresence>

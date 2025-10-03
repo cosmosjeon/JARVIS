@@ -7,139 +7,11 @@ import { ScrollArea } from 'components/ui/scroll-area';
 import QuestionService from 'services/QuestionService';
 import { useSupabaseAuth } from 'hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'services/supabaseTrees';
+import MarkdownMessage from 'components/common/MarkdownMessage';
+import ChatMessageList from 'features/chat/components/ChatMessageList';
+import AgentClient from 'services/agentClient';
 
 const TYPING_INTERVAL_MS = 18;
-
-const MarkdownMessage = ({ text }) => {
-  if (!text) return null;
-
-  // 마크다운 파싱 함수
-  const parseMarkdown = (content) => {
-    const lines = content.split('\n');
-    const elements = [];
-    let currentList = null;
-    let currentCodeBlock = null;
-    let codeLanguage = '';
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmedLine = line.trim();
-
-      // 코드 블록 처리
-      if (trimmedLine.startsWith('```')) {
-        if (currentCodeBlock === null) {
-          // 코드 블록 시작
-          codeLanguage = trimmedLine.slice(3).trim();
-          currentCodeBlock = [];
-        } else {
-          // 코드 블록 끝
-          elements.push(
-            <pre key={`code-${i}`} className="bg-muted/80 text-card-foreground p-3 rounded-md overflow-x-auto my-2">
-              <code className={`language-${codeLanguage}`}>
-                {currentCodeBlock.join('\n')}
-              </code>
-            </pre>
-          );
-          currentCodeBlock = null;
-          codeLanguage = '';
-        }
-        continue;
-      }
-
-      if (currentCodeBlock !== null) {
-        currentCodeBlock.push(line);
-        continue;
-      }
-
-      // 리스트 처리
-      if (trimmedLine.match(/^[-*+]\s/)) {
-        if (!currentList) {
-          currentList = [];
-        }
-        currentList.push(trimmedLine.slice(2));
-        continue;
-      } else if (currentList) {
-        // 리스트 끝
-        elements.push(
-          <ul key={`list-${i}`} className="list-disc list-inside space-y-1 my-2 ml-4">
-            {currentList.map((item, idx) => (
-              <li key={idx} className="text-sm">{item}</li>
-            ))}
-          </ul>
-        );
-        currentList = null;
-      }
-
-      // 헤딩 처리
-      if (trimmedLine.startsWith('### ')) {
-        elements.push(
-          <h3 key={`h3-${i}`} className="text-lg font-semibold mt-4 mb-2 text-card-foreground">
-            {trimmedLine.slice(4)}
-          </h3>
-        );
-        continue;
-      }
-
-      if (trimmedLine.startsWith('## ')) {
-        elements.push(
-          <h2 key={`h2-${i}`} className="text-xl font-bold mt-4 mb-2 text-card-foreground">
-            {trimmedLine.slice(3)}
-          </h2>
-        );
-        continue;
-      }
-
-      if (trimmedLine.startsWith('# ')) {
-        elements.push(
-          <h1 key={`h1-${i}`} className="text-2xl font-bold mt-4 mb-2 text-card-foreground">
-            {trimmedLine.slice(2)}
-          </h1>
-        );
-        continue;
-      }
-
-      // 인라인 코드 처리
-      let processedLine = line;
-      processedLine = processedLine.replace(/`([^`]+)`/g, '<code class="bg-muted/70 text-card-foreground px-1 py-0.5 rounded text-sm">$1</code>');
-
-      // 굵은 글씨 처리
-      processedLine = processedLine.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-card-foreground">$1</strong>');
-      processedLine = processedLine.replace(/__([^_]+)__/g, '<strong class="font-bold text-card-foreground">$1</strong>');
-
-      // 기울임 글씨 처리
-      processedLine = processedLine.replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
-      processedLine = processedLine.replace(/_([^_]+)_/g, '<em class="italic">$1</em>');
-
-      // 빈 줄이 아닌 경우에만 추가
-      if (trimmedLine) {
-        elements.push(
-          <p key={`p-${i}`} className="whitespace-pre-wrap leading-relaxed text-card-foreground" dangerouslySetInnerHTML={{ __html: processedLine }} />
-        );
-      } else {
-        elements.push(<br key={`br-${i}`} />);
-      }
-    }
-
-    // 마지막 리스트 처리
-    if (currentList) {
-      elements.push(
-        <ul key="list-final" className="list-disc list-inside space-y-1 my-2 ml-4">
-          {currentList.map((item, idx) => (
-            <li key={idx} className="text-sm">{item}</li>
-          ))}
-        </ul>
-      );
-    }
-
-    return elements;
-  };
-
-  return (
-    <div className="space-y-2 prose prose-invert max-w-none">
-      {parseMarkdown(text)}
-    </div>
-  );
-};
 
 const LibraryQAPanel = ({
   selectedNode,
@@ -212,24 +84,9 @@ const LibraryQAPanel = ({
 
   // LLM API 호출
   const invokeAgent = useCallback(async (channel, payload = {}) => {
-    if (typeof window === 'undefined' || !window.jarvisAPI) {
-      throw new Error('VORAN API를 사용할 수 없습니다.');
-    }
-
-    console.log(`API 호출 시도: ${channel}`, payload);
-
-    try {
-      const result = await window.jarvisAPI[channel](payload);
-      console.log(`API 호출 결과: ${channel}`, result);
-
-      if (!result.success) {
-        throw new Error(result.error?.message || 'API 호출에 실패했습니다.');
-      }
-      return result;
-    } catch (error) {
-      console.error(`API 호출 실패 (${channel}):`, error);
-      throw error;
-    }
+    if (channel === 'askRoot') return AgentClient.askRoot(payload);
+    if (channel === 'askChild') return AgentClient.askChild(payload);
+    throw new Error(`지원하지 않는 채널: ${channel}`);
   }, []);
 
   // 답변 생성 및 타이핑 애니메이션
@@ -460,32 +317,7 @@ const LibraryQAPanel = ({
                 질문을 입력해보세요.
               </div>
             ) : (
-              messages.map((message) => {
-                const isAssistant = message.role === 'assistant';
-                const Icon = isAssistant ? Bot : User;
-
-                return (
-                  <div
-                    key={message.id}
-                    className={`${isAssistant ? 'w-full' : 'flex justify-end'}`}
-                  >
-                    {isAssistant ? (
-                      <div className="w-full">
-                        {message.status === 'pending' && (
-                          <div className="flex items-center gap-2 mb-2">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          </div>
-                        )}
-                        <MarkdownMessage text={message.text} />
-                      </div>
-                    ) : (
-                      <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-primary text-primary-foreground">
-                        <p className="whitespace-pre-wrap">{message.text}</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+              <ChatMessageList title="Assistant" messages={messages} />
             )}
             <div ref={messagesEndRef} />
           </div>

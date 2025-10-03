@@ -4,7 +4,10 @@ import QuestionService from '../services/QuestionService';
 import NodeNavigationService from '../services/NodeNavigationService';
 import { useSettings } from '../hooks/SettingsContext';
 import { useTheme } from './library/ThemeProvider';
-import MarkdownMessage from './common/MarkdownMessage';
+import { Response } from './ui/shadcn-io/ai/response';
+import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
+import { Actions, Action } from './ui/shadcn-io/ai/actions';
+import { Conversation, ConversationContent, ConversationScrollButton } from './ui/shadcn-io/ai/conversation';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -471,8 +474,8 @@ const NodeAssistantPanel = ({
       const userId = `${timestamp}-user`;
       const assistantId = `${timestamp}-assistant`;
 
-      // 첫 번째 질문만 기존 노드에 추가, 두 번째 질문부터는 새 노드로 생성
-      const isFirstQuestion = messages.length === 0;
+      // 첫 번째 사용자 질문만 기존 노드에 추가, 이후에는 새 노드로 생성
+      const isFirstQuestion = !messages.some((m) => m.role === 'user');
 
       if (isFirstQuestion) {
         // 첫 번째 질문: 기존 노드에 추가
@@ -634,6 +637,45 @@ const NodeAssistantPanel = ({
       }, 100);
     }
   }, [node?.id, onNodeSelect]);
+
+  const [copiedMap, setCopiedMap] = useState({});
+  const [spinningMap, setSpinningMap] = useState({});
+  const scrollContainerRef = useRef(null);
+  const isTyping = useMemo(() => messages.some(m => m.status === 'typing' || m.status === 'pending'), [messages]);
+
+  // 타이핑 중일 때만 자동 스크롤 (메시지 변경될 때마다)
+  useEffect(() => {
+    if (isTyping && scrollContainerRef?.current) {
+      const container = scrollContainerRef.current;
+      // 다음 프레임에서 스크롤 (DOM 업데이트 후)
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      });
+    }
+  }, [messages, isTyping]);
+
+  const handleCopyMessage = useCallback((message) => {
+    if (!message?.text) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(message.text).then(() => {
+        setCopiedMap((prev) => ({ ...prev, [message.id]: true }));
+        window.setTimeout(() => setCopiedMap((prev) => ({ ...prev, [message.id]: false })), 1600);
+      }).catch(() => undefined);
+    }
+  }, []);
+
+  const handleRetryMessage = useCallback((message) => {
+    // 마지막 사용자 메시지로 재요청, 없으면 현재 노드 라벨을 질문으로 사용
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const question = lastUser?.text || summary.label || node.keyword || '';
+    if (!question) return;
+    setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    sendResponse(question).finally(() => {
+      window.setTimeout(() => setSpinningMap((prev) => ({ ...prev, [message.id]: false })), 900);
+    });
+  }, [messages, sendResponse, summary.label, node.keyword]);
 
   const handleKeyDown = useCallback(
     (event) => {
@@ -820,10 +862,13 @@ const NodeAssistantPanel = ({
       </div>
 
       <div
-        ref={highlightRootRef}
+        ref={(el) => {
+          highlightRootRef.current = el;
+          scrollContainerRef.current = el;
+        }}
         className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
       >
-        <div className="flex h-full flex-col gap-6">
+        <div className="flex flex-col gap-6">
           {messages.map((message) => {
             const isAssistant = message.role === 'assistant';
 
@@ -836,11 +881,29 @@ const NodeAssistantPanel = ({
               >
                 {isAssistant ? (
                   <div className="w-full">
-                    <MarkdownMessage
-                      text={message.text}
-                      className="w-full text-base leading-7"
-                      style={{ color: panelStyles.textColor }}
-                    />
+                    <Response className="w-full text-base leading-7" style={{ color: panelStyles.textColor }}>
+                      {message.text}
+                    </Response>
+                    <Actions className="mt-2">
+                      <Action 
+                        tooltip="Regenerate response"
+                        label="Retry"
+                        onClick={() => handleRetryMessage(message)}
+                      >
+                        <RefreshCcwIcon className={`h-4 w-4 ${spinningMap[message.id] ? 'animate-spin' : ''}`} />
+                      </Action>
+                      <Action 
+                        tooltip="Copy to clipboard"
+                        label="Copy"
+                        onClick={() => handleCopyMessage(message)}
+                      >
+                        {copiedMap[message.id] ? (
+                          <svg className="h-4 w-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        ) : (
+                          <CopyIcon className="h-4 w-4" />
+                        )}
+                      </Action>
+                    </Actions>
                   </div>
                 ) : (
                   <div
@@ -933,11 +996,6 @@ const NodeAssistantPanel = ({
           onKeyDown={handleKeyDown}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
-          onInput={(event) => {
-            // 입력 이벤트를 명시적으로 처리하여 타이핑 반응성 개선
-            const value = event.target.value;
-            setComposerValue(value);
-          }}
           onPaste={(event) => {
             // 붙여넣기 시에도 정상적으로 처리
             setTimeout(() => {
