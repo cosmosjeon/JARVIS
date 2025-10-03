@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
@@ -50,6 +50,8 @@ const TreeNode = ({
   onPanZoomGesture,
   nodeScaleFactor = 1,
   layoutOrientation = 'vertical',
+  // 카드 UI를 최소 형태로 표시할지 여부
+  isMinimalCard = false,
   // 노드 네비게이션을 위한 새로운 props
   treeNodes = [],
   treeLinks = [],
@@ -385,7 +387,7 @@ const TreeNode = ({
         }}
       >
         {/* Hide background rectangle when node is expanded (chat mode) */}
-        {displayMode !== 'chat' && (
+        {displayMode !== 'chat' && !isMinimalCard && (
           <g>
             {/* Neumorphism shadow effects - scaled for small nodes */}
             {/* Dark shadow (bottom right) */}
@@ -472,6 +474,15 @@ const TreeNode = ({
               }}
             />
           </g>
+        )}
+
+        {isMinimalCard && displayMode !== 'chat' && (
+          <motion.circle
+            r={Math.max(18, 22 * nodeScaleFactor)}
+            fill="rgba(0, 0, 0, 0)"
+            stroke="rgba(0, 0, 0, 0)"
+            style={{ pointerEvents: 'auto' }}
+          />
         )}
 
         {displayMode === 'chat' ? (
@@ -645,7 +656,7 @@ const TreeNode = ({
                 />
               )
             )}
-            <title>{isCollapsed ? '하위 노드 펼치기' : '하위 노드 접기'}</title>
+            <title>{isCollapsed ? "하위 노드 펼치기" : "하위 노드 접기"}</title>
           </g>
         )}
       </g>

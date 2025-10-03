@@ -324,6 +324,100 @@ const LibraryApp = () => {
     setSelectedNode(newNode);
   }, [selectedTree]);
 
+  // 메모 생성 핸들러
+  const handleMemoCreate = useCallback((nodeId) => {
+    if (!selectedTree || !user) {
+      return null;
+    }
+
+    const newMemoId = `memo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const newMemo = {
+      id: newMemoId,
+      title: '새 메모',
+      content: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 노드에 메모 추가
+    setTrees(prevTrees =>
+      prevTrees.map(tree =>
+        tree.id === selectedTree?.id
+          ? {
+            ...tree,
+            treeData: {
+              ...tree.treeData,
+              nodes: tree.treeData?.nodes?.map(node =>
+                node.id === nodeId
+                  ? { ...node, memo: newMemo }
+                  : node
+              ) || []
+            }
+          }
+          : tree
+      )
+    );
+
+    return newMemoId;
+  }, [selectedTree, user]);
+
+  // 메모 업데이트 핸들러
+  const handleMemoUpdate = useCallback((nodeId, memoData) => {
+    if (!selectedTree || !user) {
+      return;
+    }
+
+    setTrees(prevTrees =>
+      prevTrees.map(tree =>
+        tree.id === selectedTree?.id
+          ? {
+            ...tree,
+            treeData: {
+              ...tree.treeData,
+              nodes: tree.treeData?.nodes?.map(node =>
+                node.id === nodeId
+                  ? {
+                    ...node,
+                    memo: {
+                      ...node.memo,
+                      ...memoData,
+                      updatedAt: new Date().toISOString()
+                    }
+                  }
+                  : node
+              ) || []
+            }
+          }
+          : tree
+      )
+    );
+  }, [selectedTree, user]);
+
+  // 메모 삭제 핸들러
+  const handleMemoRemove = useCallback((memoId) => {
+    if (!selectedTree || !user) {
+      return;
+    }
+
+    setTrees(prevTrees =>
+      prevTrees.map(tree =>
+        tree.id === selectedTree?.id
+          ? {
+            ...tree,
+            treeData: {
+              ...tree.treeData,
+              nodes: tree.treeData?.nodes?.map(node =>
+                node.memo?.id === memoId
+                  ? { ...node, memo: null }
+                  : node
+              ) || []
+            }
+          }
+          : tree
+      )
+    );
+  }, [selectedTree, user]);
+
   const handleNodeRemove = useCallback(async (nodeId) => {
     if (!selectedTree || !user) {
       return;
@@ -1086,6 +1180,11 @@ const LibraryApp = () => {
                   selectedMemo={selectedTree}
                   onNodeSelect={handleNodeSelect}
                   onNodeRemove={handleNodeRemove}
+                  onNodeUpdate={handleNodeUpdate}
+                  onNewNodeCreated={handleNewNodeCreated}
+                  onMemoCreate={handleMemoCreate}
+                  onMemoUpdate={handleMemoUpdate}
+                  onMemoRemove={handleMemoRemove}
                 />
               </ResizablePanel>
               <ResizableHandle withHandle className="bg-border/80 hover:bg-border" />

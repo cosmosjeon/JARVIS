@@ -1,10 +1,25 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar, FileText } from "lucide-react";
 
-import WidgetTreeViewer from "./WidgetTreeViewer";
+import ForceDirectedTree from "../tree2/ForceDirectedTree";
 
-const TreeCanvas = ({ selectedMemo, onNodeSelect, onNodeRemove }) => {
+const TreeCanvas = ({ selectedMemo, onNodeSelect, onNodeRemove, onNodeUpdate, onNewNodeCreated, onMemoCreate, onMemoUpdate, onMemoRemove }) => {
   const nodeCount = useMemo(() => selectedMemo?.treeData?.nodes?.length ?? 0, [selectedMemo]);
+
+  const containerRef = useRef(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      setDimensions({ width: el.clientWidth || 800, height: el.clientHeight || 600 });
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const formatDate = (value) =>
     new Date(value).toLocaleDateString("ko-KR", {
@@ -43,13 +58,35 @@ const TreeCanvas = ({ selectedMemo, onNodeSelect, onNodeRemove }) => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden bg-slate-900/40">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden bg-slate-900/40">
         {nodeCount > 0 ? (
-          <WidgetTreeViewer
+          <ForceDirectedTree
             key={selectedMemo.id}
-            treeData={selectedMemo.treeData}
-            onNodeSelect={onNodeSelect}
-            onRemoveNode={onNodeRemove}
+            data={selectedMemo.treeData}
+            dimensions={dimensions}
+            onNodeClick={onNodeSelect}
+            onNodeRemove={onNodeRemove}
+            onNodeUpdate={onNodeUpdate}
+            onMemoCreate={onMemoCreate}
+            onMemoUpdate={onMemoUpdate}
+            onMemoRemove={onMemoRemove}
+            onNodeCreate={(newNode) => onNewNodeCreated?.(newNode, null)}
+            onLinkCreate={(newLink) => onNewNodeCreated?.(null, newLink)}
+            onRootCreate={({ position }) => {
+              const id = `node_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+              const newRootNode = {
+                id,
+                keyword: 'New Root',
+                // 위치를 즉시 반영할 수 있도록 좌표 포함
+                x: position?.x ?? dimensions.width / 2,
+                y: position?.y ?? dimensions.height / 2,
+                level: 0,
+              };
+              onNewNodeCreated?.(newRootNode, null);
+              return id;
+            }}
+            treeId={selectedMemo.id}
+            userId={selectedMemo.userId}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">

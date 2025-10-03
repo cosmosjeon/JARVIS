@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -3083,20 +3083,6 @@ const HierarchicalForceTree = () => {
           }}
         >
           {/* Arrow marker definition */}
-          <defs>
-            <marker
-              id="arrowhead"
-              viewBox="0 -5 10 10"
-              refX={8}
-              refY={0}
-              markerWidth={6}
-              markerHeight={6}
-              orient="auto"
-            >
-              <path d="M0,-5L10,0L0,5" fill="rgba(0,0,0,0.55)" />
-            </marker>
-          </defs>
-
           {/* Links */}
 
           <g
@@ -3126,7 +3112,19 @@ const HierarchicalForceTree = () => {
                     const targetY = targetNode.y;
 
                     const shouldAnimate = link.isNew;
-                    const pathString = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
+                    const linkGenerator = (isHorizontalLayout
+                      ? d3.linkHorizontal().x((point) => point.x).y((point) => point.y)
+                      : d3.linkVertical().x((point) => point.x).y((point) => point.y)
+                    );
+
+                    const pathString = linkGenerator({
+                      source: { x: sourceX, y: sourceY },
+                      target: { x: targetX, y: targetY },
+                    });
+
+                    if (!pathString) {
+                      return null;
+                    }
 
                     return (
                       <g key={`${String(link.source)}->${String(link.target)}`}>
@@ -3156,7 +3154,6 @@ const HierarchicalForceTree = () => {
                           strokeOpacity={0.9}
                           strokeWidth={Math.sqrt(link.value || 1) * 1.5}
                           fill="none"
-                          markerEnd="url(#arrowhead)"
                           style={{
                             filter: 'drop-shadow(1px 1px 2px #bebebe) drop-shadow(-1px -1px 2px #ffffff)',
                           }}
@@ -3173,6 +3170,52 @@ const HierarchicalForceTree = () => {
                     );
                   })}
               </AnimatePresence>
+            </g>
+
+            <g
+              className="node-labels"
+              style={{ pointerEvents: 'none' }}
+            >
+              {nodes.map((node) => {
+                const labelText = node.keyword || node.name || node.id;
+                if (!labelText) {
+                  return null;
+                }
+
+                const hasChildren = (childrenByParent.get(node.id) || []).length > 0;
+                const labelRadius = Math.max(3, 3.6 * nodeScaleFactor);
+                const spacingBase = Math.max(6, 4 * nodeScaleFactor);
+                const labelSpacing = labelRadius + spacingBase;
+                const textOffset = hasChildren ? -labelSpacing : labelSpacing;
+                const textAnchor = hasChildren ? 'end' : 'start';
+                const fontSize = Math.min(16, Math.max(10, 11 * nodeScaleFactor));
+                const textColor = currentTheme.text || '#f8fafc';
+                const strokeColor = theme === 'light' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.6)';
+                const circleStroke = theme === 'light' ? 'rgba(15, 23, 42, 0.25)' : 'rgba(255, 255, 255, 0.35)';
+                const circleFill = hasChildren ? '#64748b' : '#94a3b8';
+
+                return (
+                  <g key={`label-${node.id}`} transform={`translate(${node.x},${node.y})`}>
+                    <circle
+                      r={labelRadius}
+                      fill={circleFill}
+                      stroke={circleStroke}
+                      strokeWidth={0.6}
+                    />
+                    <text
+                      x={textOffset}
+                      textAnchor={textAnchor}
+                      alignmentBaseline="middle"
+                      fontSize={fontSize}
+                      fontFamily="Inter, 'Noto Sans KR', sans-serif"
+                      fill={textColor}
+                      style={{ paintOrder: 'stroke', stroke: strokeColor, strokeWidth: 1.2 }}
+                    >
+                      {labelText}
+                    </text>
+                  </g>
+                );
+              })}
             </g>
 
             {/* Nodes - 최상위 레이어 */}
@@ -3212,6 +3255,7 @@ const HierarchicalForceTree = () => {
                       position={{ x: node.x || 0, y: node.y || 0 }}
                       color={colorScheme(nodeDepth)}
                       onDrag={handleDrag}
+                      isMinimalCard
                       onNodeClick={handleNodeClickForAssistant}
                       isExpanded={expandedNodeId === node.id}
                       onSecondQuestion={handleSecondQuestion}
