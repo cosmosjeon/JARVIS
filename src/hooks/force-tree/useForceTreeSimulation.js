@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import DataTransformService from '../../services/force-tree/DataTransformService';
-import ForceSimulationService from '../../services/force-tree/ForceSimulationService';
+import ForceSimulationService, { FORCE_SIMULATION_DEFAULTS } from '../../services/force-tree/ForceSimulationService';
 
 const useForceTreeSimulation = ({
   data,

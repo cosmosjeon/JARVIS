@@ -1,12 +1,29 @@
 import * as d3 from 'd3';
 
+export const FORCE_SIMULATION_DEFAULTS = Object.freeze({
+    initialAlpha: 0.6,
+    alphaMin: 0.015,
+    alphaDecay: 0.08,
+    velocityDecay: 0.58,
+    autoStopAlphaThreshold: 0.035,
+    autoStopTickCount: 28,
+});
+
+const {
+    initialAlpha: DEFAULT_SIMULATION_ALPHA,
+    alphaMin: DEFAULT_ALPHA_MIN,
+    alphaDecay: DEFAULT_ALPHA_DECAY,
+    velocityDecay: DEFAULT_VELOCITY_DECAY,
+    autoStopAlphaThreshold: AUTO_STOP_ALPHA_THRESHOLD,
+    autoStopTickCount: AUTO_STOP_TICK_COUNT,
+} = FORCE_SIMULATION_DEFAULTS;
+
 /**
  * ForceSimulationService
- * 
- * Business Logic: D3 Force Simulation ê´€ë¦¬
- * Force-directed layout ì‹œë®¬ë ˆì´ì…˜ ìƒì„± ë° ì œì–´
+ *
+ * Business Logic: D3 Force Simulation °ü¸®
+ * Force-directed layout ±¸¼ºÀ» ´ã´ç
  */
-
 class ForceSimulationService {
     constructor() {
         this.simulation = null;
@@ -14,20 +31,38 @@ class ForceSimulationService {
     }
 
     /**
-     * Force simulation ìƒì„±
-     * @param {Object} hierarchyData - D3 hierarchy ë°ì´í„°
+     * Force simulation »ı¼º
+     * @param {Object} hierarchyData - D3 hierarchy µ¥ÀÌÅÍ
      * @param {Object} dimensions - {width, height}
-     * @param {Function} onTick - tick ì´ë²¤íŠ¸ ì½œë°±
-     * @param {Map} previousPositions - ì´ì „ ìœ„ì¹˜ ì •ë³´
-     * @param {Object} options - ì˜µì…˜ (enableForceSimulation ë“±)
-     * @returns {Object} {nodes, links} - simulation ì ìš©ëœ ë°ì´í„°
+     * @param {Function} onTick - tick ÀÌº¥Æ® Äİ¹é
+     * @param {Map} previousPositions - ÀÌÀü À§Ä¡ Á¤º¸
+     * @param {Object} options - ¿É¼Ç (enableForceSimulation µî)
+     * @returns {Object} {nodes, links} - simulation ¹İÈ¯ µ¥ÀÌÅÍ
      */
-    createSimulation(hierarchyData, dimensions = { width: 928, height: 600 }, onTick = null, previousPositions = new Map(), options = {}) {
+    createSimulation(
+        hierarchyData,
+        dimensions = { width: 928, height: 600 },
+        onTick = null,
+        previousPositions = new Map(),
+        options = {},
+    ) {
         if (!hierarchyData) {
             return { nodes: [], links: [] };
         }
 
-        // Hierarchyë¥¼ nodes/linksë¡œ ë³€í™˜
+        const {
+            autoStopAlphaThreshold = AUTO_STOP_ALPHA_THRESHOLD,
+            autoStopTickCount = AUTO_STOP_TICK_COUNT,
+            initialAlpha = DEFAULT_SIMULATION_ALPHA,
+            alphaMin = DEFAULT_ALPHA_MIN,
+            alphaDecay = DEFAULT_ALPHA_DECAY,
+            velocityDecay = DEFAULT_VELOCITY_DECAY,
+        } = options;
+
+        const enableForceSimulation = options.enableForceSimulation !== false;
+
+        this.cleanup();
+
         const root = d3.hierarchy(hierarchyData);
         let links = root.links();
         let nodes = root.descendants();
@@ -40,28 +75,21 @@ class ForceSimulationService {
         nodes = nodes.filter((node) => !isVirtualRoot(node));
         links = links.filter((link) => !isVirtualRoot(link.source) && !isVirtualRoot(link.target));
 
-        // ê° ë…¸ë“œì— ê³ ìœ  ID ë¶€ì—¬ (simulationìš©)
-        nodes.forEach((node, i) => {
-            node.index = i;
+        nodes.forEach((node, index) => {
+            node.index = index;
         });
 
-        // Force simulation í™œì„±í™” ì—¬ë¶€ í™•ì¸
-        const enableForceSimulation = options.enableForceSimulation !== false;
-        
-        // ê¸°ì¡´ simulation ì •ë¦¬
-        this.cleanup();
-
         const resolveDatum = (item) => {
-            if (!item) return {};
+            if (!item) {
+                return {};
+            }
             if (item.data && item.data.data) {
                 return item.data.data;
             }
             return item.data || item;
         };
 
-        const positionLookup = previousPositions instanceof Map
-            ? previousPositions
-            : new Map();
+        const positionLookup = previousPositions instanceof Map ? previousPositions : new Map();
 
         let restoredCount = 0;
         nodes.forEach((node) => {
@@ -89,18 +117,14 @@ class ForceSimulationService {
                 node.vx = 0;
                 node.vy = 0;
             }
-
-            // Force simulationì´ ë¹„í™œì„±í™”ëœ ê²½ìš°ì—ë„ ë“œë˜ê·¸ë¥¼ ìœ„í•´ ê³ ì •í•˜ì§€ ì•ŠìŒ
-            // (ë…¸ë“œë“¤ì´ ë…ë¦½ì ìœ¼ë¡œ ë“œë˜ê·¸ ê°€ëŠ¥í•˜ë„ë¡ í•¨)
         });
 
         if (restoredCount > 0 && process.env.NODE_ENV === 'development') {
             console.debug('[force] restored node positions', restoredCount);
         }
 
-        // Force simulation ìƒì„±
         const linkForce = d3.forceLink(links)
-            .id(d => d.id || d.data.id)
+            .id((d) => d.id || d.data.id)
             .distance((link) => {
                 const targetDatum = resolveDatum(link?.target);
                 if (targetDatum?.nodeType === 'memo') {
@@ -128,53 +152,54 @@ class ForceSimulationService {
                     : (Number.isFinite(targetDatum?.childCount) ? targetDatum.childCount : 0);
 
                 if (!targetChildren) {
-                    return 0.68;
+                    return 1.6;
                 }
 
-                return 0.5;
+                return 0.9;
             });
 
-        const chargeForce = d3.forceManyBody().strength((d) => {
-            const nodeType = resolveDatum(d)?.nodeType;
-            if (nodeType === 'memo') {
-                return -35;
+        const chargeForce = d3.forceManyBody()
+            .strength((node) => {
+                const datum = resolveDatum(node);
+                if (datum?.nodeType === 'memo') {
+                    return -25;
+                }
+                if (datum?.level === 0) {
+                    return -520;
+                }
+                if (datum?.level === 1) {
+                    return -420;
+                }
+                if (datum?.level === 2) {
+                    return -320;
+                }
+                return -260;
+            })
+            .theta(0.8)
+            .distanceMin(12)
+            .distanceMax(Math.max(dimensions.width, dimensions.height));
+
+        const collisionForce = d3.forceCollide().radius((node) => {
+            const datum = resolveDatum(node);
+            if (datum?.nodeType === 'memo') {
+                return 16;
             }
-            return -130;
+            return 40;
         });
 
-        const collisionForce = d3.forceCollide((d) => {
-            const nodeType = resolveDatum(d)?.nodeType;
-            if (nodeType === 'memo') {
-                return 18;
-            }
-            return 36;
-        }).strength(0.9);
+        const forceX = d3.forceX(0).strength(0.025);
+        const forceY = d3.forceY(0).strength(0.025);
 
-        const forceX = d3.forceX((d) => {
-            const datum = resolveDatum(d);
-            if (Number.isFinite(datum?.x)) {
-                return datum.x;
+        const radialForce = d3.forceRadial((node) => {
+            const datum = resolveDatum(node);
+            if (datum?.nodeType === 'memo') {
+                return 120;
             }
-            return 0;
-        }).strength((d) => (resolveDatum(d)?.nodeType === 'memo' ? 0.0075 : 0.018));
-
-        const forceY = d3.forceY((d) => {
-            const datum = resolveDatum(d);
-            if (Number.isFinite(datum?.y)) {
-                return datum.y;
-            }
-            return 0;
-        }).strength((d) => (resolveDatum(d)?.nodeType === 'memo' ? 0.0075 : 0.018));
-
-        const radialForce = d3.forceRadial((d) => {
-            const datum = resolveDatum(d);
             const level = Number.isFinite(datum?.level) ? datum.level : 0;
             return 420 + level * 240;
         }, 0, 0).strength(0.02);
 
-        // Force simulationì´ ë¹„í™œì„±í™”ëœ ê²½ìš° simulationì„ ìƒì„±í•˜ì§€ ì•ŠìŒ
         if (!enableForceSimulation) {
-            // ì¦‰ì‹œ ìµœì¢… ìœ„ì¹˜ë¡œ ì„¤ì •í•˜ê³  ì½œë°± í˜¸ì¶œ
             if (onTick && typeof onTick === 'function') {
                 onTick(nodes, links);
             }
@@ -190,24 +215,54 @@ class ForceSimulationService {
             .force('radial', radialForce)
             .force('center', d3.forceCenter(0, 0));
 
-        // Tick ì½œë°± ë“±ë¡
-        if (onTick && typeof onTick === 'function') {
-            this.onTickCallback = onTick;
+        this.simulation
+            .alphaDecay(alphaDecay)
+            .alphaMin(alphaMin)
+            .velocityDecay(velocityDecay);
+
+        const safeOnTick = (typeof onTick === 'function') ? onTick : null;
+        if (safeOnTick) {
+            this.onTickCallback = safeOnTick;
+            let stableTickCount = 0;
+            let autoStopped = false;
+            const shouldAutoStop = autoStopTickCount > 0 && autoStopAlphaThreshold > 0;
+
             this.simulation.on('tick', () => {
-                onTick(nodes, links);
+                safeOnTick(nodes, links);
+
+                if (!shouldAutoStop || !this.simulation || autoStopped) {
+                    return;
+                }
+
+                const currentAlpha = this.simulation.alpha();
+                if (currentAlpha <= autoStopAlphaThreshold) {
+                    stableTickCount += 1;
+                    if (stableTickCount >= autoStopTickCount) {
+                        this.simulation.alphaTarget(0);
+                        this.simulation.alpha(0);
+                        this.simulation.stop();
+                        nodes.forEach((node) => {
+                            node.vx = 0;
+                            node.vy = 0;
+                        });
+                        autoStopped = true;
+                    }
+                } else {
+                    stableTickCount = 0;
+                }
             });
         }
 
         if (this.simulation) {
-            this.simulation.alpha(0.6).restart();
+            this.simulation.alpha(initialAlpha).restart();
         }
 
         return { nodes, links };
     }
 
     /**
-     * Simulation ì¬ì‹œì‘
-     * @param {number} alpha - ì‹œì‘ alpha ê°’ (ê¸°ë³¸: 0.3)
+     * Simulation ´Ù½Ã ½ÃÀÛ
+     * @param {number} alpha - ½ÃÀÛ alpha °ª(±âº»: 0.3)
      */
     restart(alpha = 0.3) {
         if (this.simulation) {
@@ -216,7 +271,7 @@ class ForceSimulationService {
     }
 
     /**
-     * Simulation ì¤‘ì§€
+     * Simulation ÁßÁö
      */
     stop() {
         if (this.simulation) {
@@ -225,24 +280,22 @@ class ForceSimulationService {
     }
 
     /**
-     * ë“œë˜ê·¸ ì‹œì‘ í•¸ë“¤ëŸ¬
-     * @param {Object} event - ë“œë˜ê·¸ ì´ë²¤íŠ¸
-     * @param {Object} d - ë…¸ë“œ ë°ì´í„°
+     * µå·¡±× ½ÃÀÛ ÇÚµé·¯
+     * @param {Object} event - µå·¡±× ÀÌº¥Æ®
+     * @param {Object} d - ³ëµå µ¥ÀÌÅÍ
      */
     handleDragStart(event, d) {
         if (!event.active && this.simulation) {
             this.simulation.alphaTarget(0.3).restart();
         }
-        // í˜„ì¬ ë…¸ë“œ ìœ„ì¹˜ë¥¼ ê³ ì • (ì´ë¯¸ ë Œë”ë§ëœ ìœ„ì¹˜ ìœ ì§€)
-        // d.x, d.yê°€ ì´ë¯¸ ì˜¬ë°”ë¥¸ ê°’ì´ë¯€ë¡œ ê·¸ëŒ€ë¡œ ê³ ì •
         d.fx = d.x;
         d.fy = d.y;
     }
 
     /**
-     * ë“œë˜ê·¸ ì¤‘ í•¸ë“¤ëŸ¬
-     * @param {Object} event - ë“œë˜ê·¸ ì´ë²¤íŠ¸
-     * @param {Object} d - ë…¸ë“œ ë°ì´í„°
+     * µå·¡±× Áß ÇÚµé·¯
+     * @param {Object} event - µå·¡±× ÀÌº¥Æ®
+     * @param {Object} d - ³ëµå µ¥ÀÌÅÍ
      */
     handleDrag(event, d) {
         if (this.simulation) {
@@ -257,9 +310,9 @@ class ForceSimulationService {
     }
 
     /**
-     * ë“œë˜ê·¸ ì¢…ë£Œ í•¸ë“¤ëŸ¬
-     * @param {Object} event - ë“œë˜ê·¸ ì´ë²¤íŠ¸
-     * @param {Object} d - ë…¸ë“œ ë°ì´í„°
+     * µå·¡±× Á¾·á ÇÚµé·¯
+     * @param {Object} event - µå·¡±× ÀÌº¥Æ®
+     * @param {Object} d - ³ëµå µ¥ÀÌÅÍ
      */
     handleDragEnd(event, d) {
         if (this.simulation) {
@@ -275,7 +328,7 @@ class ForceSimulationService {
     }
 
     /**
-     * ë¦¬ì†ŒìŠ¤ ì •ë¦¬
+     * ¸®¼Ò½º Á¤¸®
      */
     cleanup() {
         if (this.simulation) {
@@ -287,8 +340,8 @@ class ForceSimulationService {
     }
 
     /**
-     * í˜„ì¬ simulation ì¸ìŠ¤í„´ìŠ¤ ë°˜í™˜
-     * @returns {Object} D3 simulation ì¸ìŠ¤í„´ìŠ¤
+     * ÇöÀç simulation ÀÎ½ºÅÏ½º ¹İÈ¯
+     * @returns {Object} D3 simulation ÀÎ½ºÅÏ½º
      */
     getSimulation() {
         return this.simulation;
