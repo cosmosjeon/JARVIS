@@ -21,12 +21,12 @@ import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import { useTheme } from './library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
 import {
-  fetchTreesWithNodes,
-  upsertTreeMetadata,
-  upsertTreeNodes,
   sanitizeConversationMessages,
   buildFallbackConversation,
 } from '../services/supabaseTrees';
+import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
+import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
+import AgentClient from 'services/agentClient';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from '../services/treeCreation';
 
 const WINDOW_CHROME_HEIGHT = 48;
@@ -217,6 +217,12 @@ const calculateNodeScaleFactor = (dimensions) => {
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
+  const {
+    loadTrees,
+    saveTreeMetadata,
+    saveTreeNodes,
+  } = useTreeDataSource();
+  const treeBridge = useMemo(() => createTreeWidgetBridge(), []);
   const { theme, setTheme, mode } = useTheme();
 
   // 테마 옵션 정의
@@ -438,18 +444,12 @@ const HierarchicalForceTree = () => {
   }, [data]);
 
   const setWindowMousePassthrough = useCallback((shouldIgnore = true) => {
-    if (typeof window === 'undefined') return;
-    const api = window.jarvisAPI;
-    if (!api || typeof api.setMousePassthrough !== 'function') {
-      return;
-    }
-
     if (isIgnoringMouseRef.current === shouldIgnore) {
       return;
     }
 
     try {
-      const result = api.setMousePassthrough({ ignore: shouldIgnore, forward: true });
+      const result = treeBridge.setMousePassthrough({ ignore: shouldIgnore, forward: true });
       isIgnoringMouseRef.current = shouldIgnore;
       if (result && typeof result.catch === 'function') {
         result.catch(() => {
@@ -458,14 +458,12 @@ const HierarchicalForceTree = () => {
         });
       }
     } catch (error) {
-      // IPC 호출 실패는 사용자 상호작용에 직접적 영향이 없으므로 조용히 처리
-      // 개발 환경에서만 로그 출력
       if (process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
         console.error('마우스 패스스루 설정 실패:', error);
       }
     }
-  }, []);
+  }, [treeBridge]);
 
 
 
@@ -528,7 +526,7 @@ const HierarchicalForceTree = () => {
     }
 
     try {
-      const trees = await fetchTreesWithNodes(user.id);
+      const trees = await loadTrees();
       const targetTree = trees.find((tree) => tree.id === resolvedTreeId);
 
       if (targetTree) {
@@ -572,7 +570,7 @@ const HierarchicalForceTree = () => {
       requestedTreeIdRef.current = null;
       setInitializingTree(false);
     }
-  }, [user, hydrateConversationStore, readSessionTreeId, writeSessionTreeId]);
+  }, [user, hydrateConversationStore, loadTrees, readSessionTreeId, writeSessionTreeId]);
 
   useEffect(() => {
     if (!user || hasResolvedInitialTreeRef.current) {
@@ -594,7 +592,7 @@ const HierarchicalForceTree = () => {
       }
 
       try {
-        const existingTrees = await fetchTreesWithNodes(user.id);
+        const existingTrees = await loadTrees();
         const shouldCreateNewTree = sessionInfo.fresh || !Array.isArray(existingTrees) || existingTrees.length === 0;
 
         if (!shouldCreateNewTree && Array.isArray(existingTrees) && existingTrees.length > 0) {
@@ -615,10 +613,9 @@ const HierarchicalForceTree = () => {
         }
 
         const freshTreeId = createClientGeneratedId('tree');
-        await upsertTreeMetadata({
+        await saveTreeMetadata({
           treeId: freshTreeId,
           title: '새 지식 트리',
-          userId: user.id,
         });
 
         writeSessionTreeId(freshTreeId);
@@ -645,7 +642,7 @@ const HierarchicalForceTree = () => {
     return () => {
       cancelled = true;
     };
-  }, [createClientGeneratedId, loadActiveTree, readSessionTreeId, sessionInfo.initialTreeId, user, writeSessionTreeId]);
+  }, [createClientGeneratedId, loadActiveTree, loadTrees, readSessionTreeId, sessionInfo.initialTreeId, user, writeSessionTreeId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -664,11 +661,7 @@ const HierarchicalForceTree = () => {
   }, [activeTreeId, loadActiveTree, readSessionTreeId, user]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.jarvisAPI?.onWidgetSetActiveTree !== 'function') {
-      return undefined;
-    }
-
-    const unsubscribe = window.jarvisAPI.onWidgetSetActiveTree((payload) => {
+    const unsubscribe = treeBridge.onSetActiveTree((payload) => {
       if (payload && typeof payload.treeId === 'string') {
         requestedTreeIdRef.current = payload.treeId;
         loadActiveTree({ treeId: payload.treeId });
@@ -676,11 +669,9 @@ const HierarchicalForceTree = () => {
     });
 
     return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
+      unsubscribe();
     };
-  }, [loadActiveTree]);
+  }, [loadActiveTree, treeBridge]);
 
   // 노드 추가 함수
   const addNode = (parentId, nodeData) => {
@@ -731,17 +722,8 @@ const HierarchicalForceTree = () => {
       return fallbackKeyword;
     }
 
-    if (typeof window === 'undefined') {
-      return fallbackKeyword;
-    }
-
-    const api = window.jarvisAPI;
-    if (!api?.extractKeyword) {
-      return fallbackKeyword;
-    }
-
     try {
-      const result = await api.extractKeyword({ question: trimmed });
+      const result = await treeBridge.extractKeyword({ question: trimmed });
       const candidate = typeof result?.keyword === 'string' ? result.keyword.trim() : '';
       if (result?.success && candidate) {
         const token = candidate.split(/\s+/).find(Boolean);
@@ -759,7 +741,7 @@ const HierarchicalForceTree = () => {
       }
     } catch (error) {
       try {
-        api?.log?.('warn', 'keyword_extraction_failed', { message: error?.message || 'unknown error' });
+        treeBridge.log('warn', 'keyword_extraction_failed', { message: error?.message || 'unknown error' });
       } catch (loggingError) {
         if (process.env.NODE_ENV === 'development') {
           // eslint-disable-next-line no-console
@@ -769,7 +751,7 @@ const HierarchicalForceTree = () => {
     }
 
     return fallbackKeyword;
-  }, []);
+  }, [treeBridge]);
 
   // 2번째 질문 처리 함수 (handleRequestAnswer 정의 후로 이동)
 
@@ -854,10 +836,9 @@ const HierarchicalForceTree = () => {
         pendingTreeIdRef.current = workingTreeId;
       }
 
-      const treeRecord = await upsertTreeMetadata({
+      const treeRecord = await saveTreeMetadata({
         treeId: workingTreeId,
         title,
-        userId: user.id,
       });
 
       const resolvedTreeId = treeRecord?.id || workingTreeId;
@@ -878,10 +859,9 @@ const HierarchicalForceTree = () => {
       }
 
       if (resolvedTreeId) {
-        await upsertTreeNodes({
+        await saveTreeNodes({
           treeId: resolvedTreeId,
           nodes: normalizedNodes,
-          userId: user.id,
         });
 
         const stateMap = treeLibrarySyncRef.current;
@@ -890,9 +870,9 @@ const HierarchicalForceTree = () => {
         const alreadyRefreshed = existingState.refreshed === true;
         const nextCount = normalizedNodes.length;
 
-        if (!alreadyRefreshed && previousCount === 0 && nextCount > 0 && typeof window !== 'undefined') {
+        if (!alreadyRefreshed && previousCount === 0 && nextCount > 0) {
           try {
-            window.jarvisAPI?.requestLibraryRefresh?.();
+            treeBridge.requestLibraryRefresh();
           } catch (error) {
             // IPC failures are non-fatal for sync notifications
           }
@@ -918,7 +898,19 @@ const HierarchicalForceTree = () => {
     } finally {
       setIsTreeSyncing(false);
     }
-  }, [user, initializingTree, data, normalizeLinkEndpoint, hierarchicalLinks, getRootNodeId, activeTreeId, writeSessionTreeId]);
+  }, [
+    user,
+    initializingTree,
+    data,
+    normalizeLinkEndpoint,
+    hierarchicalLinks,
+    getRootNodeId,
+    activeTreeId,
+    saveTreeMetadata,
+    saveTreeNodes,
+    treeBridge,
+    writeSessionTreeId,
+  ]);
 
   useEffect(() => {
     if (!user || initializingTree) {
@@ -1278,19 +1270,7 @@ const HierarchicalForceTree = () => {
   }, [parentByChild]);
 
   const invokeAgent = useCallback(async (channel, payload = {}) => {
-    const api = window.jarvisAPI;
-    if (!api || typeof api[channel] !== 'function') {
-      throw new Error('AI 에이전트 브리지가 준비되지 않았습니다.');
-    }
-    const result = await api[channel](payload);
-    if (!result?.success) {
-      const message = result?.error?.message || 'AI 응답을 가져오지 못했습니다.';
-      const code = result?.error?.code || 'agent_error';
-      const error = new Error(message);
-      error.code = code;
-      throw error;
-    }
-    return result;
+    return AgentClient.request(channel, payload);
   }, []);
 
   const handleRequestAnswer = useCallback(
@@ -1653,8 +1633,8 @@ const HierarchicalForceTree = () => {
   const handleAnswerError = useCallback((nodeId, payload = {}) => {
     if (!nodeId) return;
     const message = payload?.error?.message || 'answer request failed';
-    window.jarvisAPI?.log?.('warn', 'agent_answer_error', { nodeId, message });
-  }, []);
+    treeBridge.log('warn', 'agent_answer_error', { nodeId, message });
+  }, [treeBridge]);
 
   // 노드 및 하위 노드 제거 함수
   const removeNodeAndDescendants = (nodeId) => {
@@ -1843,12 +1823,15 @@ const HierarchicalForceTree = () => {
 
       // Supabase에 저장 (sizeScale 등 노드 속성 업데이트)
       if (activeTreeId && user?.id) {
-        await upsertTreeNodes(activeTreeId, updatedNodes, user.id);
+        await saveTreeNodes({
+          treeId: activeTreeId,
+          nodes: updatedNodes,
+        });
       }
     } catch (error) {
       console.error('노드 업데이트 실패:', error);
     }
-  }, [activeTreeId, user?.id]);
+  }, [activeTreeId, saveTreeNodes, user?.id]);
 
   const handleManualNodeCreate = useCallback((parentNodeId) => {
     const latestData = dataRef.current;
@@ -2537,9 +2520,9 @@ const HierarchicalForceTree = () => {
             <button
               className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
               onClick={() => {
-                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
-                if (api?.windowControls?.maximize) {
-                  api.windowControls.maximize();
+                const maybeResult = treeBridge.windowControls.maximize();
+                if (maybeResult && typeof maybeResult.catch === 'function') {
+                  maybeResult.catch(() => {});
                 }
               }}
               onMouseDown={(e) => e.stopPropagation()}
@@ -2560,20 +2543,25 @@ const HierarchicalForceTree = () => {
                   console.log('[Jarvis] Drag handle close requested');
                 }
 
-                const api = typeof window !== 'undefined' ? window.jarvisAPI : null;
-
                 const hideWindow = () => {
                   if (process.env.NODE_ENV === 'development') {
                     // eslint-disable-next-line no-console
                     console.log('[Jarvis] hideWindow fallback triggered');
                   }
                   try {
-                    if (api && typeof api.toggleWindow === 'function') {
-                      api.toggleWindow();
+                    const toggleResult = treeBridge.toggleWindow();
+                    if (toggleResult && typeof toggleResult.then === 'function') {
+                      toggleResult.catch(() => {});
+                      return;
+                    }
+                    if (toggleResult !== null && toggleResult !== undefined) {
                       return;
                     }
                   } catch (toggleError) {
-                    // Ignore toggle errors and fall through to window.close fallback.
+                    if (process.env.NODE_ENV === 'development') {
+                      // eslint-disable-next-line no-console
+                      console.warn('[Jarvis] toggleWindow failed', toggleError);
+                    }
                   }
 
                   if (typeof window !== 'undefined' && typeof window.close === 'function') {
@@ -2582,46 +2570,57 @@ const HierarchicalForceTree = () => {
                 };
 
                 try {
-                  const closeFn = api?.windowControls?.close;
-                  if (typeof closeFn === 'function') {
-                    const maybeResult = closeFn();
-                    if (process.env.NODE_ENV === 'development') {
-                      const tag = '[Jarvis] windowControls.close result';
-                      if (maybeResult && typeof maybeResult.then === 'function') {
-                        maybeResult.then((response) => {
-                          // eslint-disable-next-line no-console
-                          console.log(tag, response);
-                        }).catch((err) => {
-                          // eslint-disable-next-line no-console
-                          console.log(`${tag} (rejected)`, err);
-                        });
-                      } else {
-                        // eslint-disable-next-line no-console
-                        console.log(tag, maybeResult);
-                      }
-                    }
-
+                  const maybeResult = treeBridge.windowControls.close();
+                  if (process.env.NODE_ENV === 'development') {
+                    const tag = '[Jarvis] windowControls.close result';
                     if (maybeResult && typeof maybeResult.then === 'function') {
-                      maybeResult
-                        .then((response) => {
-                          if (process.env.NODE_ENV === 'development') {
-                            // eslint-disable-next-line no-console
-                            console.log('[Jarvis] close response (async)', response, response?.error);
-                          }
-                          if (!response?.success) {
-                            hideWindow();
-                          }
-                        })
-                        .catch(() => hideWindow());
-                      return;
+                      maybeResult.then((response) => {
+                        // eslint-disable-next-line no-console
+                        console.log(tag, response);
+                      }).catch((err) => {
+                        // eslint-disable-next-line no-console
+                        console.log(`${tag} (rejected)`, err);
+                      });
+                    } else {
+                      // eslint-disable-next-line no-console
+                      console.log(tag, maybeResult);
                     }
+                  }
 
-                    if (!maybeResult?.success) {
-                      hideWindow();
-                    }
+                  if (maybeResult && typeof maybeResult.then === 'function') {
+                    maybeResult
+                      .then((response) => {
+                        if (process.env.NODE_ENV === 'development') {
+                          // eslint-disable-next-line no-console
+                          console.log('[Jarvis] close response (async)', response, response?.error);
+                        }
+                        if (!response?.success) {
+                          hideWindow();
+                        }
+                      })
+                      .catch((err) => {
+                        if (process.env.NODE_ENV === 'development') {
+                          // eslint-disable-next-line no-console
+                          console.warn('[Jarvis] close response error', err);
+                        }
+                        hideWindow();
+                      });
+                    return;
+                  }
+
+                  if (maybeResult && maybeResult.success === false) {
+                    hideWindow();
+                    return;
+                  }
+
+                  if (maybeResult !== null && maybeResult !== undefined) {
                     return;
                   }
                 } catch (error) {
+                  if (process.env.NODE_ENV === 'development') {
+                    // eslint-disable-next-line no-console
+                    console.warn('[Jarvis] windowControls.close failed', error);
+                  }
                   hideWindow();
                   return;
                 }
@@ -2815,5 +2814,3 @@ const HierarchicalForceTree = () => {
 };
 
 export default HierarchicalForceTree;
-
-
