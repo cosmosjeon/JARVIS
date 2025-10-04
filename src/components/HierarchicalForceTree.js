@@ -27,6 +27,7 @@ import {
 import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
 import AgentClient from 'services/agentClient';
+import { useTreeState } from 'features/tree/state/useTreeState';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from '../services/treeCreation';
 
 const WINDOW_CHROME_HEIGHT = 48;
@@ -278,13 +279,22 @@ const HierarchicalForceTree = () => {
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [data, setData] = useState(treeData);
-  const [activeTreeId, setActiveTreeId] = useState(null);
-  const [initializingTree, setInitializingTree] = useState(false);
-  const [treeSyncError, setTreeSyncError] = useState(null);
-  const [isTreeSyncing, setIsTreeSyncing] = useState(false);
+  const treeState = useTreeState(treeData);
+  const {
+    data,
+    setData,
+    loadTree,
+    activeTreeId,
+    setActiveTreeId,
+    initializingTree,
+    setInitializingTree,
+    treeSyncError,
+    setTreeSyncError,
+    isTreeSyncing,
+    setIsTreeSyncing,
+  } = treeState;
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
-  const dataRef = useRef(treeData);
+  const dataRef = useRef(data);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
@@ -511,7 +521,7 @@ const HierarchicalForceTree = () => {
     if (!resolvedTreeId) {
       hydrateConversationStore([]);
       setActiveTreeId(null);
-      setData({ nodes: [], links: [] });
+      loadTree({ nodes: [], links: [] });
       writeSessionTreeId(null);
       if (typeof window !== 'undefined') {
         try {
@@ -538,7 +548,7 @@ const HierarchicalForceTree = () => {
           : [];
 
         hydrateConversationStore(mappedNodes);
-        setData({
+        loadTree({
           nodes: mappedNodes,
           links: Array.isArray(targetTree.treeData?.links) ? targetTree.treeData.links : [],
         });
@@ -558,7 +568,7 @@ const HierarchicalForceTree = () => {
       } else {
         hydrateConversationStore([]);
         setActiveTreeId(null);
-        setData({ nodes: [], links: [] });
+        loadTree({ nodes: [], links: [] });
         writeSessionTreeId(null);
         if (resolvedTreeId) {
           treeLibrarySyncRef.current.delete(resolvedTreeId);
@@ -570,7 +580,7 @@ const HierarchicalForceTree = () => {
       requestedTreeIdRef.current = null;
       setInitializingTree(false);
     }
-  }, [user, hydrateConversationStore, loadTrees, readSessionTreeId, writeSessionTreeId]);
+  }, [user, hydrateConversationStore, loadTree, loadTrees, readSessionTreeId, writeSessionTreeId]);
 
   useEffect(() => {
     if (!user || hasResolvedInitialTreeRef.current) {
