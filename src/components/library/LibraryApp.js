@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Loader2, FolderTree as FolderIcon, ChevronDown, ChevronRight, Monitor, Moon, Sun, Sparkles } from "lucide-react";
 
 import { Badge } from "components/ui/badge";
@@ -26,6 +26,7 @@ import {
 import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from "services/treeCreation";
 import { cn } from "lib/utils";
 import { useTheme } from "./ThemeProvider";
+import { useLibraryState } from "features/library/state/useLibraryState";
 
 const EmptyState = ({ message }) => (
   <div className="flex h-full items-center justify-center px-6 text-sm text-foreground/70">
@@ -35,23 +36,51 @@ const EmptyState = ({ message }) => (
 
 const LibraryApp = () => {
   const { user, signOut } = useSupabaseAuth();
-  const [trees, setTrees] = useState([]);
-  const [folders, setFolders] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [selectedFolderId, setSelectedFolderId] = useState(null);
-  const [expandedFolders, setExpandedFolders] = useState(new Set());
-  const [loading, setLoading] = useState(true);
-  const [foldersLoading, setFoldersLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedNode, setSelectedNode] = useState(null);
-  const [showVoranBoxManager, setShowVoranBoxManager] = useState(false);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [createType, setCreateType] = useState("folder");
   const previousSelectedTreeRef = useRef(null);
-  const [navSelectedIds, setNavSelectedIds] = useState([]);
-  const [draggedTreeIds, setDraggedTreeIds] = useState([]);
-  const [dragOverFolderId, setDragOverFolderId] = useState(null);
-  const [dragOverVoranBox, setDragOverVoranBox] = useState(false);
+  const {
+    state,
+    actions,
+  } = useLibraryState();
+
+  const {
+    trees,
+    folders,
+    selectedTreeId,
+    selectedFolderId,
+    expandedFolders,
+    loading,
+    foldersLoading,
+    error,
+    selectedNode,
+    navSelectedIds,
+    draggedTreeIds,
+    dragOverFolderId,
+    dragOverVoranBox,
+    showVoranBoxManager,
+    showCreateDialog,
+    createType,
+  } = state;
+
+  const {
+    setTrees,
+    setFolders,
+    setSelectedTreeId,
+    setSelectedFolderId,
+    setExpandedFolders,
+    setLoading,
+    setFoldersLoading,
+    setError,
+    setSelectedNode,
+    setNavSelectedIds,
+    setDraggedTreeIds,
+    setDragOverFolderId,
+    setDragOverVoranBox,
+    setShowVoranBoxManager,
+    setShowCreateDialog,
+    setCreateType,
+  } = actions;
+
+  const selectedId = selectedTreeId;
 
   const { theme, setTheme, mode } = useTheme();
 
@@ -100,7 +129,7 @@ const LibraryApp = () => {
         if (!cancelled && deletedCount > 0) {
           setTrees((prevTrees) => prevTrees.filter((tree) => tree.id !== latestSnapshot.id));
           if (selectedId === latestSnapshot.id) {
-            setSelectedId(null);
+            setSelectedTreeId(null);
           }
           window.jarvisAPI?.requestLibraryRefresh?.();
         }
@@ -120,7 +149,7 @@ const LibraryApp = () => {
     if (!user) {
       setTrees([]);
       setFolders([]);
-      setSelectedId(null);
+      setSelectedTreeId(null);
       setSelectedFolderId(null);
       setLoading(false);
       setFoldersLoading(false);
@@ -149,7 +178,7 @@ const LibraryApp = () => {
       setTrees(mappedTrees);
       setFolders(fetchedFolders);
 
-      setSelectedId((previousId) => {
+      setSelectedTreeId((previousId) => {
         if (!mappedTrees.length) return null;
         const exists = previousId && mappedTrees.some((item) => item.id === previousId);
         return exists ? previousId : null;
@@ -158,7 +187,7 @@ const LibraryApp = () => {
       setError(err);
       setTrees([]);
       setFolders([]);
-      setSelectedId(null);
+      setSelectedTreeId(null);
       setSelectedFolderId(null);
     } finally {
       setLoading(false);
@@ -249,7 +278,7 @@ const LibraryApp = () => {
     try {
       await removeTree({ treeId });
       await refreshLibrary();
-      setSelectedId((prev) => (prev === treeId ? null : prev));
+      setSelectedTreeId((prev) => (prev === treeId ? null : prev));
     } catch (err) {
       setError(err);
     } finally {
@@ -488,7 +517,7 @@ const LibraryApp = () => {
 
   const handleFolderSelect = useCallback((folderId) => {
     setSelectedFolderId(folderId);
-    setSelectedId(null);
+    setSelectedTreeId(null);
   }, []);
 
   const extractTreeIdsFromDataTransfer = useCallback((dataTransfer) => {
@@ -790,7 +819,7 @@ const LibraryApp = () => {
       const result = await handleTreeMoveToFolder({ treeIds, targetFolderId: folderId });
       if (result?.moved?.length > 0) {
         setSelectedFolderId(folderId);
-        setSelectedId(result.moved[0].id);
+        setSelectedTreeId(result.moved[0].id);
         setNavSelectedIds(result.moved.map((item) => item.id));
       }
       if (result?.failures?.length > 0) {
@@ -820,7 +849,7 @@ const LibraryApp = () => {
       const result = await handleTreeMoveToFolder({ treeIds, targetFolderId: null });
       if (result?.moved?.length > 0) {
         setSelectedFolderId(null);
-        setSelectedId(result.moved[0].id);
+        setSelectedTreeId(result.moved[0].id);
         setNavSelectedIds(result.moved.map((item) => item.id));
       }
       if (result?.failures?.length > 0) {
@@ -976,7 +1005,7 @@ const LibraryApp = () => {
                             tabIndex={-1}
                             draggable
                             onClick={() => {
-                              setSelectedId(tree.id);
+                              setSelectedTreeId(tree.id);
                               setNavSelectedIds([tree.id]);
                             }}
                             onDoubleClick={() => {
@@ -1045,7 +1074,7 @@ const LibraryApp = () => {
                       tabIndex={-1}
                       draggable
                       onClick={() => {
-                        setSelectedId(tree.id);
+                        setSelectedTreeId(tree.id);
                         setNavSelectedIds([tree.id]);
                       }}
                       onDoubleClick={() => {
@@ -1136,7 +1165,7 @@ const LibraryApp = () => {
                     return nextList;
                   });
 
-                  setSelectedId(newTree.id);
+                  setSelectedTreeId(newTree.id);
 
                   await openWidgetForTree({ treeId: newTree.id, fresh: true });
                   window.jarvisAPI?.requestLibraryRefresh?.();
@@ -1223,7 +1252,7 @@ const LibraryApp = () => {
         trees={trees}
         folders={folders}
         onTreeSelect={(tree) => {
-          setSelectedId(tree.id);
+        setSelectedTreeId(tree.id);
           setShowVoranBoxManager(false);
         }}
         onTreeMoveToFolder={handleTreeMoveToFolder}
