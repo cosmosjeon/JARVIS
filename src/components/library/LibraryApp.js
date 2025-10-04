@@ -15,16 +15,14 @@ import VoranBoxManager from "./VoranBoxManager";
 import CreateDialog from "./CreateDialog";
 import { useSupabaseAuth } from "hooks/useSupabaseAuth";
 import {
-  fetchTreesWithNodes,
-  deleteTree,
-  deleteNodes,
-  fetchFolders,
-  createFolder,
-  updateFolder,
-  deleteFolder,
-  moveTreeToFolder,
-  upsertTreeMetadata
-} from "services/supabaseTrees";
+  loadTrees,
+  loadFolders,
+  saveTreeMetadata,
+  removeTree,
+  removeNodes,
+  assignTreeToFolder,
+  createLibraryFolder,
+} from "features/library/services/libraryRepository";
 import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from "services/treeCreation";
 import { cn } from "lib/utils";
 import { useTheme } from "./ThemeProvider";
@@ -135,8 +133,8 @@ const LibraryApp = () => {
 
     try {
       const [fetchedTrees, fetchedFolders] = await Promise.all([
-        fetchTreesWithNodes(user.id),
-        fetchFolders(user.id)
+        loadTrees(user.id),
+        loadFolders(user.id),
       ]);
 
       const mappedTrees = fetchedTrees.map((tree) => ({
@@ -166,7 +164,7 @@ const LibraryApp = () => {
       setLoading(false);
       setFoldersLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, loadTrees, loadFolders]);
 
   const handleCleanupEmptyTrees = useCallback(async () => {
     if (!user) return;
@@ -249,7 +247,7 @@ const LibraryApp = () => {
     setError(null);
 
     try {
-      await deleteTree(treeId);
+      await removeTree({ treeId });
       await refreshLibrary();
       setSelectedId((prev) => (prev === treeId ? null : prev));
     } catch (err) {
@@ -257,7 +255,7 @@ const LibraryApp = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, refreshLibrary]);
+  }, [user, refreshLibrary, removeTree]);
 
   const handleTreeRename = useCallback(async (treeId, newTitle) => {
     if (!user || !treeId || !newTitle?.trim()) {
@@ -265,7 +263,7 @@ const LibraryApp = () => {
     }
 
     try {
-      await upsertTreeMetadata({
+      await saveTreeMetadata({
         treeId,
         title: newTitle.trim(),
         userId: user.id
@@ -275,7 +273,7 @@ const LibraryApp = () => {
       setError(err);
       alert(`트리 이름 변경 중 오류가 발생했습니다: ${err.message}`);
     }
-  }, [user, refreshLibrary]);
+  }, [user, refreshLibrary, saveTreeMetadata]);
 
   const handleNodeSelect = useCallback((node) => {
     setSelectedNode(node);
@@ -440,7 +438,7 @@ const LibraryApp = () => {
 
       const allNodesToDelete = [nodeId, ...getAllChildNodes(nodeId, selectedTree.treeData?.nodes || [])];
 
-      await deleteNodes({
+      await removeNodes({
         nodeIds: allNodesToDelete,
         userId: user.id
       });
@@ -470,7 +468,7 @@ const LibraryApp = () => {
       console.error('노드 삭제 실패:', error);
       alert('노드 삭제 중 오류가 발생했습니다.');
     }
-  }, [selectedTree, user, selectedNode]);
+  }, [selectedTree, user, selectedNode, removeNodes]);
 
   const handleFolderCreate = useCallback(async ({ name, parentId }) => {
     if (!user) {
@@ -479,14 +477,14 @@ const LibraryApp = () => {
     }
 
     try {
-      const newFolder = await createFolder({ name, parentId, userId: user.id });
+      const newFolder = await createLibraryFolder({ name, parentId, userId: user.id });
       setFolders(prev => [...prev, newFolder]);
     } catch (err) {
       console.error('폴더 생성 오류:', err);
       setError(err);
       alert(`폴더 생성 중 오류가 발생했습니다: ${err.message}`);
     }
-  }, [user]);
+  }, [user, createLibraryFolder]);
 
   const handleFolderSelect = useCallback((folderId) => {
     setSelectedFolderId(folderId);
@@ -646,10 +644,10 @@ const LibraryApp = () => {
       }
 
       try {
-        await moveTreeToFolder({ treeId: tree.id, folderId: targetFolderId, userId: user.id });
+        await assignTreeToFolder({ treeId: tree.id, folderId: targetFolderId, userId: user.id });
 
         if (updatedTitle !== tree.title) {
-          await upsertTreeMetadata({ treeId: tree.id, title: updatedTitle, userId: user.id });
+          await saveTreeMetadata({ treeId: tree.id, title: updatedTitle, userId: user.id });
         }
 
         moved.push({ id: tree.id, targetFolderId });
@@ -689,10 +687,10 @@ const LibraryApp = () => {
           const renameInfo = renamed.find((entry) => entry.id === previous.id);
 
           if (renameInfo && renameInfo.previousTitle !== renameInfo.newTitle) {
-            await upsertTreeMetadata({ treeId: previous.id, title: renameInfo.previousTitle, userId: user.id });
+            await saveTreeMetadata({ treeId: previous.id, title: renameInfo.previousTitle, userId: user.id });
           }
 
-          await moveTreeToFolder({ treeId: previous.id, folderId: previous.folderId, userId: user.id });
+          await assignTreeToFolder({ treeId: previous.id, folderId: previous.folderId, userId: user.id });
         }
 
         setTrees((prevTrees) => prevTrees.map((tree) => {
@@ -722,7 +720,7 @@ const LibraryApp = () => {
       skipped,
       undo,
     };
-  }, [trees, user, moveTreeToFolder, upsertTreeMetadata]);
+  }, [trees, user, assignTreeToFolder, saveTreeMetadata]);
 
   const toggleFolder = useCallback((folderId) => {
     setExpandedFolders((prev) => {
