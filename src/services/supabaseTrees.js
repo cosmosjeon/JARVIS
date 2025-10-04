@@ -1,4 +1,4 @@
-import { ensureSupabase } from '../lib/supabaseClient';
+import { ensureSupabase } from 'shared/lib/supabaseClient';
 
 const MESSAGE_LIMIT = 48;
 

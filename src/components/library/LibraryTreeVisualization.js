@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as d3 from "d3";
 import { motion, AnimatePresence } from "framer-motion";
 
-import { Button } from "components/ui/button";
-import { Input } from "components/ui/input";
-import { cn } from "lib/utils";
+import { Button } from "shared/ui/button";
+import { Input } from "shared/ui/input";
+import { cn } from 'shared/utils';
 
 const NODE_VERTICAL_SPACING = 80;
 const NODE_HORIZONTAL_SPACING = 200;

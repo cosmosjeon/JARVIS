@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { CodeBlock, CodeBlockCopyButton } from '../ui/shadcn-io/ai/code-block';
+import { CodeBlock, CodeBlockCopyButton } from 'shared/ui/shadcn-io/ai/code-block';
 
 const escapeHtml = (value = '') =>
   value

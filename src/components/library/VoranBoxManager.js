@@ -17,9 +17,9 @@ import {
     ChevronUp,
     ChevronDown
 } from "lucide-react";
-import { Button } from "components/ui/button";
-import { Input } from "components/ui/input";
-import { cn } from "lib/utils";
+import { Button } from "shared/ui/button";
+import { Input } from "shared/ui/input";
+import { cn } from 'shared/utils';
 import Logo from "assets/admin-widget/logo.svg";
 
 const VoranBoxManager = ({

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import VoranBoxManager from '../library/VoranBoxManager';
 
 // Mock the UI components
-jest.mock('components/ui/button', () => ({
+jest.mock('shared/ui/button', () => ({
     Button: ({ children, onClick, ...props }) => (
         <button onClick={onClick} {...props}>
             {children}
@@ -11,13 +11,13 @@ jest.mock('components/ui/button', () => ({
     ),
 }));
 
-jest.mock('components/ui/input', () => ({
+jest.mock('shared/ui/input', () => ({
     Input: ({ onChange, onKeyDown, ...props }) => (
         <input onChange={onChange} onKeyDown={onKeyDown} {...props} />
     ),
 }));
 
-jest.mock('lib/utils', () => ({
+jest.mock('shared/utils', () => ({
     cn: (...classes) => classes.filter(Boolean).join(' '),
 }));
 

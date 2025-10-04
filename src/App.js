@@ -5,8 +5,8 @@ import HierarchicalForceTree from './components/HierarchicalForceTree';
 import LibraryApp from './components/library/LibraryApp';
 import AdminWidgetPanel from './components/admin/AdminWidgetPanel';
 import { ThemeProvider } from './components/library/ThemeProvider';
-import { SettingsProvider } from './hooks/SettingsContext';
-import { SupabaseProvider } from './hooks/useSupabaseAuth';
+import { SettingsProvider } from 'shared/hooks/SettingsContext';
+import { SupabaseProvider } from 'shared/hooks/useSupabaseAuth';
 import SupabaseAuthGate from './components/auth/SupabaseAuthGate';
 import OAuthCallbackPage from './views/OAuthCallbackPage';
 

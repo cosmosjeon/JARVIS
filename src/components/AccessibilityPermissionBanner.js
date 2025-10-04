@@ -1,5 +1,5 @@
 import React from 'react';
-import { useSettings } from '../hooks/SettingsContext';
+import { useSettings } from 'shared/hooks/SettingsContext';
 
 const AccessibilityPermissionBanner = () => {
   const { accessibilityGranted, requestAccessibility, refreshAccessibilityStatus } = useSettings();

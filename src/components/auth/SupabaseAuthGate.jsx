@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { useSupabaseAuth } from '../../hooks/useSupabaseAuth';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
+import { Button } from 'shared/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from 'shared/ui/card';
 
 const providerConfigs = [
   {

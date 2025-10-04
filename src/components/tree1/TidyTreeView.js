@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
-import { buildTidyTreeLayout } from "../../utils/tidyTreeLayout";
+import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
 import DragStateManager from "../../services/drag/DragStateManager";
 import InsertionCalculator from "../../services/drag/InsertionCalculator";
 import PreviewLayoutCalculator from "../../services/drag/PreviewLayoutCalculator";

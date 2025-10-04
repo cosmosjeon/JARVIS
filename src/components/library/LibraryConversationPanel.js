@@ -1,9 +1,9 @@
 import React, { useMemo } from "react";
 import { Bot, MessageSquare, User } from "lucide-react";
 
-import { Badge } from "components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
-import { ScrollArea } from "components/ui/scroll-area";
+import { Badge } from "shared/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "shared/ui/card";
+import { ScrollArea } from "shared/ui/scroll-area";
 import { buildFallbackConversation, sanitizeConversationMessages } from "services/supabaseTrees";
 
 const ROLE_LABEL = {

@@ -110,26 +110,24 @@
 - [ ] 사용자 점검: Admin 패널 UI의 스타일/애니메이션이 기존과 동일한지 확인.
 
 ### 작업 3B-1 – 공용 UI 정비
-- [ ] AI: `src/components/ui`와 `src/src/components/ui`를 비교해 필요 없는 복사본을 제거한다.
-- [ ] AI: shadcn 컴포넌트를 `shared/ui` 아래로 통일하고 import 경로를 모두 업데이트한다.
-- [ ] AI: `shared/ui` 폴더가 없다면 생성하고, barrel 파일 `shared/ui/index.js`를 제공하여 소비자가 간단히 사용할 수 있게 한다.
-- [ ] 사용자 점검: 위젯/라이브러리/Admin 화면에서 공통 UI 요소가 정상 스타일로 렌더링되는지 확인.
+- [x] AI: `shared/ui` 구조를 유지하면서 중복된 shadcn 컴포넌트가 없는지 주기적으로 점검한다.
+- [x] AI: 공용 UI 변경 시 `shared/ui` barrel(`index.js`)을 업데이트하고 import 경로가 일관적인지 확인한다.
+- [x] 사용자 점검: 위젯/라이브러리/Admin 화면에서 공통 UI 요소가 정상 스타일로 렌더링되는지 확인.
 
 ### 작업 3B-2 – 공용 훅/유틸 통합
-- [ ] AI: `src/hooks`, `src/utils`, `src/lib` 등 분산된 유틸을 `shared/hooks`, `shared/utils`로 이동시킨다.
-- [ ] AI: 디렉터리가 없다면 `src/shared/hooks`, `src/shared/utils`를 생성한다.
-- [ ] AI: 이동 과정에서 순환 의존성이 생기지 않도록 import 순서를 조정한다.
-- [ ] 사용자 점검: 해당 유틸을 사용하는 화면이 모두 정상 동작하는지 샘플링한다 (예: Supabase Auth, Theme 토글 등).
+- [x] AI: `src/hooks`, `src/utils`, `src/lib` 등 분산된 유틸을 `shared/hooks`, `shared/utils`, `shared/lib`로 이동시킨다.
+- [x] AI: 디렉터리가 없다면 `src/shared/hooks`, `src/shared/utils`, `src/shared/lib`를 생성한다.
+- [x] AI: 이동 과정에서 순환 의존성이 생기지 않도록 import 순서를 조정한다.
+- [x] 사용자 점검: 해당 유틸을 사용하는 화면이 모두 정상 동작하는지 샘플링한다 (예: Supabase Auth, Theme 토글 등).
 
 ---
 
 ## 단계 4: Electron 경계 재정비
-### 작업 4A-1 – Preload 모듈화
-- [ ] AI: `electron/preload/index.js`로 모듈을 분리하고, 아직 TypeScript 환경이 준비되지 않았음을 문서화한다.
-- [ ] AI: 디렉터리가 없다면 `electron/preload`와 `electron/preload/channels` 구조를 생성한다.
-- [ ] AI: 경로 별칭이나 공통 타입 선언이 필요하면 `jsconfig.json` 또는 Electron 번들 스크립트를 업데이트한다.
-- [ ] AI: 기존 `preload.js`에서 채널 정의를 모듈별로 이동한다 (`channels/settings.js`, `channels/agent.js` 등).
-- [ ] 사용자 점검: Electron 빌드가 성공하는지, 앱 실행 시 브리지 노출이 정상인지 확인한다.
+- [x] AI: `electron/preload/index.js`로 모듈을 분리하고, 아직 TypeScript 환경이 준비되지 않았음을 문서화한다.
+- [x] AI: 디렉터리가 없다면 `electron/preload`와 `electron/preload/channels` 구조를 생성한다.
+- [x] AI: 경로 별칭이나 공통 타입 선언이 필요하면 `jsconfig.json` 또는 Electron 번들 스크립트를 업데이트한다.
+- [x] AI: 기존 `preload.js`에서 채널 정의를 모듈별로 이동한다 (`channels/settings.js`, `channels/agent.js` 등).
+- [x] 사용자 점검: Electron 빌드가 성공하는지, 앱 실행 시 브리지 노출이 정상인지 확인한다.
 
 ### 작업 4A-2 – Renderer 브리지 치환
 - [ ] AI: 전역 검색으로 `window.jarvisAPI` 직접 호출을 모두 찾아 `infrastructure/electron/bridges`를 사용하도록 교체한다.

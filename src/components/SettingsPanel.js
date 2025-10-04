@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSettings } from '../hooks/SettingsContext';
+import { useSettings } from 'shared/hooks/SettingsContext';
 import HotkeyRecorderModal from './HotkeyRecorderModal';
 
 const SettingsPanel = () => {

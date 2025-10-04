@@ -21,18 +21,18 @@ import MarkdownMessage from './common/MarkdownMessage';
 import useChat from 'features/chat/hooks/useChat';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import ChatComposer from 'features/chat/components/ChatComposer';
-import { Dialog, DialogContent } from './ui/dialog';
-import { ScrollArea } from './ui/scroll-area';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { Separator } from './ui/separator';
+import { Dialog, DialogContent } from 'shared/ui/dialog';
+import { ScrollArea } from 'shared/ui/scroll-area';
+import { Button } from 'shared/ui/button';
+import { Badge } from 'shared/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from 'shared/ui/avatar';
+import { Separator } from 'shared/ui/separator';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from './ui/tooltip';
+} from 'shared/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +40,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+} from 'shared/ui/dropdown-menu';
 import {
   CommandDialog,
   CommandEmpty,
@@ -48,10 +48,10 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from './ui/command';
-import { Textarea } from './ui/textarea';
-import { Skeleton } from './ui/skeleton';
-import { cn } from 'lib/utils';
+} from 'shared/ui/command';
+import { Textarea } from 'shared/ui/textarea';
+import { Skeleton } from 'shared/ui/skeleton';
+import { cn } from 'shared/utils';
 
 // anchorPosition: { x, y }가 전달되면 해당 좌표 기준으로 고정 렌더링
 // onSubmit 이 전달되면 첫 전송 시 상위에서 처리하도록 콜백 호출

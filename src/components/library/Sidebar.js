@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Button } from "components/ui/button";
-import { Input } from "components/ui/input";
-import { ScrollArea } from "components/ui/scroll-area";
+import { Button } from "shared/ui/button";
+import { Input } from "shared/ui/input";
+import { ScrollArea } from "shared/ui/scroll-area";
 import { Folder, Plus, Search } from "lucide-react";
 
 import CreateDialog from "./CreateDialog";

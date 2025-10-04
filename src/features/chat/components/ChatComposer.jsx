@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Textarea } from 'components/ui/textarea';
-import { Button } from 'components/ui/button';
+import { Textarea } from 'shared/ui/textarea';
+import { Button } from 'shared/ui/button';
 import { Send } from 'lucide-react';
 
 export default function ChatComposer({ onSend, placeholder = '아이디어, 질문, 다음 액션을 입력하세요...' }) {

@@ -11,13 +11,13 @@ import { treeData } from '../data/treeData';
 import TreeAnimationService from '../services/TreeAnimationService';
 import QuestionService from '../services/QuestionService';
 import useTreeViewMode from '../controllers/useTreeViewMode';
-import { markNewLinks } from '../utils/linkAnimationUtils';
+import { markNewLinks } from 'shared/utils/linkAnimationUtils';
 import ChartView from './ChartView';
 import NodeAssistantPanel from './NodeAssistantPanel';
 import ForceDirectedTree from './tree2/ForceDirectedTree';
 import TidyTreeView from './tree1/TidyTreeView';
 import TreeWorkspaceToolbar from './TreeWorkspaceToolbar';
-import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from './library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
 import {

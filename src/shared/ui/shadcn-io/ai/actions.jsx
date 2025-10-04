@@ -1,0 +1,58 @@
+'use client';
+import { Button } from 'shared/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from 'shared/ui/tooltip';
+import { cn } from 'shared/utils';
+
+export const Actions = ({ className, children, ...props }) => (
+  <div className={cn('flex items-center gap-1', className)} {...props}>
+    {children}
+  </div>
+);
+
+export const Action = ({
+  tooltip,
+  children,
+  label,
+  className,
+  variant = 'ghost',
+  size = 'sm',
+  ...props
+}) => {
+  const button = (
+    <Button
+      className={cn(
+        'size-9 p-1.5 text-muted-foreground transition-colors hover:bg-transparent',
+        '[&>svg]:transition-all [&>svg]:duration-200 [&>svg]:hover:scale-110',
+        '[&>svg]:hover:text-black dark:[&>svg]:hover:text-white',
+        className
+      )}
+      size={size}
+      type="button"
+      variant={variant}
+      {...props}
+    >
+      {children}
+      <span className="sr-only">{label || tooltip}</span>
+    </Button>
+  );
+
+  if (!tooltip) {
+    return button;
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>
+          <p>{tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};

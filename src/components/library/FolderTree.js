@@ -4,9 +4,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
-} from "components/ui/context-menu";
-import { Badge } from "components/ui/badge";
-import { cn } from "lib/utils";
+} from "shared/ui/context-menu";
+import { Badge } from "shared/ui/badge";
+import { cn } from 'shared/utils';
 import {
   getFolderChildren,
   getMemosByFolder,

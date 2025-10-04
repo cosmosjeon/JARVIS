@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Send, Loader2, Bot, User, X } from 'lucide-react';
-import { Button } from 'components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from 'components/ui/card';
-import { Badge } from 'components/ui/badge';
-import { ScrollArea } from 'components/ui/scroll-area';
+import { Button } from 'shared/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from 'shared/ui/card';
+import { Badge } from 'shared/ui/badge';
+import { ScrollArea } from 'shared/ui/scroll-area';
 import QuestionService from 'services/QuestionService';
-import { useSupabaseAuth } from 'hooks/useSupabaseAuth';
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'services/supabaseTrees';
 import MarkdownMessage from 'components/common/MarkdownMessage';
 import ChatMessageList from 'features/chat/components/ChatMessageList';

@@ -1,41 +1,70 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Folder, GripVertical } from 'lucide-react';
-import { useSupabaseAuth } from 'hooks/useSupabaseAuth';
-import { createTreeForUser, openWidgetForTree } from 'services/treeCreation';
-import { fetchTreesWithNodes } from 'services/supabaseTrees';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { Loader2 } from 'lucide-react';
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
+import {
+  loadRecentTrees as fetchRecentTrees,
+  createAndOpenTree,
+  showLibraryWindow,
+  closePanel,
+  logWarning,
+} from 'features/admin/services/adminWidgetService';
+import { useAdminWidgetState } from 'features/admin/state/useAdminWidgetState';
+import AdminWidgetControlBar from 'shared/components/admin/AdminWidgetControlBar';
 import adminWidgetLogo from 'assets/admin-widget/logo.svg';
 
 const AdminWidgetPanel = () => {
   const { user, loading } = useSupabaseAuth();
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState(null);
-  const [recentTrees, setRecentTrees] = useState([]);
-  const [loadingTrees, setLoadingTrees] = useState(false);
+  const {
+    state: { creating, error },
+    actions: {
+      beginCreate,
+      endCreate,
+      setError,
+      clearError,
+      setRecentTrees,
+      setLoadingTrees,
+    },
+  } = useAdminWidgetState();
 
   useEffect(() => {
     if (!loading && !user) {
-      window.jarvisAPI?.closeAdminPanel?.();
+      closePanel();
     }
   }, [loading, user]);
 
   // 최신 트리들 로드
   useEffect(() => {
-    const loadRecentTrees = async () => {
-      if (!user) return;
-      
+    if (!user) {
+      setRecentTrees([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadTrees = async () => {
       setLoadingTrees(true);
       try {
-        const trees = await fetchTreesWithNodes(user.id);
-        setRecentTrees(trees.slice(0, 2)); // 최신 2개만 표시
+        const trees = await fetchRecentTrees({ userId: user.id, limit: 2 });
+        if (!cancelled) {
+          setRecentTrees(Array.isArray(trees) ? trees : []);
+        }
       } catch (err) {
-        console.error('Failed to load recent trees:', err);
+        if (!cancelled) {
+          logWarning('admin_panel_recent_tree_load_failed', { message: err?.message });
+        }
       } finally {
-        setLoadingTrees(false);
+        if (!cancelled) {
+          setLoadingTrees(false);
+        }
       }
     };
 
-    loadRecentTrees();
-  }, [user]);
+    loadTrees();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, setRecentTrees, setLoadingTrees]);
 
   const statusText = useMemo(() => {
     if (loading) {
@@ -55,49 +84,38 @@ const AdminWidgetPanel = () => {
       return;
     }
 
-    setCreating(true);
-    setError(null);
+    beginCreate();
     try {
-      const newTree = await createTreeForUser({ userId: user.id });
-      await openWidgetForTree({ treeId: newTree.id, fresh: true });
-      window.jarvisAPI?.requestLibraryRefresh?.();
+      await createAndOpenTree({ userId: user.id });
     } catch (err) {
       setError(err);
     } finally {
-      setCreating(false);
+      endCreate();
     }
-  }, [user, creating]);
+  }, [user, creating, beginCreate, endCreate, setError]);
 
   const handleShowLibrary = useCallback(async () => {
     try {
-      await window.jarvisAPI?.showLibrary?.();
+      clearError();
+      await showLibraryWindow();
     } catch (err) {
       setError(err);
-      window.jarvisAPI?.log?.('warn', 'admin_panel_show_library_failed', { message: err?.message });
+      logWarning('admin_panel_show_library_failed', { message: err?.message });
     }
-  }, []);
+  }, [clearError, setError]);
 
   // Voran 로고 클릭 - React Hierarchical Force Tree로 이동
   const handleVoranClick = useCallback(async () => {
     try {
+      clearError();
       // React Hierarchical Force Tree로 이동하는 로직
       // 현재는 라이브러리를 열어서 트리 뷰어로 이동
-      await window.jarvisAPI?.showLibrary?.();
+      await showLibraryWindow();
     } catch (err) {
       setError(err);
-      window.jarvisAPI?.log?.('warn', 'admin_panel_voran_click_failed', { message: err?.message });
+      logWarning('admin_panel_voran_click_failed', { message: err?.message });
     }
-  }, []);
-
-  // 폴더 아이콘 클릭 - 해당 트리 열기
-  const handleFolderClick = useCallback(async (tree) => {
-    try {
-      await openWidgetForTree({ treeId: tree.id, fresh: false });
-    } catch (err) {
-      setError(err);
-      window.jarvisAPI?.log?.('warn', 'admin_panel_folder_click_failed', { message: err?.message });
-    }
-  }, []);
+  }, [clearError, setError]);
 
   if (loading) {
     return (
@@ -117,82 +135,12 @@ const AdminWidgetPanel = () => {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent">
       <div className="flex flex-col items-center gap-2" style={{ WebkitAppRegion: 'drag' }}>
-        <div className="flex h-12 items-center gap-2 rounded-full bg-slate-900/80 px-3 py-2 ring-1 ring-slate-800/50 backdrop-blur-xl">
-          {/* Voran 로고 */}
-          <button
-            type="button"
-            onClick={handleVoranClick}
-            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-slate-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
-            style={{ 
-              WebkitAppRegion: 'no-drag',
-              boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            <img src={adminWidgetLogo} alt="Voran" className="h-6 w-6" draggable={false} />
-          </button>
-
-          {/* NEW 버튼 */}
-          <button
-            type="button"
-            onClick={handleCreateWidget}
-            disabled={creating}
-            className={`flex h-8 items-center justify-center rounded-full px-4 text-xs font-semibold tracking-[0.1em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
-              creating
-                ? 'bg-sky-600/60 text-slate-200'
-                : 'bg-[#1f8ab5] text-white hover:bg-[#2ba5d3] active:bg-[#1978a0]'
-            }`}
-            style={{ 
-              WebkitAppRegion: 'no-drag',
-              boxShadow: creating 
-                ? '2px 2px 4px rgba(0, 0, 0, 0.2), -2px -2px 4px rgba(255, 255, 255, 0.05)'
-                : '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            NEW
-          </button>
-
-          {/* 폴더 아이콘들 */}
-          {recentTrees.map((tree, index) => (
-            <button
-              key={tree.id}
-              type="button"
-              onClick={() => handleFolderClick(tree)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-cyan-400 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70"
-              style={{ 
-                WebkitAppRegion: 'no-drag',
-                boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
-              }}
-              title={tree.title}
-            >
-              <Folder className="h-4 w-4" />
-            </button>
-          ))}
-
-          {/* 빈 폴더 아이콘 (트리가 2개 미만일 때) */}
-          {recentTrees.length < 2 && (
-            <div 
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-slate-500"
-              style={{
-                boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
-              }}
-            >
-              <Folder className="h-4 w-4" />
-            </div>
-          )}
-
-          {/* 드래그 핸들 */}
-          <button
-            type="button"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2f36] text-slate-400 transition hover:bg-[#3a3d45] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/70"
-            style={{ 
-              WebkitAppRegion: 'drag',
-              boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
-            }}
-            title="위젯 이동"
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-        </div>
+        <AdminWidgetControlBar
+          logoSrc={adminWidgetLogo}
+          onLogoClick={handleVoranClick}
+          onCreateClick={handleCreateWidget}
+          creating={creating}
+        />
         {statusText && (
           <div className="text-xs font-medium text-slate-200/85">
             {statusText}

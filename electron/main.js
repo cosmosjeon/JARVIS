@@ -546,9 +546,9 @@ const createWindow = ({ treeId = null, sessionId = generateSessionId(), fresh = 
     title: 'JARVIS Widget',
 
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload/index.js'),
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false, // TODO: sandbox 호환 수정 후 다시 true로 변경 (Stage 4A-1)
       nodeIntegration: false,
       devTools: isDev,
       spellcheck: false,
@@ -647,7 +647,7 @@ const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessi
     autoHideMenuBar: true,
     title: 'JARVIS Widget',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload/index.js'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
@@ -716,9 +716,9 @@ const createLibraryWindow = () => {
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload/index.js'),
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false, // TODO: sandbox 호환 수정 후 다시 true로 변경 (Stage 4A-1)
       nodeIntegration: false,
       devTools: isDev,
       spellcheck: false,
@@ -803,9 +803,9 @@ const ensureAdminPanelWindow = () => {
     roundedCorners: true,
     titleBarStyle: process.platform === 'darwin' ? 'customButtonsOnHover' : 'hidden',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload/index.js'),
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false, // TODO: sandbox 호환 수정 후 다시 true로 변경 (Stage 4A-1)
       nodeIntegration: false,
       devTools: isDev,
       spellcheck: false,

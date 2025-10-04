@@ -1,5 +1,7 @@
 import { useMemo, useReducer } from 'react';
 
+const EMPTY_ARRAY = Object.freeze([]);
+
 const ACTIONS = {
   SET_TREES: 'setTrees',
   SET_FOLDERS: 'setFolders',
@@ -19,23 +21,45 @@ const ACTIONS = {
   SET_CREATE_TYPE: 'setCreateType',
 };
 
-const initialState = {
-  trees: [],
-  folders: [],
+const BASE_STATE = {
+  trees: EMPTY_ARRAY,
+  folders: EMPTY_ARRAY,
   selectedTreeId: null,
   selectedFolderId: null,
-  expandedFolders: new Set(),
   loading: true,
   foldersLoading: true,
   error: null,
   selectedNode: null,
-  navSelectedIds: [],
-  draggedTreeIds: [],
+  navSelectedIds: EMPTY_ARRAY,
+  draggedTreeIds: EMPTY_ARRAY,
   dragOverFolderId: null,
   dragOverVoranBox: false,
   showVoranBoxManager: false,
   showCreateDialog: false,
   createType: 'folder',
+};
+
+const createInitialState = (overrides = {}) => {
+  const {
+    trees,
+    folders,
+    expandedFolders,
+    navSelectedIds,
+    draggedTreeIds,
+    ...rest
+  } = overrides;
+
+  return {
+    ...BASE_STATE,
+    ...rest,
+    trees: Array.isArray(trees) ? trees : BASE_STATE.trees,
+    folders: Array.isArray(folders) ? folders : BASE_STATE.folders,
+    navSelectedIds: Array.isArray(navSelectedIds) ? navSelectedIds : BASE_STATE.navSelectedIds,
+    draggedTreeIds: Array.isArray(draggedTreeIds) ? draggedTreeIds : BASE_STATE.draggedTreeIds,
+    expandedFolders: expandedFolders instanceof Set
+      ? new Set(expandedFolders)
+      : new Set(Array.isArray(expandedFolders) ? expandedFolders : []),
+  };
 };
 
 const resolveNext = (payload, previous) => (
@@ -81,33 +105,170 @@ const reducer = (state, action) => {
   }
 };
 
-const buildActions = (dispatch) => ({
-  setTrees: (trees) => dispatch({ type: ACTIONS.SET_TREES, payload: trees }),
-  setFolders: (folders) => dispatch({ type: ACTIONS.SET_FOLDERS, payload: folders }),
-  setLoading: (value) => dispatch({ type: ACTIONS.SET_LOADING, payload: value }),
-  setFoldersLoading: (value) => dispatch({ type: ACTIONS.SET_FOLDERS_LOADING, payload: value }),
-  setError: (value) => dispatch({ type: ACTIONS.SET_ERROR, payload: value }),
-  setSelectedTreeId: (value) => dispatch({ type: ACTIONS.SET_SELECTED_TREE, payload: value }),
-  setSelectedFolderId: (value) => dispatch({ type: ACTIONS.SET_SELECTED_FOLDER, payload: value }),
-  setExpandedFolders: (value) => dispatch({ type: ACTIONS.SET_EXPANDED_FOLDERS, payload: value }),
-  setSelectedNode: (value) => dispatch({ type: ACTIONS.SET_SELECTED_NODE, payload: value }),
-  setNavSelectedIds: (value) => dispatch({ type: ACTIONS.SET_NAV_SELECTED_IDS, payload: value }),
-  setDraggedTreeIds: (value) => dispatch({ type: ACTIONS.SET_DRAGGED_TREE_IDS, payload: value }),
-  setDragOverFolderId: (value) => dispatch({ type: ACTIONS.SET_DRAG_OVER_FOLDER, payload: value }),
-  setDragOverVoranBox: (value) => dispatch({ type: ACTIONS.SET_DRAG_OVER_VORAN, payload: value }),
-  setShowVoranBoxManager: (value) => dispatch({ type: ACTIONS.SET_SHOW_VORAN_BOX, payload: value }),
-  setShowCreateDialog: (value) => dispatch({ type: ACTIONS.SET_SHOW_CREATE_DIALOG, payload: value }),
-  setCreateType: (value) => dispatch({ type: ACTIONS.SET_CREATE_TYPE, payload: value }),
-});
+const buildActions = (dispatch) => {
+  const dispatchAction = (type) => (payload) => dispatch({ type, payload });
+
+  const setTrees = dispatchAction(ACTIONS.SET_TREES);
+  const setFolders = dispatchAction(ACTIONS.SET_FOLDERS);
+  const setLoading = dispatchAction(ACTIONS.SET_LOADING);
+  const setFoldersLoading = dispatchAction(ACTIONS.SET_FOLDERS_LOADING);
+  const setError = dispatchAction(ACTIONS.SET_ERROR);
+  const setSelectedTreeId = dispatchAction(ACTIONS.SET_SELECTED_TREE);
+  const setSelectedFolderId = dispatchAction(ACTIONS.SET_SELECTED_FOLDER);
+  const setExpandedFolders = dispatchAction(ACTIONS.SET_EXPANDED_FOLDERS);
+  const setSelectedNode = dispatchAction(ACTIONS.SET_SELECTED_NODE);
+  const setNavSelectedIds = dispatchAction(ACTIONS.SET_NAV_SELECTED_IDS);
+  const setDraggedTreeIds = dispatchAction(ACTIONS.SET_DRAGGED_TREE_IDS);
+  const setDragOverFolderId = dispatchAction(ACTIONS.SET_DRAG_OVER_FOLDER);
+  const setDragOverVoranBox = dispatchAction(ACTIONS.SET_DRAG_OVER_VORAN);
+  const setShowVoranBoxManager = dispatchAction(ACTIONS.SET_SHOW_VORAN_BOX);
+  const setShowCreateDialog = dispatchAction(ACTIONS.SET_SHOW_CREATE_DIALOG);
+  const setCreateType = dispatchAction(ACTIONS.SET_CREATE_TYPE);
+
+  const toggleFolder = (folderId) => {
+    if (!folderId) {
+      return;
+    }
+    setExpandedFolders((previous) => {
+      const next = new Set(previous);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
+
+  const selectTree = (treeId, options = {}) => {
+    const { folderId, navIds } = options;
+    const nextTreeId = treeId ?? null;
+    setSelectedTreeId(nextTreeId);
+    if (typeof navIds !== 'undefined') {
+      setNavSelectedIds(navIds);
+    } else if (nextTreeId) {
+      setNavSelectedIds([nextTreeId]);
+    } else {
+      setNavSelectedIds([]);
+    }
+    if (typeof folderId !== 'undefined') {
+      setSelectedFolderId(folderId);
+    }
+  };
+
+  const selectFolder = (folderId) => {
+    setSelectedFolderId(folderId ?? null);
+    setSelectedTreeId(null);
+    setNavSelectedIds([]);
+  };
+
+  const clearTreeSelection = () => {
+    setSelectedTreeId(null);
+    setNavSelectedIds([]);
+    setSelectedNode(null);
+  };
+
+  const resetDragState = () => {
+    setDraggedTreeIds([]);
+    setDragOverFolderId(null);
+    setDragOverVoranBox(false);
+  };
+
+  const showVoranBox = () => setShowVoranBoxManager(true);
+  const hideVoranBox = () => setShowVoranBoxManager(false);
+
+  const openCreateDialog = (type = 'folder') => {
+    setCreateType(type);
+    setShowCreateDialog(true);
+  };
+
+  const closeCreateDialog = () => setShowCreateDialog(false);
+
+  return {
+    data: {
+      setTrees,
+      setFolders,
+      setLoading,
+      setFoldersLoading,
+      setError,
+    },
+    selection: {
+      selectTree,
+      selectFolder,
+      setSelectedNode,
+      setNavSelectedIds,
+      clearTreeSelection,
+    },
+    folder: {
+      toggleFolder,
+      setSelectedFolderId,
+      setExpandedFolders,
+    },
+    drag: {
+      setDraggedTreeIds,
+      setDragOverFolderId,
+      setDragOverVoranBox,
+      resetDragState,
+    },
+    modal: {
+      showVoranBox,
+      hideVoranBox,
+      openCreateDialog,
+      closeCreateDialog,
+      setShowCreateDialog,
+      setCreateType,
+    },
+  };
+};
+
+const buildSelectors = (state) => {
+  const {
+    selectedTreeId,
+    selectedFolderId,
+    trees,
+    folders,
+    expandedFolders,
+  } = state;
+
+  const selectedTree = selectedTreeId
+    ? trees.find((tree) => tree.id === selectedTreeId) ?? null
+    : null;
+
+  const selectedFolder = selectedFolderId
+    ? folders.find((folder) => folder.id === selectedFolderId) ?? null
+    : null;
+
+  const treesByFolder = trees.reduce((acc, tree) => {
+    const key = tree.folderId ?? null;
+    if (!acc.has(key)) {
+      acc.set(key, []);
+    }
+    acc.get(key).push(tree);
+    return acc;
+  }, new Map());
+
+  const voranTrees = treesByFolder.get(null) ?? EMPTY_ARRAY;
+
+  return {
+    selectedTree,
+    selectedFolder,
+    voranTrees,
+    getTreesByFolder: (folderId) => treesByFolder.get(folderId) ?? EMPTY_ARRAY,
+    isFolderExpanded: (folderId) => expandedFolders.has(folderId),
+    hasSelectedTree: Boolean(selectedTreeId),
+  };
+};
 
 export const useLibraryState = (overrides = {}) => {
-  const [state, dispatch] = useReducer(reducer, { ...initialState, ...overrides });
+  const [state, dispatch] = useReducer(reducer, overrides, createInitialState);
 
   const actions = useMemo(() => buildActions(dispatch), [dispatch]);
+  const selectors = useMemo(() => buildSelectors(state), [state]);
 
   return {
     state,
     actions,
+    selectors,
   };
 };
 

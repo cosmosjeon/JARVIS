@@ -4,7 +4,7 @@ import {
   upsertTreeMetadata,
   upsertTreeNodes,
 } from 'services/supabaseTrees';
-import { useSupabaseAuth } from 'hooks/useSupabaseAuth';
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 
 /**
  * Supabase tree service wrappers.

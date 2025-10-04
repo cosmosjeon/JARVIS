@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import * as d3 from "d3";
-import { buildTidyTreeLayout } from "../../utils/tidyTreeLayout";
+import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
 
 const WidgetTidyTreeChart = ({ data, onClose }) => {
   const layout = useMemo(

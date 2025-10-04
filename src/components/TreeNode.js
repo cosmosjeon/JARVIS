@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
 import { createTreeNodeSummary, isTreeRootNode } from '../services/TreeSummaryService';
-import { useSmartPositioning } from '../hooks/useSmartPositioning';
+import { useSmartPositioning } from 'shared/hooks/useSmartPositioning';
 
 const selectPanelSize = (conversation, scaleFactor = 1) => {
   const scaledSizes = {

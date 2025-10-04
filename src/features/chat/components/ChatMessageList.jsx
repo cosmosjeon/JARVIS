@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Response } from 'components/ui/shadcn-io/ai/response';
-import { Avatar, AvatarFallback, AvatarImage } from 'components/ui/avatar';
-import { Separator } from 'components/ui/separator';
+import { Response } from 'shared/ui/shadcn-io/ai/response';
+import { Avatar, AvatarFallback, AvatarImage } from 'shared/ui/avatar';
+import { Separator } from 'shared/ui/separator';
 import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
-import { Actions, Action } from 'components/ui/shadcn-io/ai/actions';
-import { Conversation, ConversationContent, ConversationScrollButton } from 'components/ui/shadcn-io/ai/conversation';
+import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
+import { Conversation, ConversationContent, ConversationScrollButton } from 'shared/ui/shadcn-io/ai/conversation';
 
 export default function ChatMessageList({ title = 'Assistant', messages = [], endRef, onRetry, onCopy }) {
   const avatarInitial = title.charAt(0).toUpperCase();
@@ -44,12 +44,12 @@ export default function ChatMessageList({ title = 'Assistant', messages = [], en
 
   return (
     <div ref={scrollContainerRef} className="flex flex-col gap-5 p-6 h-full overflow-y-auto">
-        {messages.map((message) => {
+        {messages.map((message, index) => {
           const isUser = message.role === 'user';
           const isSystem = message.role === 'system';
           const showActions = !isUser && !isSystem && (onRetry || onCopy);
           return (
-            <div key={message.id} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div key={message?.id ?? `message-${index}`} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
               {!isUser && (
                 <Avatar className="mt-1 h-10 w-10 border border-border/80 bg-background/40">
                   <AvatarImage alt={`${title} avatar`} />
@@ -105,5 +105,4 @@ export default function ChatMessageList({ title = 'Assistant', messages = [], en
     </div>
   );
 }
-
 

@@ -1,19 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Loader2, FolderTree as FolderIcon, ChevronDown, ChevronRight, Monitor, Moon, Sun, Sparkles } from "lucide-react";
+import { Sparkles, Sun, Moon } from "lucide-react";
 
-import { Badge } from "components/ui/badge";
-import { Button } from "components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "components/ui/resizable";
-import { ScrollArea } from "components/ui/scroll-area";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "components/ui/dropdown-menu";
 import Logo from "assets/admin-widget/logo.svg";
 
-import TreeCanvas from "./TreeCanvas";
-import LibraryQAPanel from "./LibraryQAPanel";
 import VoranBoxManager from "./VoranBoxManager";
 import CreateDialog from "./CreateDialog";
-import { useSupabaseAuth } from "hooks/useSupabaseAuth";
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import {
   loadTrees,
   loadFolders,
@@ -24,15 +16,9 @@ import {
   createLibraryFolder,
 } from "features/library/services/libraryRepository";
 import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from "services/treeCreation";
-import { cn } from "lib/utils";
 import { useTheme } from "./ThemeProvider";
 import { useLibraryState } from "features/library/state/useLibraryState";
-
-const EmptyState = ({ message }) => (
-  <div className="flex h-full items-center justify-center px-6 text-sm text-foreground/70">
-    {message}
-  </div>
-);
+import { LibraryActionToolbar, LibrarySidebar, LibraryContent } from "features/library/ui";
 
 const LibraryApp = () => {
   const { user, signOut } = useSupabaseAuth();
@@ -40,6 +26,7 @@ const LibraryApp = () => {
   const {
     state,
     actions,
+    selectors,
   } = useLibraryState();
 
   const {
@@ -62,39 +49,62 @@ const LibraryApp = () => {
   } = state;
 
   const {
+    data: dataActions,
+    selection: selectionActions,
+    folder: folderActions,
+    drag: dragActions,
+    modal: modalActions,
+  } = actions;
+
+  const {
     setTrees,
     setFolders,
-    setSelectedTreeId,
-    setSelectedFolderId,
-    setExpandedFolders,
     setLoading,
     setFoldersLoading,
     setError,
+  } = dataActions;
+
+  const {
+    selectTree,
+    selectFolder,
     setSelectedNode,
     setNavSelectedIds,
+    clearTreeSelection,
+  } = selectionActions;
+
+  const {
+    toggleFolder: toggleFolderExpansion,
+    setSelectedFolderId,
+  } = folderActions;
+
+  const {
     setDraggedTreeIds,
     setDragOverFolderId,
     setDragOverVoranBox,
-    setShowVoranBoxManager,
+    resetDragState,
+  } = dragActions;
+
+  const {
+    showVoranBox,
+    hideVoranBox,
+    openCreateDialog,
     setShowCreateDialog,
-    setCreateType,
-  } = actions;
+  } = modalActions;
+
+  const {
+    selectedTree,
+    voranTrees,
+  } = selectors;
 
   const selectedId = selectedTreeId;
 
-  const { theme, setTheme, mode } = useTheme();
-
-
-  const selectedTree = useMemo(
-    () => trees.find((tree) => tree.id === selectedId) ?? null,
-    [trees, selectedId]
-  );
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     if (selectedId) {
       setNavSelectedIds([selectedId]);
     }
-  }, [selectedId]);
+  }, [selectedId, setNavSelectedIds]);
 
   useEffect(() => {
     if (!user) {
@@ -129,7 +139,7 @@ const LibraryApp = () => {
         if (!cancelled && deletedCount > 0) {
           setTrees((prevTrees) => prevTrees.filter((tree) => tree.id !== latestSnapshot.id));
           if (selectedId === latestSnapshot.id) {
-            setSelectedTreeId(null);
+            selectTree(null);
           }
           window.jarvisAPI?.requestLibraryRefresh?.();
         }
@@ -149,7 +159,7 @@ const LibraryApp = () => {
     if (!user) {
       setTrees([]);
       setFolders([]);
-      setSelectedTreeId(null);
+      clearTreeSelection();
       setSelectedFolderId(null);
       setLoading(false);
       setFoldersLoading(false);
@@ -177,23 +187,36 @@ const LibraryApp = () => {
 
       setTrees(mappedTrees);
       setFolders(fetchedFolders);
-
-      setSelectedTreeId((previousId) => {
-        if (!mappedTrees.length) return null;
-        const exists = previousId && mappedTrees.some((item) => item.id === previousId);
-        return exists ? previousId : null;
-      });
+      const exists = selectedId && mappedTrees.some((item) => item.id === selectedId);
+      if (exists) {
+        selectTree(selectedId);
+      } else {
+        clearTreeSelection();
+      }
     } catch (err) {
       setError(err);
       setTrees([]);
       setFolders([]);
-      setSelectedTreeId(null);
+      clearTreeSelection();
       setSelectedFolderId(null);
     } finally {
       setLoading(false);
       setFoldersLoading(false);
     }
-  }, [user?.id, loadTrees, loadFolders]);
+  }, [
+    user?.id,
+    loadTrees,
+    loadFolders,
+    selectedId,
+    selectTree,
+    clearTreeSelection,
+    setError,
+    setSelectedFolderId,
+    setTrees,
+    setFolders,
+    setLoading,
+    setFoldersLoading,
+  ]);
 
   const handleCleanupEmptyTrees = useCallback(async () => {
     if (!user) return;
@@ -257,7 +280,7 @@ const LibraryApp = () => {
         });
       }
     }
-  }, [setError]);
+  }, [openWidgetForTree, setError]);
 
   const handleTreeDelete = useCallback(async (treeId) => {
     if (!user || !treeId) {
@@ -278,13 +301,15 @@ const LibraryApp = () => {
     try {
       await removeTree({ treeId });
       await refreshLibrary();
-      setSelectedTreeId((prev) => (prev === treeId ? null : prev));
+      if (selectedId === treeId) {
+        clearTreeSelection();
+      }
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, [user, refreshLibrary, removeTree]);
+  }, [user, refreshLibrary, removeTree, selectedId, clearTreeSelection, setLoading, setError]);
 
   const handleTreeRename = useCallback(async (treeId, newTitle) => {
     if (!user || !treeId || !newTitle?.trim()) {
@@ -302,11 +327,11 @@ const LibraryApp = () => {
       setError(err);
       alert(`트리 이름 변경 중 오류가 발생했습니다: ${err.message}`);
     }
-  }, [user, refreshLibrary, saveTreeMetadata]);
+  }, [user, refreshLibrary, saveTreeMetadata, setError]);
 
   const handleNodeSelect = useCallback((node) => {
     setSelectedNode(node);
-  }, []);
+  }, [setSelectedNode]);
 
   const handleNodeUpdate = useCallback((updatedNode) => {
     setTrees(prevTrees =>
@@ -324,7 +349,7 @@ const LibraryApp = () => {
           : tree
       )
     );
-  }, [selectedTree]);
+  }, [selectedTree, setTrees]);
 
   const handleNewNodeCreated = useCallback((newNode, newLink) => {
     setTrees(prevTrees =>
@@ -349,7 +374,7 @@ const LibraryApp = () => {
       )
     );
     setSelectedNode(newNode);
-  }, [selectedTree]);
+  }, [selectedTree, setTrees, setSelectedNode]);
 
   // 메모 생성 핸들러
   const handleMemoCreate = useCallback((nodeId) => {
@@ -386,7 +411,7 @@ const LibraryApp = () => {
     );
 
     return newMemoId;
-  }, [selectedTree, user]);
+  }, [selectedTree, user, setTrees]);
 
   // 메모 업데이트 핸들러
   const handleMemoUpdate = useCallback((nodeId, memoData) => {
@@ -418,7 +443,7 @@ const LibraryApp = () => {
           : tree
       )
     );
-  }, [selectedTree, user]);
+  }, [selectedTree, user, setTrees]);
 
   // 메모 삭제 핸들러
   const handleMemoRemove = useCallback((memoId) => {
@@ -443,7 +468,7 @@ const LibraryApp = () => {
           : tree
       )
     );
-  }, [selectedTree, user]);
+  }, [selectedTree, user, setTrees]);
 
   const handleNodeRemove = useCallback(async (nodeId) => {
     if (!selectedTree || !user) {
@@ -497,7 +522,7 @@ const LibraryApp = () => {
       console.error('노드 삭제 실패:', error);
       alert('노드 삭제 중 오류가 발생했습니다.');
     }
-  }, [selectedTree, user, selectedNode, removeNodes]);
+  }, [selectedTree, user, selectedNode, removeNodes, setTrees, setSelectedNode]);
 
   const handleFolderCreate = useCallback(async ({ name, parentId }) => {
     if (!user) {
@@ -513,12 +538,11 @@ const LibraryApp = () => {
       setError(err);
       alert(`폴더 생성 중 오류가 발생했습니다: ${err.message}`);
     }
-  }, [user, createLibraryFolder]);
+  }, [user, createLibraryFolder, setFolders, setError]);
 
   const handleFolderSelect = useCallback((folderId) => {
-    setSelectedFolderId(folderId);
-    setSelectedTreeId(null);
-  }, []);
+    selectFolder(folderId);
+  }, [selectFolder]);
 
   const extractTreeIdsFromDataTransfer = useCallback((dataTransfer) => {
     if (!dataTransfer) {
@@ -749,20 +773,15 @@ const LibraryApp = () => {
       skipped,
       undo,
     };
-  }, [trees, user, assignTreeToFolder, saveTreeMetadata]);
+  }, [trees, user, assignTreeToFolder, saveTreeMetadata, setTrees, setError]);
 
-  const toggleFolder = useCallback((folderId) => {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(folderId)) {
-        next.delete(folderId);
-      } else {
-        next.add(folderId);
-      }
-      return next;
-    });
+  const handleFolderToggle = useCallback((folderId) => {
+    if (!folderId) {
+      return;
+    }
+    toggleFolderExpansion(folderId);
     setSelectedFolderId(folderId);
-  }, []);
+  }, [toggleFolderExpansion, setSelectedFolderId]);
 
   const handleNavDragStart = useCallback((event, treeId) => {
     if (!treeId) {
@@ -795,13 +814,18 @@ const LibraryApp = () => {
       }
       event.dataTransfer.setData("text/plain", activeSelection.join(","));
     }
-  }, [navSelectedIds, trees]);
+  }, [
+    navSelectedIds,
+    trees,
+    setNavSelectedIds,
+    setDraggedTreeIds,
+    setDragOverFolderId,
+    setDragOverVoranBox,
+  ]);
 
   const handleNavDragEnd = useCallback(() => {
-    setDraggedTreeIds([]);
-    setDragOverFolderId(null);
-    setDragOverVoranBox(false);
-  }, []);
+    resetDragState();
+  }, [resetDragState]);
 
   const handleNavDropToFolder = useCallback(async (event, folderId) => {
     event.preventDefault();
@@ -811,16 +835,15 @@ const LibraryApp = () => {
     setDragOverVoranBox(false);
 
     if (treeIds.length === 0) {
-      setDraggedTreeIds([]);
+      resetDragState();
       return;
     }
 
     try {
       const result = await handleTreeMoveToFolder({ treeIds, targetFolderId: folderId });
       if (result?.moved?.length > 0) {
-        setSelectedFolderId(folderId);
-        setSelectedTreeId(result.moved[0].id);
-        setNavSelectedIds(result.moved.map((item) => item.id));
+        const movedIds = result.moved.map((item) => item.id);
+        selectTree(result.moved[0].id, { folderId, navIds: movedIds });
       }
       if (result?.failures?.length > 0) {
         setError(new Error(result.failures[0]?.message || "일부 항목을 이동하지 못했습니다."));
@@ -829,9 +852,17 @@ const LibraryApp = () => {
       console.error("Failed to drop tree to folder", error);
       setError(error);
     } finally {
-      setDraggedTreeIds([]);
+      resetDragState();
     }
-  }, [extractTreeIdsFromDataTransfer, handleTreeMoveToFolder]);
+  }, [
+    extractTreeIdsFromDataTransfer,
+    handleTreeMoveToFolder,
+    selectTree,
+    setError,
+    setDragOverFolderId,
+    setDragOverVoranBox,
+    resetDragState,
+  ]);
 
   const handleNavDropToVoran = useCallback(async (event) => {
     event.preventDefault();
@@ -841,16 +872,15 @@ const LibraryApp = () => {
     setDragOverVoranBox(false);
 
     if (treeIds.length === 0) {
-      setDraggedTreeIds([]);
+      resetDragState();
       return;
     }
 
     try {
       const result = await handleTreeMoveToFolder({ treeIds, targetFolderId: null });
       if (result?.moved?.length > 0) {
-        setSelectedFolderId(null);
-        setSelectedTreeId(result.moved[0].id);
-        setNavSelectedIds(result.moved.map((item) => item.id));
+        const movedIds = result.moved.map((item) => item.id);
+        selectTree(result.moved[0].id, { folderId: null, navIds: movedIds });
       }
       if (result?.failures?.length > 0) {
         setError(new Error(result.failures[0]?.message || "일부 항목을 이동하지 못했습니다."));
@@ -859,18 +889,58 @@ const LibraryApp = () => {
       console.error("Failed to drop tree to VORAN BOX", error);
       setError(error);
     } finally {
-      setDraggedTreeIds([]);
+      resetDragState();
     }
-  }, [extractTreeIdsFromDataTransfer, handleTreeMoveToFolder]);
+  }, [
+    extractTreeIdsFromDataTransfer,
+    handleTreeMoveToFolder,
+    selectTree,
+    setError,
+    setDragOverFolderId,
+    setDragOverVoranBox,
+    resetDragState,
+  ]);
 
-  const filteredTrees = useMemo(() => {
-    if (selectedFolderId) {
-      return trees.filter(tree => tree.folderId === selectedFolderId);
+  const handleSidebarTreeSelect = useCallback((treeId, meta = {}) => {
+    if (!treeId) {
+      return;
     }
-    return trees;
-  }, [trees, selectedFolderId]);
+    const payload = {};
+    if (Object.prototype.hasOwnProperty.call(meta, 'folderId')) {
+      payload.folderId = meta.folderId ?? null;
+    }
+    selectTree(treeId, payload);
+  }, [selectTree]);
 
-  const voranTrees = useMemo(() => trees.filter((tree) => !tree.folderId), [trees]);
+  const handleFolderCreateRequest = useCallback(() => {
+    openCreateDialog('folder');
+  }, [openCreateDialog]);
+
+  const handleOpenVoranManager = useCallback(() => {
+    showVoranBox();
+  }, [showVoranBox]);
+
+  const handleFolderDragOver = useCallback((folderId) => {
+    setDragOverFolderId(folderId);
+  }, [setDragOverFolderId]);
+
+  const handleFolderDragLeave = useCallback((folderId) => {
+    setDragOverFolderId((prev) => (prev === folderId ? null : prev));
+  }, [setDragOverFolderId]);
+
+  const handleVoranDragOver = useCallback(() => {
+    setDragOverVoranBox(true);
+  }, [setDragOverVoranBox]);
+
+  const handleVoranDragLeave = useCallback(() => {
+    setDragOverVoranBox(false);
+  }, [setDragOverVoranBox]);
+
+  const handleSignOutClick = useCallback(() => {
+    if (typeof signOut === 'function') {
+      signOut();
+    }
+  }, [signOut]);
 
   const themeOptions = useMemo(() => {
     // 모든 모드에서 반투명/라이트/다크 옵션 제공
@@ -891,369 +961,102 @@ const LibraryApp = () => {
     setTheme(themeOptions[nextIndex].value);
   }, [theme, themeOptions, setTheme]);
 
+  const handleCreateTree = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    try {
+      const newTree = await createTreeForUser({ userId: user.id });
+
+      setTrees((previous) => {
+        const merged = new Map(previous.map((entry) => [entry.id, entry]));
+        merged.set(newTree.id, newTree);
+        const nextList = Array.from(merged.values()).sort(
+          (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
+        );
+        return nextList;
+      });
+
+      selectTree(newTree.id);
+
+      await openWidgetForTree({ treeId: newTree.id, fresh: true });
+      window.jarvisAPI?.requestLibraryRefresh?.();
+    } catch (err) {
+      setError(err);
+    }
+  }, [user, setTrees, selectTree, setError, openWidgetForTree, createTreeForUser]);
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      <aside className="flex h-full w-[320px] flex-col border-r border-border bg-card text-card-foreground overflow-hidden">
-        <div className="border-b border-border px-5 py-6 space-y-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background">
-              <img src={Logo} alt="VORAN" className="h-7 w-7" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground/80">
-                Knowledge Library
-              </p>
-              <h1 className="text-lg font-semibold leading-tight text-card-foreground">
-                저장된 트리
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                라이브러리에서 열 트리를 선택하세요.
-              </p>
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full justify-between rounded-lg border border-border/70 bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
-            onClick={() => setShowVoranBoxManager(true)}
-          >
-            <span className="flex items-center gap-2">
-              <FolderIcon className="h-4 w-4" />
-              VORAN BOX
-            </span>
-            <span className="text-xs text-muted-foreground">관리</span>
-          </Button>
-        </div>
-        <ScrollArea className="flex-1">
-          <div className="space-y-4 px-4 py-6">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-3 py-2 text-left text-sm text-foreground shadow-sm transition hover:border-border hover:bg-accent/30"
-              onClick={() => {
-                setCreateType("folder");
-                setShowCreateDialog(true);
-              }}
-            >
-              <span className="flex items-center gap-2">
-                <FolderIcon className="h-4 w-4" />
-                New Folder
-              </span>
-              <span className="text-xs text-muted-foreground">+</span>
-            </Button>
-
-            {folders.map((folder) => {
-              const folderTrees = trees.filter((tree) => tree.folderId === folder.id);
-              const isFolderSelected = selectedFolderId === folder.id;
-              const hasSelectedTreeInFolder = folderTrees.some((tree) => tree.id === selectedId);
-              const isDragTarget = dragOverFolderId === folder.id;
-              const isExpanded = expandedFolders.has(folder.id);
-
-              return (
-                <div key={folder.id} className="space-y-2">
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={() => toggleFolder(folder.id)}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDragOverFolderId(folder.id);
-                    }}
-                    onDragLeave={() =>
-                      setDragOverFolderId((prev) => (prev === folder.id ? null : prev))
-                    }
-                    onDrop={(event) => handleNavDropToFolder(event, folder.id)}
-                    className={cn(
-                      "group flex w-full items-center gap-2 rounded-lg border border-transparent bg-card/70 px-3 py-2 text-left text-sm font-medium shadow-sm transition-colors",
-                      (isFolderSelected || hasSelectedTreeInFolder) &&
-                      "border-primary/50 bg-primary/10 text-primary-foreground",
-                      !isFolderSelected &&
-                      !hasSelectedTreeInFolder &&
-                      "text-muted-foreground hover:border-border/70 hover:bg-card",
-                      isDragTarget && "ring-2 ring-primary/50"
-                    )}
-                  >
-                    {folderTrees.length > 0 ? (
-                      isExpanded ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )
-                    ) : (
-                      <FolderIcon className="h-4 w-4" />
-                    )}
-                    <span className="flex-1 truncate">{folder.name}</span>
-                    <Badge
-                      variant="secondary"
-                      className="ml-auto rounded-full border border-border/60 bg-card px-2 py-0 text-[11px] font-medium text-muted-foreground"
-                    >
-                      {folderTrees.length}
-                    </Badge>
-                  </button>
-
-                  {isExpanded && folderTrees.length > 0 && (
-                    <div className="ml-5 space-y-1.5">
-                      {folderTrees.map((tree) => {
-                        const isActive = tree.id === selectedId;
-                        const isSelectedInNav = navSelectedIds.includes(tree.id);
-                        const isDraggingTree = draggedTreeIds.includes(tree.id);
-
-                        return (
-                          <button
-                            key={tree.id}
-                            type="button"
-                            tabIndex={-1}
-                            draggable
-                            onClick={() => {
-                              setSelectedTreeId(tree.id);
-                              setNavSelectedIds([tree.id]);
-                            }}
-                            onDoubleClick={() => {
-                              void handleTreeOpen(tree.id);
-                            }}
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              handleTreeDelete(tree.id);
-                            }}
-                            onDragStart={(event) => handleNavDragStart(event, tree.id)}
-                            onDragEnd={handleNavDragEnd}
-                            className={cn(
-                              "group flex w-full items-center gap-2 rounded-md border border-transparent bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors",
-                              isActive && "border-primary/50 bg-primary/10 text-primary-foreground",
-                              !isActive &&
-                              "text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground",
-                              isSelectedInNav && "border-primary/40",
-                              isDraggingTree && "opacity-60"
-                            )}
-                          >
-                            <span className="h-2 w-2 rounded-full bg-primary/60" />
-                            <span className="flex-1 truncate">{tree.title}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            <div className="space-y-1.5 pt-2">
-              <div
-                className={cn(
-                  "flex items-center justify-between rounded-xl border border-dashed border-border/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground transition",
-                  dragOverVoranBox && "border-primary/60 bg-primary/10 text-primary-foreground"
-                )}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setDragOverVoranBox(true);
-                }}
-                onDragLeave={() => setDragOverVoranBox(false)}
-                onDrop={(event) => {
-                  setDragOverVoranBox(false);
-                  handleNavDropToVoran(event);
-                }}
-              >
-                <span>VORAN BOX</span>
-                <Badge
-                  variant="outline"
-                  className="rounded-full border-border/70 px-2 py-0 text-[11px] font-medium text-muted-foreground/80"
-                >
-                  {voranTrees.length}
-                </Badge>
-              </div>
-              {voranTrees.length > 0 ? (
-                voranTrees.map((tree) => {
-                  const isActive = tree.id === selectedId;
-                  const isSelectedInNav = navSelectedIds.includes(tree.id);
-                  const isDraggingThisTree = draggedTreeIds.includes(tree.id);
-
-                  return (
-                    <button
-                      key={tree.id}
-                      type="button"
-                      tabIndex={-1}
-                      draggable
-                      onClick={() => {
-                        setSelectedTreeId(tree.id);
-                        setNavSelectedIds([tree.id]);
-                      }}
-                      onDoubleClick={() => {
-                        void handleTreeOpen(tree.id);
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        handleTreeDelete(tree.id);
-                      }}
-                      onDragStart={(event) => handleNavDragStart(event, tree.id)}
-                      onDragEnd={handleNavDragEnd}
-                      className={cn(
-                        "group flex w-full items-center gap-2 rounded-md border border-transparent bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors",
-                        isActive && "border-primary/50 bg-primary/10 text-primary-foreground",
-                        !isActive &&
-                        "text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground",
-                        isSelectedInNav && "border-primary/40",
-                        isDraggingThisTree && "opacity-60"
-                      )}
-                    >
-                      <FolderIcon className="h-4 w-4" />
-                      <span className="flex-1 truncate">{tree.title}</span>
-                    </button>
-                  );
-                })
-              ) : (
-                <p className="px-3 py-2 text-xs text-muted-foreground/70">
-                  폴더 밖에 있는 트리가 없습니다.
-                </p>
-              )}
-            </div>
-          </div>
-        </ScrollArea>
-      </aside>
+      <LibrarySidebar
+        logoSrc={Logo}
+        folders={folders}
+        trees={trees}
+        voranTrees={voranTrees}
+        selectedTreeId={selectedId}
+        selectedFolderId={selectedFolderId}
+        expandedFolders={expandedFolders}
+        navSelectedIds={navSelectedIds}
+        draggedTreeIds={draggedTreeIds}
+        dragOverFolderId={dragOverFolderId}
+        dragOverVoranBox={dragOverVoranBox}
+        onManageVoranBox={handleOpenVoranManager}
+        onCreateFolder={handleFolderCreateRequest}
+        onToggleFolder={handleFolderToggle}
+        onSelectTree={handleSidebarTreeSelect}
+        onOpenTree={handleTreeOpen}
+        onDeleteTree={handleTreeDelete}
+        onDragStart={handleNavDragStart}
+        onDragEnd={handleNavDragEnd}
+        onDropToFolder={handleNavDropToFolder}
+        onDropToVoran={handleNavDropToVoran}
+        onFolderDragOver={handleFolderDragOver}
+        onFolderDragLeave={handleFolderDragLeave}
+        onVoranDragOver={handleVoranDragOver}
+        onVoranDragLeave={handleVoranDragLeave}
+      />
 
       <main className="flex flex-1 flex-col bg-background overflow-hidden">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-card px-6 py-4 text-card-foreground flex-shrink-0">
-          <div className="space-y-1">
-            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground/80">
-              Library Viewer
-            </span>
-            {user ? (
-              <span className="text-sm text-card-foreground">
-                {user.email || user.user_metadata?.full_name || "로그인 계정"}
-              </span>
-            ) : (
-              <span className="text-sm text-muted-foreground">로그인 필요</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 rounded-full border-border bg-background/30 text-card-foreground"
-              onClick={cycleTheme}
-              title={`테마 변경 (현재: ${activeTheme.label})`}
-            >
-              <ActiveThemeIcon className="h-4 w-4" />
-              <span className="sr-only">테마 변경</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refreshLibrary}
-              disabled={loading}
-              className="border-border bg-background/30 text-card-foreground hover:bg-background/50"
-            >
-              {loading ? "새로고침 중" : "새로고침"}
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              disabled={!user || loading}
-              onClick={async () => {
-                if (!user || typeof window === "undefined") {
-                  return;
-                }
-
-                try {
-                  const newTree = await createTreeForUser({ userId: user.id });
-
-                  setTrees((previous) => {
-                    const merged = new Map(previous.map((entry) => [entry.id, entry]));
-                    merged.set(newTree.id, newTree);
-                    const nextList = Array.from(merged.values()).sort(
-                      (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
-                    );
-                    return nextList;
-                  });
-
-                  setSelectedTreeId(newTree.id);
-
-                  await openWidgetForTree({ treeId: newTree.id, fresh: true });
-                  window.jarvisAPI?.requestLibraryRefresh?.();
-                } catch (err) {
-                  setError(err);
-                }
-              }}
-            >
-              새 트리 만들기
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (typeof signOut === "function") {
-                  signOut();
-                }
-              }}
-              className="text-muted-foreground hover:text-card-foreground"
-            >
-              로그아웃
-            </Button>
-          </div>
-        </header>
+        <LibraryActionToolbar
+          user={user}
+          ActiveThemeIcon={ActiveThemeIcon}
+          activeThemeLabel={activeTheme.label}
+          onCycleTheme={cycleTheme}
+          onRefresh={refreshLibrary}
+          onCreateTree={handleCreateTree}
+          onSignOut={handleSignOutClick}
+          isRefreshing={loading}
+          canCreateTree={Boolean(user)}
+        />
         <div className="flex-1 bg-background overflow-hidden">
-          {loading ? (
-            <div className="flex h-full items-center justify-center gap-3 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              불러오는 중입니다...
-            </div>
-          ) : !user ? (
-            <EmptyState message="로그인 후 트리를 확인할 수 있습니다." />
-          ) : error ? (
-            <EmptyState message={error?.message || "트리를 불러오지 못했습니다."} />
-          ) : selectedTree ? (
-            <ResizablePanelGroup direction="horizontal" className="h-full overflow-hidden">
-              <ResizablePanel defaultSize={70} minSize={30} className="min-h-0 bg-background overflow-hidden">
-                <TreeCanvas
-                  selectedMemo={selectedTree}
-                  onNodeSelect={handleNodeSelect}
-                  onNodeRemove={handleNodeRemove}
-                  onNodeUpdate={handleNodeUpdate}
-                  onNewNodeCreated={handleNewNodeCreated}
-                  onMemoCreate={handleMemoCreate}
-                  onMemoUpdate={handleMemoUpdate}
-                  onMemoRemove={handleMemoRemove}
-                />
-              </ResizablePanel>
-              <ResizableHandle withHandle className="bg-border/80 hover:bg-border" />
-              <ResizablePanel defaultSize={30} minSize={20} maxSize={80} className="bg-card overflow-hidden">
-                <LibraryQAPanel
-                  selectedNode={selectedNode}
-                  selectedTree={selectedTree}
-                  onNodeUpdate={handleNodeUpdate}
-                  onNewNodeCreated={handleNewNodeCreated}
-                />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          ) : selectedFolderId ? (
-            <div className="flex h-full items-center justify-center">
-              <Card className="w-full max-w-sm bg-card text-card-foreground">
-                <CardHeader className="space-y-2">
-                  <CardTitle className="text-lg font-semibold">
-                    {folders.find((f) => f.id === selectedFolderId)?.name || "폴더"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
-                  <p>이 폴더에 트리를 추가하거나 트리를 선택해주세요.</p>
-                  <p className="text-xs text-muted-foreground/80">
-                    VORAN BOX에서 트리를 이 폴더로 이동할 수 있습니다.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <EmptyState message="트리나 폴더를 선택해주세요." />
-          )}
+          <LibraryContent
+            loading={loading}
+            user={user}
+            error={error}
+            selectedTree={selectedTree}
+            selectedFolderId={selectedFolderId}
+            folders={folders}
+            selectedNode={selectedNode}
+            onNodeSelect={handleNodeSelect}
+            onNodeRemove={handleNodeRemove}
+            onNodeUpdate={handleNodeUpdate}
+            onNewNodeCreated={handleNewNodeCreated}
+            onMemoCreate={handleMemoCreate}
+            onMemoUpdate={handleMemoUpdate}
+            onMemoRemove={handleMemoRemove}
+          />
         </div>
       </main>
 
       <VoranBoxManager
         isVisible={showVoranBoxManager}
-        onClose={() => setShowVoranBoxManager(false)}
+        onClose={hideVoranBox}
         trees={trees}
         folders={folders}
         onTreeSelect={(tree) => {
-        setSelectedTreeId(tree.id);
-          setShowVoranBoxManager(false);
+          selectTree(tree.id, { folderId: tree.folderId ?? null });
+          hideVoranBox();
         }}
         onTreeMoveToFolder={handleTreeMoveToFolder}
         onTreeOpen={handleTreeOpen}
@@ -1276,7 +1079,6 @@ const LibraryApp = () => {
       />
     </div>
   );
-
 };
 
 export default LibraryApp;
