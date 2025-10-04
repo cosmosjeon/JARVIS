@@ -29,12 +29,15 @@ import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidg
 import AgentClient from 'services/agentClient';
 import { useTreeState } from 'features/tree/state/useTreeState';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from '../services/treeCreation';
+import {
+  forwardPanZoomGesture as applyPanZoomGesture,
+  focusNodeToCenter as focusNodeToCenterUtil,
+  createNodeDragHandler,
+  applyNodeDragHandlers,
+  raiseNodeLayer,
+} from 'features/tree/ui/d3Renderer';
 
 const WINDOW_CHROME_HEIGHT = 48;
-
-const DOM_DELTA_PIXEL = 0;
-const DOM_DELTA_LINE = 1;
-const DOM_DELTA_PAGE = 2;
 
 const ORTHO_PATH_DEFAULTS = {
   cornerRadius: 20,
@@ -178,13 +181,6 @@ const buildOrthogonalPath = (source, target, orientation = 'vertical', overrides
   }
 
   return buildRoundedPath(points, cornerRadius);
-};
-
-const normalizeWheelDelta = (value, mode) => {
-  if (!Number.isFinite(value)) return 0;
-  if (mode === DOM_DELTA_LINE) return value * 16;
-  if (mode === DOM_DELTA_PAGE) return value * 120;
-  return value;
 };
 
 const getViewportDimensions = () => {
@@ -1175,58 +1171,11 @@ const HierarchicalForceTree = () => {
     setExpandedNodeId(null);
   }, [clearPendingExpansion]);
 
-  const forwardPanZoomGesture = useCallback((event) => {
-    const svgElement = svgRef.current;
-    const zoomBehaviour = zoomBehaviourRef.current;
-    if (!svgElement || !zoomBehaviour || !event) {
-      return false;
-    }
-
-    const mode = typeof event.deltaMode === 'number' ? event.deltaMode : DOM_DELTA_PIXEL;
-    const selection = d3.select(svgElement);
-
-    const isPinch = event.ctrlKey || event.metaKey;
-
-    if (isPinch) {
-      const normalizedDeltaY = normalizeWheelDelta(event.deltaY || 0, mode);
-      if (!Number.isFinite(normalizedDeltaY) || normalizedDeltaY === 0) {
-        return false;
-      }
-
-      const rect = svgElement.getBoundingClientRect();
-      const clientX = typeof event.clientX === 'number' ? event.clientX : rect.left + rect.width / 2;
-      const clientY = typeof event.clientY === 'number' ? event.clientY : rect.top + rect.height / 2;
-      const pointerX = clientX - rect.left;
-      const pointerY = clientY - rect.top;
-
-      // Match the sensitivity used by the default wheel delta
-      const scaleFactor = Math.pow(2, -normalizedDeltaY / 600);
-      if (!Number.isFinite(scaleFactor) || scaleFactor === 0) {
-        return false;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      selection.interrupt('focus-node');
-      zoomBehaviour.scaleBy(selection, scaleFactor, [pointerX, pointerY]);
-      return true;
-    }
-
-    const normalizedDeltaX = normalizeWheelDelta(event.deltaX || 0, mode);
-    const normalizedDeltaY = normalizeWheelDelta(event.deltaY || 0, mode);
-    if (normalizedDeltaX === 0 && normalizedDeltaY === 0) {
-      return false;
-    }
-
-    const currentTransform = d3.zoomTransform(svgElement);
-    const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
-
-    event.preventDefault();
-    event.stopPropagation();
-    selection.interrupt('focus-node');
-    zoomBehaviour.translateBy(selection, -normalizedDeltaX / scale, -normalizedDeltaY / scale);
-    return true;
-  }, []);
+  const forwardPanZoomGesture = useCallback((event) => applyPanZoomGesture({
+    event,
+    svgElement: svgRef.current,
+    zoomBehaviour: zoomBehaviourRef.current,
+  }), []);
 
   // 부트스트랩 채팅창 위치 (화면 상단 중앙)
   // 초기 부팅 시(빈 그래프) 드래그 핸들 바로 아래에 채팅창 표시
@@ -2140,56 +2089,16 @@ const HierarchicalForceTree = () => {
     };
   }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
 
-  const focusNodeToCenter = useCallback((node, options = {}) => {
-    if (!node || !svgRef.current) {
-      return Promise.resolve();
-    }
-
-    const svgElement = svgRef.current;
-    const rect = typeof svgElement.getBoundingClientRect === 'function'
-      ? svgElement.getBoundingClientRect()
-      : null;
-
-    const fallbackWidth = typeof dimensions?.width === 'number' ? dimensions.width : 0;
-    const fallbackHeight = typeof dimensions?.height === 'number' ? dimensions.height : 0;
-
-    const width = rect?.width || fallbackWidth;
-    const height = rect?.height || fallbackHeight;
-
-    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
-      return Promise.resolve();
-    }
-
-    const { duration = 620, scale: requestedScale } = options;
-    const nodeX = Number.isFinite(node.x) ? node.x : 0;
-    const nodeY = Number.isFinite(node.y) ? node.y : 0;
-    const currentScale = Number.isFinite(viewTransform.k) ? viewTransform.k : 1;
-    const preferredScale = typeof requestedScale === 'number' ? requestedScale : Math.max(currentScale, 1);
-    const targetScale = Math.min(Math.max(preferredScale, 0.3), 4);
-
-    const translateX = (width / 2) - (nodeX * targetScale);
-    const translateY = (height / 2) - (nodeY * targetScale);
-    const nextTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
-
-    const svgSelection = d3.select(svgElement);
-    const zoomBehaviour = zoomBehaviourRef.current;
-
-    if (!zoomBehaviour) {
-      setViewTransform({ x: translateX, y: translateY, k: targetScale });
-      return Promise.resolve();
-    }
-
-    return new Promise((resolve) => {
-      const transition = svgSelection
-        .transition('focus-node')
-        .duration(duration)
-        .ease(d3.easeCubicInOut)
-        .call(zoomBehaviour.transform, nextTransform);
-
-      transition.on('end', resolve);
-      transition.on('interrupt', resolve);
-    });
-  }, [dimensions, viewTransform.k]);
+  const focusNodeToCenter = useCallback((node, options = {}) => focusNodeToCenterUtil({
+    node,
+    svgElement: svgRef.current,
+    zoomBehaviour: zoomBehaviourRef.current,
+    dimensions,
+    viewTransform,
+    setViewTransform,
+    duration: options.duration,
+    scale: options.scale,
+  }), [dimensions, viewTransform, setViewTransform]);
 
   // Handle node click for assistant focus
   const handleNodeClickForAssistant = useCallback((payload) => {
@@ -2251,101 +2160,27 @@ const HierarchicalForceTree = () => {
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
-  const handleDrag = (nodeId) => {
-    let dragStart = null;
-
-    const isInteractiveTarget = (target) => {
-      if (!target) return false;
-      const interactiveSelector = '[data-node-toggle],button,a,input,textarea,select,[contenteditable="true"]';
-      return Boolean(target.closest && target.closest(interactiveSelector));
-    };
-
-    const resolveAxisLock = (rawEvent) => {
-      if (!rawEvent) return null;
-      if (rawEvent.shiftKey) {
-        return 'horizontal'; // lock vertical movement, allow X changes
-      }
-      if (rawEvent.altKey || rawEvent.metaKey) {
-        return 'vertical'; // lock horizontal movement, allow Y changes
-      }
-      return null;
-    };
-
-    return d3.drag()
-      .filter((event) => {
-        const rawEvent = event?.sourceEvent || event;
-        if (!rawEvent) return false;
-        if (typeof rawEvent.button === 'number' && rawEvent.button !== 0) {
-          return false;
-        }
-        if (isInteractiveTarget(rawEvent.target)) {
-          return false;
-        }
-        return true;
-      })
-      .on('start', (event) => {
-        if (animationRef.current) {
-          animationRef.current.stop();
-        }
-
-        const targetNode = nodes.find((candidate) => candidate.id === nodeId);
-        if (targetNode) {
-          dragStart = { x: targetNode.x || 0, y: targetNode.y || 0 };
-        }
-      })
-      .on('drag', (event) => {
-        const container = contentGroupRef.current || svgRef.current;
-        if (!container) {
-          return;
-        }
-
-        const rawEvent = event?.sourceEvent || event;
-        const pointer = d3.pointer(event, container);
-        const axisLock = resolveAxisLock(rawEvent);
-
-        setNodes((currentNodes) => {
-          const existing = currentNodes.find((candidate) => candidate.id === nodeId);
-          if (!existing) {
-            return currentNodes;
-          }
-
-          const lockedX = axisLock === 'vertical' && dragStart ? dragStart.x : pointer[0];
-          const lockedY = axisLock === 'horizontal' && dragStart ? dragStart.y : pointer[1];
-
-          return currentNodes.map((node) => (
-            node.id === nodeId
-              ? { ...node, x: lockedX, y: lockedY }
-              : node
-          ));
-        });
-      })
-      .on('end', () => {
-        dragStart = null;
-      });
-  };
+  const getDragHandler = useCallback((nodeId) => createNodeDragHandler({
+    nodeId,
+    nodes,
+    setNodes,
+    animationRef,
+    svgRef,
+    contentGroupRef,
+  }), [nodes, setNodes]);
 
   useEffect(() => {
-    if (!svgRef.current) return;
-    const svg = d3.select(svgRef.current);
-
-    nodes.forEach(node => {
-      const selection = svg.selectAll(`[data-node-id="${node.id}"]`);
-
-      if (expandedNodeId) {
-        selection.on('.drag', null);
-        selection.style('cursor', 'default');
-      } else {
-        selection.call(handleDrag(node.id));
-        selection.style('cursor', 'grab');
-      }
+    applyNodeDragHandlers({
+      svgElement: svgRef.current,
+      nodes,
+      expandedNodeId,
+      getHandler: getDragHandler,
     });
-  }, [nodes, expandedNodeId]);
+  }, [nodes, expandedNodeId, getDragHandler]);
 
   useEffect(() => {
     if (!expandedNodeId) return;
-    const svg = d3.select(svgRef.current);
-    // 확장된 노드를 최상위로 이동
-    svg.selectAll(`[data-node-id="${expandedNodeId}"]`).raise();
+    raiseNodeLayer({ svgElement: svgRef.current, nodeId: expandedNodeId });
   }, [expandedNodeId, nodes]);
 
   useEffect(() => {
