@@ -130,14 +130,14 @@
 - [x] 사용자 점검: Electron 빌드가 성공하는지, 앱 실행 시 브리지 노출이 정상인지 확인한다.
 
 ### 작업 4A-2 – Renderer 브리지 치환
-- [ ] AI: 트리 도메인 컴포넌트/서비스(`src/services/treeCreation.js`, `src/components/NodeAssistantPanel.js`, `src/components/WindowChrome.js`)에서 `window.jarvisAPI` 호출을 `treeWidgetBridge` 또는 신규 브리지 주입 방식으로 교체한다.
-- [ ] AI: 라이브러리 화면(`src/components/library/LibraryApp.js`, `src/components/library/LibraryQAPanel.js`)의 IPC 사용을 `src/infrastructure/electron/bridges/libraryBridge.js`(신규)와 상태 훅을 통해 주입형 구조로 전환한다.
-- [ ] AI: Admin/에이전트/트레이 흐름(`src/services/agentClient.js`, `src/views/DebugDashboard.js`, `src/components/TrayDebugButton.js`)을 `agentBridge`, `trayBridge`, `logsBridge` 등 전용 브리지로 감싸고 renderer에서는 해당 브리지만 의존하도록 정리한다.
-- [ ] AI: 인증/설정 훅(`src/shared/hooks/useSupabaseAuth.js`, `src/shared/hooks/SettingsContext.js`)과 오류 대응 UI(`src/components/ErrorRecoveryCard.js`)에서 직접 브라우저 전역 접근을 제거하고 필요한 브리지/서비스로 대체한다.
-- [ ] AI: `src/infrastructure/electron/types.js`에 신규 브리지 타입을 추가하고 각 브리지 파일에 JSDoc 시그니처를 작성한다.
-- [ ] AI: 브리지 모듈을 묶는 barrel(`src/infrastructure/electron/bridges/index.js`)을 도입해 import 경로를 통일하고 테스트 시 대체 주입이 가능하도록 한다.
-- [ ] AI: 전역 검색으로 남은 `window.jarvisAPI` 호출을 점검하고 치환이 어려운 케이스는 문서화 후 후속 작업으로 남긴다.
-- [ ] AI: 필요 시 Jest mock 또는 수동 목을 제공하여 테스트/개발 환경이 문제없이 돌아가게 한다.
+- [x] AI: 트리 도메인 컴포넌트/서비스(`src/services/treeCreation.js`, `src/components/NodeAssistantPanel.js`, `src/components/WindowChrome.js`)에서 `window.jarvisAPI` 호출을 `treeWidgetBridge` 또는 신규 브리지 주입 방식으로 교체한다.
+- [x] AI: 라이브러리 화면(`src/components/library/LibraryApp.js`, `src/components/library/LibraryQAPanel.js`)의 IPC 사용을 `src/infrastructure/electron/bridges/libraryBridge.js`(신규)와 상태 훅을 통해 주입형 구조로 전환한다.
+- [x] AI: Admin/에이전트/트레이 흐름(`src/services/agentClient.js`, `src/views/DebugDashboard.js`, `src/components/TrayDebugButton.js`)을 `agentBridge`, `trayBridge`, `loggerBridge` 등 전용 브리지로 감싸고 renderer에서는 해당 브리지만 의존하도록 정리한다.
+- [x] AI: 인증/설정 훅(`src/shared/hooks/useSupabaseAuth.js`, `src/shared/hooks/SettingsContext.js`)과 오류 대응 UI(`src/components/ErrorRecoveryCard.js`)에서 직접 브라우저 전역 접근을 제거하고 필요한 브리지/서비스로 대체한다.
+- [x] AI: `src/infrastructure/electron/types.js`에 신규 브리지 타입을 추가하고 각 브리지 파일에 JSDoc 시그니처를 작성한다.
+- [x] AI: 브리지 모듈을 묶는 barrel(`src/infrastructure/electron/bridges/index.js`)을 도입해 import 경로를 통일하고 테스트 시 대체 주입이 가능하도록 한다.
+- [x] AI: 전역 검색으로 남은 `window.jarvisAPI` 호출을 점검하고 치환이 어려운 케이스는 문서화 후 후속 작업으로 남긴다.
+- [x] AI: 필요 시 Jest mock 또는 수동 목을 제공하여 테스트/개발 환경이 문제없이 돌아가게 한다.
 - [ ] 사용자 점검: 핫키, 트레이 메뉴, OAuth 리다이렉션 등 IPC 기반 기능을 실행해 오류 여부 확인.
 
 ### 작업 4B-1 – Main 모듈 분리
