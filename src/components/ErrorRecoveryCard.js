@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { createLoggerBridge } from 'infrastructure/electron/bridges';
 
 const ErrorRecoveryCard = ({
   title = '문제가 발생했습니다',
@@ -10,22 +11,23 @@ const ErrorRecoveryCard = ({
 }) => {
   const timerRef = useRef(null);
   const attemptRef = useRef(0);
+  const loggerBridge = useMemo(() => createLoggerBridge(), []);
 
   const handleRetry = async () => {
     try {
       await onRetry?.();
-      window.jarvisAPI?.log?.('info', 'error_recovery_retry_clicked');
+      loggerBridge.log?.('info', 'error_recovery_retry_clicked');
     } catch (error) {
-      window.jarvisAPI?.log?.('error', 'error_recovery_retry_failed', { message: error?.message });
+      loggerBridge.log?.('error', 'error_recovery_retry_failed', { message: error?.message });
     }
   };
 
   const handleExport = async () => {
     try {
       const result = await onExport?.();
-      window.jarvisAPI?.log?.('info', 'error_recovery_export_clicked', result || {});
+      loggerBridge.log?.('info', 'error_recovery_export_clicked', result || {});
     } catch (error) {
-      window.jarvisAPI?.log?.('error', 'error_recovery_export_failed', { message: error?.message });
+      loggerBridge.log?.('error', 'error_recovery_export_failed', { message: error?.message });
     }
   };
 
@@ -46,14 +48,14 @@ const ErrorRecoveryCard = ({
       }
       timerRef.current = setTimeout(async () => {
         attemptRef.current += 1;
-        window.jarvisAPI?.log?.('info', 'error_recovery_auto_retry_attempt', {
+        loggerBridge.log?.('info', 'error_recovery_auto_retry_attempt', {
           attempt: attemptRef.current,
           maxAttempts,
         });
         try {
           await onRetry();
         } catch (error) {
-          window.jarvisAPI?.log?.('warn', 'error_recovery_auto_retry_failed', { message: error?.message });
+          loggerBridge.log?.('warn', 'error_recovery_auto_retry_failed', { message: error?.message });
         }
         scheduleNext(intervalMs);
       }, delay);
@@ -68,7 +70,7 @@ const ErrorRecoveryCard = ({
       timerRef.current = null;
       attemptRef.current = 0;
     };
-  }, [autoRetryPolicy, onRetry]);
+  }, [autoRetryPolicy, loggerBridge, onRetry]);
 
   return (
     <div className="glass-surface flex flex-col gap-3 rounded-2xl border border-white/10 bg-rose-500/10 p-4 text-sm text-rose-50 shadow-xl">

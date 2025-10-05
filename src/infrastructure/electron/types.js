@@ -1,5 +1,5 @@
 /**
- * @typedef {Object} TreeWidgetBridge
+* @typedef {Object} TreeWidgetBridge
  * @property {(options: {ignore: boolean, forward?: boolean}) => Promise<unknown>|unknown} setMousePassthrough
  *   Electron 창의 마우스 패스스루 상태를 제어합니다.
  * @property {(listener: (payload: {treeId?: string|null}) => void) => (() => void)} onSetActiveTree
@@ -48,6 +48,8 @@
  *   창을 복원합니다.
  * @property {() => Promise<unknown>|unknown} close
  *   창을 닫습니다.
+ * @property {() => Promise<unknown>|unknown} toggleWindow
+ *   창 표시/숨김을 전환합니다.
  */
 
 /**
@@ -56,6 +58,40 @@
  *   클립보드 텍스트 공유 이벤트를 구독합니다.
  * @property {(listener: (payload: { error?: { code?: string } }) => void) => (() => void)} onClipboardError
  *   클립보드 오류 이벤트를 구독합니다.
+ */
+
+/**
+ * @typedef {Object} SettingsBridge
+ * @property {() => Promise<{ settings?: Record<string, unknown> }>|null} getSettings
+ *   현재 설정을 조회합니다.
+ * @property {(partial: Record<string, unknown>) => Promise<unknown>|unknown} updateSettings
+ *   설정을 부분 업데이트합니다.
+ * @property {(listener: (settings: Record<string, unknown>) => void) => (() => void)} onSettings
+ *   설정 변경 이벤트를 구독합니다.
+ */
+
+/**
+ * @typedef {Object} LoggerBridge
+ * @property {(level: 'info'|'warn'|'error', message: string, meta?: Record<string, unknown>) => Promise<unknown>|unknown} log
+ *   로그를 기록합니다.
+ * @property {(listener: (payload: any) => void) => (() => void)} onLog
+ *   로그 이벤트를 구독합니다.
+ * @property {(options?: Record<string, unknown>) => Promise<{ success?: boolean, path?: string, error?: any }>|null} exportLogs
+ *   로그 파일을 내보냅니다.
+ */
+
+/**
+ * @typedef {Object} TrayBridge
+ * @property {(listener: (payload: { command?: string, timestamp?: number }) => void) => (() => void)} onTrayCommand
+ *   트레이 명령 이벤트를 구독합니다.
+ */
+
+/**
+ * @typedef {Object} SystemBridge
+ * @property {() => Promise<{ success?: boolean, granted?: boolean }>|null} checkAccessibilityPermission
+ *   접근성 권한 상태를 조회합니다.
+ * @property {() => Promise<{ success?: boolean, granted?: boolean }>|null} requestAccessibilityPermission
+ *   접근성 권한을 요청합니다.
  */
 
 export {}; // JSDoc 타입 선언 전용 파일

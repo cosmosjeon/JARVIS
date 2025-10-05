@@ -1,6 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TrayDebugButton from '../components/TrayDebugButton';
 import ErrorRecoveryCard from '../components/ErrorRecoveryCard';
+import {
+  createLoggerBridge,
+  createSystemBridge,
+  createTrayBridge,
+} from 'infrastructure/electron/bridges';
 
 const DebugDashboard = () => {
   const [showErrorCard, setShowErrorCard] = useState(false);
@@ -9,37 +14,40 @@ const DebugDashboard = () => {
   const [exportStatus, setExportStatus] = useState(null);
   const [retryAttempts, setRetryAttempts] = useState(0);
   const autoRetryTimerRef = useRef(null);
+  const loggerBridge = useMemo(() => createLoggerBridge(), []);
+  const trayBridge = useMemo(() => createTrayBridge(), []);
+  const systemBridge = useMemo(() => createSystemBridge(), []);
 
   useEffect(() => {
-    if (!window.jarvisAPI?.onTrayCommand) return undefined;
-    const unsubscribe = window.jarvisAPI.onTrayCommand((payload) => {
+    if (!trayBridge.onTrayCommand) return undefined;
+    const unsubscribe = trayBridge.onTrayCommand((payload) => {
       setTrayEvents((prev) => [payload, ...prev].slice(0, 5));
-      window.jarvisAPI?.log?.('info', 'tray_command_received', { command: payload?.command });
+      loggerBridge.log?.('info', 'tray_command_received', { command: payload?.command });
     });
     return () => unsubscribe?.();
-  }, []);
+  }, [loggerBridge, trayBridge]);
 
-  const simulateRetry = async () => {
+  const simulateRetry = useCallback(async () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     setRetryAttempts((prev) => prev + 1);
     setShowErrorCard(false);
-  };
+  }, []);
 
-  const simulateExport = async () => {
-    const result = await window.jarvisAPI?.exportLogs?.();
+  const simulateExport = useCallback(async () => {
+    const result = await loggerBridge.exportLogs?.();
     setExportStatus(result);
     return result;
-  };
+  }, [loggerBridge]);
 
   const handleCheckAccessibility = async () => {
-    const result = await window.jarvisAPI?.checkAccessibilityPermission?.();
+    const result = await systemBridge.checkAccessibilityPermission?.();
     if (result && typeof result.granted === 'boolean') {
       setAccessibilityStatus(result);
     }
   };
 
   const handleRequestAccessibility = async () => {
-    const result = await window.jarvisAPI?.requestAccessibilityPermission?.();
+    const result = await systemBridge.requestAccessibilityPermission?.();
     if (result && typeof result.granted === 'boolean') {
       setAccessibilityStatus(result);
     }
@@ -62,7 +70,7 @@ const DebugDashboard = () => {
         return;
       }
       autoRetryTimerRef.current = setTimeout(async () => {
-        window.jarvisAPI?.log?.('info', 'auto_retry_attempt', { attempt: attempt + 1 });
+        loggerBridge.log?.('info', 'auto_retry_attempt', { attempt: attempt + 1 });
         await simulateRetry();
       }, 2000 * (attempt + 1));
     };
@@ -75,7 +83,7 @@ const DebugDashboard = () => {
         autoRetryTimerRef.current = null;
       }
     };
-  }, [showErrorCard]);
+  }, [loggerBridge, showErrorCard, simulateRetry]);
 
   return (
     <div className="flex flex-col gap-4">

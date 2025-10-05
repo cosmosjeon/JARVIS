@@ -2,3 +2,7 @@ export { createTreeWidgetBridge } from './treeWidgetBridge';
 export { createWindowControlsBridge } from './windowControlsBridge';
 export { createClipboardBridge } from './clipboardBridge';
 export { createAgentBridge } from './agentBridge';
+export { createSettingsBridge } from './settingsBridge';
+export { createLoggerBridge } from './loggerBridge';
+export { createTrayBridge } from './trayBridge';
+export { createSystemBridge } from './systemBridge';

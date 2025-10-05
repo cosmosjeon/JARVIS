@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
+import { createLoggerBridge, createWindowControlsBridge } from 'infrastructure/electron/bridges';
 
 const TrayDebugButton = () => {
-  const handleClick = async () => {
+  const windowControls = useMemo(() => createWindowControlsBridge(), []);
+  const loggerBridge = useMemo(() => createLoggerBridge(), []);
+
+  const handleClick = useCallback(async () => {
     try {
-      await window.jarvisAPI?.toggleWindow?.();
+      await windowControls.toggleWindow?.();
     } catch (error) {
-      window.jarvisAPI?.log?.('error', 'tray_debug_toggle_failed', { message: error?.message });
+      loggerBridge.log?.('error', 'tray_debug_toggle_failed', { message: error?.message });
     }
-  };
+  }, [loggerBridge, windowControls]);
 
   return (
     <button

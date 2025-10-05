@@ -1,4 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createLoggerBridge,
+  createSettingsBridge,
+  createSystemBridge,
+  createTrayBridge,
+} from 'infrastructure/electron/bridges';
 
 const defaultAccelerator = typeof process !== 'undefined' && process?.platform === 'darwin'
   ? 'Command+Shift+J'
@@ -28,16 +34,21 @@ export const SettingsProvider = ({ children }) => {
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
   const [accelerator, setAcceleratorState] = useState(defaultAccelerator);
 
+  const settingsBridge = useMemo(() => createSettingsBridge(), []);
+  const loggerBridge = useMemo(() => createLoggerBridge(), []);
+  const systemBridge = useMemo(() => createSystemBridge(), []);
+  const trayBridge = useMemo(() => createTrayBridge(), []);
+
   const refreshAccessibilityStatus = useCallback(async () => {
     try {
-      const result = await window.jarvisAPI?.checkAccessibilityPermission?.();
+      const result = await systemBridge.checkAccessibilityPermission?.();
       if (result && typeof result.granted === 'boolean') {
         setAccessibilityGranted(result.granted);
       }
     } catch (error) {
-      window.jarvisAPI?.log?.('warn', 'accessibility_status_failed', { message: error?.message });
+      loggerBridge.log?.('warn', 'accessibility_status_failed', { message: error?.message });
     }
-  }, []);
+  }, [loggerBridge, systemBridge]);
 
   useEffect(() => {
     let mounted = true;
@@ -55,13 +66,13 @@ export const SettingsProvider = ({ children }) => {
 
     const load = async () => {
       try {
-        const result = await window.jarvisAPI?.getSettings?.();
+        const result = await settingsBridge.getSettings?.();
         const payload = result?.settings || result;
         if (payload) {
           applySettings(payload);
         }
       } catch (error) {
-        window.jarvisAPI?.log?.('warn', 'settings_load_failed', { message: error?.message });
+        loggerBridge.log?.('warn', 'settings_load_failed', { message: error?.message });
       }
       if (mounted) {
         refreshAccessibilityStatus();
@@ -69,57 +80,57 @@ export const SettingsProvider = ({ children }) => {
     };
 
     load();
-    const unsubscribe = window.jarvisAPI?.onSettings?.((payload) => applySettings(payload));
+    const unsubscribe = settingsBridge.onSettings?.((payload) => applySettings(payload));
 
     return () => {
       mounted = false;
       unsubscribe?.();
     };
-  }, [refreshAccessibilityStatus]);
+  }, [loggerBridge, refreshAccessibilityStatus, settingsBridge]);
 
   const updateSettings = useCallback((partial) => {
-    window.jarvisAPI?.updateSettings?.(partial);
-  }, []);
+    settingsBridge.updateSettings?.(partial);
+  }, [settingsBridge]);
 
   const setDoubleCtrlEnabled = useCallback((next) => {
     setDoubleCtrlEnabledState(next);
     updateSettings({ doubleCtrlEnabled: next });
-    window.jarvisAPI?.log?.('info', 'settings_double_ctrl_changed', { enabled: next });
-  }, [updateSettings]);
+    loggerBridge.log?.('info', 'settings_double_ctrl_changed', { enabled: next });
+  }, [loggerBridge, updateSettings]);
 
 
   const setTrayEnabled = useCallback((next) => {
     setTrayEnabledState(next);
     updateSettings({ trayEnabled: next });
-    window.jarvisAPI?.log?.('info', 'settings_tray_changed', { enabled: next });
-  }, [updateSettings]);
+    loggerBridge.log?.('info', 'settings_tray_changed', { enabled: next });
+  }, [loggerBridge, updateSettings]);
 
   const requestAccessibility = useCallback(async () => {
-    const result = await window.jarvisAPI?.requestAccessibilityPermission?.();
+    const result = await systemBridge.requestAccessibilityPermission?.();
     refreshAccessibilityStatus();
     return result;
-  }, [refreshAccessibilityStatus]);
+  }, [refreshAccessibilityStatus, systemBridge]);
 
   const setAccelerator = useCallback((next) => {
     if (typeof next === 'string' && next.trim()) {
       const normalized = next.trim();
       setAcceleratorState(normalized);
       updateSettings({ accelerator: normalized });
-      window.jarvisAPI?.log?.('info', 'settings_accelerator_changed', { accelerator: normalized });
+      loggerBridge.log?.('info', 'settings_accelerator_changed', { accelerator: normalized });
     }
-  }, [updateSettings]);
+  }, [loggerBridge, updateSettings]);
 
   const resetAccelerator = useCallback(() => {
     setAcceleratorState(defaultAccelerator);
     updateSettings({ accelerator: defaultAccelerator });
-    window.jarvisAPI?.log?.('info', 'settings_accelerator_reset');
-  }, [updateSettings]);
+    loggerBridge.log?.('info', 'settings_accelerator_reset');
+  }, [loggerBridge, updateSettings]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.jarvisAPI?.onTrayCommand) {
+    if (!trayBridge.onTrayCommand) {
       return undefined;
     }
-    const unsubscribe = window.jarvisAPI.onTrayCommand(async (payload = {}) => {
+    const unsubscribe = trayBridge.onTrayCommand(async (payload = {}) => {
       const { command } = payload;
       if (command === 'accessibility-check') {
         await requestAccessibility();
@@ -129,7 +140,7 @@ export const SettingsProvider = ({ children }) => {
       }
     });
     return () => unsubscribe?.();
-  }, [refreshAccessibilityStatus, requestAccessibility]);
+  }, [refreshAccessibilityStatus, requestAccessibility, trayBridge]);
 
   const value = useMemo(() => ({
     doubleCtrlEnabled,

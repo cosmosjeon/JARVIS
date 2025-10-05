@@ -49,6 +49,10 @@ export const createWindowControlsBridge = (bridge) => {
       const controls = resolveControls();
       return safeInvoke(controls?.restore);
     },
+    toggleWindow: () => {
+      const target = resolveBridge();
+      return safeInvoke(target?.toggleWindow);
+    },
   };
 };
 
