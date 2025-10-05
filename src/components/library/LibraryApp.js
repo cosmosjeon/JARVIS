@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Sparkles, Sun, Moon } from "lucide-react";
+import { createLibraryBridge, createLoggerBridge } from 'infrastructure/electron/bridges';
 
 import Logo from "assets/admin-widget/logo.svg";
 
@@ -23,6 +24,8 @@ import { LibraryActionToolbar, LibrarySidebar, LibraryContent } from "features/l
 const LibraryApp = () => {
   const { user, signOut } = useSupabaseAuth();
   const previousSelectedTreeRef = useRef(null);
+  const libraryBridge = useMemo(() => createLibraryBridge(), []);
+  const loggerBridge = useMemo(() => createLoggerBridge(), []);
   const {
     state,
     actions,
@@ -141,7 +144,7 @@ const LibraryApp = () => {
           if (selectedId === latestSnapshot.id) {
             selectTree(null);
           }
-          window.jarvisAPI?.requestLibraryRefresh?.();
+          libraryBridge.requestLibraryRefresh?.();
         }
       } catch (err) {
         console.error('빈 트리 자동 정리 실패:', err);
@@ -153,7 +156,7 @@ const LibraryApp = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedTree, trees, user, selectedId]);
+  }, [libraryBridge, selectedId, selectedTree, selectTree, setTrees, trees, user]);
 
   const refreshLibrary = useCallback(async () => {
     if (!user) {
@@ -249,20 +252,20 @@ const LibraryApp = () => {
   }, [user, trees.length, handleCleanupEmptyTrees]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.jarvisAPI?.onLibraryRefresh !== "function") {
-      return () => { };
+    if (!libraryBridge.onLibraryRefresh) {
+      return () => {};
     }
 
-    const unsubscribe = window.jarvisAPI.onLibraryRefresh(() => {
+    const unsubscribe = libraryBridge.onLibraryRefresh(() => {
       refreshLibrary();
     });
 
     return () => {
-      if (typeof unsubscribe === "function") {
+      if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
-  }, [refreshLibrary]);
+  }, [libraryBridge, refreshLibrary]);
 
   const handleTreeOpen = useCallback(async (treeId) => {
     if (!treeId) {
@@ -273,14 +276,12 @@ const LibraryApp = () => {
       await openWidgetForTree({ treeId, fresh: false });
     } catch (err) {
       setError(err);
-      if (typeof window !== "undefined") {
-        window.jarvisAPI?.log?.("error", "library_open_tree_failed", {
-          treeId,
-          message: err?.message,
-        });
-      }
+      loggerBridge.log?.('error', 'library_open_tree_failed', {
+        treeId,
+        message: err?.message,
+      });
     }
-  }, [openWidgetForTree, setError]);
+  }, [loggerBridge, openWidgetForTree, setError]);
 
   const handleTreeDelete = useCallback(async (treeId) => {
     if (!user || !treeId) {
@@ -981,11 +982,11 @@ const LibraryApp = () => {
       selectTree(newTree.id);
 
       await openWidgetForTree({ treeId: newTree.id, fresh: true });
-      window.jarvisAPI?.requestLibraryRefresh?.();
+      libraryBridge.requestLibraryRefresh?.();
     } catch (err) {
       setError(err);
     }
-  }, [user, setTrees, selectTree, setError, openWidgetForTree, createTreeForUser]);
+  }, [createTreeForUser, libraryBridge, openWidgetForTree, selectTree, setError, setTrees, user]);
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">

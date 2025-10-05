@@ -6,3 +6,6 @@ export { createSettingsBridge } from './settingsBridge';
 export { createLoggerBridge } from './loggerBridge';
 export { createTrayBridge } from './trayBridge';
 export { createSystemBridge } from './systemBridge';
+export { createOAuthBridge } from './oauthBridge';
+export { createLibraryBridge } from './libraryBridge';
+export { createAdminBridge } from './adminBridge';

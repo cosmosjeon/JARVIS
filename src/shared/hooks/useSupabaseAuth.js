@@ -1,7 +1,14 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase as rawClient, ensureSupabase } from 'shared/lib/supabaseClient';
+import { createOAuthBridge } from 'infrastructure/electron/bridges';
 
-const isElectronRenderer = () => typeof window !== 'undefined' && typeof window.jarvisAPI !== 'undefined';
+const isElectronRenderer = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const ua = window.navigator?.userAgent || '';
+  return /Electron/i.test(ua) || Boolean(window.process?.versions?.electron);
+};
 
 const buildRedirectUrl = (mode) => {
   if (isElectronRenderer()) {
@@ -43,6 +50,7 @@ export const SupabaseProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [supabaseClient, setSupabaseClient] = useState(rawClient);
+  const oauthBridge = useMemo(() => createOAuthBridge(), []);
 
   useEffect(() => {
     if (!rawClient) {
@@ -150,8 +158,8 @@ export const SupabaseProvider = ({ children }) => {
       setLoading(false);
     });
 
-    const unsubscribeOAuth = typeof window !== 'undefined' && typeof window.jarvisAPI?.onOAuthCallback === 'function'
-      ? window.jarvisAPI.onOAuthCallback((url) => {
+    const unsubscribeOAuth = oauthBridge.onOAuthCallback
+      ? oauthBridge.onOAuthCallback((url) => {
           handleOAuthCallbackIfNeeded(url);
         })
       : undefined;
@@ -163,7 +171,7 @@ export const SupabaseProvider = ({ children }) => {
         unsubscribeOAuth();
       }
     };
-  }, []);
+  }, [oauthBridge]);
 
   const value = useMemo(() => ({
     supabase: supabaseClient,
@@ -180,9 +188,9 @@ export const SupabaseProvider = ({ children }) => {
       let redirectTo = buildRedirectUrl(options.mode);
       let electronRedirectUrl = null;
 
-      if (useElectronFlow && typeof window !== 'undefined' && window.jarvisAPI?.getOAuthRedirect) {
+      if (useElectronFlow && oauthBridge.getOAuthRedirect) {
         try {
-          const response = await window.jarvisAPI.getOAuthRedirect({ mode: options.mode });
+          const response = await oauthBridge.getOAuthRedirect({ mode: options.mode });
           if (response?.url) {
             redirectTo = response.url;
             electronRedirectUrl = response.url;
@@ -218,9 +226,9 @@ export const SupabaseProvider = ({ children }) => {
 
       if (useElectronFlow) {
         if (targetUrl) {
-          if (typeof window !== 'undefined' && window.jarvisAPI?.launchOAuth) {
-            await window.jarvisAPI.launchOAuth(targetUrl);
-          } else {
+          if (oauthBridge.launchOAuth) {
+            await oauthBridge.launchOAuth(targetUrl);
+          } else if (typeof window !== 'undefined') {
             window.open(targetUrl, '_blank', 'noopener');
           }
         }
@@ -274,7 +282,7 @@ export const SupabaseProvider = ({ children }) => {
       setLoading(false);
       return { data, error: refreshError };
     },
-  }), [supabaseClient, session, loading, error]);
+  }), [error, loading, oauthBridge, session, supabaseClient]);
 
   return (
     <SupabaseContext.Provider value={value}>

@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { Button } from 'shared/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from 'shared/ui/card';
+import { createAdminBridge } from 'infrastructure/electron/bridges';
 
 const providerConfigs = [
   {
@@ -22,6 +23,7 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
     error,
     signInWithOAuth,
   } = useSupabaseAuth();
+  const adminBridge = useMemo(() => createAdminBridge(), []);
 
   useEffect(() => {
     if (mode !== 'library' || typeof window === 'undefined') {
@@ -29,14 +31,14 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
     }
 
     if (user) {
-      window.jarvisAPI?.openAdminPanel?.();
+      adminBridge.openAdminPanel?.();
       return;
     }
 
     if (!loading) {
-      window.jarvisAPI?.closeAdminPanel?.();
+      adminBridge.closeAdminPanel?.();
     }
-  }, [user, loading, mode]);
+  }, [adminBridge, loading, mode, user]);
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100">

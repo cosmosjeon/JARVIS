@@ -94,4 +94,32 @@
  *   접근성 권한을 요청합니다.
  */
 
+/**
+ * @typedef {Object} OAuthBridge
+ * @property {(listener: (url: string) => void) => (() => void)} onOAuthCallback
+ *   OAuth 콜백 URL을 구독합니다.
+ * @property {(options?: { mode?: string }) => Promise<{ success?: boolean, url?: string }>|null} getOAuthRedirect
+ *   Electron OAuth 리다이렉트 URL을 요청합니다.
+ * @property {(url: string) => Promise<{ success?: boolean }>|null} launchOAuth
+ *   외부 OAuth 페이지를 브라우저로 엽니다.
+ */
+
+/**
+ * @typedef {Object} LibraryBridge
+ * @property {() => Promise<{ success?: boolean }>|null} showLibrary
+ *   라이브러리 창을 표시합니다.
+ * @property {() => Promise<{ success?: boolean }>|null} requestLibraryRefresh
+ *   라이브러리 데이터를 새로고침합니다.
+ * @property {(listener: () => void) => (() => void)} onLibraryRefresh
+ *   라이브러리 새로고침 이벤트를 구독합니다.
+ */
+
+/**
+ * @typedef {Object} AdminBridge
+ * @property {() => Promise<{ success?: boolean }>|null} openAdminPanel
+ *   Admin 패널을 엽니다.
+ * @property {() => Promise<{ success?: boolean }>|null} closeAdminPanel
+ *   Admin 패널을 닫습니다.
+ */
+
 export {}; // JSDoc 타입 선언 전용 파일

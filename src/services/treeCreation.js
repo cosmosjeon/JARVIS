@@ -133,7 +133,10 @@ export const openWidgetForTree = async ({ treeId, fresh = true, bridge } = {}) =
       return { success: false };
     }
 
-    if (window.jarvisAPI) {
+    const runningInElectron = /Electron/i.test(window.navigator?.userAgent || '')
+      || Boolean(window.process?.versions?.electron);
+
+    if (runningInElectron) {
       const error = new Error('Expected electron widget bridge to handle openWidget/toggleWindow.');
       error.code = 'WIDGET_BRIDGE_UNAVAILABLE';
       treeBridge.log?.('error', 'widget_open_bridge_missing', { message: error.message, treeId });

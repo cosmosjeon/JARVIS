@@ -187,18 +187,7 @@ export class AgentClient {
     const bridge = resolveAgentBridge(bridgeOverride);
     const hasBridge = bridge && typeof bridge[channel] === 'function';
 
-    // 디버깅 정보 출력
-    console.log('[AgentClient] 요청 정보:', {
-      channel,
-      hasBridge,
-      hasWindow: typeof window !== 'undefined',
-      hasJarvisAPI: typeof window !== 'undefined' && !!window.jarvisAPI,
-      canUseFallback: canUseFallback(),
-      apiKeySet: !!getFallbackApiKey(),
-    });
-
     if (hasBridge) {
-      console.log('[AgentClient] Electron 브리지를 통해 요청 중...');
       const result = await bridge[channel](payload);
       if (result !== null && result !== undefined) {
         if (!result?.success) {
@@ -209,7 +198,6 @@ export class AgentClient {
     }
 
     if (canUseFallback()) {
-      console.log('[AgentClient] Fallback API 사용 중...');
       if (channel === 'askRoot' || channel === 'askChild') {
         return fallbackAsk(payload);
       }
@@ -220,11 +208,9 @@ export class AgentClient {
     }
 
     if (!hasBridge) {
-      console.error('[AgentClient] 브리지를 찾을 수 없음');
       throw buildInvalidChannelError(channel);
     }
 
-    console.error('[AgentClient] 모든 방법 실패');
     throw buildMissingBridgeError();
   }
 

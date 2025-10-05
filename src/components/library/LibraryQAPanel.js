@@ -31,6 +31,16 @@ const LibraryQAPanel = ({
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
+  const isApiAvailable = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    const ua = window.navigator?.userAgent || '';
+    const hasElectron = /Electron/i.test(ua) || Boolean(window.process?.versions?.electron);
+    const hasFallbackKey = Boolean(process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+    return hasElectron || hasFallbackKey;
+  }, []);
+
   // 선택된 노드가 변경될 때 메시지 초기화
   useEffect(() => {
     if (selectedNode) {
@@ -286,9 +296,6 @@ const LibraryQAPanel = ({
       </Card>
     );
   }
-
-  // API 사용 가능 여부 확인
-  const isApiAvailable = typeof window !== 'undefined' && window.jarvisAPI;
 
   return (
     <Card className="flex h-full flex-col bg-card/80 overflow-hidden">

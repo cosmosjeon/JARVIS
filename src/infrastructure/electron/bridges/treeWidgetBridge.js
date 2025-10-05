@@ -62,6 +62,10 @@ export const createTreeWidgetBridge = (bridge = ensureRendererBridge()) => {
         const controls = resolveWindowControls();
         return safeInvoke(controls?.close);
       },
+      toggleWindow: () => {
+        const target = resolveBridge();
+        return safeInvoke(target?.toggleWindow);
+      },
     },
     toggleWindow: () => {
       const target = resolveBridge();
