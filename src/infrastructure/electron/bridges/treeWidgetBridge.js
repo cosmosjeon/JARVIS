@@ -1,65 +1,72 @@
-const once = (fn) => {
-  let called = false;
-  return (...args) => {
-    if (called) {
-      return undefined;
-    }
-    called = true;
-    return typeof fn === 'function' ? fn(...args) : undefined;
-  };
-};
-
-const ensureBridge = () => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  return window.jarvisAPI || null;
-};
-
-const safeInvoke = (fn, ...args) => {
-  if (typeof fn !== 'function') {
-    return null;
-  }
-  try {
-    return fn(...args);
-  } catch (error) {
-    if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.warn('[treeWidgetBridge] call failed', error);
-    }
-    return null;
-  }
-};
+import { ensureRendererBridge, safeInvoke, createSubscription } from './utils';
 
 /**
  * @param {import('../types').TreeWidgetBridge|any} bridge
  * @returns {import('../types').TreeWidgetBridge}
  */
-export const createTreeWidgetBridge = (bridge = ensureBridge()) => {
-  const subscribe = (listener) => {
-    if (typeof listener !== 'function') {
-      return () => {};
+export const createTreeWidgetBridge = (bridge = ensureRendererBridge()) => {
+  let cachedBridge = bridge;
+
+  const resolveBridge = () => {
+    const next = ensureRendererBridge(cachedBridge);
+    if (next) {
+      cachedBridge = next;
     }
-    const unsubscribe = safeInvoke(bridge?.onWidgetSetActiveTree, listener);
-    if (typeof unsubscribe === 'function') {
-      return once(unsubscribe);
+    return cachedBridge;
+  };
+
+  const resolveWindowControls = () => {
+    const target = resolveBridge();
+    const controls = target?.windowControls;
+    if (controls) {
+      return controls;
     }
-    return () => {};
+    return null;
   };
 
   return {
-    setMousePassthrough: (options) => safeInvoke(bridge?.setMousePassthrough, options),
-    onSetActiveTree: subscribe,
-    requestLibraryRefresh: () => safeInvoke(bridge?.requestLibraryRefresh),
-    extractKeyword: (payload) => safeInvoke(bridge?.extractKeyword, payload),
+    setMousePassthrough: (options) => {
+      const target = resolveBridge();
+      return safeInvoke(target?.setMousePassthrough, options);
+    },
+    onSetActiveTree: (listener) => {
+      const target = resolveBridge();
+      return createSubscription(target?.onWidgetSetActiveTree, listener);
+    },
+    requestLibraryRefresh: () => {
+      const target = resolveBridge();
+      return safeInvoke(target?.requestLibraryRefresh);
+    },
+    extractKeyword: (payload) => {
+      const target = resolveBridge();
+      return safeInvoke(target?.extractKeyword, payload);
+    },
+    openWidget: (payload) => {
+      const target = resolveBridge();
+      return safeInvoke(target?.openWidget, payload);
+    },
     log: (level, event, context) => {
-      safeInvoke(bridge?.log, level, event, context);
+      const target = resolveBridge();
+      safeInvoke(target?.log, level, event, context);
     },
     windowControls: {
-      maximize: () => safeInvoke(bridge?.windowControls?.maximize),
-      close: () => safeInvoke(bridge?.windowControls?.close),
+      maximize: () => {
+        const controls = resolveWindowControls();
+        return safeInvoke(controls?.maximize);
+      },
+      toggleFullScreen: () => {
+        const controls = resolveWindowControls();
+        return safeInvoke(controls?.toggleFullScreen);
+      },
+      close: () => {
+        const controls = resolveWindowControls();
+        return safeInvoke(controls?.close);
+      },
     },
-    toggleWindow: () => safeInvoke(bridge?.toggleWindow),
+    toggleWindow: () => {
+      const target = resolveBridge();
+      return safeInvoke(target?.toggleWindow);
+    },
   };
 };
 

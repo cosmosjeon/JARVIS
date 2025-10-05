@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createWindowControlsBridge } from '../infrastructure/electron/bridges';
 
 const DEFAULT_WINDOW_STATE = {
   maximized: false,
@@ -9,31 +10,31 @@ const WindowChrome = () => {
   const [windowState, setWindowState] = useState(DEFAULT_WINDOW_STATE);
 
   useEffect(() => {
-    const api = window.jarvisAPI?.windowControls;
-    if (!api) {
-      return undefined;
-    }
+    const bridge = createWindowControlsBridge();
+    const detachListener = bridge.onStateChange((payload = {}) => {
+      setWindowState((prev) => ({
+        ...prev,
+        ...payload,
+      }));
+    });
 
-    let detachListener = () => { };
-
-    if (typeof api.onStateChange === 'function') {
-      detachListener = api.onStateChange((payload = {}) => {
-        setWindowState((prev) => ({
-          ...prev,
-          ...payload,
-        }));
-      });
-    }
-
-    if (typeof api.getState === 'function') {
-      api.getState().then((response) => {
-        if (response?.success && response.state) {
-          setWindowState((prev) => ({
-            ...prev,
-            ...response.state,
-          }));
-        }
-      }).catch(() => { });
+    const stateResult = bridge.getState?.();
+    if (stateResult && typeof stateResult.then === 'function') {
+      stateResult
+        .then((response) => {
+          if (response?.success && response.state) {
+            setWindowState((prev) => ({
+              ...prev,
+              ...response.state,
+            }));
+          }
+        })
+        .catch(() => {});
+    } else if (stateResult?.state) {
+      setWindowState((prev) => ({
+        ...prev,
+        ...stateResult.state,
+      }));
     }
 
     return () => {

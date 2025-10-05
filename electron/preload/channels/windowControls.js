@@ -11,6 +11,7 @@ module.exports = (ipcRenderer) => {
   const windowControls = {
     minimize: () => ipcRenderer.invoke('window:control', 'minimize'),
     maximize: () => ipcRenderer.invoke('window:control', 'maximize'),
+    toggleFullScreen: () => ipcRenderer.invoke('window:control', 'toggleFullScreen'),
     close: () => ipcRenderer.invoke('window:control', 'close'),
     getState: () => ipcRenderer.invoke('window:getState'),
     onStateChange: createStateListener('window:state', ipcRenderer),

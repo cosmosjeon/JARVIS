@@ -1,4 +1,5 @@
 import { generateTreeId, upsertTreeMetadata } from './supabaseTrees';
+import { createTreeWidgetBridge } from '../infrastructure/electron/bridges';
 
 const DEFAULT_TITLE = '새 지식 트리';
 
@@ -96,12 +97,10 @@ export const createTreeForUser = async ({ userId, title = DEFAULT_TITLE } = {}) 
   };
 };
 
-export const openWidgetForTree = async ({ treeId, fresh = true } = {}) => {
-  if (!treeId) {
-    return { success: false };
-  }
+const resolveTreeBridge = (bridgeOverride) => createTreeWidgetBridge(bridgeOverride);
 
-  if (typeof window === 'undefined') {
+export const openWidgetForTree = async ({ treeId, fresh = true, bridge } = {}) => {
+  if (!treeId) {
     return { success: false };
   }
 
@@ -111,15 +110,34 @@ export const openWidgetForTree = async ({ treeId, fresh = true } = {}) => {
     fresh,
   };
 
+  const treeBridge = resolveTreeBridge(bridge);
+
   try {
-    if (window.jarvisAPI?.openWidget) {
-      await window.jarvisAPI.openWidget(payload);
-      return { success: true };
+    const widgetResult = await treeBridge.openWidget?.(payload);
+    if (widgetResult) {
+      if (typeof widgetResult === 'object' && 'success' in widgetResult) {
+        if (widgetResult.success) {
+          return { ...widgetResult, success: true };
+        }
+      } else {
+        return { success: true, result: widgetResult };
+      }
     }
 
-    if (window.jarvisAPI?.toggleWindow) {
-      window.jarvisAPI.toggleWindow();
-      return { success: true };
+    const toggleResult = treeBridge.toggleWindow?.();
+    if (toggleResult !== null) {
+      return { success: true, result: toggleResult };
+    }
+
+    if (typeof window === 'undefined') {
+      return { success: false };
+    }
+
+    if (window.jarvisAPI) {
+      const error = new Error('Expected electron widget bridge to handle openWidget/toggleWindow.');
+      error.code = 'WIDGET_BRIDGE_UNAVAILABLE';
+      treeBridge.log?.('error', 'widget_open_bridge_missing', { message: error.message, treeId });
+      return { success: false, error };
     }
 
     const url = new URL(window.location.href);
@@ -129,7 +147,7 @@ export const openWidgetForTree = async ({ treeId, fresh = true } = {}) => {
     window.open(url.toString(), '_blank', 'noopener');
     return { success: true };
   } catch (error) {
-    window.jarvisAPI?.log?.('error', 'admin_panel_open_widget_failed', { message: error?.message, treeId });
+    treeBridge.log?.('error', 'admin_panel_open_widget_failed', { message: error?.message, treeId });
     return { success: false, error };
   }
 };

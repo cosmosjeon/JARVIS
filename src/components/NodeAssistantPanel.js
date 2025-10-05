@@ -8,6 +8,7 @@ import { Response } from 'shared/ui/shadcn-io/ai/response';
 import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
 import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
 import { Conversation, ConversationContent, ConversationScrollButton } from 'shared/ui/shadcn-io/ai/conversation';
+import { createClipboardBridge } from '../infrastructure/electron/bridges';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -288,15 +289,9 @@ const NodeAssistantPanel = ({
   useEffect(() => () => disableHighlightMode(), [disableHighlightMode]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-    const api = window.jarvisAPI;
-    if (!api?.onClipboard) {
-      return undefined;
-    }
+    const clipboardBridge = createClipboardBridge();
 
-    const unsubscribeClipboard = api.onClipboard((payload = {}) => {
+    const unsubscribeClipboard = clipboardBridge.onClipboard((payload = {}) => {
       if (!autoPasteEnabled) {
         setPlaceholderNotice({ type: 'info', message: '자동 붙여넣기 비활성화 상태입니다.' });
         return;
@@ -321,7 +316,7 @@ const NodeAssistantPanel = ({
       setPlaceholderNotice({ type: 'info', message: '클립보드 텍스트가 입력창에 채워졌습니다.' });
     });
 
-    const unsubscribeError = api.onClipboardError?.((payload = {}) => {
+    const unsubscribeError = clipboardBridge.onClipboardError((payload = {}) => {
       const code = payload?.error?.code;
       let message = '클립보드 읽기에 실패했습니다. 다시 시도해주세요.';
       if (code === 'empty') {
@@ -869,12 +864,15 @@ const NodeAssistantPanel = ({
         className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
       >
         <div className="flex flex-col gap-6">
-          {messages.map((message) => {
+          {messages.map((message, index) => {
             const isAssistant = message.role === 'assistant';
+            const key = typeof message.id === 'string' && message.id.trim()
+              ? message.id
+              : `message-${index}`;
 
             return (
               <div
-                key={message.id}
+                key={key}
                 className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                 data-testid={isAssistant ? 'assistant-message' : 'user-message'}
                 data-status={message.status || 'complete'}

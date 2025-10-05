@@ -11,6 +11,48 @@ const REQUEST_TIMEOUT_MS = process.env.OPENAI_TIMEOUT_MS ? Number(process.env.OP
 
 let cachedSettingsPath = null;
 
+const extractMessageContent = (message) => {
+  if (!message) {
+    return '';
+  }
+
+  const { content } = message;
+
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((entry) => {
+        if (!entry) {
+          return '';
+        }
+        if (typeof entry === 'string') {
+          return entry;
+        }
+        if (typeof entry.text === 'string') {
+          return entry.text;
+        }
+        if (Array.isArray(entry.content)) {
+          return entry.content
+            .filter((child) => typeof child?.text === 'string')
+            .map((child) => child.text)
+            .join('');
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('');
+  }
+
+  if (content && typeof content === 'object' && typeof content.text === 'string') {
+    return content.text;
+  }
+
+  return '';
+};
+
 const getSettingsFilePath = () => {
   if (cachedSettingsPath) {
     return cachedSettingsPath;
@@ -95,8 +137,14 @@ class LLMService {
 
       const response = await client.chat.completions.create(requestPayload);
 
-      const choice = response.choices?.[0];
-      const answer = choice?.message?.content || '';
+      const choice = response.choices?.[0] || null;
+      const answer = extractMessageContent(choice?.message).trim();
+
+      if (!answer) {
+        const error = new Error('Empty response from OpenAI. Verify the model and request payload.');
+        error.code = 'OPENAI_EMPTY_ANSWER';
+        throw error;
+      }
 
       return {
         answer,

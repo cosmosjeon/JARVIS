@@ -2227,17 +2227,22 @@ const HierarchicalForceTree = () => {
 
           {/* 오른쪽: 전체화면 & 닫기 버튼 */}
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-            {/* 전체화면 버튼 */}
+            {/* 최대화 버튼 */}
             <button
               className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
               onClick={() => {
-                const maybeResult = treeBridge.windowControls.maximize();
+                const controls = treeBridge.windowControls || {};
+                const handler = controls.maximize || controls.toggleFullScreen;
+                if (typeof handler !== 'function') {
+                  return;
+                }
+                const maybeResult = handler();
                 if (maybeResult && typeof maybeResult.catch === 'function') {
                   maybeResult.catch(() => {});
                 }
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              title="전체화면"
+              title="최대화"
             >
               <svg className="h-3 w-3 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />

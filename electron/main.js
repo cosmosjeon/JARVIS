@@ -270,6 +270,22 @@ const applyWindowConfigTo = (targetWindow) => {
   targetWindow.setMenuBarVisibility(!windowConfig.frameless);
 };
 
+const sendWindowState = (targetWindow) => {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  try {
+    targetWindow.webContents.send('window:state', {
+      maximized: targetWindow.isMaximized(),
+      fullscreen: targetWindow.isFullScreen(),
+      visible: targetWindow.isVisible(),
+    });
+  } catch (error) {
+    logger?.warn?.('window_state_emit_failed', { message: error?.message });
+  }
+};
+
 const DEFAULT_ACCELERATOR = settingsStore.defaultAccelerator;
 
 let settings = { ...settingsStore.defaultSettings };
@@ -535,8 +551,8 @@ const createWindow = ({ treeId = null, sessionId = generateSessionId(), fresh = 
 
     // 기타 설정
     show: false,                // 처음엔 숨김 (준비되면 표시)
-    fullscreenable: false,
-    maximizable: false,
+    fullscreenable: true,
+    maximizable: true,
     minimizable: false,
     titleBarStyle: process.platform === 'darwin' ? 'customButtonsOnHover' : 'default',
     ...(process.platform === 'darwin' ? {
@@ -560,11 +576,7 @@ const createWindow = ({ treeId = null, sessionId = generateSessionId(), fresh = 
   mainWindow.setBackgroundColor('#00000000');
 
   broadcastWindowState = () => {
-    if (!mainWindow) return;
-    mainWindow.webContents.send('window:state', {
-      maximized: mainWindow.isMaximized(),
-      fullscreen: mainWindow.isFullScreen(),
-    });
+    sendWindowState(mainWindow);
   };
 
   mainWindow.on('maximize', broadcastWindowState);
@@ -637,8 +649,8 @@ const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessi
     resizable: true,
     movable: true,
     show: false,
-    fullscreenable: false,
-    maximizable: false,
+    fullscreenable: true,
+    maximizable: true,
     minimizable: false,
     titleBarStyle: isMac ? 'customButtonsOnHover' : 'default',
     ...(isMac ? {
@@ -649,7 +661,7 @@ const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessi
     webPreferences: {
       preload: path.join(__dirname, 'preload/index.js'),
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false, // TODO: sandbox 호환 수정 후 다시 true로 변경 (Stage 4A-1)
       nodeIntegration: false,
       devTools: isDev,
       spellcheck: false,
@@ -666,6 +678,10 @@ const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessi
   widgetWindow.on('ready-to-show', () => {
     widgetWindow.show();
     widgetWindow.focus();
+  });
+
+  ['enter-full-screen', 'leave-full-screen', 'maximize', 'unmaximize', 'show', 'hide'].forEach((eventName) => {
+    widgetWindow.on(eventName, () => sendWindowState(widgetWindow));
   });
 
   widgetWindow.on('closed', () => {
@@ -693,6 +709,7 @@ const createAdditionalWidgetWindow = ({ treeId = null, sessionId = generateSessi
     if (treeId) {
       widgetWindow.webContents.send('widget:set-active-tree', { treeId });
     }
+    sendWindowState(widgetWindow);
   });
 
   additionalWidgetWindows.add(widgetWindow);
@@ -1333,6 +1350,15 @@ app.whenReady().then(() => {
           broadcastWindowState();
         }
         break;
+      case 'toggleFullScreen':
+        {
+          const next = !currentWindow.isFullScreen();
+          currentWindow.setFullScreen(next);
+          if (currentWindow === mainWindow) {
+            broadcastWindowState();
+          }
+        }
+        break;
       case 'close':
         currentWindow.close();
         break;
@@ -1340,24 +1366,29 @@ app.whenReady().then(() => {
         return { success: false, error: { code: 'invalid_action', message: 'Unsupported window control action' } };
     }
 
+    sendWindowState(currentWindow);
+
     return {
       success: true,
       action,
       maximized: currentWindow.isMaximized(),
+      fullscreen: currentWindow.isFullScreen(),
     };
   });
 
-  ipcMain.handle('window:getState', () => {
-    if (!mainWindow) {
-      return { success: false, error: { code: 'no_window', message: 'Main window not available' } };
+  ipcMain.handle('window:getState', (event) => {
+    const targetWindow = resolveBrowserWindowFromSender(event.sender) || mainWindow;
+
+    if (!targetWindow) {
+      return { success: false, error: { code: 'no_window', message: 'Window not available' } };
     }
 
     return {
       success: true,
       state: {
-        maximized: mainWindow.isMaximized(),
-        fullscreen: mainWindow.isFullScreen(),
-        visible: mainWindow.isVisible(),
+        maximized: targetWindow.isMaximized(),
+        fullscreen: targetWindow.isFullScreen(),
+        visible: targetWindow.isVisible(),
       },
     };
   });
