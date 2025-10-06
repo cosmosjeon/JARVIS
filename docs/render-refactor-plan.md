@@ -42,25 +42,25 @@
 
 ### 작업 6C – Admin Feature 정리
 - [x] **6C-1 파일 매핑**: `src/components/admin`, `src/services/admin` 현황 조사 *(2025-10-07 AdminWidgetPanel 종속성/브리지 파악 완료)*
-- [ ] **6C-2 기능 이전**: Admin UI/상태/서비스를 `src/features/admin`으로 통합, 공용 UI는 `src/shared/components/admin` 유지
-- [ ] **6C-3 IPC 계약 검토**: `adminBridge.openAdminPanel`, `adminBridge.closeAdminPanel` 등이 Stage 4 구조와 일치하는지 확인
-- [ ] **6C-4 QA**: 관리자 패널 기능 수동 확인, 문서 갱신
+- [x] **6C-2 기능 이전**: Admin UI/상태/서비스를 `src/features/admin`으로 통합, 공용 UI는 `src/shared/components/admin` 유지 *(AdminWidgetPanel 이동 및 ui/index 배럴 추가)*
+- [x] **6C-3 IPC 계약 검토**: `adminBridge.openAdminPanel`, `adminBridge.closeAdminPanel` 등이 Stage 4 구조와 일치하는지 확인 *(preload/main handlers/adminWidgetService 호출 경로 점검 완료)*
+- [x] **6C-4 QA**: 관리자 패널 기능 수동 확인, 문서 갱신 *(사용자 검증 완료 보고)*
 
 ### 작업 6D – Shared / Infrastructure 통합
-- [ ] **6D-1 Shared UI**: `src/components` 및 `src/shared/ui` 중복 컴포넌트 정비, shadcn 기반 공통 컴포넌트는 `src/shared/ui`로 집약
-- [ ] **6D-2 Shared Hooks/Utils**: 중복 훅/유틸을 `src/shared/hooks`, `src/shared/utils`로 이동하고 배럴 파일 업데이트
-- [ ] **6D-3 Infrastructure**: Electron/Supabase 연동이 흩어져 있는 경우 `src/infrastructure/<system>`으로 재배치, 명시적 의존성 주입 문서화
+- [x] **6D-1 Shared UI**: `src/components` 및 `src/shared/ui` 중복 컴포넌트 정비, shadcn 기반 공통 컴포넌트는 `src/shared/ui`로 집약 *(MarkdownMessage 이동, 미사용 UI 제거)*
+- [x] **6D-2 Shared Hooks/Utils**: 중복 훅/유틸을 `src/shared/hooks`, `src/shared/utils`로 이동하고 배럴 파일 업데이트 *(drag 서비스 `features/tree/services/drag`로 이동, 공용 utils 정돈)*
+- [x] **6D-3 Infrastructure**: Electron/Supabase 연동이 흩어져 있는 경우 `src/infrastructure/<system>`으로 재배치, 명시적 의존성 주입 문서화 *(agentClient를 `infrastructure/ai`로 이동, legacy `src/services` 제거)*
 
 ### 작업 6E – Domain 계층 정리 (선택적)
-- [ ] **6E-1 로직 선별**: 트리 계산, 정렬, 데이터 머지 등 UI와 독립된 로직 후보 목록 작성
+- [x] **6E-1 로직 선별**: 트리 계산, 정렬, 데이터 머지 등 UI와 독립된 로직 후보 목록 작성 *(2025-10-07 Domain 후보 메모 작성)*
 - [ ] **6E-2 Domain 모듈화**: 후보 로직을 `src/domain/<feature>`로 이동하고 JSDoc 타입 문서화
 - [ ] **6E-3 테스트**: 해당 로직 단위 테스트 보강(필요 시)
 
 ### 작업 6F – 마무리 & 문서
-- [ ] **6F-1 문서 업데이트**: `docs/architecture.md`에 Stage 6 결과 반영 (레이어별 책임, 디렉터리 스냅샷)
-- [ ] **6F-2 README/CHANGELOG**: 핵심 변경 요약 추가
-- [ ] **6F-3 사용자 점검**: 전체 흐름(위젯, 라이브러리, Admin) 및 설정/로그 기능 재확인
-- [ ] **6F-4 TODO 리스트**: 남은 이슈/테크빚 문서화
+- [x] **6F-1 문서 업데이트**: `docs/architecture.md`에 Stage 6 결과 반영 (레이어별 책임, 디렉터리 스냅샷)
+- [x] **6F-2 README/CHANGELOG**: 핵심 변경 요약 추가 *(README Stage 6 구조 반영)*
+- [x] **6F-3 사용자 점검**: 전체 흐름(위젯, 라이브러리, Admin) 및 설정/로그 기능 재확인 *(사용자 검증 완료 보고)*
+- [x] **6F-4 TODO 리스트**: 남은 이슈/테크빚 문서화 *(Stage 6 TODO 메모 작성)*
 
 ## Dependencies & Risks
 - Supabase 키/환경 설정이 필요하므로 사용자 환경을 미리 확인

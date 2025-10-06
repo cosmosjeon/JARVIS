@@ -4,12 +4,12 @@ import { Button } from 'shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from 'shared/ui/card';
 import { Badge } from 'shared/ui/badge';
 import { ScrollArea } from 'shared/ui/scroll-area';
-import QuestionService from 'services/QuestionService';
+import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
-import MarkdownMessage from 'components/common/MarkdownMessage';
+import MarkdownMessage from 'shared/components/markdown/MarkdownMessage';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
-import AgentClient from 'services/agentClient';
+import AgentClient from 'infrastructure/ai/agentClient';
 
 const TYPING_INTERVAL_MS = 18;
 

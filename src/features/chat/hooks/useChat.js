@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import AgentClient from 'services/agentClient';
+import AgentClient from 'infrastructure/ai/agentClient';
 import { ChatStatus, createAssistantMessagePlaceholder, createUserMessage } from '../models/message';
 
 export default function useChat({ onAssistantDone } = {}) {
@@ -71,4 +71,3 @@ export default function useChat({ onAssistantDone } = {}) {
     send,
   };
 }
-

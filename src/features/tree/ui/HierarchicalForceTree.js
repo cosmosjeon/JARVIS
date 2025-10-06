@@ -9,7 +9,7 @@ import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from 'data/treeData';
 import TreeAnimationService from 'features/tree/services/TreeAnimationService';
-import QuestionService from 'services/QuestionService';
+import QuestionService from 'features/tree/services/QuestionService';
 import useTreeViewMode from 'features/tree/state/useTreeViewMode';
 import { markNewLinks } from 'shared/utils/linkAnimationUtils';
 import ChartView from 'features/tree/ui/components/ChartView';
@@ -26,7 +26,7 @@ import {
 } from 'features/tree/utils/conversation';
 import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
-import AgentClient from 'services/agentClient';
+import AgentClient from 'infrastructure/ai/agentClient';
 import { useTreeState } from 'features/tree/state/useTreeState';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from 'features/tree/services/treeCreation';
 import {

@@ -144,5 +144,11 @@ project-root/
 3. Follow the feature-specific checklist (see `docs/refactor-plan.md`) with the user, confirming UI flows and noting any regressions.
 4. Record findings in the PR description or task notes before moving to the next slice.
 
+## 9. Stage 6 Snapshot (2025-10-07)
+- `features/tree`, `features/library`, `features/admin`는 각각 `ui/`, `state/`, `services/` 레이어를 갖춘 일관된 슬라이스 구조를 사용한다.
+- 순수 renderer 의존성이었던 `services/drag/*`, `QuestionService` 등은 `features/tree/services` 하위로 이동했고, Electron 연동 클라이언트는 `infrastructure/electron` 및 `infrastructure/ai` 계층을 통해 접근한다.
+- 공유 UI는 `shared/ui`(shadcn 기반)와 `shared/components/**`(예: `admin/AdminWidgetControlBar`, `markdown/MarkdownMessage`)로 집약되어 있으며, 레거시 `src/components` 루트는 제거되었다.
+- Stage 7에서는 초대형 컴포넌트(`HierarchicalForceTree`, `LibraryApp`, `VoranBoxManager` 등)를 커스텀 훅/서비스로 분해해 domain 계층 승격을 추진할 계획이다.
+
 ---
 This blueprint balances the long-term layered architecture with MVP pragmatism: we grow vertical slices first, rely on tight human feedback loops, and promote well-tested logic into domain/infrastructure as it matures.

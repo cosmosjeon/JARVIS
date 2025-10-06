@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
-import QuestionService from 'services/QuestionService';
+import QuestionService from 'features/tree/services/QuestionService';
 import NodeNavigationService from 'features/tree/services/NodeNavigationService';
 import { useSettings } from 'shared/hooks/SettingsContext';
 import { useTheme } from 'shared/components/library/ThemeProvider';

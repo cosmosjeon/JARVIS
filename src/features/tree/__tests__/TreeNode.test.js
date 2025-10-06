@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import TreeNode from 'features/tree/ui/components/TreeNode';
-import QuestionService from 'services/QuestionService';
+import QuestionService from 'features/tree/services/QuestionService';
 import { PANEL_SIZES } from 'features/tree/ui/components/NodeAssistantPanel';
 
 describe('TreeNode', () => {

@@ -6,7 +6,7 @@ import ForceSimulationService from 'features/tree/services/ForceSimulationServic
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import MemoPanel from './MemoPanel';
 import MemoEditor from './MemoEditor';
-import QuestionService from 'services/QuestionService';
+import QuestionService from 'features/tree/services/QuestionService';
 import { saveTreeViewportState, loadTreeViewportState } from 'infrastructure/supabase/services/treeService';
 
 const NODE_COLOR_PALETTE = (d3.schemeTableau10 && d3.schemeTableau10.length ? d3.schemeTableau10 : d3.schemeCategory10);

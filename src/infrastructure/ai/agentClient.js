@@ -1,4 +1,4 @@
-import { createAgentBridge } from '../infrastructure/electron/bridges';
+import { createAgentBridge } from '../electron/bridges';
 
 const resolveAgentBridge = (bridgeOverride) => createAgentBridge(bridgeOverride);
 

@@ -1,114 +1,96 @@
-# React Hierarchical Force-Directed Tree 🌳
+# JARVIS Renderer
 
-A modern, interactive hierarchical tree visualization built with React, D3.js, and Framer Motion.
+Electron 기반 지식 트리·라이브러리·관리자 패널을 렌더링하는 React 애플리케이션입니다. Stage 6 리팩터링을 통해 feature-first 구조, shared/infrastructure 계층 분리, Electron 브리지 캡슐화를 완료했습니다.
 
-## ✨ Features
+## ✨ 주요 기능
 
-- **🎯 Interactive Nodes**: Hover to expand nodes and reveal full descriptions
-- **🌊 Smooth Animations**: Powered by Framer Motion for buttery-smooth transitions
-- **🎪 Physics Simulation**: D3.js force-directed layout with hierarchical constraints
-- **🖱️ Drag & Drop**: Fully draggable nodes with physics simulation
-- **📱 Responsive**: Adapts to any screen size
-- **⚡ Modern React**: Uses hooks, functional components, and modern patterns
+- **트리 위젯** (`features/tree`)
+  - Force/Tidy 레이아웃 구성, 노드 편집·드래그, 대화 이력 확인
+  - Supabase 동기화 및 Electron 위젯 브리지 연동
+- **라이브러리 모드** (`features/library`)
+  - 저장된 트리/폴더 관리, Q/A 대화 재활용, Voran Box 드래그 관리
+- **관리자 패널** (`features/admin`)
+  - 빠른 트리 생성, 라이브러리 열기, 최근 트리 접근을 위한 오버레이 패널
+- **Electron 브리지** (`infrastructure/electron/bridges`)
+  - preload 채널을 JSDoc-타입 어댑터로 노출 (`libraryBridge`, `adminBridge`, `settingsBridge`, ...)
+- **OpenAI 연동** (`infrastructure/ai/agentClient.js`)
+  - 브리지 경유 호출 + HTTP fallback(Supabase/환경변수 기반)
+- **Shared Design System** (`shared/ui`, `shared/components/**`)
+  - shadcn 기반 UI 프리미티브와 공용 컴포넌트(`admin/AdminWidgetControlBar`, `markdown/MarkdownMessage` 등)
 
-## 🚀 Quick Start
+## 🚀 개발 시작
 
-1. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+npm run electron:dev
+```
 
-2. **Start development server**:
-   ```bash
-   npm start
-   ```
+필수 환경 변수는 `.env`에 정의합니다.
 
-3. **Open your browser** to `http://localhost:3000`
+```
+REACT_APP_SUPABASE_URL=...
+REACT_APP_SUPABASE_ANON_KEY=...
+# 선택: Electron 없이 OpenAI fallback을 사용하려면 아래 키 지정
+REACT_APP_OPENAI_API_KEY=...
+```
 
-## 🛠️ Tech Stack
-
-- **React 18** - Modern React with hooks
-- **D3.js v7** - Force simulation and data manipulation
-- **Framer Motion** - Smooth, spring-based animations
-- **Modern JavaScript** - ES6+ features throughout
-
-## 📁 Project Structure
+## 📁 Stage 6 이후 디렉터리 스냅샷
 
 ```
 src/
-├── components/
-│   ├── HierarchicalForceTree.js  # Main tree component
-│   └── TreeNode.js               # Individual node component
-├── data/
-│   └── treeData.js               # Tree data structure
-├── hooks/
-│   └── useD3Force.js             # Custom D3 force simulation hook
-├── App.js                        # Main App component
-└── index.js                      # React entry point
+├─ App.js
+├─ features/
+│  ├─ tree/
+│  │  ├─ ui/
+│  │  ├─ state/
+│  │  ├─ services/
+│  │  └─ utils/
+│  ├─ library/
+│  │  ├─ ui/
+│  │  ├─ state/
+│  │  └─ services/
+│  └─ admin/
+│     ├─ ui/
+│     └─ state/
+├─ infrastructure/
+│  ├─ electron/
+│  │  └─ bridges/
+│  ├─ supabase/
+│  │  └─ repositories/
+│  └─ ai/
+│     └─ agentClient.js
+├─ shared/
+│  ├─ components/
+│  │  ├─ admin/
+│  │  └─ markdown/
+│  ├─ hooks/
+│  ├─ ui/
+│  └─ utils/
+└─ domain/
+   └─ library/
 ```
 
-## 🎨 Key Components
+자세한 구조 및 리팩터 진행 상황은 다음 문서를 참고하세요.
 
-### TreeNode Component
-- Handles individual node rendering and animations
-- Manages hover states and text expansion
-- Smooth transitions between keyword and full text
+- `docs/architecture.md` – 계층 책임, Stage 6 스냅샷
+- `docs/render-refactor-plan.md` – 단계별 체크리스트
+- `docs/render-refactor-status.md` – 최신 진행 상황 및 사용자 점검 가이드
 
-### HierarchicalForceTree Component
-- Manages D3 force simulation
-- Handles drag interactions
-- Renders links with arrows
-- Orchestrates the entire tree layout
+## 🛠️ 유용한 스크립트
 
-### useD3Force Hook
-- Encapsulates D3 force simulation logic
-- Provides drag behavior
-- Manages node positioning
+- `npm run electron:dev` – Electron + React 개발 서버 실행
+- `npm run build` – 생산용 번들 생성
+- `npm run lint` – ESLint 검사(구성된 경우)
+- `npm run test` – 단위 테스트 실행(구성된 경우)
 
-## 🎯 Animation Features
+## ✅ 수동 점검 루프
 
-- **Spring Physics**: Natural, bouncy animations
-- **Staggered Entrance**: Nodes appear with sequential delays
-- **Hover Expansion**: Circles expand to show full text
-- **Smooth Transitions**: All state changes are animated
+Stage 6 리팩터 이후 각 기능 변경 시 다음 절차를 따릅니다.
 
-## 📊 Data Structure
+1. `npm run electron:dev`로 앱 실행
+2. `docs/render-refactor-status.md`에 정의된 사용자 점검 가이드를 따라 UI 플로우 검증
+3. 결과/이슈를 문서화한 뒤 다음 작업으로 이동
 
-```javascript
-{
-  nodes: [
-    {
-      id: "CEO",
-      keyword: "CEO",
-      fullText: "Chief Executive Officer...",
-      level: 0,
-      size: 20
-    }
-  ],
-  links: [
-    { source: "CEO", target: "CTO", value: 3 }
-  ]
-}
-```
+---
 
-## 🎛️ Customization
-
-- **Colors**: Modify `colorScheme` in HierarchicalForceTree.js
-- **Animation**: Adjust Framer Motion transition properties
-- **Physics**: Tune D3 force parameters (charge, distance, etc.)
-- **Data**: Update treeData.js with your own hierarchy
-
-## 🚀 Performance
-
-- **Optimized Rendering**: React's virtual DOM minimizes updates
-- **Efficient Physics**: D3's optimized force simulation
-- **Smooth 60fps**: Framer Motion's hardware-accelerated animations
-- **Memory Efficient**: Proper cleanup and effect management
-
-## 🔧 Development
-
-- `npm start` - Development server with hot reload
-- `npm build` - Production build
-- `npm eject` - Eject from Create React App (⚠️ irreversible)
-
-Enjoy building beautiful, interactive tree visualizations! 🎉
+Stage 7에서는 초대형 컴포넌트(`HierarchicalForceTree`, `LibraryApp`, `VoranBoxManager`, `AdminWidgetPanel`)를 커스텀 훅/서비스로 세분화하고 도메인 계층 승격을 진행할 예정입니다.
