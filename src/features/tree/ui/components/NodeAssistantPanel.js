@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
-import QuestionService from 'features/tree/services/QuestionService';
 import NodeNavigationService from 'features/tree/services/NodeNavigationService';
 import { useSettings } from 'shared/hooks/SettingsContext';
 import { useTheme } from 'shared/components/library/ThemeProvider';
@@ -9,6 +8,7 @@ import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
 import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
 import { Conversation, ConversationContent, ConversationScrollButton } from 'shared/ui/shadcn-io/ai/conversation';
 import createClipboardBridge from 'infrastructure/electron/bridges/clipboardBridge';
+import { useNodeAssistantConversation } from 'features/tree/hooks/useNodeAssistantConversation';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -26,19 +26,6 @@ const getScaledPanelSizes = (scaleFactor = 1) => ({
     height: PANEL_SIZES.expanded.height * scaleFactor
   },
 });
-
-const TYPING_INTERVAL_MS = 18;
-
-const buildAnswerText = (summary, question) => {
-  const bulletSource = Array.isArray(summary?.bullets) ? summary.bullets : [];
-  const bulletText = bulletSource.map((item) => `- ${item}`).join('\n');
-  const intro = question
-    ? `${summary.label} 관련 질문을 받았습니다.`
-    : `${summary.label} 개요입니다.`;
-  const detail = `${summary.intro}`;
-  const body = [detail, bulletText].filter(Boolean).join('\n\n');
-  return `${intro}\n\n${body}`.trim();
-};
 
 const NodeAssistantPanel = ({
   node,
@@ -88,12 +75,6 @@ const NodeAssistantPanel = ({
       bullets: [],
     };
   }, [node, nodeSummary]);
-  const normalizedInitialConversation = useMemo(() => {
-    if (!Array.isArray(initialConversation)) return [];
-    return initialConversation.map((message) => ({ ...message }));
-  }, [initialConversation]);
-
-  const [messages, setMessages] = useState(() => normalizedInitialConversation);
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
   const [hasFocusedComposer, setHasFocusedComposer] = useState(false);
@@ -101,11 +82,30 @@ const NodeAssistantPanel = ({
   const [placeholderNotice, setPlaceholderNotice] = useState(null);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const { theme } = useTheme();
-  const typingTimers = useRef([]);
-  const questionServiceRef = useRef(externalQuestionService ?? new QuestionService());
+
+  const {
+    messages,
+    assistantMessageCount,
+    isTyping,
+    submitMessage,
+    sendResponse,
+  } = useNodeAssistantConversation({
+    node,
+    summary,
+    initialConversation,
+    isRootNode: isRootNodeProp,
+    bootstrapMode,
+    questionService: externalQuestionService,
+    onConversationChange,
+    onSecondQuestion,
+    onRequestAnswer,
+    onAnswerComplete,
+    onAnswerError,
+    onBootstrapFirstSend,
+    onCloseNode,
+  });
+
   const navigationServiceRef = useRef(new NodeNavigationService());
-  const isHydratingRef = useRef(true);
-  const hasBootstrappedRef = useRef(false);
   const composerValueRef = useRef('');
 
   useLayoutEffect(() => {
@@ -120,10 +120,6 @@ const NodeAssistantPanel = ({
     return () => clearTimeout(timer);
   }, [node, hasFocusedComposer]);
 
-  // initialConversation이 변경되면 messages 업데이트
-  useEffect(() => {
-    setMessages(normalizedInitialConversation);
-  }, [normalizedInitialConversation]);
   useEffect(() => {
     composerValueRef.current = composerValue;
   }, [composerValue]);
@@ -133,12 +129,6 @@ const NodeAssistantPanel = ({
   const composerRef = useRef(null);
   const highlightHandlersRef = useRef({ create: null, remove: null });
   const highlightSourceMapRef = useRef(new Map());
-
-  useEffect(() => {
-    if (externalQuestionService) {
-      questionServiceRef.current = externalQuestionService;
-    }
-  }, [externalQuestionService]);
 
   // 노드 네비게이션 서비스에 트리 데이터 설정
   useEffect(() => {
@@ -366,256 +356,31 @@ const NodeAssistantPanel = ({
     return true;
   }, [clearHighlightSelections, getHighlightTexts, isHighlightMode, node.id, onPlaceholderCreate]);
 
-  const clearTypingTimers = useCallback(() => {
-    typingTimers.current.forEach(clearInterval);
-    typingTimers.current = [];
-  }, []);
-
-  useEffect(() => () => clearTypingTimers(), [clearTypingTimers]);
-
-  useEffect(() => {
-    clearTypingTimers();
-    setMessages(normalizedInitialConversation);
-    if (!composerValueRef.current || composerValueRef.current.length === 0) {
-      setComposerValue('');
-    }
-    isHydratingRef.current = true;
-    hasBootstrappedRef.current = false;
-  }, [clearTypingTimers, normalizedInitialConversation]);
-
   useEffect(() => {
     setHasFocusedComposer(false);
   }, [node?.id]);
-
-  const assistantMessageCount = useMemo(
-    () => messages.filter((message) => message.role === 'assistant').length,
-    [messages],
-  );
-
-  useEffect(() => {
-    if (!onSizeChange) return;
-    const nextSize = assistantMessageCount > 0 ? PANEL_SIZES.expanded : PANEL_SIZES.compact;
-    onSizeChange(nextSize);
-  }, [assistantMessageCount, onSizeChange]);
-
-  useEffect(() => {
-    if (isHydratingRef.current) {
-      isHydratingRef.current = false;
-      return;
-    }
-    onConversationChange(messages.map((message) => ({ ...message })));
-  }, [messages, onConversationChange]);
-
-  const animateAssistantResponse = useCallback(
-    (assistantId, answerText, context = {}) => {
-      const characters = Array.from(answerText || '');
-
-      if (characters.length === 0) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantId
-              ? { ...message, text: '', status: 'complete' }
-              : message,
-          ),
-        );
-        onAnswerComplete?.(node.id, { ...context, answer: '' });
-        return;
-      }
-
-      let index = 0;
-      const intervalId = setInterval(() => {
-        index += 1;
-        const typedText = characters.slice(0, index).join('');
-        setMessages((prev) =>
-          prev.map((message) => {
-            if (message.id !== assistantId) return message;
-            const isDone = index >= characters.length;
-            return {
-              ...message,
-              text: typedText,
-              status: isDone ? 'complete' : 'typing',
-            };
-          }),
-        );
-
-        if (index >= characters.length) {
-          clearInterval(intervalId);
-          typingTimers.current = typingTimers.current.filter((timer) => timer !== intervalId);
-          onAnswerComplete?.(node.id, { ...context, answer: typedText });
-        }
-      }, TYPING_INTERVAL_MS);
-
-      typingTimers.current.push(intervalId);
-    },
-    [node.id, onAnswerComplete],
-  );
-
-  const sendResponse = useCallback(
-    async (question, { skipSecondQuestionCheck = false, overrideAnswerText } = {}) => {
-      clearTypingTimers();
-
-      const resolvedIsRootNode = isRootNodeProp;
-      const normalizedQuestion = typeof question === 'string' ? question.trim() : '';
-      const questionText = normalizedQuestion || (typeof question === 'string' ? question : '');
-
-      let shouldCreateChild = false;
-      if (!skipSecondQuestionCheck) {
-        shouldCreateChild = resolvedIsRootNode
-          ? questionServiceRef.current.incrementQuestionCount(node.id)
-          : true;
-      }
-
-      const timestamp = Date.now();
-      const userId = `${timestamp}-user`;
-      const assistantId = `${timestamp}-assistant`;
-
-      // 첫 번째 사용자 질문만 기존 노드에 추가, 이후에는 새 노드로 생성
-      const isFirstQuestion = !messages.some((m) => m.role === 'user');
-
-      if (isFirstQuestion) {
-        // 첫 번째 질문: 기존 노드에 추가
-        setMessages((prev) => [
-          ...prev,
-          { id: userId, role: 'user', text: question },
-          { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
-        ]);
-      } else {
-        // 두 번째 질문부터: 질문 입력 즉시 기존 노드 닫고 새 노드 생성
-        if (shouldCreateChild && onSecondQuestion) {
-          // 질문 입력 즉시 기존 노드 닫기
-          onCloseNode();
-
-          // 즉시 새 노드 생성
-          await onSecondQuestion(node.id, question, '', {});
-
-          return; // 새 노드로 생성했으므로 여기서 종료
-        }
-      }
-
-      // 첫 번째 질문일 때만 답변 생성
-      if (isFirstQuestion) {
-        try {
-          let answerText = overrideAnswerText ?? '';
-          let metadata = null;
-
-          if (!answerText) {
-            if (typeof onRequestAnswer === 'function') {
-              const result = await onRequestAnswer({
-                node,
-                question,
-                isRootNode: resolvedIsRootNode,
-                shouldCreateChild: false, // 첫 번째 질문이므로 자식 노드 생성하지 않음
-              });
-              answerText = result?.answer ?? '';
-              metadata = result || {};
-            } else {
-              answerText = buildAnswerText(summary, question);
-            }
-          }
-
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? { ...message, text: '', status: 'typing' }
-                : message,
-            ),
-          );
-
-          animateAssistantResponse(assistantId, answerText, {
-            question,
-            metadata,
-            shouldCreateChild: false, // 첫 번째 질문이므로 자식 노드 생성하지 않음
-            isRootNode: resolvedIsRootNode,
-          });
-        } catch (error) {
-          const messageText = error?.message || '요청 처리 중 오류가 발생했습니다.';
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? { ...message, text: `⚠️ ${messageText}`, status: 'error' }
-                : message,
-            ),
-          );
-          onAnswerError?.(node.id, {
-            question,
-            error,
-            shouldCreateChild: false,
-            isRootNode: resolvedIsRootNode,
-          });
-        }
-      }
-    },
-    [
-      animateAssistantResponse,
-      clearTypingTimers,
-      isRootNodeProp,
-      node,
-      onAnswerError,
-      onRequestAnswer,
-      onSecondQuestion,
-      questionServiceRef,
-      summary,
-    ],
-  );
-
-  useEffect(() => {
-    if (!node.questionData) return;
-    if (normalizedInitialConversation.length > 0) return;
-    if (hasBootstrappedRef.current) return;
-    hasBootstrappedRef.current = true;
-    sendResponse(node.questionData.question, {
-      skipSecondQuestionCheck: true,
-      overrideAnswerText: node.questionData.answer,
-    });
-  }, [node.questionData, normalizedInitialConversation.length, sendResponse]);
 
   const handleSend = useCallback(async () => {
     const trimmed = composerValue.trim();
     if (!trimmed) return;
 
-    if (bootstrapMode) {
-      const hasAnyUser = messages.some((m) => m.role === 'user');
-      if (!hasAnyUser && typeof onBootstrapFirstSend === 'function') {
-        const timestamp = Date.now();
-        const userId = `${timestamp}-user`;
-        const assistantId = `${timestamp}-assistant`;
-
-        // Bootstrap 모드에서는 첫 번째 질문만 기존 노드에 추가
-        setMessages((prev) => [
-          ...prev,
-          { id: userId, role: 'user', text: trimmed },
-          { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
-        ]);
-
-        try {
-          await onBootstrapFirstSend(trimmed);
-        } catch (error) {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? {
-                  ...message,
-                  text: `⚠️ ${error?.message || '루트 노드 생성 중 오류가 발생했습니다.'}`,
-                  status: 'error',
-                }
-                : message,
-            ),
-          );
-          throw error;
-        }
-        return;
-      }
-    }
-
     try {
-      await sendResponse(trimmed);
+      await submitMessage(trimmed);
     } catch (error) {
       console.error('메시지 전송 오류:', error);
-      // 오류 발생 시 사용자에게 알림 (이미 setComposerValue에서 처리됨)
       throw error;
     }
-  }, [bootstrapMode, composerValue, messages, onBootstrapFirstSend, sendResponse]);
+  }, [composerValue, submitMessage]);
 
+  useEffect(() => {
+    if (!onSizeChange) {
+      return;
+    }
+    const nextSize = assistantMessageCount > 0 ? PANEL_SIZES.expanded : PANEL_SIZES.compact;
+    onSizeChange(nextSize);
+  }, [assistantMessageCount, onSizeChange]);
+
+  // 노드 네비게이션 핸들러
   // 노드 네비게이션 핸들러
   const handleNodeNavigation = useCallback((direction) => {
     if (!node?.id || !onNodeSelect) {
@@ -636,8 +401,6 @@ const NodeAssistantPanel = ({
   const [copiedMap, setCopiedMap] = useState({});
   const [spinningMap, setSpinningMap] = useState({});
   const scrollContainerRef = useRef(null);
-  const isTyping = useMemo(() => messages.some(m => m.status === 'typing' || m.status === 'pending'), [messages]);
-
   // 타이핑 중일 때만 자동 스크롤 (메시지 변경될 때마다)
   useEffect(() => {
     if (isTyping && scrollContainerRef?.current) {

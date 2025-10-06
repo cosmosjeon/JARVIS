@@ -94,7 +94,7 @@
 ### 작업 7B – Tree UI 분리
 - [x] **7B-1 책임 구획** (2025-10-07 분석 메모 반영): `HierarchicalForceTree.js`, `NodeAssistantPanel.js`, `MemoEditor.js`의 기능 블록(뷰포트, 대화, LLM 처리, 저장/동기화) 목록화
 - [ ] **7B-2 상태/뷰포트 훅**: `useTreeViewport`, `useTreePersistence`, `useConversationStore` 등을 도입해 렌더/상태 로직 분리 *(useTreeViewport/useTreePersistence 초안 도입, conversation 훅 진행 예정)*
-- [ ] **7B-3 서비스 추출**: LLM 연동/메시지 정규화/폴백 생성 로직을 `features/tree/services` 또는 `features/tree/utils` 하위로 이동, 테스트 추가
+- [x] **7B-3 서비스 추출**: LLM 연동/메시지 정규화/폴백 생성 로직을 `features/tree/services` 또는 `features/tree/utils` 하위로 이동, 테스트 추가 *(useNodeAssistantConversation 훅 도입으로 NodeAssistantPanel의 대화/LLM 책임을 분리 완료 — MemoEditor 관련 후속 정리·테스트는 7B-4/7C-2에서 계속 진행)*
 - [ ] **7B-4 UI 컴포넌트 정리**: 패널/에디터를 프리젠테이션 컴포넌트와 컨테이너로 분리, props 인터페이스 문서화
 - [ ] **7B-5 사용자 점검**: 트리 편집/저장/대화 플로우 회귀 검증 및 Electron 브리지 로그 확인
 
