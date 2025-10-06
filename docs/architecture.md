@@ -116,7 +116,8 @@ project-root/
 ## 4. Electron Boundary
 - `electron/preload/index.js` exports the minimum set of channels.
 - Renderer code must consume them via `src/infrastructure/electron/bridges/<name>Bridge.js` to keep mocking straightforward.
-- Each IPC handler in `electron/main/ipc-handlers` lives in its own module and registers itself via a `registerXyzHandlers(ipcMain, services)` helper.
+- Each IPC handler in `electron/main/ipc-handlers` lives in its own module and registers itself via a `registerXyzHandlers(ipcMain, services)` helper. 현재 구현된 모듈은 `agent`, `system`, `settings`, `logs`, `window`, `library`, `admin`으로 구성되며, 기존 채널 명(`agent:askRoot`, `window:toggleVisibility`, `auth:oauth-callback` 등)은 변경되지 않는다.
+- `registerIpcHandlers`는 메인 엔트리(`electron/main/index.js`)에서 단일 호출로 IPC 모듈을 초기화하며, `tray`/`globalShortcut`/`accessibility` 초기화와 충돌하지 않도록 의존성을 명시적으로 주입한다.
 
 ## 5. Testing & Validation Strategy
 - Use lightweight unit tests where they provide clear value (e.g., pure utilities, domain rules).

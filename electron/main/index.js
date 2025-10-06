@@ -8,11 +8,11 @@ try {
 }
 
 const { app, ipcMain, nativeTheme, screen, globalShortcut } = require('electron');
-const { createLogBridge } = require('../logger');
+const { createLogBridge } = require('./logger');
 const { createHotkeyManager } = require('../hotkeys');
 const accessibility = require('../accessibility');
 const logs = require('../logs');
-const settingsStore = require('../settings');
+const settingsStoreModule = require('./settings');
 const { createTray } = require('../tray');
 const { LLMService } = require('../services/llm-service');
 const {
@@ -49,23 +49,25 @@ let logger;
 let hotkeyManager;
 let tray;
 let llmService;
-let settings = { ...settingsStore.defaultSettings };
+const settingsStore = settingsStoreModule.createSettingsStore();
+
+let settings = settingsStore.get();
 let oauthServer;
 let handleOAuthDeepLink;
 
 const pendingOAuthCallbacks = [];
 
-const DEFAULT_ACCELERATOR = settingsStore.defaultAccelerator;
+const DEFAULT_ACCELERATOR = settingsStoreModule.DEFAULT_ACCELERATOR;
 
 const loadSettings = () => {
   settings = {
-    ...settingsStore.defaultSettings,
-    ...settingsStore.readSettings(),
+    ...settingsStoreModule.defaultSettings,
+    ...settingsStoreModule.readSettings(),
   };
 };
 
 const persistSettings = () => {
-  const success = settingsStore.writeSettings(settings);
+  const success = settingsStore.persist();
   if (!success) {
     logger?.warn?.('Failed to persist settings');
   }

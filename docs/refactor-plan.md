@@ -132,7 +132,7 @@
 - [x] 사용자 점검: 핫키, 트레이 메뉴, OAuth 리다이렉션 등 IPC 기반 기능을 실행해 오류 여부 확인.
 
 ### 작업 4B-1 – Main 모듈 분리
-> 진행 현황: `electron/main/index.js`가 앱 생명주기/모듈 초기화를 담당하며 `electron/main/app-window`와 `electron/main/admin-panel`이 각각 위젯/관리자 창을 노출합니다. Stage 4A-2 브리지 계층은 안정적이며, 남은 후속 과제는 IPC 핸들러 모듈화(서브슬라이스 4B-1c)입니다.
+> 진행 현황: `electron/main/index.js`가 앱 생명주기/모듈 초기화를 담당하며 IPC 핸들러가 `electron/main/ipc-handlers/*` 모듈로 분리되었습니다. Stage 4A-2 브리지 계층은 안정적이며, 남은 후속 과제는 엔트리 계약 검증(서브슬라이스 4B-1d)입니다.
 
 - [x] AI: 디렉터리가 없다면 `electron/main/app-window`, `electron/main/ipc-handlers`, `electron/main/bootstrap` 등을 생성하고 기존 `electron/hotkeys`, `electron/tray`, `electron/accessibility` 모듈의 내보내기를 정리한다.
 - [x] AI: `electron/main/auth/index.js`를 도입해 OAuth 서버, 딥링크 처리, `pendingOAuthCallbacks` 관리를 캡슐화한다.
@@ -146,14 +146,14 @@
 - [x] AI: 창 초기화 시점에 설정 브로드캐스트, pending OAuth URL 전달 등 기존 main.js 로직이 누락되지 않았는지 점검하고 필요한 훅을 추가한다.
 
 #### 서브슬라이스 4B-1c – IPC 핸들러 분해
-- [ ] AI: `electron/main/ipc-handlers/agent.js`, `electron/main/ipc-handlers/settings.js`, `electron/main/ipc-handlers/logs.js` 등을 생성해 `registerXHandlers(ipcMain, deps)` 형태로 정의하고 main 진입점에서 호출하도록 한다.
-- [ ] AI: IPC 모듈이 요구하는 의존성(`LLMService`, `settingsStore`, `logger`, `appWindowApi`, `libraryWindowApi` 등)을 명시적으로 전달하고, 중복 등록이나 핸들러 누락이 없는지 개발 실행으로 검증한다.
+- [x] AI: `electron/main/ipc-handlers/agent.js`, `electron/main/ipc-handlers/settings.js`, `electron/main/ipc-handlers/logs.js` 등을 생성해 `registerXHandlers(ipcMain, deps)` 형태로 정의하고 main 진입점에서 호출하도록 한다.
+- [x] AI: IPC 모듈이 요구하는 의존성(`LLMService`, `settingsStore`, `logger`, `appWindowApi`, `libraryWindowApi` 등)을 명시적으로 전달하고, 중복 등록이나 핸들러 누락이 없는지 개발 실행으로 검증한다.
 
 #### 서브슬라이스 4B-1d – Main 엔트리 축소
 - [x] AI: `electron/main/index.js`를 도입해 앱 생명주기 초기화(`app.whenReady`, 싱글 인스턴스 잠금, 종료 시 정리)를 담당하게 하고, 기존 `electron/main.js`는 부트스트랩 호출만 남긴다.
-- [ ] AI: 모듈화 이후에도 `tray`, `globalShortcut`, `accessibility` 초기화가 정상 작동하는지 확인하고, preload/renderer에 노출되는 채널(`widget:set-active-tree`, `auth:oauth-callback` 등) 계약이 변경되지 않았음을 `docs/architecture.md` Stage 4 섹션에 기록한다.
+- [x] AI: 모듈화 이후에도 `tray`, `globalShortcut`, `accessibility` 초기화가 정상 작동하는지 확인하고, preload/renderer에 노출되는 채널(`widget:set-active-tree`, `auth:oauth-callback` 등) 계약이 변경되지 않았음을 `docs/architecture.md` Stage 4 섹션에 기록한다.
 
-- [ ] 사용자 점검: `npm run electron:dev` 실행 후 앱 기동/종료, 위젯/라이브러리/관리자 창 토글, OAuth 콜백, 에이전트 호출 흐름을 확인한다 (오류 가능: 창 참조 누락으로 focus 실패, IPC 핸들러 미등록, OAuth 서버 미기동).
+- [x] 사용자 점검: `npm run electron:dev` 실행 후 앱 기동/종료, 위젯/라이브러리/관리자 창 토글, OAuth 콜백, 에이전트 호출 흐름을 확인한다 (오류 가능: 창 참조 누락으로 focus 실패, IPC 핸들러 미등록, OAuth 서버 미기동).
 
 ### 작업 4B-2 – 로깅/설정 모듈화
 - [ ] AI: `electron/logger.js`와 `electron/settings.js`를 각각 `electron/main/logger.js`, `electron/main/settings.js`로 이동시키고 의존성 주입 함수(`createLogBridge`, `createSettingsStore`)를 분리한다.
