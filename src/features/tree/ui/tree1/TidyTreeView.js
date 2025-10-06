@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
-import DragStateManager from "../../services/drag/DragStateManager";
-import InsertionCalculator from "../../services/drag/InsertionCalculator";
-import PreviewLayoutCalculator from "../../services/drag/PreviewLayoutCalculator";
-import SiblingReorderService from "../../services/drag/SiblingReorderService";
+import DragStateManager from 'services/drag/DragStateManager';
+import InsertionCalculator from 'services/drag/InsertionCalculator';
+import PreviewLayoutCalculator from 'services/drag/PreviewLayoutCalculator';
+import SiblingReorderService from 'services/drag/SiblingReorderService';
 
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 2.6;

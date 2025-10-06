@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { AnimatePresence, motion } from "framer-motion";
-import TreeNode from "components/TreeNode";
-import TreeAnimationService from "services/TreeAnimationService";
+import TreeNode from 'features/tree/ui/components/TreeNode';
+import TreeAnimationService from 'features/tree/services/TreeAnimationService';
 import WidgetTidyTreeChart from "./WidgetTidyTreeChart";
 import QuestionService from "services/QuestionService";
 import { markNewLinks } from "utils/linkAnimationUtils";

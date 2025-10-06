@@ -1,4 +1,4 @@
-import { treeData } from '../data/treeData';
+import { treeData } from 'data/treeData';
 
 const parentsByChild = new Map();
 const nodesById = new Map();

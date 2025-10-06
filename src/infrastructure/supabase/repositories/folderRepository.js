@@ -3,11 +3,11 @@ import {
   createFolder as legacyCreateFolder,
   updateFolder as legacyUpdateFolder,
   deleteFolder as legacyDeleteFolder,
-} from 'services/supabaseTrees';
+} from 'infrastructure/supabase/services/treeService';
 
 /**
  * FolderRepository는 폴더 관련 Supabase 연동을 캡슐화한다.
- * 현재는 기존 `services/supabaseTrees` 구현에 위임하며 점진적으로 쿼리를 이전할 예정이다.
+ * 현재는 기존 `infrastructure/supabase/services/treeService` 구현에 위임하며 점진적으로 쿼리를 이전할 예정이다.
  */
 export const fetchFolders = async (userId) => legacyFetchFolders(userId);
 

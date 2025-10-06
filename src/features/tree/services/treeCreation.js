@@ -1,5 +1,5 @@
-import { generateTreeId, upsertTreeMetadata } from './supabaseTrees';
-import { createTreeWidgetBridge } from '../infrastructure/electron/bridges';
+import { generateTreeId, upsertTreeMetadata } from 'infrastructure/supabase/services/treeService';
+import { createTreeWidgetBridge } from 'infrastructure/electron/bridges';
 
 const DEFAULT_TITLE = '새 지식 트리';
 
@@ -50,7 +50,7 @@ export const getTrackedEmptyTrees = () => {
 
 // 빈 트리 정리 함수
 export const cleanupEmptyTrees = async (trees = []) => {
-  const { deleteTree } = await import('./supabaseTrees');
+  const { deleteTree } = await import('infrastructure/supabase/services/treeService');
   const trackedTreeIds = getTrackedEmptyTrees();
   const treesToDelete = [];
 

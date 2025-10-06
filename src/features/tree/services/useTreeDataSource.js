@@ -3,7 +3,7 @@ import {
   fetchTreesWithNodes,
   upsertTreeMetadata,
   upsertTreeNodes,
-} from 'services/supabaseTrees';
+} from 'infrastructure/supabase/services/treeService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 
 /**

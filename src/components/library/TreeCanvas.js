@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar, FileText } from "lucide-react";
 
-import ForceDirectedTree from "../tree2/ForceDirectedTree";
+import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
 import WidgetTreeView from "../../features/treeCanvas/WidgetTreeView";
 
 const LIGHTWEIGHT_THRESHOLD = 250;

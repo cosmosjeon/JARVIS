@@ -1,5 +1,5 @@
-import { createTreeForUser, openWidgetForTree } from 'services/treeCreation';
-import { fetchTreesWithNodes } from 'services/supabaseTrees';
+import { createTreeForUser, openWidgetForTree } from 'features/tree/services/treeCreation';
+import { fetchTreesWithNodes } from 'infrastructure/supabase/services/treeService';
 
 const ensureWindow = () => (typeof window !== 'undefined' ? window : undefined);
 

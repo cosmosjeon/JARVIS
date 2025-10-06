@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Highlighter from 'web-highlighter';
-import QuestionService from '../services/QuestionService';
-import NodeNavigationService from '../services/NodeNavigationService';
+import QuestionService from 'services/QuestionService';
+import NodeNavigationService from 'features/tree/services/NodeNavigationService';
 import { useSettings } from 'shared/hooks/SettingsContext';
-import { useTheme } from './library/ThemeProvider';
+import { useTheme } from 'components/library/ThemeProvider';
 import { Response } from 'shared/ui/shadcn-io/ai/response';
 import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
 import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
 import { Conversation, ConversationContent, ConversationScrollButton } from 'shared/ui/shadcn-io/ai/conversation';
-import { createClipboardBridge } from '../infrastructure/electron/bridges';
+import createClipboardBridge from 'infrastructure/electron/bridges/clipboardBridge';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },

@@ -4,7 +4,7 @@ import { Bot, MessageSquare, User } from "lucide-react";
 import { Badge } from "shared/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "shared/ui/card";
 import { ScrollArea } from "shared/ui/scroll-area";
-import { buildFallbackConversation, sanitizeConversationMessages } from "services/supabaseTrees";
+import { buildFallbackConversation, sanitizeConversationMessages } from 'features/tree/utils/conversation';
 
 const ROLE_LABEL = {
   assistant: "VORAN",

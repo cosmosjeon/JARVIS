@@ -6,7 +6,7 @@ import { Badge } from 'shared/ui/badge';
 import { ScrollArea } from 'shared/ui/scroll-area';
 import QuestionService from 'services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
-import { upsertTreeNodes } from 'services/supabaseTrees';
+import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
 import MarkdownMessage from 'components/common/MarkdownMessage';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import AgentClient from 'services/agentClient';

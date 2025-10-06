@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import NodeAssistantPanel, { PANEL_SIZES } from './NodeAssistantPanel';
-import { createTreeNodeSummary, isTreeRootNode } from '../services/TreeSummaryService';
+import { createTreeNodeSummary, isTreeRootNode } from 'features/tree/services/TreeSummaryService';
 import { useSmartPositioning } from 'shared/hooks/useSmartPositioning';
 
 const selectPanelSize = (conversation, scaleFactor = 1) => {

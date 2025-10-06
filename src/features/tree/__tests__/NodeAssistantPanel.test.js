@@ -1,8 +1,8 @@
 import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import { render, screen, within } from '@testing-library/react';
-import NodeAssistantPanel, { PANEL_SIZES } from '../NodeAssistantPanel';
-import { createTreeNodeSummary, isTreeRootNode } from '../../services/TreeSummaryService';
+import NodeAssistantPanel, { PANEL_SIZES } from 'features/tree/ui/components/NodeAssistantPanel';
+import { createTreeNodeSummary, isTreeRootNode } from 'features/tree/services/TreeSummaryService';
 
 jest.mock('web-highlighter', () => {
   const instances = [];

@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
-import DataTransformService from '../../services/DataTransformService';
-import ForceSimulationService from '../../services/ForceSimulationService';
-import NodeAssistantPanel from '../NodeAssistantPanel';
+import DataTransformService from 'features/tree/services/DataTransformService';
+import ForceSimulationService from 'features/tree/services/ForceSimulationService';
+import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import MemoPanel from './MemoPanel';
 import MemoEditor from './MemoEditor';
-import QuestionService from '../../services/QuestionService';
-import { saveTreeViewportState, loadTreeViewportState } from '../../services/supabaseTrees';
+import QuestionService from 'services/QuestionService';
+import { saveTreeViewportState, loadTreeViewportState } from 'infrastructure/supabase/services/treeService';
 
 const NODE_COLOR_PALETTE = (d3.schemeTableau10 && d3.schemeTableau10.length ? d3.schemeTableau10 : d3.schemeCategory10);
 const DEFAULT_CONTEXT_MENU_STATE = {

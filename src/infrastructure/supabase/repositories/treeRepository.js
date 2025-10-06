@@ -4,11 +4,11 @@ import {
   deleteTree as legacyDeleteTree,
   deleteNodes as legacyDeleteNodes,
   moveTreeToFolder as legacyMoveTreeToFolder,
-} from 'services/supabaseTrees';
+} from 'infrastructure/supabase/services/treeService';
 
 /**
  * TreeRepository는 Supabase 연동 로직을 한곳에 모아두기 위한 얇은 어댑터입니다.
- * 현재는 기존 `services/supabaseTrees` 함수에 위임하며, 추후 실제 쿼리가 이 모듈로 이전될 예정입니다.
+ * 현재는 기존 `infrastructure/supabase/services/treeService` 함수에 위임하며, 추후 실제 쿼리가 이 모듈로 이전될 예정입니다.
  */
 export const fetchTreesWithNodes = async (userId) => legacyFetchTreesWithNodes(userId);
 

@@ -178,3 +178,43 @@
 
 ---
 **주의**: 각 작업 사이에 새로운 의존성이나 예상치 못한 문제를 발견하면, 반드시 사용자의 확인을 받고 작업 순서를 조정하거나 범위를 축소하십시오.
+
+
+## 단계 6: Renderer 구조 재정비
+### 작업 6A – Tree Feature 정리
+- [x] AI: 트리 관련 파일(`src/components/HierarchicalForceTree`, `src/controllers/tree`, `src/services/tree` 등)을 전수 조사하고 의존성 다이어그램을 작성한다.
+- [x] AI: 트리 UI/상태/서비스를 `src/features/tree/ui|state|services` 구조로 이동시켜 feature slice를 완성한다.
+- [x] AI: Supabase/Electron 호출을 `src/infrastructure` 계층으로 이전하고, 순수 로직을 `src/domain/tree`로 승격할지 평가한다.
+- [ ] AI: 트리 기능 수동 테스트(노드 CRUD, 저장/로드) 후 결과를 사용자 점검 가이드로 제공한다.
+- [ ] 사용자 점검: 트리 기능 전반을 확인하고 문제를 피드백한다.
+
+### 작업 6B – Library Feature 정리
+- [ ] AI: 라이브러리 관련 파일(`src/components/library`, `src/views/LibraryApp` 등)을 조사하고 이동 계획을 세운다.
+- [ ] AI: 라이브러리 UI/상태/서비스를 `src/features/library`로 이전하고 공용 컴포넌트는 `src/shared/components/library`로 정리한다.
+- [ ] AI: Electron 브리지(`libraryBridge`)와 설정 브로드캐스트 계약을 검증한다.
+- [ ] AI: 라이브러리 필터/검색/동기화 흐름을 수동 검증하고 가이드를 작성한다.
+- [ ] 사용자 점검: 라이브러리 주요 플로우를 확인한다.
+
+### 작업 6C – Admin Feature 정리
+- [ ] AI: Admin 관련 파일을 조사하고 `src/features/admin` 중심 구조로 재배치한다.
+- [ ] AI: Admin UI/상태/서비스를 재정비하고 공용 UI는 `src/shared/components/admin`에 유지한다.
+- [ ] AI: `adminBridge` 채널이 Stage 4 구조와 일치하는지 확인하고 필요한 문서 업데이트를 수행한다.
+- [ ] AI: 관리자 패널 플로우 수동 검증 후 체크리스트를 제공한다.
+- [ ] 사용자 점검: 관리자 패널 동작을 확인한다.
+
+### 작업 6D – Shared / Infrastructure 통합
+- [ ] AI: `src/components`와 `src/shared/ui` 중복을 제거하고 shadcn 기반 공용 컴포넌트를 `src/shared/ui`로 집약한다.
+- [ ] AI: 중복 훅/유틸을 `src/shared/hooks`, `src/shared/utils`로 이동하고 배럴 파일을 업데이트한다.
+- [ ] AI: Supabase/Electron 연동 코드를 `src/infrastructure/<system>`로 이동시키고 의존성 주입 방식을 문서화한다.
+- [ ] 사용자 점검: 주요 공유 컴포넌트/훅을 사용하는 화면을 샘플 테스트한다.
+
+### 작업 6E – Domain 계층 정리 (선택적)
+- [ ] AI: UI와 독립된 순수 로직 후보를 발굴하고 `src/domain/<feature>`로 이동할 계획을 작성한다.
+- [ ] AI: 이동된 로직에 대해 JSDoc 문서화 및 단위 테스트(선택)를 추가한다.
+- [ ] 사용자 점검: 해당 기능이 회귀 없이 동작하는지 확인한다.
+
+### 작업 6F – 마무리 & 문서
+- [ ] AI: `docs/architecture.md`에 Stage 6 결과(최종 디렉터리 스냅샷, 책임 정리)를 기록한다.
+- [ ] AI: README 또는 CHANGELOG에 주요 변경을 요약한다.
+- [ ] AI: 전체 앱 기능(위젯/라이브러리/Admin/설정/로그)을 최종 검증하고 사용자 가이드를 제공한다.
+- [ ] 사용자 점검: 전체 앱 시연 후 최종 상태를 승인한다.

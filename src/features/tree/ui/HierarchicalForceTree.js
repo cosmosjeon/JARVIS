@@ -7,28 +7,28 @@
 } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
-import { treeData } from '../data/treeData';
-import TreeAnimationService from '../services/TreeAnimationService';
-import QuestionService from '../services/QuestionService';
-import useTreeViewMode from '../controllers/useTreeViewMode';
+import { treeData } from 'data/treeData';
+import TreeAnimationService from 'features/tree/services/TreeAnimationService';
+import QuestionService from 'services/QuestionService';
+import useTreeViewMode from 'features/tree/state/useTreeViewMode';
 import { markNewLinks } from 'shared/utils/linkAnimationUtils';
-import ChartView from './ChartView';
-import NodeAssistantPanel from './NodeAssistantPanel';
-import ForceDirectedTree from './tree2/ForceDirectedTree';
-import TidyTreeView from './tree1/TidyTreeView';
-import TreeWorkspaceToolbar from './TreeWorkspaceToolbar';
+import ChartView from 'features/tree/ui/components/ChartView';
+import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
+import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
+import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
+import TreeWorkspaceToolbar from 'features/tree/ui/components/TreeWorkspaceToolbar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
-import { useTheme } from './library/ThemeProvider';
+import { useTheme } from 'components/library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
 import {
   sanitizeConversationMessages,
   buildFallbackConversation,
-} from '../services/supabaseTrees';
+} from 'features/tree/utils/conversation';
 import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
 import AgentClient from 'services/agentClient';
 import { useTreeState } from 'features/tree/state/useTreeState';
-import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from '../services/treeCreation';
+import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from 'features/tree/services/treeCreation';
 import {
   forwardPanZoomGesture as applyPanZoomGesture,
   focusNodeToCenter as focusNodeToCenterUtil,

@@ -16,7 +16,7 @@ import {
   assignTreeToFolder,
   createLibraryFolder,
 } from "features/library/services/libraryRepository";
-import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from "services/treeCreation";
+import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from "features/tree/services/treeCreation";
 import { useTheme } from "./ThemeProvider";
 import { useLibraryState } from "features/library/state/useLibraryState";
 import { LibraryActionToolbar, LibrarySidebar, LibraryContent } from "features/library/ui";

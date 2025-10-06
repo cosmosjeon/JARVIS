@@ -1,4 +1,4 @@
-import NodeNavigationService from '../NodeNavigationService';
+import NodeNavigationService from 'features/tree/services/NodeNavigationService';
 
 describe('NodeNavigationService', () => {
     let service;

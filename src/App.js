@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import './App.css';
 import './theme/glass.css';
-import HierarchicalForceTree from './components/HierarchicalForceTree';
+import HierarchicalForceTree from 'features/tree/ui/HierarchicalForceTree';
 import LibraryApp from './components/library/LibraryApp';
 import AdminWidgetPanel from './components/admin/AdminWidgetPanel';
 import { ThemeProvider } from './components/library/ThemeProvider';
