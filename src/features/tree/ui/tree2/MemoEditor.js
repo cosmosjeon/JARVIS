@@ -6,7 +6,7 @@ import React, {
     useState,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useTheme } from 'components/library/ThemeProvider';
+import { useTheme } from 'shared/components/library/ThemeProvider';
 import memoEditorTokens from './editor/tokens';
 import {
     BLOCK_TYPES,

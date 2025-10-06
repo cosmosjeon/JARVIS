@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Sparkles, Sun, Moon } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Sparkles, Sun, Moon } from 'lucide-react';
 import { createLibraryBridge, createLoggerBridge } from 'infrastructure/electron/bridges';
 
-import Logo from "assets/admin-widget/logo.svg";
+import Logo from 'assets/admin-widget/logo.svg';
 
-import VoranBoxManager from "./VoranBoxManager";
-import CreateDialog from "./CreateDialog";
+import VoranBoxManager from './components/VoranBoxManager';
+import CreateDialog from './components/CreateDialog';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import {
   loadTrees,
@@ -15,11 +15,11 @@ import {
   removeNodes,
   assignTreeToFolder,
   createLibraryFolder,
-} from "features/library/services/libraryRepository";
-import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from "features/tree/services/treeCreation";
-import { useTheme } from "./ThemeProvider";
-import { useLibraryState } from "features/library/state/useLibraryState";
-import { LibraryActionToolbar, LibrarySidebar, LibraryContent } from "features/library/ui";
+} from 'features/library/services/libraryRepository';
+import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from 'features/tree/services/treeCreation';
+import { useTheme } from 'shared/components/library/ThemeProvider';
+import { useLibraryState } from 'features/library/state/useLibraryState';
+import { LibraryActionToolbar, LibrarySidebar, LibraryContent } from 'features/library/ui';
 
 const LibraryApp = () => {
   const { user, signOut } = useSupabaseAuth();

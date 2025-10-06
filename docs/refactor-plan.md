@@ -189,8 +189,8 @@
 - [ ] 사용자 점검: 트리 기능 전반을 확인하고 문제를 피드백한다.
 
 ### 작업 6B – Library Feature 정리
-- [ ] AI: 라이브러리 관련 파일(`src/components/library`, `src/views/LibraryApp` 등)을 조사하고 이동 계획을 세운다.
-- [ ] AI: 라이브러리 UI/상태/서비스를 `src/features/library`로 이전하고 공용 컴포넌트는 `src/shared/components/library`로 정리한다.
+- [x] AI: 라이브러리 관련 파일(`src/components/library`, `src/views/LibraryApp` 등)을 조사하고 이동 계획을 세운다. *(2025-10-07 Stage 6B-1 완료, Legacy 컴포넌트 목록 및 의존성 정리)*
+- [x] AI: 라이브러리 UI/상태/서비스를 `src/features/library`로 이전하고 공용 컴포넌트는 `src/shared/components/library`로 정리한다. *(LibraryApp/TreeCanvas/VoranBoxManager 등 재배치 완료)*
 - [ ] AI: Electron 브리지(`libraryBridge`)와 설정 브로드캐스트 계약을 검증한다.
 - [ ] AI: 라이브러리 필터/검색/동기화 흐름을 수동 검증하고 가이드를 작성한다.
 - [ ] 사용자 점검: 라이브러리 주요 플로우를 확인한다.

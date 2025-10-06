@@ -18,7 +18,7 @@ import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
 import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
 import TreeWorkspaceToolbar from 'features/tree/ui/components/TreeWorkspaceToolbar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
-import { useTheme } from 'components/library/ThemeProvider';
+import { useTheme } from 'shared/components/library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
 import {
   sanitizeConversationMessages,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import VoranBoxManager from '../library/VoranBoxManager';
+import VoranBoxManager from 'features/library/ui/components/VoranBoxManager';
 
 // Mock the UI components
 jest.mock('shared/ui/button', () => ({

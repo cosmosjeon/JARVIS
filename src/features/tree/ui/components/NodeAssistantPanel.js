@@ -3,7 +3,7 @@ import Highlighter from 'web-highlighter';
 import QuestionService from 'services/QuestionService';
 import NodeNavigationService from 'features/tree/services/NodeNavigationService';
 import { useSettings } from 'shared/hooks/SettingsContext';
-import { useTheme } from 'components/library/ThemeProvider';
+import { useTheme } from 'shared/components/library/ThemeProvider';
 import { Response } from 'shared/ui/shadcn-io/ai/response';
 import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
 import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';

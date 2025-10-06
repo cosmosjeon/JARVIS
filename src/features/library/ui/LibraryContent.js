@@ -2,8 +2,8 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from 'shared/ui/card';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from 'shared/ui/resizable';
-import TreeCanvas from 'components/library/TreeCanvas';
-import LibraryQAPanel from 'components/library/LibraryQAPanel';
+import TreeCanvas from './components/TreeCanvas';
+import LibraryQAPanel from './components/LibraryQAPanel';
 
 const EmptyState = ({ message }) => (
   <div className="flex h-full items-center justify-center px-6 text-sm text-foreground/70">

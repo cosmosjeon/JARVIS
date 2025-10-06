@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Input } from 'shared/ui/input';
 import { Textarea } from 'shared/ui/textarea';
-import { useTheme } from 'components/library/ThemeProvider';
+import { useTheme } from 'shared/components/library/ThemeProvider';
 
 const MemoPanel = ({ memo, onClose, onUpdate }) => {
     const [title, setTitle] = useState('');
