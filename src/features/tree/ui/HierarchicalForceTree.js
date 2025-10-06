@@ -26,6 +26,7 @@ import {
   sanitizeConversationMessages,
   buildFallbackConversation,
 } from 'features/tree/utils/conversation';
+import useConversationStore from 'features/tree/state/useConversationStore';
 import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
 import AgentClient from 'infrastructure/ai/agentClient';
@@ -130,7 +131,16 @@ const HierarchicalForceTree = () => {
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
-  const conversationStoreRef = useRef(new Map());
+  const {
+    hydrateFromNodes,
+    getConversation,
+    setConversation: upsertConversation,
+    deleteConversation,
+    hasConversation,
+    ensureBootstrap,
+    clearBootstrap,
+    clearAll: clearConversationStore,
+  } = useConversationStore();
   const pendingTreeIdRef = useRef(null);
   const treeLibrarySyncRef = useRef(new Map());
   const zoomBehaviourRef = useRef(null);
@@ -246,24 +256,7 @@ const HierarchicalForceTree = () => {
     return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
   }, []);
 
-  const hydrateConversationStore = useCallback((incomingNodes = []) => {
-    conversationStoreRef.current.clear();
-    incomingNodes.forEach((node) => {
-      if (!node || !node.id) {
-        return;
-      }
 
-      const baseConversation = sanitizeConversationMessages(node.conversation);
-      const fallbackConversation = baseConversation.length
-        ? baseConversation
-        : buildFallbackConversation(
-          node.question || node.questionData?.question,
-          node.answer || node.questionData?.answer || node.fullText,
-        );
-
-      conversationStoreRef.current.set(node.id, fallbackConversation);
-    });
-  }, []);
   const linkKeysRef = useRef(new Set());
   const hasCleanedQ2Ref = useRef(false);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
@@ -358,7 +351,7 @@ const HierarchicalForceTree = () => {
   const loadActiveTree = useCallback(async ({ treeId: explicitTreeId } = {}) => {
     if (!user) {
       setActiveTreeId(null);
-      hydrateConversationStore([]);
+      clearConversationStore();
       setData(treeData);
       setInitializingTree(false);
       return;
@@ -372,7 +365,7 @@ const HierarchicalForceTree = () => {
       : (requestedTreeIdRef.current || readSessionTreeId());
 
     if (!resolvedTreeId) {
-      hydrateConversationStore([]);
+      clearConversationStore();
       setActiveTreeId(null);
       loadTree({ nodes: [], links: [] });
       writeSessionTreeId(null);
@@ -400,7 +393,7 @@ const HierarchicalForceTree = () => {
           }))
           : [];
 
-        hydrateConversationStore(mappedNodes);
+        hydrateFromNodes(mappedNodes);
         loadTree({
           nodes: mappedNodes,
           links: Array.isArray(targetTree.treeData?.links) ? targetTree.treeData.links : [],
@@ -419,7 +412,7 @@ const HierarchicalForceTree = () => {
           }
         }
       } else {
-        hydrateConversationStore([]);
+        clearConversationStore();
         setActiveTreeId(null);
         loadTree({ nodes: [], links: [] });
         writeSessionTreeId(null);
@@ -433,7 +426,7 @@ const HierarchicalForceTree = () => {
       requestedTreeIdRef.current = null;
       setInitializingTree(false);
     }
-  }, [user, hydrateConversationStore, loadTree, loadTrees, readSessionTreeId, writeSessionTreeId]);
+  }, [user, clearConversationStore, hydrateFromNodes, loadTree, loadTrees, readSessionTreeId, writeSessionTreeId]);
 
   useEffect(() => {
     if (!user || hasResolvedInitialTreeRef.current) {
@@ -779,17 +772,11 @@ const HierarchicalForceTree = () => {
     };
   }, [visibleGraph.nodes, visibleGraph.links]);
 
-  const getInitialConversationForNode = (nodeId) => {
-    const stored = conversationStoreRef.current.get(nodeId);
-    return stored ? stored.map((message) => ({ ...message })) : [];
-  };
+  const getInitialConversationForNode = useCallback((nodeId) => getConversation(nodeId), [getConversation]);
 
   const setConversationForNode = useCallback((nodeId, messages) => {
-    const normalized = Array.isArray(messages)
-      ? messages.map((message) => ({ ...message }))
-      : [];
-    conversationStoreRef.current.set(nodeId, normalized);
-  }, []);
+    upsertConversation(nodeId, messages);
+  }, [upsertConversation]);
 
   useEffect(() => {
     const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
@@ -798,11 +785,9 @@ const HierarchicalForceTree = () => {
     if (isEmpty) {
       setSelectedNodeId(null);
       setExpandedNodeId(null);
-      if (!conversationStoreRef.current.has('__bootstrap__')) {
-        conversationStoreRef.current.set('__bootstrap__', []);
-      }
+      ensureBootstrap();
     } else {
-      conversationStoreRef.current.delete('__bootstrap__');
+      clearBootstrap();
     }
   }, [data.nodes]);
 
@@ -856,7 +841,7 @@ const HierarchicalForceTree = () => {
 
     const collected = [];
     chain.forEach((id) => {
-      const history = conversationStoreRef.current.get(id) || [];
+      const history = getConversation(id);
       history.forEach((entry) => {
         if (!entry || typeof entry.text !== 'string') {
           return;
@@ -1023,7 +1008,7 @@ const HierarchicalForceTree = () => {
       });
 
       setConversationForNode(rootId, sanitizedConversation);
-      conversationStoreRef.current.delete('__bootstrap__');
+      clearBootstrap();
 
       questionService.current.setQuestionCount(rootId, 1);
       setExpandedNodeId(rootId);
@@ -1278,7 +1263,7 @@ const HierarchicalForceTree = () => {
 
     // 대화 상태 정리
     toRemove.forEach((id) => {
-      conversationStoreRef.current.delete(id);
+      deleteConversation(id);
     });
 
     // 선택/확장 상태 초기화
@@ -1629,7 +1614,7 @@ const HierarchicalForceTree = () => {
 
   useEffect(() => {
     data.nodes.forEach((node) => {
-      if (!conversationStoreRef.current.has(node.id)) {
+      if (!hasConversation(node.id)) {
         setConversationForNode(node.id, []);
       }
     });
@@ -1681,7 +1666,7 @@ const HierarchicalForceTree = () => {
     });
 
     setData({ ...data, nodes: newNodes, links: newLinks });
-    toRemove.forEach((id) => conversationStoreRef.current.delete(id));
+    toRemove.forEach((id) => deleteConversation(id));
     if (selectedNodeId && toRemove.has(selectedNodeId)) setSelectedNodeId(null);
     if (expandedNodeId && toRemove.has(expandedNodeId)) collapseAssistantPanel();
 

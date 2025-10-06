@@ -87,17 +87,24 @@
 ### 작업 7A – Library UI 분리
 - [x] **7A-1 구조 진단**: `src/features/library/ui/LibraryApp.js`, `components/VoranBoxManager.js`, `components/TreeCanvas.js`의 책임 목록화 및 의존 그래프 작성 *(2025-10-07 구조 분석 및 Stage 7A-1 메모 작성)*
 - [x] **7A-2 커스텀 훅 추출**: `useLibraryData`, `useLibraryDialogs`, `useLibraryDrag` 등 커스텀 훅 초안 작성, API 호출과 브리지 통신을 훅으로 이동
-- [ ] **7A-3 프리젠테이션 분리**: `LibraryApp`은 레이아웃 중심으로 단순화, VoranBox/TreeCanvas 내부 UI를 하위 컴포넌트로 분해 *(2025-10-08 VoranBoxManager 토스트 로직 분리 + `VoranTreeListPanel`/`VoranFolderPanel`/`VoranTreeListItem` 도입, 남은 상태 모듈 정리는 후속 진행)*
+- [x] **7A-3 프리젠테이션 분리**: `LibraryApp`은 레이아웃 중심으로 단순화, VoranBox/TreeCanvas 내부 UI를 하위 컴포넌트로 분해 *(2025-10-08 `useVoranBoxManagerState` + Voran 패널/아이템 컴포넌트 도입, 키 가이드 레이아웃 수정 완료)*
 - [x] **7A-4 테스트/문서**: 새 훅 인터페이스에 대한 단위 테스트 또는 스토리북/문서 초안 작성, `docs/render-refactor-status.md` 업데이트 *(2025-10-08 `useLibraryDialogs`/`useLibraryDrag` 테스트 추가)*
 - [ ] **7A-5 사용자 점검**: 라이브러리 주요 플로우 회귀 테스트 진행 *(스토리/회귀 시나리오 미검증, 후속 점검 필요)*
 
 ### 작업 7B – Tree UI 분리
 - [x] **7B-1 책임 구획** (2025-10-07 분석 메모 반영): `HierarchicalForceTree.js`, `NodeAssistantPanel.js`, `MemoEditor.js`의 기능 블록(뷰포트, 대화, LLM 처리, 저장/동기화) 목록화
-- [ ] **7B-2 상태/뷰포트 훅**: `useTreeViewport`, `useTreePersistence`, `useConversationStore` 등을 도입해 렌더/상태 로직 분리 *(useTreeViewport/useTreePersistence 초안 도입, conversation 훅 진행 예정)*
+- [x] **7B-2 상태/뷰포트 훅**: `useTreeViewport`, `useTreePersistence`, `useConversationStore` 등을 도입해 렌더/상태 로직 분리 *(2025-10-08 `useConversationStore` 훅으로 HierarchicalForceTree 대화 상태 분리 완료)*
 - [x] **7B-3 서비스 추출**: LLM 연동/메시지 정규화/폴백 생성 로직을 `features/tree/services` 또는 `features/tree/utils` 하위로 이동, 테스트 추가 *(useNodeAssistantConversation 훅 도입으로 NodeAssistantPanel의 대화/LLM 책임을 분리 완료 — MemoEditor 관련 후속 정리·테스트는 7B-4/7C-2에서 계속 진행)*
-- [ ] **7B-4 UI 컴포넌트 정리**: 패널/에디터를 프리젠테이션 컴포넌트와 컨테이너로 분리, props 인터페이스 문서화
+- [x] **7B-4 UI 컴포넌트 정리**: 패널/에디터를 프리젠테이션 컴포넌트와 컨테이너로 분리, props 인터페이스 문서화 *(2025-10-08 NodeAssistantPanel 컨테이너/훅 구조화 + MemoEditor 훅/뷰 분리 완료, 새 테스트/문서 후속 작성 예정 — 세부 사항은 Stage 7B-4 메모 참고)*
 - [ ] **7B-5 사용자 점검**: 트리 편집/저장/대화 플로우 회귀 검증 및 Electron 브리지 로그 확인
 
+
+#### Stage 7B-4 UI 컴포넌트 정리 메모 (2025-10-08)
+- NodeAssistantPanel을 `NodeAssistantPanelContainer`/`NodeAssistantPanelView`로 분리하고, 상태·사이드이펙트는 `useNodeAssistantPanelController` 훅에서 통합 관리한다. 하이라이트 선택 상태는 `HighlightSelectionStore`, 네비게이션은 `services/node-assistant/NodeNavigationService`로 주입 구조화했다.
+- Highlighter 이벤트/클립보드 브리지/노드 네비게이션 등을 훅 내부로 이동해 프리젠테이션 뷰가 UI 렌더링에만 집중하도록 조정했다. 테스트 편의를 위해 클립보드/네비게이션 의존성은 주입 가능하게 설계했다.
+- MemoEditor를 `useMemoEditorController`(상태/비즈니스 로직)와 `MemoEditorView`(프리젠테이션)로 분리하고, HTML 정규화/블록 탐색 로직은 `domain/tree/memo/textTransforms`로 이동해 재사용성과 테스트 용이성을 높였다.
+- SlashCommandPalette/InlineFormatToolbar와의 상호작용은 훅에서 캡슐화하고, 프리젠테이션은 props 기반으로 수신해 Storybook/테스트에 활용 가능하도록 했다.
+- 후속 작업: ① `useNodeAssistantPanelController`/`useMemoEditorController` 단위 테스트 작성 ② Storybook 스냅샷 갱신 ③ NodeAssistantPanel 테스트(`__tests__/NodeAssistantPanel.test.js`)를 새 구조에 맞춰 정비.
 
 #### Stage 7B-1 책임 구획 메모 (2025-10-07)
 - `HierarchicalForceTree`는 viewport/D3 시뮬레이션, Electron 브리지 호출, Supabase 동기화, 대화/노드 CRUD, LLM 요청까지 모두 담고 있어 "viewport 관리", "데이터 동기화", "대화/LLM 흐름", "UI 상태/테마" 네 가지 관심사를 분리 필요
