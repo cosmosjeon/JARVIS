@@ -3,6 +3,7 @@
 ---
 ### 진행 요약
 ### Stage 7 진행 현황 (2025-10-07)
+- Tree UI 뷰포트/자동 저장 로직을 `useTreeViewport`, `useTreePersistence` 훅으로 분리해 `HierarchicalForceTree`의 창 크기/스케일·자동 저장 책임을 축소 (Stage 7B-2 진행 중)
 - 라이브러리 화면은 `useLibraryAppViewModel`을 통해 데이터/상태/드래그 로직을 분리했고, `LibraryApp`은 프리젠테이션 전용 셸로 축소됨
 - 트리 이동 계획/Undo 처리가 `treeMovePlanner` 서비스로 추상화되어 드래그&드롭 결과를 일관되게 처리
 - 드래그 페이로드 파싱/직렬화는 `features/library/utils/dragPayload` 유틸로 캡슐화되어 VoranBox/사이드바에서 재사용 가능

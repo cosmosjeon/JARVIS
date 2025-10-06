@@ -20,6 +20,8 @@ import TreeWorkspaceToolbar from 'features/tree/ui/components/TreeWorkspaceToolb
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from 'shared/components/library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
+import { useTreeViewport } from 'features/tree/hooks/useTreeViewport';
+import { useTreePersistence } from 'features/tree/hooks/useTreePersistence';
 import {
   sanitizeConversationMessages,
   buildFallbackConversation,
@@ -37,8 +39,6 @@ import {
   raiseNodeLayer,
 } from 'features/tree/ui/d3Renderer';
 
-const WINDOW_CHROME_HEIGHT = 48;
-
 const ORTHO_PATH_DEFAULTS = {
   cornerRadius: 20,
   nodePadding: 18,
@@ -48,35 +48,6 @@ import {
   buildRoundedPath,
   buildOrthogonalPath,
 } from 'features/tree/ui/renderUtils';
-
-const getViewportDimensions = () => {
-  if (typeof window === 'undefined') {
-    return { width: 1024, height: 720 - WINDOW_CHROME_HEIGHT };
-  }
-  return {
-    width: window.innerWidth,
-    height: Math.max(window.innerHeight - WINDOW_CHROME_HEIGHT, 0),
-  };
-};
-
-// 창 크기에 따른 노드 스케일 팩터 계산
-const calculateNodeScaleFactor = (dimensions) => {
-  // 기준 크기 (1024x672)
-  const BASE_WIDTH = 1024;
-  const BASE_HEIGHT = 720 - WINDOW_CHROME_HEIGHT;
-
-  // 현재 창 크기
-  const currentWidth = dimensions.width || BASE_WIDTH;
-  const currentHeight = dimensions.height || BASE_HEIGHT;
-
-  // 너비와 높이 스케일을 각각 계산하고 더 작은 값 사용 (비율 유지)
-  const widthScale = currentWidth / BASE_WIDTH;
-  const heightScale = currentHeight / BASE_HEIGHT;
-  const scaleFactor = Math.min(widthScale, heightScale);
-
-  // 최소 0.4배, 최대 2.0배로 제한
-  return Math.max(0.4, Math.min(2.0, scaleFactor));
-};
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
@@ -132,14 +103,12 @@ const HierarchicalForceTree = () => {
   const currentTheme = themeColors[theme] || themeColors.glass;
 
   const svgRef = useRef(null);
-  const [dimensions, setDimensions] = useState(getViewportDimensions());
-  const [nodeScaleFactor, setNodeScaleFactor] = useState(() => calculateNodeScaleFactor(getViewportDimensions()));
+  const { dimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [viewMode, setViewMode] = useTreeViewMode('tree1');
   const [linkValidationError, setLinkValidationError] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
-  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, k: 1 });
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const treeState = useTreeState(treeData);
   const {
@@ -363,6 +332,28 @@ const HierarchicalForceTree = () => {
   const normalizeLinkEndpoint = useCallback((endpoint) => (
     typeof endpoint === 'object' && endpoint !== null ? endpoint.id : endpoint
   ), []);
+
+  useTreePersistence({
+    user,
+    data,
+    hierarchicalLinks,
+    getRootNodeId,
+    normalizeLinkEndpoint,
+    activeTreeId,
+    setActiveTreeId,
+    writeSessionTreeId,
+    saveTreeMetadata,
+    saveTreeNodes,
+    treeBridge,
+    requestedTreeIdRef,
+    treeLibrarySyncRef,
+    setTreeSyncError,
+    setIsTreeSyncing,
+    isTrackingEmptyTree,
+    stopTrackingEmptyTree,
+    cleanupEmptyTrees,
+    initializingTree,
+  });
 
   const loadActiveTree = useCallback(async ({ treeId: explicitTreeId } = {}) => {
     if (!user) {
@@ -626,215 +617,6 @@ const HierarchicalForceTree = () => {
   }, [treeBridge]);
 
   // 2번째 질문 처리 함수 (handleRequestAnswer 정의 후로 이동)
-
-  const persistTreeData = useCallback(async () => {
-    if (!user || initializingTree) {
-      return;
-    }
-
-    if (!data?.nodes?.length) {
-      return;
-    }
-
-    setIsTreeSyncing(true);
-    setTreeSyncError(null);
-
-    try {
-      const parentByChild = new Map();
-      hierarchicalLinks.forEach((link) => {
-        const sourceId = normalizeLinkEndpoint(link.source);
-        const targetId = normalizeLinkEndpoint(link.target);
-        if (sourceId && targetId) {
-          parentByChild.set(targetId, sourceId);
-        }
-      });
-
-      const normalizedNodes = data.nodes.map((node) => {
-        const parentId = parentByChild.get(node.id) || null;
-        const createdAt = node.createdAt || Date.now();
-        const baseQuestion = typeof node.question === 'string' && node.question.trim()
-          ? node.question.trim()
-          : (node.questionData?.question || null);
-        const baseAnswer = typeof node.answer === 'string' && node.answer.trim()
-          ? node.answer.trim()
-          : node.questionData?.answer || node.fullText || null;
-        const isMemoNode = node.nodeType === 'memo';
-        const normalizedConversation = isMemoNode
-          ? []
-          : sanitizeConversationMessages(conversationStoreRef.current.get(node.id));
-        const conversation = isMemoNode
-          ? []
-          : (normalizedConversation.length
-            ? normalizedConversation
-            : buildFallbackConversation(baseQuestion, baseAnswer));
-        const memoPayload = isMemoNode
-          ? {
-            title: node.memo?.title || node.keyword || '',
-            content: node.memo?.content || node.fullText || '',
-            metadata: node.memo?.metadata || node.memoMetadata || null,
-          }
-          : null;
-
-        return {
-          id: node.id,
-          keyword: node.keyword || null,
-          fullText: node.fullText || '',
-          question: baseQuestion,
-          answer: baseAnswer,
-          status: node.status || 'answered',
-          createdAt,
-          updatedAt: Date.now(),
-          parentId,
-          conversation,
-          questionData: node.questionData,
-          nodeType: node.nodeType || null,
-          memoParentId: node.memoParentId || null,
-          memo: memoPayload,
-          memoMetadata: memoPayload?.metadata || null,
-        };
-      });
-
-      const rootNodeId = getRootNodeId();
-      const rootNode = data.nodes.find((node) => node.id === rootNodeId) || data.nodes[0];
-      const title = rootNode?.keyword
-        || rootNode?.questionData?.question
-        || '새 지식 트리';
-
-      let workingTreeId = activeTreeId || pendingTreeIdRef.current;
-      if (!workingTreeId) {
-        const timestamp = Date.now();
-        const randomPart = Math.random().toString(16).slice(2, 10);
-        workingTreeId = `tree_${timestamp}_${randomPart}`;
-        pendingTreeIdRef.current = workingTreeId;
-      }
-
-      const treeRecord = await saveTreeMetadata({
-        treeId: workingTreeId,
-        title,
-      });
-
-      const resolvedTreeId = treeRecord?.id || workingTreeId;
-      pendingTreeIdRef.current = resolvedTreeId;
-      if (resolvedTreeId) {
-        writeSessionTreeId(resolvedTreeId);
-        requestedTreeIdRef.current = resolvedTreeId;
-      }
-      if (!activeTreeId && resolvedTreeId) {
-        setActiveTreeId(resolvedTreeId);
-        if (typeof window !== 'undefined') {
-          try {
-            window.localStorage.setItem('jarvis.activeTreeId', resolvedTreeId);
-          } catch (error) {
-            // ignore storage errors
-          }
-        }
-      }
-
-      if (resolvedTreeId) {
-        await saveTreeNodes({
-          treeId: resolvedTreeId,
-          nodes: normalizedNodes,
-        });
-
-        const stateMap = treeLibrarySyncRef.current;
-        const existingState = stateMap.get(resolvedTreeId) || { lastCount: 0, refreshed: false };
-        const previousCount = existingState.lastCount || 0;
-        const alreadyRefreshed = existingState.refreshed === true;
-        const nextCount = normalizedNodes.length;
-
-        if (!alreadyRefreshed && previousCount === 0 && nextCount > 0) {
-          try {
-            treeBridge.requestLibraryRefresh();
-          } catch (error) {
-            // IPC failures are non-fatal for sync notifications
-          }
-          stateMap.set(resolvedTreeId, { lastCount: nextCount, refreshed: true });
-        } else {
-          stateMap.set(resolvedTreeId, {
-            lastCount: nextCount,
-            refreshed: alreadyRefreshed || nextCount > 0,
-          });
-        }
-
-        // 트리에 내용이 추가되었으므로 빈 트리 추적 중지
-        if (isTrackingEmptyTree(resolvedTreeId)) {
-          stopTrackingEmptyTree(resolvedTreeId);
-          console.log(`트리에 내용이 추가되어 빈 트리 추적 중지: ${resolvedTreeId}`);
-        }
-      }
-    } catch (error) {
-      setTreeSyncError(error);
-      if (!activeTreeId) {
-        pendingTreeIdRef.current = null;
-      }
-    } finally {
-      setIsTreeSyncing(false);
-    }
-  }, [
-    user,
-    initializingTree,
-    data,
-    normalizeLinkEndpoint,
-    hierarchicalLinks,
-    getRootNodeId,
-    activeTreeId,
-    saveTreeMetadata,
-    saveTreeNodes,
-    treeBridge,
-    writeSessionTreeId,
-  ]);
-
-  useEffect(() => {
-    if (!user || initializingTree) {
-      return undefined;
-    }
-
-    if (!data?.nodes?.length) {
-      return undefined;
-    }
-
-    if (treeSyncDebounceRef.current) {
-      clearTimeout(treeSyncDebounceRef.current);
-    }
-
-    treeSyncDebounceRef.current = setTimeout(() => {
-      persistTreeData();
-    }, 800);
-
-    return () => {
-      if (treeSyncDebounceRef.current) {
-        clearTimeout(treeSyncDebounceRef.current);
-      }
-    };
-  }, [data, user, initializingTree, persistTreeData]);
-
-  // 위젯에서 나갈 때 빈 트리 정리
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleBeforeUnload = async () => {
-      try {
-        // 현재 트리 데이터를 가져와서 빈 트리인지 확인
-        const currentTree = {
-          id: activeTreeId,
-          treeData: data
-        };
-
-        // 빈 트리인 경우 정리
-        if (activeTreeId && data && data.nodes && data.nodes.length === 0) {
-          await cleanupEmptyTrees([currentTree]);
-        }
-      } catch (error) {
-        console.error('빈 트리 정리 중 오류:', error);
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [activeTreeId, data]);
 
   // 부모 -> 자식 맵 계산 (원본 데이터 기준)
   const childrenByParent = React.useMemo(() => {
@@ -1905,20 +1687,6 @@ const HierarchicalForceTree = () => {
 
     hasCleanedQ2Ref.current = true;
   }, [data, selectedNodeId, expandedNodeId, hierarchicalLinks]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsResizing(true);
-      const newDimensions = getViewportDimensions();
-      setDimensions(newDimensions);
-      setNodeScaleFactor(calculateNodeScaleFactor(newDimensions));
-      if (handleResize._t) clearTimeout(handleResize._t);
-      handleResize._t = setTimeout(() => setIsResizing(false), 140);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   useEffect(() => {
     // 기존 애니메이션 정리

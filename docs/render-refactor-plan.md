@@ -86,17 +86,24 @@
 
 ### 작업 7A – Library UI 분리
 - [x] **7A-1 구조 진단**: `src/features/library/ui/LibraryApp.js`, `components/VoranBoxManager.js`, `components/TreeCanvas.js`의 책임 목록화 및 의존 그래프 작성 *(2025-10-07 구조 분석 및 Stage 7A-1 메모 작성)*
-- [ ] **7A-2 커스텀 훅 추출**: `useLibraryData`, `useLibraryDialogs`, `useLibraryDrag` 등 커스텀 훅 초안 작성, API 호출과 브리지 통신을 훅으로 이동
-- [ ] **7A-3 프리젠테이션 분리**: `LibraryApp`은 레이아웃 중심으로 단순화, VoranBox/TreeCanvas 내부 UI를 하위 컴포넌트로 분해
-- [ ] **7A-4 테스트/문서**: 새 훅 인터페이스에 대한 단위 테스트 또는 스토리북/문서 초안 작성, `docs/render-refactor-status.md` 업데이트
-- [ ] **7A-5 사용자 점검**: 라이브러리 주요 플로우 회귀 테스트 진행
+- [x] **7A-2 커스텀 훅 추출**: `useLibraryData`, `useLibraryDialogs`, `useLibraryDrag` 등 커스텀 훅 초안 작성, API 호출과 브리지 통신을 훅으로 이동
+- [x] **7A-3 프리젠테이션 분리**: `LibraryApp`은 레이아웃 중심으로 단순화, VoranBox/TreeCanvas 내부 UI를 하위 컴포넌트로 분해
+- [ ] **7A-4 테스트/문서** (문서 초안 작성 완료, 테스트 보강 필요): 새 훅 인터페이스에 대한 단위 테스트 또는 스토리북/문서 초안 작성, `docs/render-refactor-status.md` 업데이트
+- [x] **7A-5 사용자 점검**: 라이브러리 주요 플로우 회귀 테스트 진행
 
 ### 작업 7B – Tree UI 분리
-- [ ] **7B-1 책임 구획**: `HierarchicalForceTree.js`, `NodeAssistantPanel.js`, `MemoEditor.js`의 기능 블록(뷰포트, 대화, LLM 처리, 저장/동기화) 목록화
-- [ ] **7B-2 상태/뷰포트 훅**: `useTreeViewport`, `useTreePersistence`, `useConversationStore` 등을 도입해 렌더/상태 로직 분리
+- [x] **7B-1 책임 구획** (2025-10-07 분석 메모 반영): `HierarchicalForceTree.js`, `NodeAssistantPanel.js`, `MemoEditor.js`의 기능 블록(뷰포트, 대화, LLM 처리, 저장/동기화) 목록화
+- [ ] **7B-2 상태/뷰포트 훅**: `useTreeViewport`, `useTreePersistence`, `useConversationStore` 등을 도입해 렌더/상태 로직 분리 *(useTreeViewport/useTreePersistence 초안 도입, conversation 훅 진행 예정)*
 - [ ] **7B-3 서비스 추출**: LLM 연동/메시지 정규화/폴백 생성 로직을 `features/tree/services` 또는 `features/tree/utils` 하위로 이동, 테스트 추가
 - [ ] **7B-4 UI 컴포넌트 정리**: 패널/에디터를 프리젠테이션 컴포넌트와 컨테이너로 분리, props 인터페이스 문서화
 - [ ] **7B-5 사용자 점검**: 트리 편집/저장/대화 플로우 회귀 검증 및 Electron 브리지 로그 확인
+
+
+#### Stage 7B-1 책임 구획 메모 (2025-10-07)
+- `HierarchicalForceTree`는 viewport/D3 시뮬레이션, Electron 브리지 호출, Supabase 동기화, 대화/노드 CRUD, LLM 요청까지 모두 담고 있어 "viewport 관리", "데이터 동기화", "대화/LLM 흐름", "UI 상태/테마" 네 가지 관심사를 분리 필요
+- `NodeAssistantPanel`은 하이라이트, 대화 타이핑, 클립보드, 노드 네비게이션을 모두 처리하므로 "대화 상태 관리", "LLM 요청/재시도", "하이라이트" 모듈, "키바인딩/네비게이션"으로 분할 예정
+- `MemoEditor`는 블록 모델, 슬래시 커맨드, 포커스/키보드 제어가 한 파일에 뭉쳐 있으며, 데이터를 순수 변환 util(`blockUtils`)과 UI 컨트롤러 레이어로 나눌 필요 존재
+- 공통적으로 Electron/Supabase 연동은 `features/tree/services` 단계에서 래핑하고 UI는 커스텀 훅을 통해 의존성 주입하도록 재구성한다
 
 ### 작업 7C – 공통 유틸/테스트 강화
 - [ ] **7C-1 공통 유틸 정리**: 드래그, 토스트, 타이핑 애니메이션 등 중복 로직을 `shared/utils` 또는 `shared/hooks`로 승격
