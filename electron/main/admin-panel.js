@@ -1,5 +1,6 @@
 const path = require('path');
 const { BrowserWindow } = require('electron');
+const { getRendererUrl } = require('./bootstrap/renderer-url');
 
 let adminPanelWindow = null;
 
@@ -34,7 +35,14 @@ const positionAdminPanelWindow = (windowInstance, screen, logger) => {
 
 const ensureAdminPanelWindow = ({ screen, isDev = false, logger }) => {
   if (adminPanelWindow && !adminPanelWindow.isDestroyed()) {
-    adminPanelWindow.showInactive();
+    adminPanelWindow.setOpacity(1);
+    adminPanelWindow.show();
+    adminPanelWindow.focus();
+    try {
+      adminPanelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch (error) {
+      logger?.warn('admin_panel_workspace_visibility_failed', { message: error?.message });
+    }
     return adminPanelWindow;
   }
 
@@ -69,18 +77,40 @@ const ensureAdminPanelWindow = ({ screen, isDev = false, logger }) => {
   try {
     adminPanelWindow.setAlwaysOnTop(true, 'floating', 1);
     adminPanelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    adminPanelWindow.setOpacity(1);
   } catch (error) {
     logger?.warn('admin_panel_always_on_top_failed', { message: error?.message });
   }
 
+  const panelUrl = getRendererUrl('admin-panel');
+  logger?.info?.('Loading admin panel URL', { panelUrl });
+  adminPanelWindow.loadURL(panelUrl);
+
   adminPanelWindow.on('ready-to-show', () => {
     positionAdminPanelWindow(adminPanelWindow, screen, logger);
+    adminPanelWindow.setOpacity(1);
     adminPanelWindow.show();
+    adminPanelWindow.focus();
   });
 
   adminPanelWindow.on('closed', () => {
     adminPanelWindow = null;
   });
+
+  adminPanelWindow.on('show', () => {
+    try {
+      adminPanelWindow.setOpacity(1);
+      adminPanelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch (error) {
+      logger?.warn('admin_panel_show_visibility_failed', { message: error?.message });
+    }
+  });
+
+  adminPanelWindow.webContents.on('did-finish-load', () => {
+    adminPanelWindow.setOpacity(1);
+  });
+
+  adminPanelWindow.setOpacity(1);
 
   return adminPanelWindow;
 };

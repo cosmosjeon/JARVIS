@@ -1,4 +1,5 @@
 const path = require('path');
+const { randomUUID } = require('crypto');
 const { BrowserWindow, shell } = require('electron');
 const {
   windowConfig,
@@ -8,18 +9,152 @@ const {
 const { getRendererUrl } = require('../bootstrap/renderer-url');
 const { broadcastSettings } = require('../bootstrap/settings-broadcast');
 
-const createWidgetWindow = ({
+let mainWindow = null;
+let widgetsCurrentlyVisible = false;
+const additionalWidgetWindows = new Set();
+const widgetSessionByWindowId = new Map();
+
+const generateSessionId = () => {
+  try {
+    return randomUUID();
+  } catch (error) {
+    return `session_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+  }
+};
+
+const getLivingWindowSet = (collection) => {
+  const entries = Array.from(collection);
+  entries.forEach((win) => {
+    if (!win || win.isDestroyed()) {
+      collection.delete(win);
+    }
+  });
+  return collection;
+};
+
+const getMainWindow = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+
+const trackWidgetSession = (window, sessionId) => {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+  widgetSessionByWindowId.set(window.id, sessionId);
+};
+
+const removeWidgetSession = (window) => {
+  if (!window) {
+    return;
+  }
+  widgetSessionByWindowId.delete(window.id);
+};
+
+const getWidgetSession = (windowId) => widgetSessionByWindowId.get(windowId) || null;
+
+const getAllWidgetWindows = () => {
+  const windows = [];
+  const main = getMainWindow();
+  if (main) {
+    windows.push(main);
+  }
+
+  getLivingWindowSet(additionalWidgetWindows).forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      windows.push(win);
+    }
+  });
+
+  return windows;
+};
+
+const attachWindowStateBroadcast = (window, logger) => {
+  const broadcastWindowState = () => sendWindowState(window);
+  ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'show', 'hide']
+    .forEach((eventName) => {
+      window.on(eventName, broadcastWindowState);
+    });
+  window.on('closed', () => {
+    logger?.info?.('widget_window_state_teardown', { id: window.id });
+  });
+  return broadcastWindowState;
+};
+
+const initializeWidgetWindow = ({
+  window,
   sessionId,
-  treeId = null,
-  fresh = false,
-  isDev = false,
-  settings = {},
+  treeId,
   logger,
+  settings,
+  autoShow,
   onReady,
   onClosed,
 }) => {
-  const isMac = process.platform === 'darwin';
+  applyWindowConfigTo(window);
+  window.setBackgroundColor('#00000000');
 
+  window.on('ready-to-show', () => {
+    window.setMenuBarVisibility(false);
+    if (process.platform === 'darwin' && windowConfig.frameless) {
+      window.setWindowButtonVisibility?.(false);
+    }
+    if (autoShow) {
+      window.show();
+      if (autoShow === 'focus') {
+        window.focus();
+      }
+    }
+    logger?.info?.('Widget window ready', { id: window.id, autoShow: Boolean(autoShow) });
+    onReady?.(window);
+  });
+
+  window.on('closed', () => {
+    logger?.info?.('Widget window closed', { id: window.id });
+    if (window === mainWindow) {
+      mainWindow = null;
+    } else {
+      additionalWidgetWindows.delete(window);
+    }
+    removeWidgetSession(window);
+    onClosed?.(window);
+  });
+
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event, url) => {
+    if (url !== window.webContents.getURL()) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  const broadcastWindowState = attachWindowStateBroadcast(window, logger);
+
+  window.webContents.on('did-finish-load', () => {
+    broadcastSettings(window, settings);
+    broadcastWindowState();
+    if (treeId) {
+      window.webContents.send('widget:set-active-tree', { treeId });
+    }
+  });
+
+  trackWidgetSession(window, sessionId);
+  return window;
+};
+
+const createMainWindow = ({
+  logger,
+  settings = {},
+  sessionId = generateSessionId(),
+  treeId = null,
+  fresh = false,
+  isDev = false,
+  onReady,
+  onClosed,
+} = {}) => {
+  const livingMain = getMainWindow();
+  if (livingMain) {
+    return { window: livingMain, sessionId: getWidgetSession(livingMain.id) };
+  }
+
+  const isMac = process.platform === 'darwin';
   const window = new BrowserWindow({
     width: 1024,
     height: 720,
@@ -51,36 +186,15 @@ const createWidgetWindow = ({
     },
   });
 
-  applyWindowConfigTo(window);
-  window.setBackgroundColor('#00000000');
-
-  const broadcastWindowState = () => sendWindowState(window);
-
-  window.on('maximize', broadcastWindowState);
-  window.on('unmaximize', broadcastWindowState);
-  window.on('enter-full-screen', broadcastWindowState);
-  window.on('leave-full-screen', broadcastWindowState);
-
-  window.on('ready-to-show', () => {
-    window.setMenuBarVisibility(false);
-    if (process.platform === 'darwin' && windowConfig.frameless) {
-      window.setWindowButtonVisibility?.(false);
-    }
-    logger?.info('Widget window ready');
-    onReady?.(window);
-  });
-
-  window.on('closed', () => {
-    logger?.info('Widget window closed');
-    onClosed?.(window);
-  });
-
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  window.webContents.on('will-navigate', (event, url) => {
-    if (url !== window.webContents.getURL()) {
-      event.preventDefault();
-      shell.openExternal(url);
-    }
+  const widgetWindow = initializeWidgetWindow({
+    window,
+    sessionId,
+    treeId,
+    logger,
+    settings,
+    autoShow: false,
+    onReady,
+    onClosed,
   });
 
   const startUrl = getRendererUrl('widget', {
@@ -89,31 +203,141 @@ const createWidgetWindow = ({
     treeId: treeId || undefined,
   });
 
-  logger?.info('Loading widget URL', { startUrl });
-  window.loadURL(startUrl);
+  logger?.info?.('Loading primary widget URL', { startUrl });
+  widgetWindow.loadURL(startUrl);
 
-  window.webContents.on('did-finish-load', () => {
-    broadcastSettings(window, settings);
-    broadcastWindowState();
-    if (treeId) {
-      window.webContents.send('widget:set-active-tree', { treeId });
-    }
-  });
-
-  return window;
+  mainWindow = widgetWindow;
+  return { window: widgetWindow, sessionId };
 };
 
-const ensureMainWindowFocus = (window) => {
-  if (!window) {
+const createWidgetWindow = ({
+  logger,
+  settings = {},
+  sessionId = generateSessionId(),
+  treeId = null,
+  fresh = true,
+  isDev = false,
+  onReady,
+  onClosed,
+} = {}) => {
+  const isMac = process.platform === 'darwin';
+  const window = new BrowserWindow({
+    width: 1024,
+    height: 720,
+    minWidth: 320,
+    minHeight: 240,
+    frame: false,
+    transparent: windowConfig.transparent,
+    backgroundColor: '#00000000',
+    alwaysOnTop: windowConfig.alwaysOnTop,
+    skipTaskbar: windowConfig.skipTaskbar,
+    hasShadow: true,
+    resizable: true,
+    movable: true,
+    show: false,
+    fullscreenable: true,
+    maximizable: true,
+    minimizable: false,
+    titleBarStyle: isMac ? 'customButtonsOnHover' : 'default',
+    ...(isMac ? { trafficLightPosition: { x: -1000, y: -1000 } } : {}),
+    autoHideMenuBar: true,
+    title: 'JARVIS Widget',
+    webPreferences: {
+      preload: path.join(__dirname, '../../preload/index.js'),
+      contextIsolation: true,
+      sandbox: false,
+      nodeIntegration: false,
+      devTools: isDev,
+      spellcheck: false,
+    },
+  });
+
+  const widgetWindow = initializeWidgetWindow({
+    window,
+    sessionId,
+    treeId,
+    logger,
+    settings,
+    autoShow: 'focus',
+    onReady,
+    onClosed,
+  });
+
+  const startUrl = getRendererUrl('widget', {
+    session: sessionId,
+    fresh: fresh ? '1' : undefined,
+    treeId: treeId || undefined,
+  });
+
+  logger?.info?.('Loading additional widget URL', { startUrl });
+  widgetWindow.loadURL(startUrl);
+
+  additionalWidgetWindows.add(widgetWindow);
+  widgetsCurrentlyVisible = true;
+
+  return { window: widgetWindow, sessionId };
+};
+
+const ensureMainWindowFocus = () => {
+  const target = getMainWindow();
+  if (!target) {
     return;
   }
-  if (!window.isVisible()) {
-    window.show();
+  if (!target.isVisible()) {
+    target.show();
   }
-  if (window.isMinimized()) {
-    window.restore();
+  if (target.isMinimized()) {
+    target.restore();
   }
-  window.focus();
+  target.focus();
+};
+
+const hideAllWidgets = (logger) => {
+  const windows = getAllWidgetWindows();
+  windows.forEach((win) => {
+    win.hide();
+    logger?.info?.('Widget window hidden', { id: win.id });
+  });
+  widgetsCurrentlyVisible = false;
+  return windows;
+};
+
+const showAllWidgets = (logger) => {
+  const windows = getAllWidgetWindows();
+  windows.forEach((win) => {
+    win.show();
+    if (win.isMinimized()) {
+      win.restore();
+    }
+    win.focus();
+    logger?.info?.('Widget window shown', { id: win.id });
+  });
+  widgetsCurrentlyVisible = windows.length > 0;
+  return windows;
+};
+
+const toggleWidgetVisibility = (logger) => {
+  const windows = getAllWidgetWindows();
+  if (windows.length === 0) {
+    logger?.warn?.('No widget windows available to toggle');
+    return { visible: false, windows };
+  }
+
+  if (widgetsCurrentlyVisible) {
+    hideAllWidgets(logger);
+  } else {
+    showAllWidgets(logger);
+  }
+
+  return { visible: widgetsCurrentlyVisible, windows };
+};
+
+const areWidgetsVisible = () => widgetsCurrentlyVisible;
+
+const broadcastSettingsToWidgets = (settings = {}) => {
+  getAllWidgetWindows().forEach((win) => {
+    broadcastSettings(win, settings);
+  });
 };
 
 const resolveBrowserWindowFromSender = (sender) => {
@@ -152,7 +376,15 @@ const resolveBrowserWindowFromSender = (sender) => {
 };
 
 module.exports = {
+  createMainWindow,
   createWidgetWindow,
   ensureMainWindowFocus,
+  toggleWidgetVisibility,
+  areWidgetsVisible,
+  getMainWindow,
+  getAllWidgetWindows,
+  broadcastSettingsToWidgets,
+  getWidgetSession,
+  generateSessionId,
   resolveBrowserWindowFromSender,
 };
