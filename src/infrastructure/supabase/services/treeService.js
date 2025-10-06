@@ -4,6 +4,20 @@ import {
   buildFallbackConversation,
 } from 'features/tree/utils/conversation';
 
+import {
+  fetchTreesWithNodes as repositoryFetchTreesWithNodes,
+  upsertTreeMetadata as repositoryUpsertTreeMetadata,
+  deleteTree as repositoryDeleteTree,
+  deleteNodes as repositoryDeleteNodes,
+  moveTreeToFolder as repositoryMoveTreeToFolder,
+} from 'infrastructure/supabase/repositories/treeRepository';
+import {
+  fetchFolders as repositoryFetchFolders,
+  createFolder as repositoryCreateFolder,
+  updateFolder as repositoryUpdateFolder,
+  deleteFolder as repositoryDeleteFolder,
+} from 'infrastructure/supabase/repositories/folderRepository';
+
 const parseConversationField = (value) => {
   if (!value) {
     return [];
@@ -189,49 +203,7 @@ export const transformTreeRowsToLibraryData = (trees, nodeRows) => {
   });
 };
 
-export const fetchTreesWithNodes = async (userId) => {
-  const supabase = ensureSupabase();
-
-  const query = supabase
-    .from('trees')
-    .select('id, title, created_at, updated_at, deleted_at, folder_id')
-    .is('deleted_at', null)
-    .order('updated_at', { ascending: false });
-
-  if (userId) {
-    query.eq('user_id', userId);
-  }
-
-  const { data: treeRows, error: treeError } = await query.range(0, 199);
-
-  if (treeError) {
-    throw treeError;
-  }
-
-  if (!treeRows?.length) {
-    return [];
-  }
-
-  const treeIds = treeRows.map((tree) => tree.id);
-
-  const nodeQuery = supabase
-    .from('nodes')
-    .select('id, tree_id, parent_id, keyword, question, answer, status, node_type, memo_parent_id, memo_title, memo_content, memo_metadata, created_at, updated_at, deleted_at, conversation')
-    .in('tree_id', treeIds)
-    .is('deleted_at', null);
-
-  if (userId) {
-    nodeQuery.eq('user_id', userId);
-  }
-
-  const { data: nodeRows, error: nodeError } = await nodeQuery.range(0, 9999);
-
-  if (nodeError) {
-    throw nodeError;
-  }
-
-  return transformTreeRowsToLibraryData(treeRows, nodeRows || []);
-};
+export const fetchTreesWithNodes = (userId) => repositoryFetchTreesWithNodes(userId);
 
 export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
   const supabase = ensureSupabase();
@@ -291,190 +263,28 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
 
 // 링크는 parent_id로 관리되므로 별도 테이블 불필요
 
-export const upsertTreeMetadata = async ({ treeId, title, userId }) => {
-  const supabase = ensureSupabase();
-  const now = Date.now();
-  const resolvedTreeId = treeId || generateId('tree');
+export const upsertTreeMetadata = (payload) => repositoryUpsertTreeMetadata(payload);
 
-  const payload = {
-    id: resolvedTreeId,
-    title,
-    updated_at: now,
-    user_id: userId,
-  };
-
+export const deleteTree = (input) => {
+  const treeId = typeof input === 'string' ? input : input?.treeId;
   if (!treeId) {
-    payload.created_at = now;
-  } else {
-    const { data: existingTree, error: fetchError } = await supabase
-      .from('trees')
-      .select('created_at')
-      .eq('id', treeId)
-      .maybeSingle();
-
-    if (fetchError) {
-      throw fetchError;
-    }
-
-    payload.created_at = existingTree?.created_at ?? now;
+    throw new Error('treeId is required');
   }
-
-  const { data, error } = await supabase
-    .from('trees')
-    .upsert(payload, { onConflict: 'id' })
-    .select()
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  return repositoryDeleteTree({ treeId });
 };
 
-export const deleteTree = async (treeId) => {
-  const supabase = ensureSupabase();
-
-  const timestamp = Date.now();
-  const { error } = await supabase
-    .from('trees')
-    .update({ deleted_at: timestamp, updated_at: timestamp })
-    .eq('id', treeId);
-
-  if (error) {
-    throw error;
-  }
-};
-
-export const deleteNodes = async ({ nodeIds, userId }) => {
-  const supabase = ensureSupabase();
-
-  if (!nodeIds || !nodeIds.length) {
-    return;
-  }
-
-  const timestamp = Date.now();
-  const { error } = await supabase
-    .from('nodes')
-    .update({ deleted_at: timestamp, updated_at: timestamp })
-    .in('id', nodeIds)
-    .eq('user_id', userId);
-
-  if (error) {
-    throw error;
-  }
-};
+export const deleteNodes = (params) => repositoryDeleteNodes(params);
 
 // Folder management functions
-export const fetchFolders = async (userId) => {
-  const supabase = ensureSupabase();
+export const fetchFolders = (userId) => repositoryFetchFolders(userId);
 
-  const { data, error } = await supabase
-    .from('folders')
-    .select('*')
-    .eq('user_id', userId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
+export const createFolder = (payload) => repositoryCreateFolder(payload);
 
-  if (error) {
-    throw error;
-  }
+export const updateFolder = (payload) => repositoryUpdateFolder(payload);
 
-  return data || [];
-};
+export const deleteFolder = (payload) => repositoryDeleteFolder(payload);
 
-export const createFolder = async ({ name, parentId, userId }) => {
-  const supabase = ensureSupabase();
-  const now = Date.now();
-
-  console.log('createFolder 호출:', { name, parentId, userId });
-
-  const insertData = {
-    name,
-    user_id: userId,
-    created_at: now,
-    updated_at: now
-  };
-
-  // parentId가 있을 때만 추가
-  if (parentId) {
-    insertData.parent_id = parentId;
-  }
-
-  console.log('insertData:', insertData);
-
-  const { data, error } = await supabase
-    .from('folders')
-    .insert(insertData)
-    .select()
-    .single();
-
-  if (error) {
-    console.error('createFolder 오류:', error);
-    throw error;
-  }
-
-  console.log('createFolder 성공:', data);
-  return data;
-};
-
-export const updateFolder = async ({ folderId, name, userId }) => {
-  const supabase = ensureSupabase();
-  const now = Date.now();
-
-  const { data, error } = await supabase
-    .from('folders')
-    .update({
-      name,
-      updated_at: now
-    })
-    .eq('id', folderId)
-    .eq('user_id', userId)
-    .select()
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
-};
-
-export const deleteFolder = async ({ folderId, userId }) => {
-  const supabase = ensureSupabase();
-  const now = Date.now();
-
-  const { error } = await supabase
-    .from('folders')
-    .update({
-      deleted_at: now,
-      updated_at: now
-    })
-    .eq('id', folderId)
-    .eq('user_id', userId);
-
-  if (error) {
-    throw error;
-  }
-};
-
-export const moveTreeToFolder = async ({ treeId, folderId, userId }) => {
-  const supabase = ensureSupabase();
-  const now = Date.now();
-
-  const { error } = await supabase
-    .from('trees')
-    .update({
-      folder_id: folderId,
-      updated_at: now
-    })
-    .eq('id', treeId)
-    .eq('user_id', userId);
-
-  if (error) {
-    throw error;
-  }
-};
+export const moveTreeToFolder = (params) => repositoryMoveTreeToFolder(params);
 
 // ==================== Memos Management ====================
 

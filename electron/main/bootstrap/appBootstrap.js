@@ -1,0 +1,230 @@
+const { app, ipcMain, nativeTheme, screen } = require('electron');
+const accessibility = require('../../accessibility');
+const logs = require('../../logs');
+const { createHotkeyService } = require('../../services/hotkey-service');
+const { createTrayService } = require('../../services/tray-service');
+const { LLMService } = require('../../services/llm-service');
+const { createLogBridge } = require('../logger');
+const {
+  createMainWindow,
+  createWidgetWindow,
+  ensureMainWindowFocus,
+  toggleWidgetVisibility,
+  getMainWindow,
+  getAllWidgetWindows,
+  broadcastSettingsToWidgets,
+  getWidgetSession,
+  resolveBrowserWindowFromSender,
+} = require('../app-window');
+const { windowConfig, applyWindowConfigTo } = require('../bootstrap/window-state');
+const { createLibraryWindow, getLibraryWindow } = require('../library-window');
+const {
+  ensureAdminPanelWindow,
+  closeAdminPanelWindow,
+  getAdminPanelWindow,
+  positionAdminPanelWindow,
+} = require('../admin-panel');
+const { createSettingsManager } = require('../settingsManager');
+const { registerDeepLinkScheme, prepareSingleInstance } = require('./deepLink');
+const { registerIpcHandlers } = require('./ipc');
+const { createOAuthController } = require('./oauth');
+const { registerAppEventHandlers } = require('./appEvents');
+
+const start = () => {
+  const isDev = !app.isPackaged;
+  const pendingOAuthCallbacks = [];
+
+  let logger;
+  let llmService;
+  let hotkeyService;
+  let trayService;
+  let oauthServer;
+  let handleOAuthDeepLinkRef = (url) => {
+    if (url) {
+      pendingOAuthCallbacks.push(url);
+    }
+  };
+
+  const settingsManager = createSettingsManager({
+    getLogger: () => logger,
+    broadcastSettingsToWidgets,
+    getLibraryWindow,
+  });
+
+  const getFocusWindow = () => {
+    const libraryWindow = getLibraryWindow();
+    if (libraryWindow && !libraryWindow.isDestroyed()) {
+      return libraryWindow;
+    }
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      return mainWindow;
+    }
+    return null;
+  };
+
+  const sendOAuthCallback = (url) => {
+    if (!url) {
+      return;
+    }
+
+    const libraryWindow = getLibraryWindow();
+    const widgetWindows = getAllWidgetWindows();
+    const targets = [];
+
+    if (libraryWindow && !libraryWindow.isDestroyed()) {
+      targets.push(libraryWindow);
+    }
+
+    widgetWindows.forEach((win) => {
+      if (win && !win.isDestroyed()) {
+        targets.push(win);
+      }
+    });
+
+    if (!targets.length) {
+      pendingOAuthCallbacks.push(url);
+      return;
+    }
+
+    targets.forEach((target) => target.webContents.send('auth:oauth-callback', url));
+
+    const focusTarget = getFocusWindow();
+    if (focusTarget) {
+      focusTarget.show();
+      focusTarget.focus();
+    }
+  };
+
+  registerDeepLinkScheme({ app });
+
+  prepareSingleInstance({
+    app,
+    getLibraryWindow,
+    ensureMainWindowFocus,
+    handleOAuthDeepLink: (url) => handleOAuthDeepLinkRef(url),
+  });
+
+  registerAppEventHandlers({
+    app,
+    handleOAuthDeepLink: (url) => handleOAuthDeepLinkRef(url),
+    getLogger: () => logger,
+    getHotkeyService: () => hotkeyService,
+    getTrayService: () => trayService,
+    getOAuthServer: () => oauthServer,
+    ensureMainWindowFocus,
+    getMainWindow,
+    createMainWindow,
+    getLibraryWindow,
+    createLibraryWindow,
+    settingsManager,
+    isDev,
+  });
+
+  const onReady = () => {
+    nativeTheme.themeSource = 'dark';
+    settingsManager.loadSettings();
+
+    logger = createLogBridge(() => getMainWindow());
+    llmService = new LLMService({ logger });
+
+    hotkeyService = createHotkeyService({
+      logger,
+      toggleWidgetVisibility,
+      ensureMainWindowFocus,
+      getMainWindow,
+    });
+
+    trayService = createTrayService({
+      logger,
+      toggleWidgetVisibility,
+      getMainWindow,
+      ensureMainWindowFocus,
+      app,
+    });
+
+    const oauthController = createOAuthController({
+      ipcMain,
+      logger,
+      settingsManager,
+      sendOAuthCallback,
+      getFocusWindow,
+      pendingOAuthCallbacks,
+    });
+
+    oauthServer = oauthController.oauthServer;
+    handleOAuthDeepLinkRef = oauthController.handleOAuthDeepLink;
+
+    createLibraryWindow({ isDev, logger });
+
+    const initialDeepLinkArg = process.argv.find((arg) => typeof arg === 'string' && arg.startsWith('jarvis://'));
+    if (initialDeepLinkArg) {
+      pendingOAuthCallbacks.push(initialDeepLinkArg);
+    }
+
+    oauthController.flushPendingCallbacks?.();
+    hotkeyService.applyHotkeySettings();
+    trayService.applyTraySettings(settingsManager.getSettings());
+    hotkeyService.registerPassThroughShortcut();
+    settingsManager.broadcastSettings();
+
+    try {
+      screen.on?.('display-metrics-changed', () => {
+        const panel = getAdminPanelWindow();
+        if (!panel || panel.isDestroyed()) {
+          return;
+        }
+        positionAdminPanelWindow(panel, screen, logger);
+      });
+    } catch (error) {
+      logger?.warn?.('admin_panel_screen_listener_failed', { message: error?.message });
+    }
+
+    registerIpcHandlers({
+      ipcMain,
+      accessibility,
+      logger,
+      logs,
+      llmService,
+      settingsManager,
+      hotkeyService,
+      trayService,
+      createLogBridge,
+      screen,
+      isDev,
+      toggleWidgetVisibility,
+      createMainWindow,
+      createWidgetWindow,
+      ensureMainWindowFocus,
+      getWidgetSession,
+      getMainWindow,
+      getAllWidgetWindows,
+      resolveBrowserWindowFromSender,
+      windowConfig,
+      applyWindowConfigTo,
+      createLibraryWindow,
+      getLibraryWindow,
+      ensureAdminPanelWindow,
+      closeAdminPanelWindow,
+      positionAdminPanelWindow,
+    });
+
+    app.on('activate', () => {
+      const existingMain = getMainWindow();
+      if (!existingMain) {
+        createMainWindow({ logger, settings: settingsManager.getSettings(), isDev });
+      }
+      if (!getLibraryWindow()) {
+        createLibraryWindow({ isDev, logger });
+      }
+    });
+  };
+
+  app.whenReady().then(onReady).catch((error) => {
+    logger?.error?.('app_ready_failed', { message: error?.message });
+  });
+};
+
+module.exports = {
+  start,
+};
