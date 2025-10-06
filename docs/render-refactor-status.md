@@ -9,7 +9,7 @@
 - 트리 이동 계획/Undo 처리가 `treeMovePlanner` 서비스로 추상화되어 드래그&드롭 결과를 일관되게 처리
 - 드래그 페이로드 파싱/직렬화는 `features/library/utils/dragPayload` 유틸로 캡슐화되어 VoranBox/사이드바에서 재사용 가능
 - Stage 7A-4 라이브러리 훅(`useLibraryDialogs`, `useLibraryDrag`) 단위 테스트 추가로 기본 검증 체계를 확보 (2025-10-08)
-- Stage 7A-3 VoranBoxManager 토스트 로직을 전용 훅/프리젠테이션 컴포넌트로 분리해 UI 책임 구획을 시작, 핵심 서브뷰 분할은 계속 진행 예정
+- Stage 7A-3 VoranBoxManager 토스트 로직을 전용 훅/프리젠테이션 컴포넌트로 분리하고, 트리·폴더 패널을 `VoranTreeListPanel`/`VoranFolderPanel`/`VoranTreeListItem`으로 분할해 UI 역할을 명확화 (잔여 상태 정리는 후속 예정)
 - Stage 7A-5/7B-5 사용자 회귀 테스트는 후속 작업으로 유지
 
 - Stage 6A-1 ~ 6A-3 완료 (트리 파일 구조 개편 + Supabase 서비스 이동)
