@@ -87,9 +87,9 @@
 ### 작업 7A – Library UI 분리
 - [x] **7A-1 구조 진단**: `src/features/library/ui/LibraryApp.js`, `components/VoranBoxManager.js`, `components/TreeCanvas.js`의 책임 목록화 및 의존 그래프 작성 *(2025-10-07 구조 분석 및 Stage 7A-1 메모 작성)*
 - [x] **7A-2 커스텀 훅 추출**: `useLibraryData`, `useLibraryDialogs`, `useLibraryDrag` 등 커스텀 훅 초안 작성, API 호출과 브리지 통신을 훅으로 이동
-- [x] **7A-3 프리젠테이션 분리**: `LibraryApp`은 레이아웃 중심으로 단순화, VoranBox/TreeCanvas 내부 UI를 하위 컴포넌트로 분해
-- [ ] **7A-4 테스트/문서** (문서 초안 작성 완료, 테스트 보강 필요): 새 훅 인터페이스에 대한 단위 테스트 또는 스토리북/문서 초안 작성, `docs/render-refactor-status.md` 업데이트
-- [x] **7A-5 사용자 점검**: 라이브러리 주요 플로우 회귀 테스트 진행
+- [ ] **7A-3 프리젠테이션 분리**: `LibraryApp`은 레이아웃 중심으로 단순화, VoranBox/TreeCanvas 내부 UI를 하위 컴포넌트로 분해 *(2025-10-08 VoranBoxManager 토스트 로직/프리젠테이션 분리, 핵심 뷰 분할 진행 중)*
+- [x] **7A-4 테스트/문서**: 새 훅 인터페이스에 대한 단위 테스트 또는 스토리북/문서 초안 작성, `docs/render-refactor-status.md` 업데이트 *(2025-10-08 `useLibraryDialogs`/`useLibraryDrag` 테스트 추가)*
+- [ ] **7A-5 사용자 점검**: 라이브러리 주요 플로우 회귀 테스트 진행 *(스토리/회귀 시나리오 미검증, 후속 점검 필요)*
 
 ### 작업 7B – Tree UI 분리
 - [x] **7B-1 책임 구획** (2025-10-07 분석 메모 반영): `HierarchicalForceTree.js`, `NodeAssistantPanel.js`, `MemoEditor.js`의 기능 블록(뷰포트, 대화, LLM 처리, 저장/동기화) 목록화

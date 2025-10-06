@@ -9,11 +9,7 @@ import {
     Folder,
     Edit,
     Trash2,
-    CheckCircle2,
-    Info,
-    AlertTriangle,
     Ban,
-    XCircle,
     ChevronUp,
     ChevronDown
 } from "lucide-react";
@@ -21,6 +17,9 @@ import { Button } from "shared/ui/button";
 import { Input } from "shared/ui/input";
 import { cn } from 'shared/utils';
 import Logo from "assets/admin-widget/logo.svg";
+import useVoranBoxToasts from 'features/library/hooks/useVoranBoxToasts';
+import VoranToastStack from './VoranToastStack';
+
 
 const VoranBoxManager = ({
     isVisible,
@@ -53,47 +52,17 @@ const VoranBoxManager = ({
     const [activePreviewFolderId, setActivePreviewFolderId] = useState(null);
     const [showInvalidDropIndicator, setShowInvalidDropIndicator] = useState(false);
     const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
-    const [toasts, setToasts] = useState([]);
     const [canScrollUp, setCanScrollUp] = useState(false);
     const [canScrollDown, setCanScrollDown] = useState(false);
+
+    const { toasts, toastVisuals, showToast, handleToastAction } = useVoranBoxToasts();
 
     const dragPreviewRef = useRef(null);
     const dragStatusRef = useRef({ canDrop: false });
     const folderHoverTimerRef = useRef(null);
     const lastVibrateRef = useRef(0);
     const voranListRef = useRef(null);
-    const toastIdRef = useRef(0);
-    const toastTimersRef = useRef(new Map());
     const wasVisibleRef = useRef(false);
-
-const toastVisuals = useMemo(() => ({
-        success: {
-            container: "bg-emerald-500/10 border border-emerald-400/40 text-emerald-100",
-            iconClass: "text-emerald-300",
-            Icon: CheckCircle2,
-        },
-        info: {
-            container: "bg-blue-500/10 border border-blue-400/40 text-blue-100",
-            iconClass: "text-blue-300",
-            Icon: Info,
-        },
-        warning: {
-            container: "bg-amber-500/10 border border-amber-400/40 text-amber-100",
-            iconClass: "text-amber-300",
-            Icon: AlertTriangle,
-        },
-        error: {
-            container: "bg-red-500/10 border border-red-400/40 text-red-100",
-            iconClass: "text-red-300",
-            Icon: XCircle,
-        },
-        default: {
-            container: "bg-muted/70 border border-border/40 text-card-foreground",
-            iconClass: "text-card-foreground",
-            Icon: Info,
-        },
-}), []);
-
 const arraysEqual = (a, b) => {
     if (a === b) return true;
     if (!a || !b) return false;
@@ -294,56 +263,8 @@ const arraysEqual = (a, b) => {
         return counts;
     }, [trees]);
 
-    const removeToast = useCallback((id) => {
-        const timer = toastTimersRef.current.get(id);
-        if (timer) {
-            clearTimeout(timer);
-            toastTimersRef.current.delete(id);
-        }
-        setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, []);
-
-    const showToast = useCallback(({ type = "default", message, duration = 2000, actionLabel, onAction } = {}) => {
-        if (!message) {
-            return null;
-        }
-        const nextId = toastIdRef.current + 1;
-        toastIdRef.current = nextId;
-        const toast = {
-            id: nextId,
-            type,
-            message,
-            actionLabel,
-            onAction,
-        };
-        setToasts((prev) => [...prev, toast]);
-        if (duration > 0) {
-            const timer = setTimeout(() => removeToast(nextId), duration);
-            toastTimersRef.current.set(nextId, timer);
-        }
-        return nextId;
-    }, [removeToast]);
-
-    const handleToastAction = useCallback(async (toast) => {
-        if (!toast) {
-            return;
-        }
-        removeToast(toast.id);
-        if (toast.onAction) {
-            try {
-                await toast.onAction();
-                showToast({ type: "info", message: "이동을 되돌렸습니다.", duration: 2000 });
-            } catch (err) {
-                console.error("Undo action failed", err);
-                showToast({ type: "error", message: err?.message || "되돌리기에 실패했습니다.", duration: 3000 });
-            }
-        }
-    }, [removeToast, showToast]);
-
     useEffect(() => () => {
         cleanupDragPreview();
-        toastTimersRef.current.forEach((timer) => clearTimeout(timer));
-        toastTimersRef.current.clear();
     }, [cleanupDragPreview]);
 
     const updateSelection = useCallback((tree, event, { notify = false } = {}) => {
@@ -621,12 +542,13 @@ const arraysEqual = (a, b) => {
     }, [onTreeOpen, updateSelection]);
 
     const handleFolderCreate = useCallback(() => {
-        if (newFolderName.trim() && onFolderCreate) {
-            onFolderCreate({ name: newFolderName.trim() });
+        const trimmedName = newFolderName.trim();
+        if (trimmedName && onFolderCreate) {
+            onFolderCreate(trimmedName, selectedFolderId ?? null);
             setNewFolderName("");
             setShowCreateFolder(false);
         }
-    }, [newFolderName, onFolderCreate]);
+    }, [newFolderName, onFolderCreate, selectedFolderId]);
 
     const handleTreeRename = useCallback((treeId, newName) => {
         if (onTreeRename && newName?.trim()) {
@@ -1023,6 +945,7 @@ const arraysEqual = (a, b) => {
                                 <Button
                                     variant="ghost"
                                     size="sm"
+                                    aria-label="새 폴더 만들기"
                                     onClick={() => setShowCreateFolder(true)}
                                     className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
                                 >
@@ -1296,42 +1219,7 @@ const arraysEqual = (a, b) => {
                     </div>
                 </motion.div>
 
-                <div className="pointer-events-none fixed right-6 top-6 z-[101] space-y-2">
-                    <AnimatePresence>
-                        {toasts.map((toast) => {
-                            const visuals = toastVisuals[toast.type] || toastVisuals.default;
-                            const Icon = visuals.Icon;
-                            return (
-                                <motion.div
-                                    key={toast.id}
-                                    initial={{ opacity: 0, y: -12 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -12 }}
-                                    transition={{ duration: 0.18 }}
-                                    className={cn(
-                                        "pointer-events-auto flex min-w-[260px] max-w-[320px] items-start gap-3 rounded-lg px-4 py-3 shadow-lg backdrop-blur-sm",
-                                        visuals.container
-                                    )}
-                                >
-                                    <Icon className={cn("h-4 w-4 mt-0.5 flex-shrink-0", visuals.iconClass)} />
-                                    <div className="flex-1 text-xs leading-5">{toast.message}</div>
-                                    {toast.actionLabel && toast.onAction && (
-                                        <button
-                                            className="text-xs font-semibold text-blue-200 hover:text-white"
-                                            onClick={(event) => {
-                                                event.preventDefault();
-                                                event.stopPropagation();
-                                                handleToastAction(toast);
-                                            }}
-                                        >
-                                            {toast.actionLabel}
-                                        </button>
-                                    )}
-                                </motion.div>
-                            );
-                        })}
-                    </AnimatePresence>
-                </div>
+                <VoranToastStack toasts={toasts} toastVisuals={toastVisuals} onToastAction={handleToastAction} />
 
                 <AnimatePresence>
                     {isDragging && showInvalidDropIndicator && (

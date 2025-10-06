@@ -1,14 +1,16 @@
-# Renderer & Supabase Refactor Status (2025-10-06)
+# Renderer & Supabase Refactor Status (2025-10-08)
 
 ---
 ### 진행 요약
-### Stage 7 진행 현황 (2025-10-07)
+### Stage 7 진행 현황 (2025-10-08)
 - Tree UI 뷰포트/자동 저장 로직을 `useTreeViewport`, `useTreePersistence` 훅으로 분리해 `HierarchicalForceTree`의 창 크기/스케일·자동 저장 책임을 축소 (Stage 7B-2 진행 중)
 - NodeAssistantPanel 대화/LLM 흐름을 `useNodeAssistantConversation` 훅으로 이동해 프리젠테이션 컴포넌트가 UI 렌더링에 집중하도록 정비 (Stage 7B-3 완료, MemoEditor 후속 정리 및 테스트는 차기 단계로 이월)
-- 라이브러리 화면은 `useLibraryAppViewModel`을 통해 데이터/상태/드래그 로직을 분리했고, `LibraryApp`은 프리젠테이션 전용 셸로 축소됨
+- 라이브러리 화면은 `useLibraryAppViewModel`을 통해 데이터/상태/드래그 로직을 분리했고, `LibraryApp`은 프리젠테이션 전용 셸로 축소됨 (VoranBoxManager 분해는 진행 중)
 - 트리 이동 계획/Undo 처리가 `treeMovePlanner` 서비스로 추상화되어 드래그&드롭 결과를 일관되게 처리
 - 드래그 페이로드 파싱/직렬화는 `features/library/utils/dragPayload` 유틸로 캡슐화되어 VoranBox/사이드바에서 재사용 가능
-- Stage 7A-2/7A-3 테스트 문서화는 후속 작업으로 유지 (스토리/테스트 보강 필요)
+- Stage 7A-4 라이브러리 훅(`useLibraryDialogs`, `useLibraryDrag`) 단위 테스트 추가로 기본 검증 체계를 확보 (2025-10-08)
+- Stage 7A-3 VoranBoxManager 토스트 로직을 전용 훅/프리젠테이션 컴포넌트로 분리해 UI 책임 구획을 시작, 핵심 서브뷰 분할은 계속 진행 예정
+- Stage 7A-5/7B-5 사용자 회귀 테스트는 후속 작업으로 유지
 
 - Stage 6A-1 ~ 6A-3 완료 (트리 파일 구조 개편 + Supabase 서비스 이동)
 - Stage 6A-4 수동 테스트 가이드 초안 작성 완료, 사용자 검증 대기
@@ -126,5 +128,5 @@
 - 노드 삭제 시 훅의 `handleNodesRemove`를 통해 Supabase 연동을 추상화하고, 실패 시 사용자에게만 경고하도록 처리
 - Voran Box, 드래그, 모달 로직은 Stage 7A-3에서 추가 분리 예정
 
-업데이트: 2025-10-06 17:20 KST
+업데이트: 2025-10-08 10:00 KST
 ---
