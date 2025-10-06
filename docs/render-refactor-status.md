@@ -2,6 +2,12 @@
 
 ---
 ### 진행 요약
+### Stage 7 진행 현황 (2025-10-07)
+- 라이브러리 화면은 `useLibraryAppViewModel`을 통해 데이터/상태/드래그 로직을 분리했고, `LibraryApp`은 프리젠테이션 전용 셸로 축소됨
+- 트리 이동 계획/Undo 처리가 `treeMovePlanner` 서비스로 추상화되어 드래그&드롭 결과를 일관되게 처리
+- 드래그 페이로드 파싱/직렬화는 `features/library/utils/dragPayload` 유틸로 캡슐화되어 VoranBox/사이드바에서 재사용 가능
+- Stage 7A-2/7A-3 테스트 문서화는 후속 작업으로 유지 (스토리/테스트 보강 필요)
+
 - Stage 6A-1 ~ 6A-3 완료 (트리 파일 구조 개편 + Supabase 서비스 이동)
 - Stage 6A-4 수동 테스트 가이드 초안 작성 완료, 사용자 검증 대기
 - Stage 6B-1 ~ 6B-2 완료 (라이브러리 UI/서비스 `features/library` 재배치 + ThemeProvider 공유화)

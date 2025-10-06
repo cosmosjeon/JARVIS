@@ -8,8 +8,20 @@ import {
   assignTreeToFolder,
   createLibraryFolder,
 } from 'features/library/services/libraryRepository';
-import { createTreeForUser, openWidgetForTree, cleanupEmptyTrees, isTrackingEmptyTree } from 'features/tree/services/treeCreation';
+import {
+  createTreeForUser,
+  openWidgetForTree,
+  cleanupEmptyTrees,
+  isTrackingEmptyTree,
+} from 'features/tree/services/treeCreation';
 import { createLibraryBridge, createLoggerBridge } from 'infrastructure/electron/bridges';
+import {
+  planTreeMoves,
+  applyTreeMovePlan,
+  revertTreeMovePlan,
+  summariseMovePlan,
+  buildUndoSnapshot,
+} from 'features/library/services/treeMovePlanner';
 
 const EMPTY_ARRAY = Object.freeze([]);
 
@@ -28,8 +40,33 @@ const normalizeTree = (tree) => ({
   folderId: tree.folderId || null,
 });
 
+const mapMoveFailure = (error, id) => ({
+  id,
+  message: error?.message || '지식 트리를 이동하지 못했습니다.',
+});
+
+const createTreeMoveExecutor = ({ assignTree, saveMetadata, userId }) => async (moves) => {
+  const successIds = [];
+  const failures = [];
+
+  for (const move of moves) {
+    try {
+      await assignTree({ treeId: move.id, folderId: move.nextFolderId, userId });
+      if (move.renamed) {
+        await saveMetadata({ treeId: move.id, title: move.nextTitle, userId });
+      }
+      successIds.push(move.id);
+    } catch (error) {
+      failures.push(mapMoveFailure(error, move.id));
+    }
+  }
+
+  return { successIds, failures };
+};
+
 export const useLibraryData = ({
   user,
+  trees,
   selectedTreeId,
   selectTree,
   setTrees,
@@ -85,27 +122,27 @@ export const useLibraryData = ({
     user?.id,
     selectedTreeId,
     clearTreeSelection,
-    loadTrees,
-    loadFolders,
     setError,
     setFolders,
     setFoldersLoading,
     setLoading,
-      setTrees,
+    setTrees,
   ]);
 
-  const handleCleanupEmptyTrees = useCallback(async (trees) => {
-    if (!user) return;
+  const handleCleanupEmptyTrees = useCallback(async (targetTrees) => {
+    if (!user) {
+      return;
+    }
 
     try {
-      const deletedCount = await cleanupEmptyTrees(trees);
+      const deletedCount = await cleanupEmptyTrees(targetTrees);
       if (deletedCount > 0) {
         await refreshLibrary();
       }
     } catch (err) {
       loggerBridge.log?.('warn', 'library_cleanup_empty_trees_failed', { message: err?.message });
     }
-  }, [user, refreshLibrary, loggerBridge]);
+  }, [loggerBridge, refreshLibrary, user]);
 
   const handleCreateTree = useCallback(async () => {
     if (!user) {
@@ -123,7 +160,23 @@ export const useLibraryData = ({
       setError(err);
       return null;
     }
-  }, [createTreeForUser, libraryBridge, openWidgetForTree, setError, setTrees, selectTree, user]);
+  }, [libraryBridge, selectTree, setError, setTrees, user]);
+
+  const handleOpenTree = useCallback(async ({ treeId, fresh = false }) => {
+    if (!treeId) {
+      return;
+    }
+    try {
+      await openWidgetForTree({ treeId, fresh });
+    } catch (err) {
+      setError(err);
+      loggerBridge.log?.('error', 'library_open_tree_failed', {
+        treeId,
+        message: err?.message,
+      });
+      throw err;
+    }
+  }, [loggerBridge, setError]);
 
   const handleTreeDelete = useCallback(async (treeId) => {
     if (!user || !treeId) {
@@ -144,7 +197,7 @@ export const useLibraryData = ({
     } finally {
       setLoading(false);
     }
-  }, [user, selectedTreeId, clearTreeSelection, refreshLibrary, removeTree, setError, setLoading]);
+  }, [clearTreeSelection, refreshLibrary, selectedTreeId, setError, setLoading, user]);
 
   const handleTreeRename = useCallback(async (treeId, newTitle) => {
     if (!user || !treeId || !newTitle?.trim()) {
@@ -159,7 +212,7 @@ export const useLibraryData = ({
       setError(err);
       return false;
     }
-  }, [user, refreshLibrary, saveTreeMetadata, setError]);
+  }, [refreshLibrary, setError, user]);
 
   const handleNodesRemove = useCallback(async ({ nodeIds }) => {
     if (!user || !Array.isArray(nodeIds) || nodeIds.length === 0) {
@@ -175,20 +228,88 @@ export const useLibraryData = ({
     }
   }, [removeNodes, setError, user]);
 
-  const handleTreeMoveToFolder = useCallback(async ({ treeId, folderId }) => {
-    if (!user || !treeId) {
-      return false;
+  const moveTreesToFolder = useCallback(async ({ treeIds, targetFolderId }) => {
+    if (!user) {
+      return {
+        moved: [],
+        failures: [],
+        renamed: [],
+        skipped: [],
+        missing: treeIds || [],
+        undo: async () => {},
+      };
     }
 
-    try {
-      await assignTreeToFolder({ treeId, folderId, userId: user.id });
-      await refreshLibrary();
-      return true;
-    } catch (err) {
-      setError(err);
-      return false;
+    const plan = planTreeMoves({
+      trees: Array.isArray(trees) ? trees : EMPTY_ARRAY,
+      treeIds,
+      targetFolderId,
+    });
+
+    if (!plan.moves.length) {
+      return {
+        moved: [],
+        failures: [],
+        renamed: [],
+        skipped: plan.skipped,
+        missing: plan.missing,
+        undo: async () => {},
+      };
     }
-  }, [assignTreeToFolder, refreshLibrary, setError, user]);
+
+    const executeMove = createTreeMoveExecutor({
+      assignTree: assignTreeToFolder,
+      saveMetadata: saveTreeMetadata,
+      userId: user.id,
+    });
+
+    const { successIds, failures } = await executeMove(plan.moves);
+
+    if (successIds.length > 0) {
+      setTrees((prev) => applyTreeMovePlan({ trees: prev, plan, successfulIds: successIds }));
+    }
+
+    if (failures.length > 0) {
+      setError(new Error(failures[0].message));
+    }
+
+    const { moved, renamed } = summariseMovePlan({ plan, successfulIds: successIds });
+    const undoSnapshots = buildUndoSnapshot({ plan, successfulIds: successIds });
+
+    const undo = async () => {
+      if (undoSnapshots.length === 0) {
+        return;
+      }
+      try {
+        const revertExecutor = createTreeMoveExecutor({
+          assignTree: assignTreeToFolder,
+          saveMetadata: saveTreeMetadata,
+          userId: user.id,
+        });
+        const planLookup = new Map(plan.moves.map((move) => [move.id, move]));
+        await revertExecutor(
+          undoSnapshots.map((snapshot) => ({
+            id: snapshot.id,
+            nextFolderId: snapshot.folderId,
+            nextTitle: snapshot.title,
+            renamed: Boolean(planLookup.get(snapshot.id)?.renamed),
+          })),
+        );
+        setTrees((prev) => revertTreeMovePlan({ trees: prev, plan, revertIds: successIds }));
+      } catch (err) {
+        loggerBridge.log?.('error', 'library_move_undo_failed', { message: err?.message });
+      }
+    };
+
+    return {
+      moved,
+      failures,
+      renamed,
+      skipped: plan.skipped,
+      missing: plan.missing,
+      undo,
+    };
+  }, [loggerBridge, setError, setTrees, trees, user]);
 
   const handleFolderCreate = useCallback(async ({ name, parentId }) => {
     if (!user || !name?.trim()) {
@@ -202,7 +323,7 @@ export const useLibraryData = ({
       setError(err);
       return null;
     }
-  }, [createLibraryFolder, refreshLibrary, setError, user]);
+  }, [refreshLibrary, setError, user]);
 
   const handleWidgetShouldCleanup = useCallback((tree) => {
     if (!tree) {
@@ -225,10 +346,11 @@ export const useLibraryData = ({
     refreshLibrary,
     handleCleanupEmptyTrees,
     handleCreateTree,
+    handleOpenTree,
     handleTreeDelete,
     handleTreeRename,
     handleNodesRemove,
-    handleTreeMoveToFolder,
+    moveTreesToFolder,
     handleFolderCreate,
     handleWidgetShouldCleanup,
     handleExistingEmptyTree,
