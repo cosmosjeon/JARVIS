@@ -3,7 +3,7 @@ import './App.css';
 import './theme/glass.css';
 import HierarchicalForceTree from 'features/tree/ui/HierarchicalForceTree';
 import LibraryApp from 'features/library/ui/LibraryApp';
-import AdminWidgetPanel from './components/admin/AdminWidgetPanel';
+import AdminWidgetPanel from 'features/admin/ui/AdminWidgetPanel';
 import { ThemeProvider } from 'shared/components/library/ThemeProvider';
 import { SettingsProvider } from 'shared/hooks/SettingsContext';
 import { SupabaseProvider } from 'shared/hooks/useSupabaseAuth';

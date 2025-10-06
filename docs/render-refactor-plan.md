@@ -38,10 +38,10 @@
 - [x] **6B-1 파일 매핑**: `src/components/library`, `src/views/LibraryApp` 등 조사 *(2025-10-07 Legacy 컴포넌트 의존성 정리)*
 - [x] **6B-2 기능 이전**: 라이브러리 관련 모듈을 `src/features/library`로 재배치, 중복 UI `src/shared/components/library`로 정리 *(LibraryApp, TreeCanvas, VoranBoxManager 등 이동 완료)*
 - [x] **6B-3 계약 확인**: 라이브러리와 Electron 브리지(`libraryBridge`) 간 채널, 설정 방송(`settings:changed`) 동작 검증 *(2025-10-07 preload/main IPC 채널/renderer 구독 로직 점검 완료)*
-- [ ] **6B-4 사용자 점검**: 필터/정렬/동기화 흐름 체크, 문서 업데이트
+- [x] **6B-4 사용자 점검**: 필터/정렬/동기화 흐름 체크, 문서 업데이트 *(사용자 검증 완료 보고)*
 
 ### 작업 6C – Admin Feature 정리
-- [ ] **6C-1 파일 매핑**: `src/components/admin`, `src/services/admin` 현황 조사
+- [x] **6C-1 파일 매핑**: `src/components/admin`, `src/services/admin` 현황 조사 *(2025-10-07 AdminWidgetPanel 종속성/브리지 파악 완료)*
 - [ ] **6C-2 기능 이전**: Admin UI/상태/서비스를 `src/features/admin`으로 통합, 공용 UI는 `src/shared/components/admin` 유지
 - [ ] **6C-3 IPC 계약 검토**: `adminBridge.openAdminPanel`, `adminBridge.closeAdminPanel` 등이 Stage 4 구조와 일치하는지 확인
 - [ ] **6C-4 QA**: 관리자 패널 기능 수동 확인, 문서 갱신

@@ -15,11 +15,10 @@
 - 라이브러리/관리자/공용 컴포넌트는 아직 레거시 경로(`src/components/library`, `src/components/admin`, `src/services/drag`)에 존재
 
 ### 남은 작업 (Stage 6 Roadmap)
-1. **6B-4** : 라이브러리 사용자 점검 가이드 확정 및 수동 테스트
-2. **6C** : 관리자 기능 구조 재정비
-3. **6D** : shared/infrastructure 통합 (drag utils 등)
-4. **6E** : Domain 계층 승격 검토 (선택)
-5. **6F** : 문서 업데이트, README/CHANGELOG 갱신, 최종 검증
+1. **6C** : 관리자 기능 구조 재정비
+2. **6D** : shared/infrastructure 통합 (drag utils 등)
+3. **6E** : Domain 계층 승격 검토 (선택)
+4. **6F** : 문서 업데이트, README/CHANGELOG 갱신, 최종 검증
 
 ### 라이브러리 구조 변경 메모 (2025-10-07)
 - `LibraryApp` 및 주요 서브 컴포넌트를 `src/features/library/ui/**`로 이동 완료
@@ -29,6 +28,7 @@
 
 ### 기타 변경 메모 (2025-10-07)
 - 미사용 실험용 `SettingsPanel` 컴포넌트를 삭제하여 노출되지 않는 설정 UI 잔재 제거
+- `AdminWidgetPanel`을 `src/features/admin/ui`로 이동해 Stage 6C 구조 정비 착수
 
 ### 라이브러리 브리지 점검 메모 (2025-10-07)
 - `electron/preload/channels/library.js` ↔ `electron/main/ipc-handlers/library.js` 간 `library:show`, `library:request-refresh`, `library:refresh` IPC 경로 확인
