@@ -1,23 +1,26 @@
 const path = require('path');
-const { BrowserWindow } = require('electron');
-const { applyWindowConfigTo, windowConfig, sendWindowState } = require('../bootstrap/window-state');
+const { BrowserWindow, shell } = require('electron');
+const {
+  windowConfig,
+  applyWindowConfigTo,
+  sendWindowState,
+} = require('../bootstrap/window-state');
 const { getRendererUrl } = require('../bootstrap/renderer-url');
 const { broadcastSettings } = require('../bootstrap/settings-broadcast');
 
-let mainWindow;
-const additionalWidgetWindows = new Set();
-const widgetSessionByWindowId = new Map();
-
-const createMainWindow = ({
-  treeId = null,
+const createWidgetWindow = ({
   sessionId,
+  treeId = null,
   fresh = false,
   isDev = false,
+  settings = {},
   logger,
+  onReady,
+  onClosed,
 }) => {
   const isMac = process.platform === 'darwin';
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1024,
     height: 720,
     minWidth: 320,
@@ -48,37 +51,35 @@ const createMainWindow = ({
     },
   });
 
-  applyWindowConfigTo(mainWindow);
-  mainWindow.setBackgroundColor('#00000000');
+  applyWindowConfigTo(window);
+  window.setBackgroundColor('#00000000');
 
-  const broadcastWindowState = () => {
-    sendWindowState(mainWindow);
-  };
+  const broadcastWindowState = () => sendWindowState(window);
 
-  mainWindow.on('maximize', broadcastWindowState);
-  mainWindow.on('unmaximize', broadcastWindowState);
-  mainWindow.on('enter-full-screen', broadcastWindowState);
-  mainWindow.on('leave-full-screen', broadcastWindowState);
+  window.on('maximize', broadcastWindowState);
+  window.on('unmaximize', broadcastWindowState);
+  window.on('enter-full-screen', broadcastWindowState);
+  window.on('leave-full-screen', broadcastWindowState);
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.setMenuBarVisibility(false);
+  window.on('ready-to-show', () => {
+    window.setMenuBarVisibility(false);
     if (process.platform === 'darwin' && windowConfig.frameless) {
-      mainWindow.setWindowButtonVisibility?.(false);
+      window.setWindowButtonVisibility?.(false);
     }
-    logger?.info('Main window ready (kept hidden until explicitly toggled)');
+    logger?.info('Widget window ready');
+    onReady?.(window);
   });
 
-  mainWindow.on('closed', () => {
-    logger?.info('Main window closed');
-    widgetSessionByWindowId.delete(mainWindow.id);
-    mainWindow = null;
+  window.on('closed', () => {
+    logger?.info('Widget window closed');
+    onClosed?.(window);
   });
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (url !== mainWindow.webContents.getURL()) {
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event, url) => {
+    if (url !== window.webContents.getURL()) {
       event.preventDefault();
-      require('electron').shell.openExternal(url);
+      shell.openExternal(url);
     }
   });
 
@@ -88,117 +89,70 @@ const createMainWindow = ({
     treeId: treeId || undefined,
   });
 
-  logger?.info('Loading URL', { startUrl });
-  mainWindow.loadURL(startUrl);
+  logger?.info('Loading widget URL', { startUrl });
+  window.loadURL(startUrl);
 
-  mainWindow.webContents.on('did-finish-load', () => {
-    broadcastSettings(mainWindow);
+  window.webContents.on('did-finish-load', () => {
+    broadcastSettings(window, settings);
     broadcastWindowState();
     if (treeId) {
-      mainWindow.webContents.send('widget:set-active-tree', { treeId });
+      window.webContents.send('widget:set-active-tree', { treeId });
     }
   });
 
-  widgetSessionByWindowId.set(mainWindow.id, sessionId);
-  return mainWindow;
+  return window;
 };
 
-const createAdditionalWidgetWindow = ({
-  treeId = null,
-  sessionId,
-  fresh = true,
-  isDev = false,
-  settings,
-}) => {
-  const isMac = process.platform === 'darwin';
+const ensureMainWindowFocus = (window) => {
+  if (!window) {
+    return;
+  }
+  if (!window.isVisible()) {
+    window.show();
+  }
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.focus();
+};
 
-  const widgetWindow = new BrowserWindow({
-    width: 1024,
-    height: 720,
-    minWidth: 320,
-    minHeight: 240,
-    frame: false,
-    transparent: windowConfig.transparent,
-    backgroundColor: '#00000000',
-    alwaysOnTop: windowConfig.alwaysOnTop,
-    skipTaskbar: windowConfig.skipTaskbar,
-    hasShadow: true,
-    resizable: true,
-    movable: true,
-    show: false,
-    fullscreenable: true,
-    maximizable: true,
-    minimizable: false,
-    titleBarStyle: isMac ? 'customButtonsOnHover' : 'default',
-    ...(isMac ? { trafficLightPosition: { x: -1000, y: -1000 } } : {}),
-    autoHideMenuBar: true,
-    title: 'JARVIS Widget',
-    webPreferences: {
-      preload: path.join(__dirname, '../../preload/index.js'),
-      contextIsolation: true,
-      sandbox: false,
-      nodeIntegration: false,
-      devTools: isDev,
-      spellcheck: false,
-    },
-  });
-
-  applyWindowConfigTo(widgetWindow);
-  widgetWindow.setBackgroundColor('#00000000');
-  widgetWindow.setMenuBarVisibility(false);
-  if (isMac && windowConfig.frameless) {
-    widgetWindow.setWindowButtonVisibility?.(false);
+const resolveBrowserWindowFromSender = (sender) => {
+  if (!sender) {
+    return null;
   }
 
-  widgetWindow.on('ready-to-show', () => {
-    widgetWindow.show();
-    widgetWindow.focus();
-  });
+  const directWindow = BrowserWindow.fromWebContents(sender);
+  if (directWindow) {
+    return directWindow;
+  }
 
-  ['enter-full-screen', 'leave-full-screen', 'maximize', 'unmaximize', 'show', 'hide'].forEach((eventName) => {
-    widgetWindow.on(eventName, () => sendWindowState(widgetWindow));
-  });
-
-  widgetWindow.on('closed', () => {
-    additionalWidgetWindows.delete(widgetWindow);
-    widgetSessionByWindowId.delete(widgetWindow.id);
-  });
-
-  widgetWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  widgetWindow.webContents.on('will-navigate', (event, url) => {
-    if (url !== widgetWindow.webContents.getURL()) {
-      event.preventDefault();
-      require('electron').shell.openExternal(url);
+  if (typeof sender.getOwnerBrowserWindow === 'function') {
+    const ownerWindow = sender.getOwnerBrowserWindow();
+    if (ownerWindow) {
+      return ownerWindow;
     }
-  });
+  }
 
-  const startUrl = getRendererUrl('widget', {
-    session: sessionId,
-    fresh: fresh ? '1' : undefined,
-    treeId: treeId || undefined,
-  });
-  widgetWindow.loadURL(startUrl);
-
-  widgetWindow.webContents.on('did-finish-load', () => {
-    widgetWindow.webContents.send('settings:changed', { ...settings });
-    if (treeId) {
-      widgetWindow.webContents.send('widget:set-active-tree', { treeId });
+  if (sender.hostWebContents) {
+    const hostWindow = resolveBrowserWindowFromSender(sender.hostWebContents);
+    if (hostWindow) {
+      return hostWindow;
     }
-    sendWindowState(widgetWindow);
-  });
+  }
 
-  additionalWidgetWindows.add(widgetWindow);
-  widgetSessionByWindowId.set(widgetWindow.id, sessionId);
-  return widgetWindow;
+  const senderId = typeof sender.id === 'number' ? sender.id : null;
+  if (senderId !== null) {
+    const fallbackWindow = BrowserWindow.getAllWindows().find((win) => win.webContents.id === senderId);
+    if (fallbackWindow) {
+      return fallbackWindow;
+    }
+  }
+
+  return null;
 };
 
-const getMainWindow = () => mainWindow;
-const getAdditionalWidgetWindows = () => Array.from(additionalWidgetWindows);
-
 module.exports = {
-  createMainWindow,
-  createAdditionalWidgetWindow,
-  getMainWindow,
-  getAdditionalWidgetWindows,
-  widgetSessionByWindowId,
+  createWidgetWindow,
+  ensureMainWindowFocus,
+  resolveBrowserWindowFromSender,
 };
