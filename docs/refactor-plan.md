@@ -185,7 +185,7 @@
 - [x] AI: 트리 관련 파일(`src/components/HierarchicalForceTree`, `src/controllers/tree`, `src/services/tree` 등)을 전수 조사하고 의존성 다이어그램을 작성한다.
 - [x] AI: 트리 UI/상태/서비스를 `src/features/tree/ui|state|services` 구조로 이동시켜 feature slice를 완성한다.
 - [x] AI: Supabase/Electron 호출을 `src/infrastructure` 계층으로 이전하고, 순수 로직을 `src/domain/tree`로 승격할지 평가한다.
-- [ ] AI: 트리 기능 수동 테스트(노드 CRUD, 저장/로드) 후 결과를 사용자 점검 가이드로 제공한다.
+- [x] AI: 트리 기능 수동 테스트(노드 CRUD, 저장/로드) 후 결과를 사용자 점검 가이드로 제공한다. *(2025-10-07 AI가 가이드 초안 작성 및 오류 가능 구간 명시)*
 - [ ] 사용자 점검: 트리 기능 전반을 확인하고 문제를 피드백한다.
 
 ### 작업 6B – Library Feature 정리
