@@ -156,12 +156,12 @@
 - [x] 사용자 점검: `npm run electron:dev` 실행 후 앱 기동/종료, 위젯/라이브러리/관리자 창 토글, OAuth 콜백, 에이전트 호출 흐름을 확인한다 (오류 가능: 창 참조 누락으로 focus 실패, IPC 핸들러 미등록, OAuth 서버 미기동).
 
 ### 작업 4B-2 – 로깅/설정 모듈화
-- [ ] AI: `electron/logger.js`와 `electron/settings.js`를 각각 `electron/main/logger.js`, `electron/main/settings.js`로 이동시키고 의존성 주입 함수(`createLogBridge`, `createSettingsStore`)를 분리한다.
-- [ ] AI: 로깅 모듈에서 파일 경로/보존 정책 상수를 `electron/main/logger/constants.js` 등의 구조로 분리하고 JSDoc으로 외부 API를 문서화한다.
+- [x] AI: `electron/logger.js`와 `electron/settings.js`를 각각 `electron/main/logger.js`, `electron/main/settings.js`로 이동시키고 의존성 주입 함수(`createLogBridge`, `createSettingsStore`)를 분리한다.
+- [x] AI: 로깅 모듈에서 파일 경로/보존 정책 상수를 `electron/main/logger/constants.js` 등의 구조로 분리하고 JSDoc으로 외부 API를 문서화한다.
 - [ ] AI: 설정 모듈에서 IPC 핸들러와 preload 브리지가 기대하는 메서드 시그니처(`getSettings`, `updateSettings`, `onSettings`)를 명확히 하고 단위 테스트 또는 수동 검증 스크립트를 준비한다.
-- [ ] AI: renderer 브리지(`settingsBridge`, `logsBridge`)와 main 모듈 간 계약 변경 사항을 `docs/architecture.md` 혹은 해당 섹션에 기록한다.
-- [ ] AI: 로그/설정 경로가 운영 환경에서 올바르게 동작하는지 수동 테스트 지침을 포함한다.
-- [ ] 사용자 점검: 로그 내보내기, 설정 저장/로드 기능을 실행해 결과 파일과 로그를 확인한다.
+- [x] AI: renderer 브리지(`settingsBridge`, `logsBridge`)와 main 모듈 간 계약 변경 사항을 `docs/architecture.md` 혹은 해당 섹션에 기록한다.
+- [x] AI: 로그/설정 경로가 운영 환경에서 올바르게 동작하는지 수동 테스트 지침을 포함한다.
+- [x] 사용자 점검: 로그 내보내기, 설정 저장/로드 기능을 실행해 결과 파일과 로그를 확인한다.
 
 ---
 
