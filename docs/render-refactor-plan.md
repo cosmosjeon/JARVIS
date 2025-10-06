@@ -85,7 +85,7 @@
 ## Stage 7 세부 계획
 
 ### 작업 7A – Library UI 분리
-- [ ] **7A-1 구조 진단**: `src/features/library/ui/LibraryApp.js`, `components/VoranBoxManager.js`, `components/TreeCanvas.js`의 책임 목록화 및 의존 그래프 작성
+- [x] **7A-1 구조 진단**: `src/features/library/ui/LibraryApp.js`, `components/VoranBoxManager.js`, `components/TreeCanvas.js`의 책임 목록화 및 의존 그래프 작성 *(2025-10-07 구조 분석 및 Stage 7A-1 메모 작성)*
 - [ ] **7A-2 커스텀 훅 추출**: `useLibraryData`, `useLibraryDialogs`, `useLibraryDrag` 등 커스텀 훅 초안 작성, API 호출과 브리지 통신을 훅으로 이동
 - [ ] **7A-3 프리젠테이션 분리**: `LibraryApp`은 레이아웃 중심으로 단순화, VoranBox/TreeCanvas 내부 UI를 하위 컴포넌트로 분해
 - [ ] **7A-4 테스트/문서**: 새 훅 인터페이스에 대한 단위 테스트 또는 스토리북/문서 초안 작성, `docs/render-refactor-status.md` 업데이트

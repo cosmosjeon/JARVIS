@@ -96,5 +96,27 @@
 - Stage 7: 초대형 컴포넌트 분해(`useLibraryData`, `useTreeViewport`, `useConversationStore` 등) 및 도메인 추출
 - Stage 8 제안: Admin/Library 문서화, QA 자동화(선택)
 
+### Stage 7A-1 구조 진단 (2025-10-07)
+- **LibraryApp (1085 lines)**
+  - 책임: Supabase CRUD, Electron bridge 연동, empty-tree 정리, 테마/모달 상태 관리, 드래그/폴더 조작 이벤트 처리
+  - 주요 의존성: `useLibraryState`, `createLibraryBridge`, `createTreeForUser`, `useTheme`, Supabase repository 함수
+  - 개선 포인트: 데이터 로딩/저장 로직을 `useLibraryData` 훅으로, 드래그/네비게이션 로직을 `useLibraryDrag`, 모달/대화 상자 제어를 `useLibraryDialogs` 등으로 분리 필요
+  - Stage 7A-2 준비: `features/library/hooks/{useLibraryData,useLibraryDialogs,useLibraryDrag}.js` 초안 추가
+- **VoranBoxManager (1357 lines)**
+  - 책임: 로컬 선택/드래그 상태, 드래그 미리보기 DOM, 폴더/트리 컨텍스트 메뉴, 토스트/알림, 키보드 네비게이션
+  - 주요 의존성: `shared/ui` 버튼/입력, `trees`/`folders` prop, 내부 toasts/drag utils
+  - 개선 포인트: 드래그 상태/미리보기 로직을 훅(`useVoranDragPreview`), 토스트 관리(`useToastQueue`), 리스트 네비게이션(`useFolderNavigation`) 등으로 분리
+- **TreeCanvas (≈150 lines)**
+  - 책임: ForceDirectedTree vs WidgetTreeView 렌더 스위칭, 리사이즈 관찰, 날짜 포매팅, 새 루트 생성 콜백
+  - 주요 의존성: `features/tree/ui/tree2/ForceDirectedTree`, `features/treeCanvas/WidgetTreeView`, `lucide-react` 아이콘
+  - 개선 포인트: 뷰어 선택 로직과 렌더 컴포넌트를 분리(`TreeCanvasViewSwitcher`), 날짜 포맷/노드 메타 표시를 별도 프레젠테이션 컴포넌트로 이동
+- **공통 위험 요소**: 브리지 호출(`libraryBridge`, `treeCreation`), Supabase 저장, 드래그 처리 등 부수효과가 UI 컴포넌트 내부에 혼재 → Stage 7A-2에서 커스텀 훅으로 추출 필요
+
+### Stage 7A-2 커스텀 훅 적용 (2025-10-07)
+- `LibraryApp`가 `useLibraryData` 훅을 통해 Supabase/Electron 연동·빈 트리 정리·생성/삭제/이름변경 로직을 캡슐화
+- UI 컴포넌트에서는 확인/선택과 같은 프리젠테이션 로직만 수행하며, 훅은 `setTrees`/`setFolders`/`setLoading` 등 상태 갱신을 담당
+- 노드 삭제 시 훅의 `handleNodesRemove`를 통해 Supabase 연동을 추상화하고, 실패 시 사용자에게만 경고하도록 처리
+- Voran Box, 드래그, 모달 로직은 Stage 7A-3에서 추가 분리 예정
+
 업데이트: 2025-10-06 17:20 KST
 ---
