@@ -55,6 +55,7 @@ const LibraryApp = () => {
         onVoranDragOver={handlers.voranDragOver}
         onVoranDragLeave={handlers.voranDragLeave}
         onToggleCollapsed={handlers.toggleSidebar}
+        onMoveTreesToFolder={handlers.moveTreesToFolder}
       />
 
       <main className="flex flex-1 flex-col bg-background overflow-hidden">
@@ -74,6 +75,7 @@ const LibraryApp = () => {
             onMemoCreate={handlers.memoCreate}
             onMemoUpdate={handlers.memoUpdate}
             onMemoRemove={handlers.memoRemove}
+            onTreeRename={handlers.renameTree}
           />
         </div>
       </main>

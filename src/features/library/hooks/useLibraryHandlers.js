@@ -41,9 +41,11 @@ export const useLibraryHandlers = ({
     actions.folder.setSelectedFolderId(folderId);
   }, [actions.folder]);
 
-  const nodeAdd = useCallback((node, link) => {
+  const nodeAdd = useCallback((node, link, options = {}) => {
     addNode(node, link);
-    actions.selection.setSelectedNode(node);
+    if (options.select !== false) {
+      actions.selection.setSelectedNode(node);
+    }
   }, [actions.selection, addNode]);
 
   const toggleCreateDialog = useCallback((open) => {

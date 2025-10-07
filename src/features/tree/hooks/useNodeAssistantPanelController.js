@@ -90,12 +90,12 @@ export const useNodeAssistantPanelController = ({
   const [hasFocusedComposer, setHasFocusedComposer] = useState(false);
   const [placeholderNotice, setPlaceholderNotice] = useState(null);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
-  const [copiedMap, setCopiedMap] = useState({});
-  const [spinningMap, setSpinningMap] = useState({});
   const [draftAttachments, setDraftAttachments] = useState(() => (
     Array.isArray(attachments) ? attachments : []
   ));
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
+
+  const [spinningMap, setSpinningMap] = useState({});
 
   const scaledPanelSizes = useMemo(
     () => getScaledPanelSizes(nodeScaleFactor),
@@ -483,10 +483,7 @@ export const useNodeAssistantPanelController = ({
   const handleCopyMessage = useCallback((message) => {
     if (!message?.text) return;
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(message.text).then(() => {
-        setCopiedMap((prev) => ({ ...prev, [message.id]: true }));
-        window.setTimeout(() => setCopiedMap((prev) => ({ ...prev, [message.id]: false })), 1600);
-      }).catch(() => undefined);
+      navigator.clipboard.writeText(message.text).catch(() => undefined);
     }
   }, []);
 
@@ -494,9 +491,15 @@ export const useNodeAssistantPanelController = ({
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const question = lastUser?.text || summary.label || node?.keyword || '';
     if (!question) return;
-    setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    if (message?.id) {
+      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    }
     sendResponse(question).finally(() => {
-      window.setTimeout(() => setSpinningMap((prev) => ({ ...prev, [message.id]: false })), 900);
+      if (message?.id) {
+        window.setTimeout(() => {
+          setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
+        }, 900);
+      }
     });
   }, [messages, node?.keyword, sendResponse, summary?.label]);
 
@@ -615,13 +618,12 @@ export const useNodeAssistantPanelController = ({
     onCloseNode,
     onPanZoomGesture,
     messages,
-    spinningMap,
-    copiedMap,
     attachments: draftAttachments,
     onAttachmentRemove: handleAttachmentRemove,
     onClearAttachments: clearAttachments,
     handleRetryMessage,
     handleCopyMessage,
+    spinningMap,
     registerMessageContainer,
     handleHighlightToggle,
     isHighlightMode,

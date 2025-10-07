@@ -67,10 +67,10 @@ describe('VoranBoxManager', () => {
         });
     });
 
-    test('renders VORAN BOX and folder sections', () => {
+    test('renders BOX and folder sections', () => {
         render(<VoranBoxManager {...mockProps} />);
 
-        expect(screen.getByText('VORAN BOX')).toBeInTheDocument();
+        expect(screen.getByText('BOX')).toBeInTheDocument();
         expect(screen.getByText('폴더 관리')).toBeInTheDocument();
         expect(screen.getByText('Test Tree 1')).toBeInTheDocument();
         expect(screen.getByText('Test Folder 1')).toBeInTheDocument();

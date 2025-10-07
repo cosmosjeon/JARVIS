@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import AssistantPanelHeader from 'features/tree/ui/components/node-assistant/AssistantPanelHeader';
-import AssistantMessageList from 'features/tree/ui/components/node-assistant/AssistantMessageList';
+import ChatMessageList from 'features/chat/components/ChatMessageList';
 
 const NodeAssistantPanelView = ({
   panelRef,
@@ -17,7 +17,6 @@ const NodeAssistantPanelView = ({
   handleRetryMessage,
   handleCopyMessage,
   spinningMap,
-  copiedMap,
   attachments = [],
   onAttachmentRemove = () => {},
   onClearAttachments = () => {},
@@ -85,20 +84,19 @@ const NodeAssistantPanelView = ({
       showCloseButton={showHeaderControls}
     />
 
-    <div
-      ref={registerMessageContainer}
-      className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
-    >
-      <AssistantMessageList
-        messages={messages}
-        panelStyles={panelStyles}
-        theme={theme}
-        onRetry={handleRetryMessage}
-        onCopy={handleCopyMessage}
-        spinningMap={spinningMap}
-        copiedMap={copiedMap}
-      />
-    </div>
+    <ChatMessageList
+      title="Assistant"
+      messages={messages}
+      onRetry={handleRetryMessage}
+      onCopy={handleCopyMessage}
+      panelStyles={panelStyles}
+      theme={theme}
+      className="flex-1 min-h-0 pr-1"
+      onContainerRef={registerMessageContainer}
+      assistantMessageMaxWidth={560}
+      userBubbleMaxWidth={280}
+      retryingMessageMap={spinningMap}
+    />
 
     {Array.isArray(attachments) && attachments.length > 0 ? (
       <div

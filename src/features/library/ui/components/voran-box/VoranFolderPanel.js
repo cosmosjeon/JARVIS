@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
+  Box,
   Folder,
   FolderPlus,
   FolderTree as TreeIcon,
@@ -78,8 +79,8 @@ const VoranFolderPanel = ({
           )}
           onClick={onSelectVoranBox}
         >
-          <TreeIcon className="h-3 w-3 text-muted-foreground" />
-          <span className="text-card-foreground">VORAN BOX</span>
+          <Box className="h-3 w-3 text-muted-foreground" />
+          <span className="text-card-foreground">BOX</span>
           <span className="text-xs text-muted-foreground bg-border px-1 py-0.5 rounded-full">{folderTreeCounts.voranCount}</span>
         </button>
 

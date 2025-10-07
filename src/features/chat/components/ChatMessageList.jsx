@@ -1,39 +1,101 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Response } from 'shared/ui/shadcn-io/ai/response';
-import { Avatar, AvatarFallback, AvatarImage } from 'shared/ui/avatar';
-import { Separator } from 'shared/ui/separator';
 import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
 import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
-import { Conversation, ConversationContent, ConversationScrollButton } from 'shared/ui/shadcn-io/ai/conversation';
+import { Response } from 'shared/ui/shadcn-io/ai/response';
+import { cn } from 'shared/utils';
+import {
+  DEFAULT_CHAT_PANEL_STYLES,
+  DEFAULT_CHAT_THEME,
+  isLightLikeChatTheme,
+} from 'features/chat/constants/panelStyles';
 
-export default function ChatMessageList({ title = 'Assistant', messages = [], endRef, onRetry, onCopy }) {
-  const avatarInitial = title.charAt(0).toUpperCase();
-  const [copiedMap, setCopiedMap] = useState({});
-  const [spinningMap, setSpinningMap] = useState({});
-  const messageById = useMemo(() => Object.fromEntries((messages || []).map(m => [m.id, m])), [messages]);
+const USER_ROLE = 'user';
+const SYSTEM_ROLE = 'system';
+
+const getMessageKey = (message, fallback) => {
+  const rawId = message?.id;
+  if (typeof rawId === 'string') {
+    return rawId.trim() ? rawId : fallback;
+  }
+  if (typeof rawId === 'number') {
+    return String(rawId);
+  }
+  return fallback;
+};
+
+const renderAttachments = (attachments = [], theme, panelStyles) => {
+  if (!Array.isArray(attachments) || attachments.length === 0) {
+    return null;
+  }
+
+  const backgroundColor = theme === 'dark'
+    ? 'rgba(37, 38, 48, 0.75)'
+    : 'rgba(241, 245, 249, 0.85)';
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-3">
+      {attachments.map((attachment) => (
+        <div
+          key={attachment.id}
+          className="relative h-24 w-32 overflow-hidden rounded-lg border"
+          style={{
+            borderColor: panelStyles.borderColor,
+            backgroundColor,
+          }}
+        >
+          {attachment.dataUrl ? (
+            <img
+              src={attachment.dataUrl}
+              alt={attachment.label || '첨부 이미지'}
+              className="h-full w-full object-cover"
+            />
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default function ChatMessageList({
+  title = 'Assistant',
+  messages = [],
+  endRef,
+  onRetry,
+  onCopy,
+  theme = DEFAULT_CHAT_THEME,
+  panelStyles = DEFAULT_CHAT_PANEL_STYLES,
+  className,
+  onContainerRef,
+  userBubbleMaxWidth = 320,
+  assistantMessageMaxWidth = 560,
+  retryingMessageMap,
+}) {
+  const [internalCopiedMap, setInternalCopiedMap] = useState({});
+  const [internalSpinningMap, setInternalSpinningMap] = useState({});
   const scrollContainerRef = useRef(null);
-  const isTyping = useMemo(() => messages.some(m => m.status === 'typing' || m.status === 'pending'), [messages]);
 
-  const handleRetryClick = (message) => {
-    if (!message) return;
-    setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
-    try { onRetry?.(message); } finally {
-      window.setTimeout(() => setSpinningMap((prev) => ({ ...prev, [message.id]: false })), 900);
+  const resolvedPanelStyles = useMemo(
+    () => ({ ...DEFAULT_CHAT_PANEL_STYLES, ...(panelStyles || {}) }),
+    [panelStyles],
+  );
+  const resolvedTheme = theme || DEFAULT_CHAT_THEME;
+  const isLightTheme = isLightLikeChatTheme(resolvedTheme);
+  const isTyping = useMemo(
+    () => messages.some((message) => message.status === 'typing' || message.status === 'pending'),
+    [messages],
+  );
+
+  useEffect(() => {
+    if (typeof onContainerRef === 'function') {
+      onContainerRef(scrollContainerRef.current);
+      return () => onContainerRef(null);
     }
-  };
+    return undefined;
+  }, [onContainerRef]);
 
-  const handleCopyClick = (message) => {
-    if (!message) return;
-    onCopy?.(message);
-    setCopiedMap((prev) => ({ ...prev, [message.id]: true }));
-    window.setTimeout(() => setCopiedMap((prev) => ({ ...prev, [message.id]: false })), 1600);
-  };
-
-  // 타이핑 중일 때만 자동 스크롤 (메시지 변경될 때마다)
   useEffect(() => {
     if (isTyping && scrollContainerRef?.current) {
       const container = scrollContainerRef.current;
-      // 다음 프레임에서 스크롤 (DOM 업데이트 후)
       requestAnimationFrame(() => {
         if (container) {
           container.scrollTop = container.scrollHeight;
@@ -42,67 +104,166 @@ export default function ChatMessageList({ title = 'Assistant', messages = [], en
     }
   }, [messages, isTyping]);
 
+  const hasExternalRetryingState = Boolean(retryingMessageMap);
+  const activeSpinningMap = hasExternalRetryingState ? retryingMessageMap : internalSpinningMap;
+
+  const handleRetryClick = (messageId, message) => {
+    if (!messageId) {
+      return;
+    }
+    if (!hasExternalRetryingState) {
+      setInternalSpinningMap((prev) => ({ ...prev, [messageId]: true }));
+    }
+    try {
+      onRetry?.(message);
+    } finally {
+      if (!hasExternalRetryingState) {
+        window.setTimeout(() => {
+          setInternalSpinningMap((prev) => ({ ...prev, [messageId]: false }));
+        }, 900);
+      }
+    }
+  };
+
+  const handleCopyClick = (messageId, message) => {
+    if (!messageId) {
+      return;
+    }
+    onCopy?.(message);
+    setInternalCopiedMap((prev) => ({ ...prev, [messageId]: true }));
+    window.setTimeout(() => {
+      setInternalCopiedMap((prev) => ({ ...prev, [messageId]: false }));
+    }, 1600);
+  };
+
   return (
-    <div ref={scrollContainerRef} className="flex flex-col gap-5 p-6 h-full overflow-y-auto">
-        {messages.map((message, index) => {
-          const isUser = message.role === 'user';
-          const isSystem = message.role === 'system';
-          const showActions = !isUser && !isSystem && (onRetry || onCopy);
+    <div
+      ref={scrollContainerRef}
+      className={cn(
+        'glass-scrollbar flex h-full min-h-0 flex-col gap-6 overflow-y-auto overflow-x-hidden',
+        className,
+      )}
+      aria-live="polite"
+      role="log"
+      data-testid="chat-message-list"
+      data-assistant-name={title}
+    >
+      {messages.map((message, index) => {
+        const key = getMessageKey(message, `message-${index}`);
+        const status = message?.status || 'complete';
+        const role = message?.role || 'assistant';
+
+        if (role === SYSTEM_ROLE) {
           return (
-            <div key={message?.id ?? `message-${index}`} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
-              {!isUser && (
-                <Avatar className="mt-1 h-10 w-10 border border-border/80 bg-background/40">
-                  <AvatarImage alt={`${title} avatar`} />
-                  <AvatarFallback className="bg-muted text-xs font-semibold uppercase tracking-wide">{avatarInitial}</AvatarFallback>
-                </Avatar>
-              )}
-              <div className={`flex max-w-[560px] flex-col gap-3 ${isUser ? 'items-end' : ''}`}>
-                <div className={`group relative w-full rounded-2xl border border-border/80 bg-card/90 p-4 text-sm shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-colors ${isUser ? 'border-primary/50 bg-primary text-primary-foreground' : ''} ${isSystem ? 'border-muted/50 bg-muted text-muted-foreground' : ''}`}>
-                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground/80">
-                    <span>{isUser ? 'You' : isSystem ? 'System' : title}</span>
-                    {message.timestamp && <span>{typeof message.timestamp === 'number' ? new Date(message.timestamp).toLocaleTimeString() : message.timestamp}</span>}
-                  </div>
-                  <Separator className="my-3 bg-border/60" />
-                  <div className="leading-relaxed">
-                    {isUser ? (
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</p>
-                    ) : (
-                      <Response className="w-full text-sm leading-relaxed">{message.text}</Response>
-                    )}
-                  </div>
-                  {showActions && (
-                    <Actions className="mt-2">
-                      {onRetry && (
-                        <Action
-                          tooltip="Regenerate response"
-                          label="Retry"
-                          onClick={() => handleRetryClick(message)}
-                        >
-                          <RefreshCcwIcon className={`h-4 w-4 ${spinningMap[message.id] ? 'animate-spin' : ''}`} />
-                        </Action>
-                      )}
-                      {onCopy && (
-                        <Action
-                          tooltip="Copy to clipboard"
-                          label="Copy"
-                          onClick={() => handleCopyClick(message)}
-                        >
-                          {copiedMap[message.id] ? (
-                            <svg className="h-4 w-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-                          ) : (
-                            <CopyIcon className="h-4 w-4" />
-                          )}
-                        </Action>
-                      )}
-                    </Actions>
-                  )}
-                </div>
+            <div key={key} className="flex justify-center" data-role="system" data-status={status}>
+              <div
+                className="max-w-[480px] rounded-xl border px-4 py-2 text-xs font-medium backdrop-blur-sm"
+                style={{
+                  backgroundColor: isLightTheme
+                    ? 'rgba(148, 163, 184, 0.16)'
+                    : 'rgba(30, 31, 45, 0.65)',
+                  borderColor: resolvedPanelStyles.borderColor,
+                  color: resolvedPanelStyles.subtleTextColor,
+                }}
+              >
+                {message.text}
               </div>
             </div>
           );
-        })}
-        <div ref={endRef} />
+        }
+
+        if (role === USER_ROLE) {
+          const hasText = Boolean(message?.text);
+          const attachmentsNode = renderAttachments(
+            message.attachments,
+            resolvedTheme,
+            resolvedPanelStyles,
+          );
+
+          return (
+            <div key={key} className="flex justify-end" data-role="user" data-status={status}>
+              <div
+                className="break-words rounded-2xl border px-4 py-3 text-sm shadow-lg backdrop-blur-sm"
+                style={{
+                  maxWidth: userBubbleMaxWidth,
+                  backgroundColor: isLightTheme
+                    ? 'rgba(0, 0, 0, 0.05)'
+                    : 'rgba(255, 255, 255, 0.08)',
+                  borderColor: resolvedPanelStyles.borderColor,
+                  color: isLightTheme
+                    ? 'rgba(0, 0, 0, 0.9)'
+                    : 'rgba(255, 255, 255, 0.92)',
+                }}
+              >
+                {hasText ? (
+                  <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+                ) : null}
+                {attachmentsNode}
+              </div>
+            </div>
+          );
+        }
+
+        const showActions = Boolean((onRetry || onCopy) && role !== SYSTEM_ROLE);
+        const attachmentsNode = renderAttachments(
+          message.attachments,
+          resolvedTheme,
+          resolvedPanelStyles,
+        );
+
+        return (
+          <div key={key} className="flex justify-start" data-role="assistant" data-status={status}>
+            <div className="w-full" style={{ maxWidth: assistantMessageMaxWidth }}>
+              {message.text ? (
+                <Response
+                  className="w-full text-base leading-7"
+                  style={{ color: resolvedPanelStyles.textColor }}
+                >
+                  {message.text}
+                </Response>
+              ) : null}
+              {attachmentsNode}
+              {showActions && (
+                <Actions className="mt-2">
+                  {onRetry && (
+                    <Action
+                      tooltip="Regenerate response"
+                      label="Retry"
+                      onClick={() => handleRetryClick(key, message)}
+                    >
+                      <RefreshCcwIcon className={`h-4 w-4 ${activeSpinningMap?.[key] ? 'animate-spin' : ''}`} />
+                    </Action>
+                  )}
+                  {onCopy && (
+                    <Action
+                      tooltip="Copy to clipboard"
+                      label="Copy"
+                      onClick={() => handleCopyClick(key, message)}
+                    >
+                      {internalCopiedMap[key] ? (
+                        <svg
+                          className="h-4 w-4 text-emerald-500"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M20 6 9 17l-5-5" />
+                        </svg>
+                      ) : (
+                        <CopyIcon className="h-4 w-4" />
+                      )}
+                    </Action>
+                  )}
+                </Actions>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <div ref={endRef} />
     </div>
   );
 }
-

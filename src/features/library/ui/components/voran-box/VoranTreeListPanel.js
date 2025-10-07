@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, FolderTree as TreeIcon, X } from 'lucide-react';
+import { Box, ChevronDown, ChevronUp, FolderTree as TreeIcon, X } from 'lucide-react';
 import { Button } from 'shared/ui/button';
 import { cn } from 'shared/utils';
 import VoranTreeListItem from './VoranTreeListItem';
@@ -50,7 +50,8 @@ const VoranTreeListPanel = ({
     <div className="border-b border-border/60 px-4 h-[87px] flex flex-col justify-center">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold text-card-foreground">VORAN BOX</h3>
+          <Box className="h-5 w-5 text-card-foreground" />
+          <h3 className="text-lg font-semibold text-card-foreground">BOX</h3>
           <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">{treeCount}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -89,7 +90,7 @@ const VoranTreeListPanel = ({
         <div className="mt-2 text-xs text-blue-400 font-medium">탭키로 폴더를 선택하고 엔터로 저장하세요</div>
       )}
       {dragOverTarget?.type === 'voran' && (
-        <div className="mt-2 text-xs text-blue-400 font-medium">여기에 트리를 놓으면 VORAN BOX로 이동합니다</div>
+        <div className="mt-2 text-xs text-blue-400 font-medium">여기에 트리를 놓으면 BOX로 이동합니다</div>
       )}
     </div>
 
