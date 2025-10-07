@@ -15,6 +15,7 @@ const registerIpcHandlers = ({
   settingsManager,
   hotkeyService,
   trayService,
+  createLogBridge,
   screen,
   isDev,
   toggleWidgetVisibility,

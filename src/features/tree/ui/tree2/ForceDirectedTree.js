@@ -1,13 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { motion, AnimatePresence } from 'framer-motion';
-import DataTransformService from 'features/tree/services/DataTransformService';
-import ForceSimulationService from 'features/tree/services/ForceSimulationService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import MemoPanel from './MemoPanel';
 import MemoEditor from './MemoEditor';
 import QuestionService from 'features/tree/services/QuestionService';
-import { saveTreeViewportState, loadTreeViewportState } from 'infrastructure/supabase/services/treeService';
+import useForceDirectedTreeEngine from './hooks/useForceDirectedTreeEngine';
 
 const NODE_COLOR_PALETTE = (d3.schemeTableau10 && d3.schemeTableau10.length ? d3.schemeTableau10 : d3.schemeCategory10);
 const DEFAULT_CONTEXT_MENU_STATE = {
@@ -213,8 +211,6 @@ const ForceDirectedTree = ({
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const simulationServiceRef = useRef(null);
-    const [simulatedNodes, setSimulatedNodes] = useState([]);
-    const [simulatedLinks, setSimulatedLinks] = useState([]);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [selectedNodeIds, setSelectedNodeIds] = useState(new Set());
     const [isDraggingNode, setIsDraggingNode] = useState(false);
@@ -284,12 +280,27 @@ const ForceDirectedTree = ({
             : []
     ), [data?.links]);
 
+    const {
+        simulatedNodes,
+        simulatedLinks,
+        setSimulatedNodes,
+        viewTransform,
+        setViewTransform,
+    } = useForceDirectedTreeEngine({
+        data,
+        dimensions,
+        hierarchicalLinks,
+        treeId,
+        userId,
+        isForceSimulationEnabled,
+        getNodeDatum,
+        previousPositionsRef,
+        simulationServiceRef,
+    });
+
     // SVG 중심 위치 계산
     const centerX = dimensions.width / 2;
     const centerY = dimensions.height / 2;
-
-    // viewTransform 초기값을 중심으로 설정
-    const [viewTransform, setViewTransform] = useState({ x: centerX, y: centerY, k: 1 });
 
     const hasRenderableNodes = (Array.isArray(data?.nodes) && data.nodes.length > 0)
         || (Array.isArray(simulatedNodes) && simulatedNodes.length > 0);
@@ -304,261 +315,6 @@ const ForceDirectedTree = ({
         });
         return map;
     }, [simulatedNodes]);
-
-    // 뷰포트 상태 저장/복원 관련
-    const [viewportStateLoaded, setViewportStateLoaded] = useState(false);
-    const saveViewportStateTimeoutRef = useRef(null);
-
-    const assignFallbackPositions = useCallback((nodes = []) => {
-        if (!Array.isArray(nodes)) {
-            return [];
-        }
-
-        const clonedNodes = nodes.map((node) => ({ ...node }));
-        const levelMap = new Map();
-
-        clonedNodes.forEach((node) => {
-            const level = Number.isFinite(node.level) ? node.level : 0;
-            if (!levelMap.has(level)) {
-                levelMap.set(level, []);
-            }
-            levelMap.get(level).push(node);
-        });
-
-        levelMap.forEach((levelNodes, level) => {
-            const radius = 200 + level * 120;
-            const sorted = [...levelNodes].sort((a, b) => {
-                const aId = (a.id || '').toString();
-                const bId = (b.id || '').toString();
-                return aId.localeCompare(bId);
-            });
-            const count = sorted.length || 1;
-
-            const angleOffset = Math.random() * Math.PI * 2;
-
-            sorted.forEach((node, index) => {
-                if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
-                    return;
-                }
-                const angle = angleOffset + (index / count) * Math.PI * 2;
-                const jitterX = (Math.random() - 0.5) * 50;
-                const jitterY = (Math.random() - 0.5) * 50;
-                node.x = Math.cos(angle) * radius + jitterX;
-                node.y = Math.sin(angle) * radius + jitterY;
-            });
-        });
-
-        return clonedNodes;
-    }, []);
-
-    // 뷰포트 상태 저장 함수
-    const saveViewportState = useCallback(async () => {
-        if (!treeId || !userId || !viewportStateLoaded) {
-            return;
-        }
-
-        try {
-            const nodePositions = {};
-
-            // simulatedNodes에서 노드 위치 수집
-            simulatedNodes.forEach(node => {
-                const datum = getNodeDatum(node);
-                const nodeId = datum?.id || node.id;
-                if (nodeId && Number.isFinite(node.x) && Number.isFinite(node.y)) {
-                    nodePositions[nodeId] = {
-                        x: node.x,
-                        y: node.y
-                    };
-                }
-            });
-
-            // previousPositionsRef에서도 노드 위치 수집 (fallback)
-            if (Object.keys(nodePositions).length === 0 && previousPositionsRef.current.size > 0) {
-                previousPositionsRef.current.forEach((position, nodeId) => {
-                    if (Number.isFinite(position.x) && Number.isFinite(position.y)) {
-                        nodePositions[nodeId] = {
-                            x: position.x,
-                            y: position.y
-                        };
-                    }
-                });
-            }
-
-            const viewportData = {
-                nodePositions
-            };
-
-            console.log('뷰포트 상태 저장:', {
-                treeId,
-                userId,
-                nodeCount: Object.keys(nodePositions).length,
-                simulatedNodesCount: simulatedNodes.length,
-                previousPositionsCount: previousPositionsRef.current.size,
-                viewportData
-            });
-
-            await saveTreeViewportState({
-                treeId,
-                userId,
-                viewportData
-            });
-
-            console.log('뷰포트 상태 저장 완료');
-        } catch (error) {
-            console.warn('뷰포트 상태 저장 실패:', error);
-        }
-    }, [treeId, userId, viewTransform, simulatedNodes, viewportStateLoaded]);
-
-    // 뷰포트 상태 복원 함수
-    const loadViewportState = useCallback(async () => {
-        if (!treeId || !userId || viewportStateLoaded) {
-            return;
-        }
-
-        try {
-            console.log('뷰포트 상태 복원 시작:', { treeId, userId });
-            const savedState = await loadTreeViewportState({ treeId, userId });
-
-            if (savedState) {
-                console.log('저장된 뷰포트 상태:', savedState);
-
-                // 뷰포트 변환은 복원하지 않음 (노드 위치만 복원)
-
-                // 노드 위치 복원을 위한 플래그 설정
-                if (savedState.nodePositions) {
-                    const nodePositionsMap = new Map(Object.entries(savedState.nodePositions));
-                    previousPositionsRef.current = nodePositionsMap;
-                    console.log('노드 위치 복원:', nodePositionsMap.size, '개 노드');
-                    console.log('복원된 노드 위치:', Object.fromEntries(nodePositionsMap));
-                }
-            } else {
-                console.log('저장된 뷰포트 상태 없음');
-            }
-            setViewportStateLoaded(true);
-        } catch (error) {
-            console.warn('뷰포트 상태 복원 실패:', error);
-            setViewportStateLoaded(true);
-        }
-    }, [treeId, userId, centerX, centerY, viewportStateLoaded]);
-
-    // 뷰포트 상태 자동 저장 (디바운스)
-    const debouncedSaveViewportState = useCallback(() => {
-        if (saveViewportStateTimeoutRef.current) {
-            clearTimeout(saveViewportStateTimeoutRef.current);
-        }
-        saveViewportStateTimeoutRef.current = setTimeout(() => {
-            saveViewportState();
-        }, 1000); // 1초 후 저장
-    }, [saveViewportState]);
-
-    // Simulation 초기화 (뷰포트 상태 로드 후)
-    useEffect(() => {
-        if (!data || !data.nodes || data.nodes.length === 0) {
-            previousPositionsRef.current = new Map();
-            setSimulatedNodes([]);
-            setSimulatedLinks([]);
-            return;
-        }
-
-        // 뷰포트 상태가 아직 로드되지 않았으면 대기
-        if (treeId && userId && !viewportStateLoaded) {
-            return;
-        }
-
-        const preparedNodes = assignFallbackPositions(data.nodes);
-
-        const hierarchyData = DataTransformService?.transformToHierarchy(
-            preparedNodes,
-            hierarchicalLinks
-        );
-
-        if (!hierarchyData) {
-            previousPositionsRef.current = new Map();
-            setSimulatedNodes([]);
-            setSimulatedLinks([]);
-            return;
-        }
-
-        if (!simulationServiceRef.current) {
-            simulationServiceRef.current = new ForceSimulationService();
-        }
-
-        const previousPositions = previousPositionsRef.current || new Map();
-        if (previousPositions.size === 0) {
-            preparedNodes.forEach((node) => {
-                if (node?.id && Number.isFinite(node.x) && Number.isFinite(node.y)) {
-                    previousPositions.set(node.id, { x: node.x, y: node.y });
-                }
-            });
-        }
-
-        const handleTick = (nodes, links) => {
-            const nextMap = new Map(previousPositionsRef.current);
-            nodes.forEach((node) => {
-                const datum = getNodeDatum(node);
-                if (datum?.id) {
-                    nextMap.set(datum.id, { x: node.x || 0, y: node.y || 0 });
-                }
-            });
-            previousPositionsRef.current = nextMap;
-            setSimulatedNodes([...nodes]);
-            setSimulatedLinks([...links]);
-        };
-
-        const { nodes: nextNodes, links: nextLinks } = simulationServiceRef.current.createSimulation(
-            hierarchyData,
-            dimensions,
-            handleTick,
-            previousPositions,
-            { enableForceSimulation: isForceSimulationEnabled }
-        );
-
-        if (Array.isArray(nextNodes)) {
-            previousPositionsRef.current = new Map(
-                nextNodes
-                    .map((node) => {
-                        const datum = getNodeDatum(node);
-                        return datum?.id ? [datum.id, { x: node.x || 0, y: node.y || 0 }] : null;
-                    })
-                    .filter(Boolean)
-            );
-            setSimulatedNodes([...nextNodes]);
-        } else {
-            previousPositionsRef.current = new Map();
-            setSimulatedNodes([]);
-        }
-
-        setSimulatedLinks(Array.isArray(nextLinks) ? [...nextLinks] : []);
-
-        // Cleanup
-        return () => {
-            if (simulationServiceRef.current) {
-                simulationServiceRef.current.cleanup();
-            }
-            // 컴포넌트 언마운트 시 뷰포트 상태 저장
-            if (viewportStateLoaded) {
-                saveViewportState();
-            }
-            // 타이머 정리
-            if (saveViewportStateTimeoutRef.current) {
-                clearTimeout(saveViewportStateTimeoutRef.current);
-            }
-        };
-    }, [data, dimensions, assignFallbackPositions, viewportStateLoaded, treeId, userId, hierarchicalLinks, isForceSimulationEnabled]);
-
-    // 뷰포트 상태 복원 (컴포넌트 마운트 시)
-    useEffect(() => {
-        if (treeId && userId && !viewportStateLoaded) {
-            loadViewportState();
-        }
-    }, [treeId, userId, loadViewportState, viewportStateLoaded]);
-
-    // 노드 위치 변경 시 자동 저장 (뷰포트 변경은 저장하지 않음)
-    useEffect(() => {
-        if (viewportStateLoaded) {
-            debouncedSaveViewportState();
-        }
-    }, [simulatedNodes, debouncedSaveViewportState, viewportStateLoaded]);
 
 
     // dimensions가 변경될 때 viewTransform 업데이트 (비율 유지)
