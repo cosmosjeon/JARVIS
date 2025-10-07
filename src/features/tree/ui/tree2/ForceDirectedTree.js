@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import MemoPanel from './MemoPanel';
 import MemoEditor from './MemoEditor';
+import { Maximize2, Minimize2, X } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import useForceDirectedTreeEngine from './hooks/useForceDirectedTreeEngine';
 
@@ -177,137 +178,17 @@ const normalizeLinkEndpoint = (endpoint) => {
     return null;
 };
 
-const getNodeSizeScale = (datum = {}) => {
-    const rawValue = typeof datum?.sizeValue === 'number' ? datum.sizeValue : 50;
-    return Math.max(0.1, rawValue / 50);
-};
-
-const estimateNodeRadius = (datum = {}) => {
-    if (datum?.nodeShape === NODE_SHAPES.DOT) {
-        return 4;
-    }
-
-    const base = datum?.nodeType === 'memo' || (Number.isFinite(datum?.level) && datum.level === 0)
-        ? 18
-        : 14;
-
-    return base * getNodeSizeScale(datum);
-};
-
-const computeDeterministicOffset = (seed, magnitude = 0) => {
-    if (!seed || magnitude <= 0) {
-        return 0;
-    }
-
-    let hash = 0;
-    const input = String(seed);
-    for (let i = 0; i < input.length; i += 1) {
-        hash = ((hash << 5) - hash) + input.charCodeAt(i);
-        hash |= 0;
-    }
-
-    const normalized = ((hash % 200) / 100) - 1; // [-1, 1) 범위
-    return normalized * magnitude;
-};
-
-const deriveTrimmedLine = (source, target, options = {}) => {
-    if (!source || !target) {
-        return null;
-    }
-
-    const sx = Number.isFinite(source.x) ? source.x : 0;
-    const sy = Number.isFinite(source.y) ? source.y : 0;
-    const tx = Number.isFinite(target.x) ? target.x : 0;
-    const ty = Number.isFinite(target.y) ? target.y : 0;
-
-    const dx = tx - sx;
-    const dy = ty - sy;
-    const distance = Math.hypot(dx, dy);
-
-    if (!Number.isFinite(distance) || distance === 0) {
-        return {
-            x1: sx,
-            y1: sy,
-            x2: tx,
-            y2: ty,
-        };
-    }
-
-    const unitX = dx / distance;
-    const unitY = dy / distance;
-    const normalX = -unitY;
-    const normalY = unitX;
-
-    let startRadius = Math.max(0, options.sourceRadius || 0);
-    let endRadius = Math.max(0, options.targetRadius || 0);
-
-    const maxRadius = distance * 0.45;
-    startRadius = Math.min(startRadius, maxRadius);
-    endRadius = Math.min(endRadius, maxRadius);
-
-    if (startRadius + endRadius > distance * 0.9) {
-        const scale = (distance * 0.9) / (startRadius + endRadius);
-        startRadius *= scale;
-        endRadius *= scale;
-    }
-
-    const baseX1 = sx + unitX * startRadius;
-    const baseY1 = sy + unitY * startRadius;
-    const baseX2 = tx - unitX * endRadius;
-    const baseY2 = ty - unitY * endRadius;
-
-    const offset = options.offset || 0;
-    const offsetX = normalX * offset;
-    const offsetY = normalY * offset;
-
-    return {
-        x1: baseX1 + offsetX,
-        y1: baseY1 + offsetY,
-        x2: baseX2 + offsetX,
-        y2: baseY2 + offsetY,
-    };
-};
-
-const getHierarchicalLinkCoordinates = (link) => {
+const getLinkEndpoints = (link) => {
     if (!link?.source || !link?.target) {
         return null;
     }
 
-    const sourceDatum = getNodeDatum(link.source);
-    const targetDatum = getNodeDatum(link.target);
-    const depth = Number.isFinite(link.target.depth) ? link.target.depth : 0;
-
-    const sourceRadius = estimateNodeRadius(sourceDatum) + 6;
-    const targetRadius = estimateNodeRadius(targetDatum) + 6;
-
-    const offsetMagnitude = depth <= 1 ? 0 : Math.min(12, depth * 2.5);
-    const offsetSeed = `${targetDatum?.id || targetDatum?.name || ''}:${depth}`;
-    const offset = computeDeterministicOffset(offsetSeed, offsetMagnitude);
-
-    return deriveTrimmedLine(link.source, link.target, {
-        sourceRadius,
-        targetRadius,
-        offset,
-    });
-};
-
-const getConnectionLinkCoordinates = (sourceNode, targetNode) => {
-    if (!sourceNode || !targetNode) {
-        return null;
-    }
-
-    const sourceDatum = getNodeDatum(sourceNode);
-    const targetDatum = getNodeDatum(targetNode);
-    const sourceRadius = estimateNodeRadius(sourceDatum) + 4;
-    const targetRadius = estimateNodeRadius(targetDatum) + 4;
-    const orderedPair = [getNodeId(sourceNode) || '', getNodeId(targetNode) || ''].sort().join('::');
-    const offset = computeDeterministicOffset(orderedPair, 9);
-
-    return deriveTrimmedLine(sourceNode, targetNode, {
-        sourceRadius,
-        targetRadius,
-        offset,
-    });
+    return {
+        x1: Number.isFinite(link.source.x) ? link.source.x : 0,
+        y1: Number.isFinite(link.source.y) ? link.source.y : 0,
+        x2: Number.isFinite(link.target.x) ? link.target.x : 0,
+        y2: Number.isFinite(link.target.y) ? link.target.y : 0,
+    };
 };
 
 /**
@@ -1659,7 +1540,7 @@ const ForceDirectedTree = ({
 
                             const linkWidth = isMemoLink ? 1.1 : 1.5;
                             const linkOpacity = isMemoLink ? 0.75 : 1;
-                            const coordinates = getHierarchicalLinkCoordinates(link);
+                            const coordinates = getLinkEndpoints(link);
 
                             if (!coordinates) {
                                 return null;
@@ -1707,7 +1588,7 @@ const ForceDirectedTree = ({
                                 : (involvesMemo ? 'rgba(45, 212, 191, 0.82)' : 'rgba(147, 197, 253, 0.88)');
 
                             const strokeWidth = involvesMemo ? 0.8 : 1.1;
-                            const coordinates = getConnectionLinkCoordinates(sourceNode, targetNode);
+                            const coordinates = getLinkEndpoints({ source: sourceNode, target: targetNode });
 
                             if (!coordinates) {
                                 return null;
@@ -2306,7 +2187,13 @@ const ForceDirectedTree = ({
     const splitControlButtonClassName = theme === 'light'
         ? 'rounded-full border border-slate-300/60 bg-white/90 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-white'
         : 'rounded-full border border-white/15 bg-slate-900/70 px-3 py-1 text-xs font-medium text-slate-100 shadow-lg transition hover:bg-slate-900';
-    const maximizeLabel = isSplitPanelMaximized ? '원래대로' : '전체 화면';
+    const maximizeLabel = isSplitPanelMaximized ? '원래 크기로' : '전체 화면';
+    const controlIconColor = theme === 'light'
+        ? 'rgba(30, 41, 59, 0.9)'
+        : 'rgba(241, 245, 249, 0.92)';
+    const maximizeIcon = isSplitPanelMaximized
+        ? <Minimize2 className="h-4 w-4" style={{ color: controlIconColor }} aria-hidden="true" />
+        : <Maximize2 className="h-4 w-4" style={{ color: controlIconColor }} aria-hidden="true" />;
 
     return (
         <div
@@ -2344,14 +2231,16 @@ const ForceDirectedTree = ({
                                 onClick={handleSplitPanelToggleMaximize}
                                 className={splitControlButtonClassName}
                             >
-                                {maximizeLabel}
+                                {maximizeIcon}
+                                <span className="sr-only">{maximizeLabel}</span>
                             </button>
                             <button
                                 type="button"
                                 onClick={handlePanelClose}
                                 className={splitControlButtonClassName}
                             >
-                                닫기
+                                <X className="h-4 w-4" style={{ color: controlIconColor }} aria-hidden="true" />
+                                <span className="sr-only">닫기</span>
                             </button>
                         </div>
                         <div className="flex h-full w-full overflow-hidden">

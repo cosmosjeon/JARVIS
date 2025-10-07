@@ -15,7 +15,6 @@ import { markNewLinks } from 'shared/utils/linkAnimationUtils';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
 import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
-import TreeWorkspaceToolbar from 'features/tree/ui/components/TreeWorkspaceToolbar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from 'shared/components/library/ThemeProvider';
 import { Sun, Moon, Sparkles, Settings } from 'lucide-react';
@@ -113,7 +112,6 @@ const HierarchicalForceTree = () => {
     setViewMode,
     isForceView,
     isTidyView,
-    toolbarProps,
   } = useTreeViewController({ initialMode: 'tree1' });
   const closeHandleMenu = useCallback(() => {
     setIsHandleMenuOpen(false);
@@ -1871,16 +1869,22 @@ const HierarchicalForceTree = () => {
           className="relative flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3"
           style={{ width: '240px' }}
         >
-          {/* 왼쪽: 드래그 점들 & 테마 버튼 */}
+          {/* 왼쪽: 설정 & 테마 버튼 */}
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-            {/* 드래그 점들 */}
-            <div className="flex space-x-1">
-              <div className="h-1 w-1 rounded-full bg-white/60"></div>
-              <div className="h-1 w-1 rounded-full bg-white/60"></div>
-              <div className="h-1 w-1 rounded-full bg-white/60"></div>
-            </div>
+            <button
+              ref={handleMenuButtonRef}
+              type="button"
+              className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/60 bg-black/40 p-0.5 transition-all duration-200 hover:bg-gray-700/80"
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleHandleMenu();
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+              title="트리 설정"
+            >
+              <Settings className="h-3.5 w-3.5 text-white/90" aria-hidden="true" />
+            </button>
 
-            {/* 테마 드롭다운 버튼 */}
             {/* 테마 토글 버튼 */}
             <button
               className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
@@ -1889,21 +1893,6 @@ const HierarchicalForceTree = () => {
               title={`테마 변경 (현재: ${activeTheme.label})`}
             >
               <ActiveThemeIcon className="h-3 w-3 text-white/90" />
-            </button>
-
-            <button
-              ref={handleMenuButtonRef}
-              type="button"
-              className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/60 bg-black/40 transition-all duration-200 hover:bg-gray-700/80"
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleHandleMenu();
-              }}
-              onMouseDown={(event) => event.stopPropagation()}
-              title="트리 설정"
-            >
-              <Settings className="h-3 w-3 text-white/90" aria-hidden="true" />
-              <span className="sr-only">트리 설정</span>
             </button>
           </div>
 
@@ -2083,14 +2072,6 @@ const HierarchicalForceTree = () => {
             </div>
           ) : null}
         </div>
-      </div>
-
-      {/* 뷰 선택 버튼 - 상단바 아래 */}
-      <div
-        className="absolute top-12 left-1/2 z-[1300] -translate-x-1/2"
-        style={{ pointerEvents: 'none' }}
-      >
-        <TreeWorkspaceToolbar {...toolbarProps} />
       </div>
 
       {isTreeSyncing && !initializingTree ? (

@@ -1,5 +1,273 @@
 import * as d3 from 'd3';
 
+const EDGE_FORCE_DEFAULTS = Object.freeze({
+    sampleRatios: [0.33, 0.5, 0.67],
+    nodePadding: 48,
+    linePadding: 56,
+    nodeStrength: 0.16,
+    lineStrength: 0.12,
+    counterForceRatio: 0.45,
+    sharedNodeStrengthFactor: 0.35,
+    intersectionBoost: 1.5,
+    fallbackRadius: 16,
+});
+
+const applyVelocity = (node, vx, vy) => {
+    if (!node) {
+        return;
+    }
+    node.vx = (node.vx || 0) + vx;
+    node.vy = (node.vy || 0) + vy;
+};
+
+const computeNodeRadius = (datum, fallback) => {
+    if (!datum || typeof datum !== 'object') {
+        return fallback;
+    }
+    if (datum.nodeShape === 'dot') {
+        return 4;
+    }
+    const base = (datum.nodeType === 'memo' || (Number.isFinite(datum.level) && datum.level === 0)) ? 18 : 14;
+    const scale = typeof datum.sizeValue === 'number' ? Math.max(0.1, datum.sizeValue / 50) : 1;
+    return base * scale;
+};
+
+const buildSampleCache = (linkCount, sampleCount) => (
+    Array.from({ length: linkCount }, () => (
+        Array.from({ length: sampleCount }, () => ({ x: 0, y: 0 }))
+    ))
+);
+
+const computeSamplePosition = (link, ratio) => {
+    const startX = Number.isFinite(link?.source?.x) ? link.source.x : 0;
+    const startY = Number.isFinite(link?.source?.y) ? link.source.y : 0;
+    const endX = Number.isFinite(link?.target?.x) ? link.target.x : 0;
+    const endY = Number.isFinite(link?.target?.y) ? link.target.y : 0;
+    return {
+        x: startX + (endX - startX) * ratio,
+        y: startY + (endY - startY) * ratio,
+    };
+};
+
+const updateSampleCache = (links, ratios, cache) => {
+    links.forEach((link, linkIndex) => {
+        const samples = cache[linkIndex];
+        ratios.forEach((ratio, sampleIndex) => {
+            const position = computeSamplePosition(link, ratio);
+            samples[sampleIndex].x = position.x;
+            samples[sampleIndex].y = position.y;
+        });
+    });
+};
+
+const rebuildNodeRadiusCache = (nodes, resolveDatum, cache, fallbackRadius) => {
+    cache.clear();
+    nodes.forEach((node) => {
+        const datum = resolveDatum(node);
+        cache.set(node, computeNodeRadius(datum, fallbackRadius));
+    });
+};
+
+const sharesEndpoint = (linkA, linkB) => (
+    linkA.source === linkB.source
+    || linkA.source === linkB.target
+    || linkA.target === linkB.source
+    || linkA.target === linkB.target
+);
+
+const orientationSign = (ax, ay, bx, by, cx, cy) => {
+    const value = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if (value > 0) return 1;
+    if (value < 0) return -1;
+    return 0;
+};
+
+const isBetween = (value, min, max) => value >= Math.min(min, max) && value <= Math.max(min, max);
+
+const onSegment = (px, py, qx, qy, rx, ry) => (
+    isBetween(qx, px, rx)
+    && isBetween(qy, py, ry)
+);
+
+const getSegmentPoints = (link) => ({
+    start: {
+        x: Number.isFinite(link?.source?.x) ? link.source.x : 0,
+        y: Number.isFinite(link?.source?.y) ? link.source.y : 0,
+    },
+    end: {
+        x: Number.isFinite(link?.target?.x) ? link.target.x : 0,
+        y: Number.isFinite(link?.target?.y) ? link.target.y : 0,
+    },
+});
+
+const segmentsIntersect = (linkA, linkB) => {
+    if (sharesEndpoint(linkA, linkB)) {
+        return false;
+    }
+    const segmentA = getSegmentPoints(linkA);
+    const segmentB = getSegmentPoints(linkB);
+
+    const o1 = orientationSign(segmentA.start.x, segmentA.start.y, segmentA.end.x, segmentA.end.y, segmentB.start.x, segmentB.start.y);
+    const o2 = orientationSign(segmentA.start.x, segmentA.start.y, segmentA.end.x, segmentA.end.y, segmentB.end.x, segmentB.end.y);
+    const o3 = orientationSign(segmentB.start.x, segmentB.start.y, segmentB.end.x, segmentB.end.y, segmentA.start.x, segmentA.start.y);
+    const o4 = orientationSign(segmentB.start.x, segmentB.start.y, segmentB.end.x, segmentB.end.y, segmentA.end.x, segmentA.end.y);
+
+    if (o1 !== o2 && o3 !== o4) {
+        return true;
+    }
+
+    if (o1 === 0 && onSegment(segmentA.start.x, segmentA.start.y, segmentB.start.x, segmentB.start.y, segmentA.end.x, segmentA.end.y)) return true;
+    if (o2 === 0 && onSegment(segmentA.start.x, segmentA.start.y, segmentB.end.x, segmentB.end.y, segmentA.end.x, segmentA.end.y)) return true;
+    if (o3 === 0 && onSegment(segmentB.start.x, segmentB.start.y, segmentA.start.x, segmentA.start.y, segmentB.end.x, segmentB.end.y)) return true;
+    if (o4 === 0 && onSegment(segmentB.start.x, segmentB.start.y, segmentA.end.x, segmentA.end.y, segmentB.end.x, segmentB.end.y)) return true;
+
+    return false;
+};
+
+const pushNodeAwayFromSample = (node, link, sample, nodeRadius, config, alpha) => {
+    const nodeX = Number.isFinite(node?.x) ? node.x : 0;
+    const nodeY = Number.isFinite(node?.y) ? node.y : 0;
+    const dx = nodeX - sample.x;
+    const dy = nodeY - sample.y;
+    const distance = Math.hypot(dx, dy);
+    const padding = nodeRadius + config.nodePadding;
+
+    if (!Number.isFinite(distance) || distance === 0 || distance >= padding) {
+        return;
+    }
+
+    const overlap = padding - distance;
+    const strength = (overlap / padding) * config.nodeStrength * alpha;
+    const unitX = dx / distance;
+    const unitY = dy / distance;
+
+    applyVelocity(node, unitX * strength, unitY * strength);
+
+    const counter = strength * config.counterForceRatio;
+    applyVelocity(link.source, -unitX * counter, -unitY * counter);
+    applyVelocity(link.target, -unitX * counter, -unitY * counter);
+};
+
+const applyLinkSampleRepulsion = (sampleA, sampleB, linkA, linkB, padding, strength, alpha) => {
+    const dx = sampleB.x - sampleA.x;
+    const dy = sampleB.y - sampleA.y;
+    const distance = Math.hypot(dx, dy);
+
+    if (!Number.isFinite(distance) || distance === 0 || distance >= padding) {
+        return;
+    }
+
+    const overlap = padding - distance;
+    const scaled = (overlap / padding) * strength * alpha;
+    const unitX = dx / distance;
+    const unitY = dy / distance;
+
+    applyVelocity(linkA.source, -unitX * scaled, -unitY * scaled);
+    applyVelocity(linkA.target, -unitX * scaled, -unitY * scaled);
+    applyVelocity(linkB.source, unitX * scaled, unitY * scaled);
+    applyVelocity(linkB.target, unitX * scaled, unitY * scaled);
+};
+
+const applyNodeLineForces = (params) => {
+    const { nodes, links, sampleCache, config, alpha, nodeRadiusByNode } = params;
+    nodes.forEach((node) => {
+        const radius = nodeRadiusByNode.get(node) || config.fallbackRadius;
+        links.forEach((link, linkIndex) => {
+            if (link.source === node || link.target === node) {
+                return;
+            }
+            sampleCache[linkIndex].forEach((sample) => {
+                pushNodeAwayFromSample(node, link, sample, radius, config, alpha);
+            });
+        });
+    });
+};
+
+const processLinkPair = ({ linkA, linkB, samplesA, samplesB, config, alpha }) => {
+    const baseMultiplier = sharesEndpoint(linkA, linkB) ? config.sharedNodeStrengthFactor : 1;
+    const baseStrength = config.lineStrength * baseMultiplier;
+    if (baseStrength <= 0) {
+        return;
+    }
+    const boost = segmentsIntersect(linkA, linkB) ? config.intersectionBoost : 1;
+    const effectiveStrength = baseStrength * boost;
+    samplesA.forEach((sampleA) => {
+        samplesB.forEach((sampleB) => {
+            applyLinkSampleRepulsion(sampleA, sampleB, linkA, linkB, config.linePadding, effectiveStrength, alpha);
+        });
+    });
+};
+
+const applyLinkPairForces = (params) => {
+    const { links, sampleCache, config, alpha } = params;
+    for (let i = 0; i < links.length; i += 1) {
+        for (let j = i + 1; j < links.length; j += 1) {
+            processLinkPair({
+                linkA: links[i],
+                linkB: links[j],
+                samplesA: sampleCache[i],
+                samplesB: sampleCache[j],
+                config,
+                alpha,
+            });
+        }
+    }
+};
+
+const runEdgeRepulsionStep = (context) => {
+    const { alpha, links, sampleCache, config, nodes, resolveDatum, nodeRadiusByNode } = context;
+    updateSampleCache(links, config.sampleRatios, sampleCache);
+    rebuildNodeRadiusCache(nodes, resolveDatum, nodeRadiusByNode, config.fallbackRadius);
+    applyNodeLineForces({
+        nodes,
+        links,
+        sampleCache,
+        config,
+        alpha,
+        nodeRadiusByNode,
+    });
+    applyLinkPairForces({
+        links,
+        sampleCache,
+        config,
+        alpha,
+    });
+};
+
+const createEdgeForceWithContext = (context) => {
+    let nodesRef = [];
+    const force = (alpha) => {
+        if (!nodesRef.length) {
+            return;
+        }
+        runEdgeRepulsionStep({ ...context, alpha, nodes: nodesRef });
+    };
+    force.initialize = (simulationNodes) => {
+        nodesRef = Array.isArray(simulationNodes) ? simulationNodes : [];
+    };
+    return force;
+};
+
+const createLinkRepulsionForce = (links, resolveDatum, options = {}) => {
+    if (options && options.enabled === false) {
+        return null;
+    }
+    if (!Array.isArray(links) || links.length === 0) {
+        return null;
+    }
+
+    const config = { ...EDGE_FORCE_DEFAULTS, ...options };
+    const context = {
+        links,
+        resolveDatum,
+        config,
+        sampleCache: buildSampleCache(links.length, config.sampleRatios.length),
+        nodeRadiusByNode: new Map(),
+    };
+
+    return createEdgeForceWithContext(context);
+};
+
 /**
  * ForceSimulationService
  * 
@@ -172,7 +440,6 @@ class ForceSimulationService {
 
         // Force simulation이 비활성화된 경우 simulation을 생성하지 않음
         if (!enableForceSimulation) {
-            // 즉시 최종 위치로 설정하고 콜백 호출
             if (onTick && typeof onTick === 'function') {
                 onTick(nodes, links);
             }
@@ -187,6 +454,11 @@ class ForceSimulationService {
             .force('y', forceY)
             .force('radial', radialForce)
             .force('center', d3.forceCenter(0, 0));
+
+        const edgeRepulsionForce = createLinkRepulsionForce(links, resolveDatum, options.edgeRepulsion);
+        if (edgeRepulsionForce) {
+            this.simulation.force('edge-repulsion', edgeRepulsionForce);
+        }
 
         // Tick 콜백 등록
         if (onTick && typeof onTick === 'function') {
