@@ -12,8 +12,6 @@ const MemoEditorView = ({
   titleRef,
   title,
   handleTitleChange,
-  onDelete,
-  onClose,
   blocks,
   renderBlock,
   slashPalette,
@@ -35,41 +33,21 @@ const MemoEditorView = ({
         ref={editorRef}
         data-interactive-zone="true"
       >
-        <div className="flex items-center justify-between border-b border-slate-200/70 px-24 py-10">
-          <div className="flex flex-1 flex-col gap-2">
+        <div className="flex border-b border-slate-200/70 px-24 py-10">
+          <div className="flex flex-col gap-2">
             <input
               ref={titleRef}
               value={title}
               onChange={(event) => handleTitleChange(event.target.value)}
               placeholder="제목 없는 페이지"
-              className="text-3xl font-semibold tracking-tight text-slate-900 outline-none placeholder:text-slate-400"
-              style={{ backgroundColor: 'transparent' }}
+              className="text-3xl font-semibold tracking-tight outline-none placeholder:text-[color:var(--memo-title-placeholder-color)]"
+              style={{
+                backgroundColor: 'transparent',
+                color: palette.text,
+                '--memo-title-placeholder-color': palette.hint,
+              }}
             />
             <p className="text-xs text-slate-400">생각을 빠르게 적고, 가볍게 구조화하세요.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {typeof onDelete === 'function' && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  onDelete();
-                }}
-                className="rounded-full border border-red-200 px-3 py-1 text-xs font-medium text-red-500 transition hover:bg-red-50"
-              >
-                삭제
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                onClose();
-              }}
-              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
-            >
-              닫기
-            </button>
           </div>
         </div>
 

@@ -588,6 +588,18 @@ export const useMemoEditorController = ({
         }
 
         if (event.key === 'Enter' && !event.shiftKey) {
+            if (block.type === BLOCK_TYPES.TOGGLE) {
+                event.preventDefault();
+                const newBlock = createBlock(BLOCK_TYPES.TEXT);
+                setBlocks((prev) => setBlockAtPath(prev, path, (current) => ({
+                    ...current,
+                    props: { ...(current.props || {}), expanded: true },
+                    children: [...(current.children || []), newBlock],
+                })));
+                requestAnimationFrame(() => focusBlock(newBlock.id, 'start'));
+                return;
+            }
+
             if (block.type === BLOCK_TYPES.TEXT) {
                 const marker = decodeHtml(stripHtml(block.html || '')).trim();
                 if (marker === '---') {
