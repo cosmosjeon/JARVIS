@@ -6,18 +6,12 @@ import {
   createTrayBridge,
 } from 'infrastructure/electron/bridges';
 
-const defaultAccelerator = typeof process !== 'undefined' && process?.platform === 'darwin'
-  ? 'Command+Shift+J'
-  : 'Control+Shift+J';
-
 const SettingsContext = createContext({
-  doubleCtrlEnabled: true,
   trayEnabled: true,
-  accelerator: defaultAccelerator,
-  setDoubleCtrlEnabled: () => { },
   setTrayEnabled: () => { },
-  setAccelerator: () => { },
-  resetAccelerator: () => { },
+  accessibilityGranted: null,
+  refreshAccessibilityStatus: () => { },
+  requestAccessibility: () => Promise.resolve(),
 });
 
 const normalizeBoolean = (value, fallback = true) => {
@@ -28,11 +22,8 @@ const normalizeBoolean = (value, fallback = true) => {
 };
 
 export const SettingsProvider = ({ children }) => {
-  const isWindows = typeof process !== 'undefined' && process?.platform === 'win32';
-  const [doubleCtrlEnabled, setDoubleCtrlEnabledState] = useState(isWindows);
   const [trayEnabled, setTrayEnabledState] = useState(true);
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
-  const [accelerator, setAcceleratorState] = useState(defaultAccelerator);
 
   const settingsBridge = useMemo(() => createSettingsBridge(), []);
   const loggerBridge = useMemo(() => createLoggerBridge(), []);
@@ -55,13 +46,7 @@ export const SettingsProvider = ({ children }) => {
 
     const applySettings = (next = {}) => {
       if (!mounted) return;
-      setDoubleCtrlEnabledState(normalizeBoolean(next.doubleCtrlEnabled, isWindows));
       setTrayEnabledState(normalizeBoolean(next.trayEnabled, true));
-      if (typeof next.accelerator === 'string' && next.accelerator.trim()) {
-        setAcceleratorState(next.accelerator.trim());
-      } else {
-        setAcceleratorState(defaultAccelerator);
-      }
     };
 
     const load = async () => {
@@ -92,13 +77,6 @@ export const SettingsProvider = ({ children }) => {
     settingsBridge.updateSettings?.(partial);
   }, [settingsBridge]);
 
-  const setDoubleCtrlEnabled = useCallback((next) => {
-    setDoubleCtrlEnabledState(next);
-    updateSettings({ doubleCtrlEnabled: next });
-    loggerBridge.log?.('info', 'settings_double_ctrl_changed', { enabled: next });
-  }, [loggerBridge, updateSettings]);
-
-
   const setTrayEnabled = useCallback((next) => {
     setTrayEnabledState(next);
     updateSettings({ trayEnabled: next });
@@ -110,21 +88,6 @@ export const SettingsProvider = ({ children }) => {
     refreshAccessibilityStatus();
     return result;
   }, [refreshAccessibilityStatus, systemBridge]);
-
-  const setAccelerator = useCallback((next) => {
-    if (typeof next === 'string' && next.trim()) {
-      const normalized = next.trim();
-      setAcceleratorState(normalized);
-      updateSettings({ accelerator: normalized });
-      loggerBridge.log?.('info', 'settings_accelerator_changed', { accelerator: normalized });
-    }
-  }, [loggerBridge, updateSettings]);
-
-  const resetAccelerator = useCallback(() => {
-    setAcceleratorState(defaultAccelerator);
-    updateSettings({ accelerator: defaultAccelerator });
-    loggerBridge.log?.('info', 'settings_accelerator_reset');
-  }, [loggerBridge, updateSettings]);
 
   useEffect(() => {
     if (!trayBridge.onTrayCommand) {
@@ -143,17 +106,12 @@ export const SettingsProvider = ({ children }) => {
   }, [refreshAccessibilityStatus, requestAccessibility, trayBridge]);
 
   const value = useMemo(() => ({
-    doubleCtrlEnabled,
     trayEnabled,
-    accelerator,
     accessibilityGranted,
-    setDoubleCtrlEnabled,
     setTrayEnabled,
-    setAccelerator,
-    resetAccelerator,
     refreshAccessibilityStatus,
     requestAccessibility,
-  }), [doubleCtrlEnabled, trayEnabled, accelerator, accessibilityGranted, setDoubleCtrlEnabled, setTrayEnabled, setAccelerator, resetAccelerator, refreshAccessibilityStatus, requestAccessibility]);
+  }), [trayEnabled, accessibilityGranted, setTrayEnabled, refreshAccessibilityStatus, requestAccessibility]);
 
   return (
     <SettingsContext.Provider value={value}>

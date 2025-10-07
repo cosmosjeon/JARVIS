@@ -2,7 +2,6 @@ const registerAppEventHandlers = ({
   app,
   handleOAuthDeepLink,
   getLogger,
-  getHotkeyService,
   getTrayService,
   getOAuthServer,
   ensureMainWindowFocus,
@@ -24,7 +23,6 @@ const registerAppEventHandlers = ({
   });
 
   app.on('will-quit', () => {
-    getHotkeyService()?.dispose();
     getTrayService()?.dispose();
     const oauthServer = getOAuthServer();
     const logger = getLogger?.();

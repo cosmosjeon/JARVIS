@@ -13,7 +13,6 @@ const registerIpcHandlers = ({
   logs,
   llmService,
   settingsManager,
-  hotkeyService,
   trayService,
   createLogBridge,
   screen,
@@ -50,11 +49,9 @@ const registerIpcHandlers = ({
     ipcMain,
     getSettings: () => settingsManager.getSettings(),
     setSettings: (next) => settingsManager.setSettings(next),
-    applyHotkeySettings: () => hotkeyService.applyHotkeySettings(),
     applyTraySettings: () => trayService.applyTraySettings(settingsManager.getSettings()),
     persistSettings: () => settingsManager.persistSettings(),
     broadcastSettings: () => settingsManager.broadcastSettings(),
-    defaultAccelerator: settingsManager.defaultAccelerator,
   });
 
   registerWindowHandlers({

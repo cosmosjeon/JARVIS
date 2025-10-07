@@ -3,21 +3,9 @@ const path = require('path');
 const { app } = require('electron');
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
-const DEFAULT_ACCELERATOR = process.platform === 'darwin' ? 'Command+1' : 'Control+Shift+J';
-
 const defaultSettings = {
-  doubleCtrlEnabled: process.platform === 'win32',
   autoPasteEnabled: true,
   trayEnabled: true,
-  accelerator: DEFAULT_ACCELERATOR,
-};
-
-const normalizeAccelerator = (value) => {
-  if (typeof value !== 'string') {
-    return DEFAULT_ACCELERATOR;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : DEFAULT_ACCELERATOR;
 };
 
 const readSettings = () => {
@@ -30,7 +18,6 @@ const readSettings = () => {
     return {
       ...defaultSettings,
       ...parsed,
-      accelerator: normalizeAccelerator(parsed.accelerator),
     };
   } catch (error) {
     return { ...defaultSettings };
@@ -52,7 +39,7 @@ const createSettingsStore = () => {
 
   const get = () => current;
   const set = (next) => {
-    current = { ...defaultSettings, ...next, accelerator: normalizeAccelerator(next.accelerator) };
+    current = { ...defaultSettings, ...next };
     return current;
   };
   const persist = () => writeSettings(current);
@@ -66,7 +53,6 @@ const createSettingsStore = () => {
 
 module.exports = {
   SETTINGS_FILE,
-  DEFAULT_ACCELERATOR,
   defaultSettings,
   readSettings,
   writeSettings,

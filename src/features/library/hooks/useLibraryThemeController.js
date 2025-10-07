@@ -1,16 +1,26 @@
-import { useCallback, useMemo } from 'react';
-import { Sparkles, Sun, Moon } from 'lucide-react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { Sun, Moon } from 'lucide-react';
 
 const THEME_OPTIONS = Object.freeze([
-  { label: '반투명', value: 'glass', icon: Sparkles },
   { label: '라이트', value: 'light', icon: Sun },
   { label: '다크', value: 'dark', icon: Moon },
 ]);
 
-const resolveActiveTheme = (currentTheme) => THEME_OPTIONS.find((option) => option.value === currentTheme)
-  || THEME_OPTIONS[0];
+const NORMALIZE_THEME = Object.freeze({ glass: 'light' });
+
+const resolveActiveTheme = (currentTheme) => {
+  const normalized = NORMALIZE_THEME[currentTheme] || currentTheme;
+  return THEME_OPTIONS.find((option) => option.value === normalized) || THEME_OPTIONS[0];
+};
 
 export const useLibraryThemeController = ({ theme, setTheme }) => {
+  useEffect(() => {
+    const normalized = NORMALIZE_THEME[theme] || theme;
+    if (normalized !== theme) {
+      setTheme(normalized);
+    }
+  }, [theme, setTheme]);
+
   const active = useMemo(() => resolveActiveTheme(theme), [theme]);
 
   const cycleTheme = useCallback(() => {
