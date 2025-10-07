@@ -69,6 +69,7 @@ export default function ChatMessageList({
   userBubbleMaxWidth = 320,
   assistantMessageMaxWidth = 560,
   retryingMessageMap,
+  isScrollable = true,
 }) {
   const [internalCopiedMap, setInternalCopiedMap] = useState({});
   const [internalSpinningMap, setInternalSpinningMap] = useState({});
@@ -87,13 +88,26 @@ export default function ChatMessageList({
 
   useEffect(() => {
     if (typeof onContainerRef === 'function') {
-      onContainerRef(scrollContainerRef.current);
-      return () => onContainerRef(null);
+      const element = scrollContainerRef.current;
+      console.debug('[ChatMessageList] register container', {
+        element,
+        isScrollable,
+      });
+      onContainerRef(element);
+      return () => {
+        console.debug('[ChatMessageList] unregister container', {
+          element,
+        });
+        onContainerRef(null);
+      };
     }
     return undefined;
   }, [onContainerRef]);
 
   useEffect(() => {
+    if (!isScrollable) {
+      return;
+    }
     if (isTyping && scrollContainerRef?.current) {
       const container = scrollContainerRef.current;
       requestAnimationFrame(() => {
@@ -102,7 +116,7 @@ export default function ChatMessageList({
         }
       });
     }
-  }, [messages, isTyping]);
+  }, [isScrollable, isTyping, messages]);
 
   const hasExternalRetryingState = Boolean(retryingMessageMap);
   const activeSpinningMap = hasExternalRetryingState ? retryingMessageMap : internalSpinningMap;
@@ -140,13 +154,16 @@ export default function ChatMessageList({
     <div
       ref={scrollContainerRef}
       className={cn(
-        'glass-scrollbar flex h-full min-h-0 flex-col gap-6 overflow-y-auto overflow-x-hidden',
+        'flex w-full flex-col gap-6',
+        isScrollable && 'glass-scrollbar h-full min-h-0 flex-1 overflow-y-auto overflow-x-hidden',
         className,
       )}
       aria-live="polite"
       role="log"
       data-testid="chat-message-list"
       data-assistant-name={title}
+      data-block-pan="true"
+      style={{ userSelect: 'text', position: 'relative', zIndex: 0, pointerEvents: 'auto' }}
     >
       {messages.map((message, index) => {
         const key = getMessageKey(message, `message-${index}`);

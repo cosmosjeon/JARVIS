@@ -6,6 +6,7 @@ import createClipboardBridge from 'infrastructure/electron/bridges/clipboardBrid
 import { useNodeAssistantConversation } from 'features/tree/hooks/useNodeAssistantConversation';
 import NodeNavigationService from 'features/tree/services/node-assistant/NodeNavigationService';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
+import { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -97,6 +98,20 @@ export const useNodeAssistantPanelController = ({
 
   const [spinningMap, setSpinningMap] = useState({});
 
+  const shouldFocusComposer = useCallback(() => {
+    if (typeof document === 'undefined') {
+      return true;
+    }
+    if (document.querySelector(`[${EDITABLE_TITLE_ACTIVE_ATTR}="true"]`)) {
+      return false;
+    }
+    const activeElement = document.activeElement;
+    if (!activeElement) {
+      return true;
+    }
+    return !activeElement.closest(`[${EDITABLE_TITLE_ACTIVE_ATTR}="true"]`);
+  }, []);
+
   const scaledPanelSizes = useMemo(
     () => getScaledPanelSizes(nodeScaleFactor),
     [nodeScaleFactor],
@@ -130,7 +145,7 @@ export const useNodeAssistantPanelController = ({
 
   useLayoutEffect(() => {
     const timer = setTimeout(() => {
-      if (composerRef.current && !hasFocusedComposer) {
+      if (composerRef.current && !hasFocusedComposer && shouldFocusComposer()) {
         composerRef.current.focus();
         const length = composerRef.current.value.length;
         composerRef.current.setSelectionRange(length, length);
@@ -139,7 +154,7 @@ export const useNodeAssistantPanelController = ({
     }, 50);
 
     return () => clearTimeout(timer);
-  }, [node, hasFocusedComposer]);
+  }, [hasFocusedComposer, node, shouldFocusComposer]);
 
   useEffect(() => {
     composerValueRef.current = composerValue;
@@ -333,7 +348,9 @@ export const useNodeAssistantPanelController = ({
       });
 
       setComposerValue(trimmed);
-      composerRef.current?.focus?.();
+      if (shouldFocusComposer()) {
+        composerRef.current?.focus?.();
+      }
       setPlaceholderNotice({ type: 'info', message: '클립보드 텍스트가 입력창에 채워졌습니다.' });
     });
 
@@ -356,7 +373,7 @@ export const useNodeAssistantPanelController = ({
       unsubscribeClipboard?.();
       unsubscribeError?.();
     };
-  }, [autoPasteEnabled, disableHighlightMode]);
+  }, [autoPasteEnabled, disableHighlightMode, shouldFocusComposer]);
 
   const handleHighlightToggle = useCallback(() => {
     setIsHighlightMode((prev) => {
@@ -466,10 +483,13 @@ export const useNodeAssistantPanelController = ({
     if (targetNode) {
       onNodeSelect(targetNode);
       setTimeout(() => {
+        if (!shouldFocusComposer()) {
+          return;
+        }
         composerRef.current?.focus();
       }, 100);
     }
-  }, [node?.id, onNodeSelect]);
+  }, [node?.id, onNodeSelect, shouldFocusComposer]);
 
   useEffect(() => {
     if (isTyping && messageContainerRef.current) {
@@ -562,15 +582,16 @@ export const useNodeAssistantPanelController = ({
     if (!node) return;
 
     const timer = setTimeout(() => {
-      if (composerRef.current) {
-        composerRef.current.focus();
-        const length = composerRef.current.value.length;
-        composerRef.current.setSelectionRange(length, length);
+      if (!composerRef.current || !shouldFocusComposer()) {
+        return;
       }
+      composerRef.current.focus();
+      const length = composerRef.current.value.length;
+      composerRef.current.setSelectionRange(length, length);
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [node]);
+  }, [node, shouldFocusComposer]);
 
   const panelStyles = useMemo(() => buildPanelStyles(theme), [theme]);
 

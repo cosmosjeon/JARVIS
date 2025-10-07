@@ -16,7 +16,7 @@ const NodeAssistantPanelView = ({
   messages,
   handleRetryMessage,
   handleCopyMessage,
-  spinningMap,
+  spinningMap = {},
   attachments = [],
   onAttachmentRemove = () => {},
   onClearAttachments = () => {},
@@ -91,7 +91,7 @@ const NodeAssistantPanelView = ({
       onCopy={handleCopyMessage}
       panelStyles={panelStyles}
       theme={theme}
-      className="flex-1 min-h-0 pr-1"
+      className="flex-1 min-h-0 pr-1 h-full"
       onContainerRef={registerMessageContainer}
       assistantMessageMaxWidth={560}
       userBubbleMaxWidth={280}
@@ -150,7 +150,11 @@ const NodeAssistantPanelView = ({
       </div>
     ) : null}
 
-    <div className="flex -mb-2 flex-shrink-0 justify-start" data-block-pan="true">
+    <div
+      className="flex -mb-2 flex-shrink-0 justify-start"
+      data-block-pan="true"
+      style={{ position: 'relative', zIndex: 2 }}
+    >
       <button
         type="button"
         onClick={handleHighlightToggle}

@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Send, Loader2 } from 'lucide-react';
-import { ScrollArea } from 'shared/ui/scroll-area';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
-import EditableTitle from 'shared/ui/EditableTitle';
+import EditableTitle, { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
 import AgentClient from 'infrastructure/ai/agentClient';
 import Highlighter from 'web-highlighter';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
@@ -33,6 +32,24 @@ const LibraryQAPanel = ({
   const highlightHandlersRef = useRef({ create: null, remove: null });
   const highlightStoreRef = useRef(new HighlightSelectionStore());
   const [highlightNotice, setHighlightNotice] = useState(null);
+
+  const handleRegisterMessageContainer = useCallback((element) => {
+    messageContainerRef.current = element;
+    console.debug('[LibraryQAPanel] message container registered', element);
+  }, []);
+
+  const isEditableTitleActive = useCallback(() => {
+    if (typeof document === 'undefined') {
+      return false;
+    }
+    if (document.querySelector(`[${EDITABLE_TITLE_ACTIVE_ATTR}="true"]`)) {
+      return true;
+    }
+    const activeElement = document.activeElement;
+    return Boolean(
+      activeElement && activeElement.closest(`[${EDITABLE_TITLE_ACTIVE_ATTR}="true"]`),
+    );
+  }, []);
 
   const handleHighlighterCreate = useCallback(({ sources = [] }) => {
     const { added, size } = highlightStoreRef.current.addSources(sources);
@@ -79,15 +96,18 @@ const LibraryQAPanel = ({
 
   const enableHighlightMode = useCallback(() => {
     if (highlighterRef.current) {
+      console.debug('[LibraryQAPanel] highlight already active');
       return true;
     }
 
     if (typeof window === 'undefined') {
+      console.debug('[LibraryQAPanel] enableHighlightMode skipped: no window');
       return false;
     }
 
     const root = messageContainerRef.current;
     if (!root) {
+      console.debug('[LibraryQAPanel] enableHighlightMode failed: no root');
       setHighlightNotice({ type: 'warning', message: '메시지 영역을 찾을 수 없습니다.' });
       return false;
     }
@@ -114,6 +134,7 @@ const LibraryQAPanel = ({
       setHighlightNotice({ type: 'info', message: '질문으로 만들 텍스트를 드래그해 선택하세요.' });
       return true;
     } catch (error) {
+      console.error('[LibraryQAPanel] enableHighlightMode error', error);
       setHighlightNotice({ type: 'warning', message: '하이라이트 모드 초기화에 실패했습니다.' });
       return false;
     }
@@ -229,6 +250,10 @@ const LibraryQAPanel = ({
   }, [onNewNodeCreated, onNodeSelect, selectedNode, selectedTree, user]);
 
   const toggleMultiQuestionMode = useCallback(() => {
+    console.debug('[LibraryQAPanel] toggleMultiQuestionMode click', {
+      isMultiQuestionMode,
+      containerExists: Boolean(messageContainerRef.current),
+    });
     if (isMultiQuestionMode) {
       disableHighlightMode();
       setIsMultiQuestionMode(false);
@@ -236,6 +261,10 @@ const LibraryQAPanel = ({
       return;
     }
     const enabled = enableHighlightMode();
+    console.debug('[LibraryQAPanel] enableHighlightMode invoked', { container: messageContainerRef.current, button: document.querySelector('button[aria-label="하이라이트 모드"]') });
+    console.debug('[LibraryQAPanel] enableHighlightMode result', enabled, {
+      container: messageContainerRef.current,
+    });
     if (enabled) {
       setIsMultiQuestionMode(true);
     }
@@ -289,18 +318,20 @@ const LibraryQAPanel = ({
   // 노드가 선택되거나 변경되면 입력창에 포커스
   useEffect(() => {
     if (selectedNode && textareaRef.current) {
-      // 약간의 지연을 두어 DOM이 업데이트된 후 포커스
       const timer = setTimeout(() => {
-        if (textareaRef.current && !isProcessing && !isComposing) {
-          textareaRef.current.focus();
-          // 커서를 텍스트 끝으로 이동
-          const length = textareaRef.current.value.length;
-          textareaRef.current.setSelectionRange(length, length);
+        if (!textareaRef.current || isProcessing || isComposing) {
+          return;
         }
+        if (isEditableTitleActive()) {
+          return;
+        }
+        textareaRef.current.focus();
+        const length = textareaRef.current.value.length;
+        textareaRef.current.setSelectionRange(length, length);
       }, 150);
       return () => clearTimeout(timer);
     }
-  }, [selectedNode, isProcessing, isComposing]);
+  }, [isComposing, isEditableTitleActive, isProcessing, selectedNode]);
 
   // 타이핑 애니메이션을 위한 타이머 정리
   const clearTypingTimers = useCallback(() => {
@@ -595,21 +626,22 @@ const LibraryQAPanel = ({
         </div>
       </div>
 
-      <ScrollArea className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
-        {messages.length === 0 ? (
+      {messages.length === 0 ? (
+        <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
           <div className="text-center text-sm py-8" style={{ color: subtleTextColor }}>
             질문을 입력해보세요.
           </div>
-        ) : (
-          <ChatMessageList
-            title="Assistant"
-            messages={messages}
-            endRef={messagesEndRef}
-            className="p-6"
-            onContainerRef={(element) => { messageContainerRef.current = element; }}
-          />
-        )}
-      </ScrollArea>
+        </div>
+      ) : (
+        <ChatMessageList
+          title="Assistant"
+          messages={messages}
+          endRef={messagesEndRef}
+          className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
+          onContainerRef={handleRegisterMessageContainer}
+          isScrollable={false}
+        />
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-200/60 bg-red-50 px-3 py-2 text-xs text-red-500 shadow-sm">
@@ -617,7 +649,11 @@ const LibraryQAPanel = ({
         </div>
       )}
 
-      <div className="flex -mb-2 flex-shrink-0 justify-start" data-block-pan="true">
+      <div
+        className="flex -mb-2 flex-shrink-0 justify-start"
+        data-block-pan="true"
+        style={{ position: 'relative', zIndex: 2 }}
+      >
         <button
           type="button"
           onClick={toggleMultiQuestionMode}
