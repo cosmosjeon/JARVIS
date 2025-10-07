@@ -39,12 +39,18 @@ const NODE_FILL_LIGHT_EVEN = '#FFFFFF';
 const NODE_FILL_LIGHT_ODD = '#000000';
 const NODE_FILL_DARK_EVEN = '#FFFFFF';
 const NODE_FILL_DARK_ODD = '#000000';
+const NODE_FILL_ROOT_LIGHT = '#FF6B6B';
+const NODE_FILL_ROOT_DARK = '#DC2626';
 const NODE_STROKE_LIGHT = '#CBD5F5';
 const NODE_STROKE_DARK = '#94A3B8';
+const NODE_STROKE_ROOT_LIGHT = '#F97316';
+const NODE_STROKE_ROOT_DARK = '#FCA5A5';
 const LABEL_COLOR_LIGHT_EVEN = '#111111';
 const LABEL_COLOR_LIGHT_ODD = '#F9FAFB';
+const LABEL_COLOR_LIGHT_ROOT = '#0F172A';
 const LABEL_COLOR_DARK_EVEN = '#0F172A';
 const LABEL_COLOR_DARK_ODD = '#F8FAFC';
+const LABEL_COLOR_DARK_ROOT = '#FEF2F2';
 const ARROW_HEAD_LENGTH = 8;
 const ARROW_HEAD_SPREAD = 4;
 
@@ -1719,7 +1725,10 @@ const ForceDirectedTree = ({
                             let fillColor;
                             let textColor;
 
-                            if (isLightMode) {
+                            if (isRootNode) {
+                                fillColor = isLightMode ? NODE_FILL_ROOT_LIGHT : NODE_FILL_ROOT_DARK;
+                                textColor = isLightMode ? LABEL_COLOR_LIGHT_ROOT : LABEL_COLOR_DARK_ROOT;
+                            } else if (isLightMode) {
                                 fillColor = isEvenDepth ? NODE_FILL_LIGHT_EVEN : NODE_FILL_LIGHT_ODD;
                                 textColor = isEvenDepth ? LABEL_COLOR_LIGHT_EVEN : LABEL_COLOR_LIGHT_ODD;
                             } else {
@@ -1727,7 +1736,9 @@ const ForceDirectedTree = ({
                                 textColor = isEvenDepth ? LABEL_COLOR_DARK_EVEN : LABEL_COLOR_DARK_ODD;
                             }
 
-                            const strokeColor = isLightMode ? NODE_STROKE_LIGHT : NODE_STROKE_DARK;
+                            const strokeColor = isRootNode
+                                ? (isLightMode ? NODE_STROKE_ROOT_LIGHT : NODE_STROKE_ROOT_DARK)
+                                : (isLightMode ? NODE_STROKE_LIGHT : NODE_STROKE_DARK);
 
                             const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
                             const baseStrokeWidth = isRootNode ? 0.9 : 0.6;

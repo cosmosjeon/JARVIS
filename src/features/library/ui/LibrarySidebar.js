@@ -13,6 +13,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+const FALLBACK_THEME_LABEL = '테마';
+
 const LibrarySidebar = ({
   folders,
   trees,
@@ -27,6 +29,12 @@ const LibrarySidebar = ({
   onManageVoranBox,
   onCreateFolder,
   onCreateTree,
+  onCycleTheme = () => {},
+  onRefresh = () => {},
+  onSignOut = () => {},
+  activeThemeLabel,
+  ActiveThemeIcon,
+  user,
   canCreateTree = true,
   isLoading = false,
   onToggleFolder,
@@ -53,6 +61,12 @@ const LibrarySidebar = ({
       return acc;
     }, new Map());
   }, [folders, trees]);
+
+  const ThemeIcon = ActiveThemeIcon;
+  const userLabel = user?.email || user?.user_metadata?.full_name || '게스트';
+  const themeLabel = activeThemeLabel || FALLBACK_THEME_LABEL;
+
+  const canSignOut = Boolean(user);
 
   const toggleLabel = collapsed ? '사이드바 펼치기' : '사이드바 접기';
   const handleToggleCollapsed = () => {
@@ -92,11 +106,11 @@ const LibrarySidebar = ({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-3 border-b border-border px-5 py-6">
+          <div className="flex items-center gap-4 border-b border-border px-6 py-8">
             <Button
               type="button"
               variant="outline"
-              className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
+              className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
               onClick={onManageVoranBox}
             >
               <span className="flex items-center gap-2">
@@ -105,7 +119,7 @@ const LibrarySidebar = ({
               </span>
               <span className="text-xs text-muted-foreground">관리</span>
             </Button>
-            {renderToggleButton(false, 'ml-1 flex-shrink-0')}
+            {renderToggleButton(false, 'ml-4 flex-shrink-0')}
           </div>
 
           <ScrollArea className="flex-1">
@@ -297,6 +311,46 @@ const LibrarySidebar = ({
               </div>
             </div>
           </ScrollArea>
+
+          <div className="border-t border-border px-5 py-4 space-y-3">
+            <div className="text-xs text-muted-foreground/80">
+              {canSignOut ? (
+                <span className="font-medium text-foreground">{userLabel}</span>
+              ) : (
+                <span className="font-medium text-muted-foreground">로그인 필요</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 rounded-full border-border bg-background/40 text-card-foreground"
+                onClick={onCycleTheme}
+                title={`테마 변경 (현재: ${themeLabel})`}
+              >
+                {ThemeIcon ? <ThemeIcon className="h-4 w-4" /> : <span className="text-xs">🎨</span>}
+                <span className="sr-only">테마 변경</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRefresh}
+                disabled={isLoading}
+                className="border-border bg-background/40 text-card-foreground hover:bg-background/60"
+              >
+                {isLoading ? '새로고침 중' : '새로고침'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onSignOut}
+                disabled={!canSignOut}
+                className="text-muted-foreground hover:text-card-foreground disabled:opacity-60"
+              >
+                로그아웃
+              </Button>
+            </div>
+          </div>
         </>
       )}
     </aside>

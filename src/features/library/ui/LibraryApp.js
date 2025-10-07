@@ -1,5 +1,4 @@
 import React from 'react';
-import LibraryActionToolbar from './LibraryActionToolbar';
 import LibrarySidebar from './LibrarySidebar';
 import LibraryContent from './LibraryContent';
 import VoranBoxManager from './components/VoranBoxManager';
@@ -18,7 +17,8 @@ const LibraryApp = () => {
   } = useLibraryAppViewModel();
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className="relative flex h-screen bg-background text-foreground overflow-hidden">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-8" style={{ WebkitAppRegion: 'drag' }} />
       <LibrarySidebar
         collapsed={state.isSidebarCollapsed}
         folders={state.folders}
@@ -34,6 +34,12 @@ const LibraryApp = () => {
         onManageVoranBox={handlers.showVoranBox}
         onCreateFolder={() => handlers.openCreateDialog('folder')}
         onCreateTree={handlers.createTree}
+        onCycleTheme={theme.cycle}
+        onRefresh={handlers.refreshLibrary}
+        onSignOut={signOut}
+        activeThemeLabel={theme.active.label}
+        ActiveThemeIcon={theme.active.icon}
+        user={user}
         canCreateTree={Boolean(user)}
         isLoading={status.loading}
         onToggleFolder={handlers.folderToggle}
@@ -52,15 +58,6 @@ const LibraryApp = () => {
       />
 
       <main className="flex flex-1 flex-col bg-background overflow-hidden">
-        <LibraryActionToolbar
-          user={user}
-          ActiveThemeIcon={theme.active.icon}
-          activeThemeLabel={theme.active.label}
-          onCycleTheme={theme.cycle}
-          onRefresh={handlers.refreshLibrary}
-          onSignOut={signOut}
-          isRefreshing={status.loading}
-        />
         <div className="flex-1 bg-background overflow-hidden">
           <LibraryContent
             loading={status.loading}
