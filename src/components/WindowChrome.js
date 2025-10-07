@@ -42,13 +42,7 @@ const WindowChrome = () => {
     };
   }, []);
 
-  return (
-    <header className="window-chrome" data-interactive-zone="true" data-window-chrome="true">
-      <div className="window-chrome__drag" data-interactive-zone="true">
-      </div>
-      {/* controls removed */}
-    </header>
-  );
+  return null;
 };
 
 export default WindowChrome;
