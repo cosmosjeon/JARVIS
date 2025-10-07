@@ -19,6 +19,7 @@ const ACTIONS = {
   SET_SHOW_VORAN_BOX: 'setShowVoranBox',
   SET_SHOW_CREATE_DIALOG: 'setShowCreateDialog',
   SET_CREATE_TYPE: 'setCreateType',
+  SET_SIDEBAR_COLLAPSED: 'setSidebarCollapsed',
 };
 
 const BASE_STATE = {
@@ -37,6 +38,7 @@ const BASE_STATE = {
   showVoranBoxManager: false,
   showCreateDialog: false,
   createType: 'folder',
+  isSidebarCollapsed: false,
 };
 
 const createInitialState = (overrides = {}) => {
@@ -100,6 +102,8 @@ const reducer = (state, action) => {
       return { ...state, showCreateDialog: resolveNext(action.payload, state.showCreateDialog) };
     case ACTIONS.SET_CREATE_TYPE:
       return { ...state, createType: resolveNext(action.payload, state.createType) };
+    case ACTIONS.SET_SIDEBAR_COLLAPSED:
+      return { ...state, isSidebarCollapsed: resolveNext(action.payload, state.isSidebarCollapsed) };
     default:
       return state;
   }
@@ -124,6 +128,7 @@ const buildActions = (dispatch) => {
   const setShowVoranBoxManager = dispatchAction(ACTIONS.SET_SHOW_VORAN_BOX);
   const setShowCreateDialog = dispatchAction(ACTIONS.SET_SHOW_CREATE_DIALOG);
   const setCreateType = dispatchAction(ACTIONS.SET_CREATE_TYPE);
+  const setSidebarCollapsed = dispatchAction(ACTIONS.SET_SIDEBAR_COLLAPSED);
 
   const toggleFolder = (folderId) => {
     if (!folderId) {
@@ -184,6 +189,10 @@ const buildActions = (dispatch) => {
 
   const closeCreateDialog = () => setShowCreateDialog(false);
 
+  const toggleSidebar = () => {
+    setSidebarCollapsed((previous) => !previous);
+  };
+
   return {
     data: {
       setTrees,
@@ -217,6 +226,10 @@ const buildActions = (dispatch) => {
       closeCreateDialog,
       setShowCreateDialog,
       setCreateType,
+    },
+    layout: {
+      setSidebarCollapsed,
+      toggleSidebar,
     },
   };
 };

@@ -22,6 +22,7 @@ const LibraryApp = () => {
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       <LibrarySidebar
         logoSrc={Logo}
+        collapsed={state.isSidebarCollapsed}
         folders={state.folders}
         trees={state.trees}
         voranTrees={state.voranTrees}
@@ -46,6 +47,7 @@ const LibraryApp = () => {
         onFolderDragLeave={handlers.folderDragLeave}
         onVoranDragOver={handlers.voranDragOver}
         onVoranDragLeave={handlers.voranDragLeave}
+        onToggleCollapsed={handlers.toggleSidebar}
       />
 
       <main className="flex flex-1 flex-col bg-background overflow-hidden">

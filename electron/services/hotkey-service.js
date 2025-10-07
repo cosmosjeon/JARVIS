@@ -1,7 +1,11 @@
 const { globalShortcut } = require('electron');
 const { createHotkeyManager } = require('../hotkeys');
 
-const DEFAULT_WIDGET_ACCELERATOR = 'Alt+1';
+const WIDGET_ACCELERATOR_MAP = {
+  darwin: 'Command+1',
+};
+
+const DEFAULT_WIDGET_ACCELERATOR = WIDGET_ACCELERATOR_MAP[process.platform] || 'Alt+1';
 const PASS_THROUGH_ACCELERATOR = 'CommandOrControl+2';
 
 const createHotkeyService = ({ logger, toggleWidgetVisibility, ensureMainWindowFocus, getMainWindow }) => {
@@ -22,7 +26,7 @@ const createHotkeyService = ({ logger, toggleWidgetVisibility, ensureMainWindowF
       logger?.info?.('Hotkey manager created for widget toggle');
     }
 
-    logger?.info?.('Attempting to register Alt+1 hotkey for widget toggle');
+    logger?.info?.(`Attempting to register ${DEFAULT_WIDGET_ACCELERATOR} hotkey for widget toggle`);
 
     const success = hotkeyManager.registerToggle({
       accelerator: DEFAULT_WIDGET_ACCELERATOR,
