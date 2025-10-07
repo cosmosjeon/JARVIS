@@ -401,26 +401,25 @@ export const useNodeAssistantPanelController = ({
     setHasFocusedComposer(false);
   }, [node?.id]);
 
-  const handleSend = useCallback(async () => {
-    const trimmed = composerValue.trim();
+  const handleSend = useCallback(async (textSnapshot, attachmentsSnapshot) => {
+    const rawText = typeof textSnapshot === 'string' ? textSnapshot : '';
+    const trimmed = rawText.trim();
     const hasText = trimmed.length > 0;
-    const hasAttachments = draftAttachments.length > 0;
+    const sanitizedAttachments = Array.isArray(attachmentsSnapshot)
+      ? attachmentsSnapshot.filter((item) => item && typeof item === 'object')
+      : [];
+    const hasAttachments = sanitizedAttachments.length > 0;
 
     if (!hasText && !hasAttachments) {
       return;
     }
 
-    const attachmentMarkdown = draftAttachments
-      .filter((item) => item?.dataUrl)
-      .map((item, index) => {
-        const label = item?.label || item?.name || `Attachment ${index + 1}`;
-        return `![${label}](${item.dataUrl})`;
-      })
-      .join('\n');
-
-    const payload = [trimmed, attachmentMarkdown]
-      .filter((segment) => segment && segment.trim().length > 0)
-      .join(hasText && attachmentMarkdown ? '\n\n' : '');
+    const payload = {
+      text: trimmed,
+      attachments: hasAttachments
+        ? sanitizedAttachments.map((item) => ({ ...item }))
+        : undefined,
+    };
 
     try {
       await submitMessage(payload);
@@ -431,22 +430,24 @@ export const useNodeAssistantPanelController = ({
       console.error('메시지 전송 오류:', error);
       throw error;
     }
-  }, [clearAttachments, composerValue, draftAttachments, submitMessage]);
+  }, [clearAttachments, submitMessage]);
 
   const triggerSend = useCallback(() => {
-    const hasText = composerValueRef.current.trim().length > 0;
-    const hasAttachments = draftAttachments.length > 0;
+    const textSnapshot = composerValueRef.current;
+    const attachmentsSnapshot = draftAttachments;
+    const hasText = textSnapshot.trim().length > 0;
+    const hasAttachments = attachmentsSnapshot.length > 0;
 
     if (!hasText && !hasAttachments) {
       return;
     }
 
-    const latestValue = composerValueRef.current;
     setComposerValue('');
-    handleSend().catch(() => {
-      setComposerValue(latestValue);
+    handleSend(textSnapshot, attachmentsSnapshot).catch(() => {
+      setComposerValue(textSnapshot);
+      updateAttachments(attachmentsSnapshot);
     });
-  }, [draftAttachments, handleSend]);
+  }, [draftAttachments, handleSend, updateAttachments]);
 
   useEffect(() => {
     if (!onSizeChange) {

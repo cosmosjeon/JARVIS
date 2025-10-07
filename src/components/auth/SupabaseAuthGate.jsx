@@ -89,7 +89,7 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
 
 SupabaseAuthGate.propTypes = {
   children: PropTypes.node.isRequired,
-  mode: PropTypes.oneOf(['widget', 'library', 'admin-panel']),
+  mode: PropTypes.oneOf(['widget', 'library', 'admin-panel', 'capture-overlay']),
 };
 
 export default SupabaseAuthGate;

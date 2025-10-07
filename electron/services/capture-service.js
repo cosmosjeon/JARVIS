@@ -131,11 +131,28 @@ const createCaptureService = ({
     });
 
     overlay.once('ready-to-show', () => {
-      overlay.showInactive();
+      try {
+        overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        overlay.setAlwaysOnTop(true, 'screen-saver');
+        overlay.setIgnoreMouseEvents(false);
+      } catch (error) {
+        logger?.warn?.('capture_overlay_configure_failed', { message: error?.message });
+      }
+      overlay.show();
       overlay.focus();
+      overlay.moveTop?.();
+      overlay.webContents.focus();
     });
 
     overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+    overlay.on('show', () => {
+      try {
+        overlay.webContents.focus();
+      } catch (error) {
+        logger?.warn?.('capture_overlay_focus_failed', { message: error?.message });
+      }
+    });
 
     overlayWindow = overlay;
     return overlay;

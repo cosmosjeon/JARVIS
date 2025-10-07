@@ -96,6 +96,8 @@ const CaptureOverlay = () => {
   }, [bridge, params.boundsX, params.boundsY, params.displayId, params.scaleFactor, resetSelection]);
 
   const handlePointerDown = useCallback((event) => {
+    // eslint-disable-next-line no-console
+    console.log('[overlay] pointerdown', event.clientX, event.clientY);
     if (isProcessing || (typeof event.button === 'number' && event.button !== 0)) {
       return;
     }
@@ -117,6 +119,8 @@ const CaptureOverlay = () => {
   }, [isProcessing]);
 
   const handlePointerMove = useCallback((event) => {
+    // eslint-disable-next-line no-console
+    console.log('[overlay] pointermove', event.clientX, event.clientY, 'dragging?', isDragging);
     if (!isDragging || !dragStart) {
       return;
     }
@@ -143,6 +147,8 @@ const CaptureOverlay = () => {
   }, [dragStart, isDragging]);
 
   const handlePointerUp = useCallback((event) => {
+    // eslint-disable-next-line no-console
+    console.log('[overlay] pointerup', event?.clientX, event?.clientY);
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -166,10 +172,14 @@ const CaptureOverlay = () => {
   }, [finalizeSelection, isDragging, resetSelection, selectionRect]);
 
   const handlePointerCancel = useCallback(() => {
+    // eslint-disable-next-line no-console
+    console.log('[overlay] pointercancel');
     resetSelection();
   }, [resetSelection]);
 
   const handlePointerLeave = useCallback(() => {
+    // eslint-disable-next-line no-console
+    console.log('[overlay] pointerleave');
     if (!isProcessing) {
       resetSelection();
     }
@@ -185,6 +195,10 @@ const CaptureOverlay = () => {
     const element = overlayRef.current;
     if (!element) {
       return undefined;
+    }
+
+    if (typeof element.focus === 'function') {
+      element.focus();
     }
 
     const pointerDown = (event) => handlePointerDown(event);
@@ -207,6 +221,15 @@ const CaptureOverlay = () => {
       element.removeEventListener('pointerleave', pointerLeave);
     };
   }, [handlePointerCancel, handlePointerDown, handlePointerLeave, handlePointerMove, handlePointerUp]);
+
+  useEffect(() => {
+    const handlePointerDownWindow = (event) => {
+      // eslint-disable-next-line no-console
+      console.log('[overlay] window pointerdown', event.clientX, event.clientY);
+    };
+    window.addEventListener('pointerdown', handlePointerDownWindow, true);
+    return () => window.removeEventListener('pointerdown', handlePointerDownWindow, true);
+  }, []);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown, true);
@@ -233,6 +256,7 @@ const CaptureOverlay = () => {
     <div
       ref={overlayRef}
       className="fixed inset-0 cursor-crosshair select-none"
+      tabIndex={-1}
       style={{
         backgroundColor: 'rgba(17, 24, 39, 0.45)',
         backdropFilter: 'blur(2px)',

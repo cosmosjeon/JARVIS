@@ -38,14 +38,24 @@ function App() {
     return <OAuthCallbackPage />;
   }
 
+  if (mode === 'capture-overlay') {
+    return (
+      <SupabaseProvider>
+        <SettingsProvider>
+          <ThemeProvider defaultTheme="glass" mode={mode}>
+            <CaptureOverlay />
+          </ThemeProvider>
+        </SettingsProvider>
+      </SupabaseProvider>
+    );
+  }
+
   return (
     <SupabaseProvider>
       <SettingsProvider>
         <ThemeProvider defaultTheme="glass" mode={mode}>
           <SupabaseAuthGate mode={mode}>
-            {mode === 'capture-overlay' ? (
-              <CaptureOverlay />
-            ) : mode === 'library' ? (
+            {mode === 'library' ? (
               <LibraryApp />
             ) : mode === 'admin-panel' ? (
               <AdminWidgetPanel />
