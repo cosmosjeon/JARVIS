@@ -1,7 +1,6 @@
 const { app, ipcMain, nativeTheme, screen } = require('electron');
 const accessibility = require('../../accessibility');
 const logs = require('../../logs');
-const { createHotkeyService } = require('../../services/hotkey-service');
 const { createTrayService } = require('../../services/tray-service');
 const { LLMService } = require('../../services/llm-service');
 const { createLogBridge } = require('../logger');
@@ -36,7 +35,6 @@ const start = () => {
 
   let logger;
   let llmService;
-  let hotkeyService;
   let trayService;
   let oauthServer;
   let handleOAuthDeepLinkRef = (url) => {
@@ -109,7 +107,6 @@ const start = () => {
     app,
     handleOAuthDeepLink: (url) => handleOAuthDeepLinkRef(url),
     getLogger: () => logger,
-    getHotkeyService: () => hotkeyService,
     getTrayService: () => trayService,
     getOAuthServer: () => oauthServer,
     ensureMainWindowFocus,
@@ -127,13 +124,6 @@ const start = () => {
 
     logger = createLogBridge(() => getMainWindow());
     llmService = new LLMService({ logger });
-
-    hotkeyService = createHotkeyService({
-      logger,
-      toggleWidgetVisibility,
-      ensureMainWindowFocus,
-      getMainWindow,
-    });
 
     trayService = createTrayService({
       logger,
@@ -163,9 +153,7 @@ const start = () => {
     }
 
     oauthController.flushPendingCallbacks?.();
-    hotkeyService.applyHotkeySettings();
     trayService.applyTraySettings(settingsManager.getSettings());
-    hotkeyService.registerPassThroughShortcut();
     settingsManager.broadcastSettings();
 
     try {
@@ -187,7 +175,6 @@ const start = () => {
       logs,
       llmService,
       settingsManager,
-      hotkeyService,
       trayService,
       createLogBridge,
       screen,

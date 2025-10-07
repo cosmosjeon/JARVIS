@@ -35,6 +35,18 @@ const LABEL_MAX_CHAR_PER_LINE = 22;
 const LABEL_MAX_LINES = 2;
 const LABEL_LINE_HEIGHT = 16;
 const LABEL_GAP = 1;
+const NODE_FILL_LIGHT_EVEN = '#FFFFFF';
+const NODE_FILL_LIGHT_ODD = '#000000';
+const NODE_FILL_DARK_EVEN = '#FFFFFF';
+const NODE_FILL_DARK_ODD = '#000000';
+const NODE_STROKE_LIGHT = '#CBD5F5';
+const NODE_STROKE_DARK = '#94A3B8';
+const LABEL_COLOR_LIGHT_EVEN = '#111111';
+const LABEL_COLOR_LIGHT_ODD = '#F9FAFB';
+const LABEL_COLOR_DARK_EVEN = '#0F172A';
+const LABEL_COLOR_DARK_ODD = '#F8FAFC';
+const ARROW_HEAD_LENGTH = 8;
+const ARROW_HEAD_SPREAD = 4;
 
 const NODE_SHAPES = {
     RECTANGLE: 'rectangle',
@@ -1487,27 +1499,29 @@ const ForceDirectedTree = ({
                     {/* 다크모드 - 링크 화살표 */}
                     <marker
                         id="arrowhead-dark"
-                        viewBox="0 -5 10 10"
-                        refX={15}
+                        viewBox={`-${ARROW_HEAD_LENGTH} ${-ARROW_HEAD_SPREAD} ${ARROW_HEAD_LENGTH} ${ARROW_HEAD_SPREAD * 2}`}
+                        refX={0}
                         refY={0}
-                        markerWidth={6}
-                        markerHeight={6}
+                        markerWidth={ARROW_HEAD_LENGTH}
+                        markerHeight={ARROW_HEAD_SPREAD * 2}
                         orient="auto"
+                        markerUnits="userSpaceOnUse"
                     >
-                        <path d="M0,-5L10,0L0,5" fill="rgba(31, 41, 55, 0.6)" />
+                        <path d={`M0,0 L-${ARROW_HEAD_LENGTH},${ARROW_HEAD_SPREAD} L-${ARROW_HEAD_LENGTH},${-ARROW_HEAD_SPREAD} Z`} fill="rgba(31, 41, 55, 0.7)" />
                     </marker>
 
                     {/* 라이트모드 - 링크 화살표 */}
                     <marker
                         id="arrowhead-light"
-                        viewBox="0 -5 10 10"
-                        refX={15}
+                        viewBox={`-${ARROW_HEAD_LENGTH} ${-ARROW_HEAD_SPREAD} ${ARROW_HEAD_LENGTH} ${ARROW_HEAD_SPREAD * 2}`}
+                        refX={0}
                         refY={0}
-                        markerWidth={6}
-                        markerHeight={6}
+                        markerWidth={ARROW_HEAD_LENGTH}
+                        markerHeight={ARROW_HEAD_SPREAD * 2}
                         orient="auto"
+                        markerUnits="userSpaceOnUse"
                     >
-                        <path d="M0,-5L10,0L0,5" fill="rgba(156, 163, 175, 0.5)" />
+                        <path d={`M0,0 L-${ARROW_HEAD_LENGTH},${ARROW_HEAD_SPREAD} L-${ARROW_HEAD_LENGTH},${-ARROW_HEAD_SPREAD} Z`} fill="rgba(156, 163, 175, 0.6)" />
                     </marker>
                 </defs>
 
@@ -1556,12 +1570,13 @@ const ForceDirectedTree = ({
                             if (distance > 0) {
                                 const unitX = dx / distance;
                                 const unitY = dy / distance;
-                                const sourceOffset = Math.min(sourceScaleState.circleRadius, distance / 2);
-                                const targetOffset = Math.min(targetScaleState.circleRadius + 4, distance / 2);
+                                const targetRadius = Math.max(targetScaleState.circleRadius - 1.5, 0);
+                                const sourceRadius = Math.max(sourceScaleState.circleRadius - 1.5, 0);
+                                const sourceOffset = Math.min(sourceRadius, Math.max(0, distance - targetRadius - ARROW_HEAD_LENGTH));
                                 x1 += unitX * sourceOffset;
                                 y1 += unitY * sourceOffset;
-                                x2 -= unitX * targetOffset;
-                                y2 -= unitY * targetOffset;
+                                x2 -= unitX * (targetRadius);
+                                y2 -= unitY * (targetRadius);
                             }
 
                             const markerId = isLightMode ? 'arrowhead-light' : 'arrowhead-dark';
@@ -1625,12 +1640,13 @@ const ForceDirectedTree = ({
                             if (distance > 0) {
                                 const unitX = dx / distance;
                                 const unitY = dy / distance;
-                                const sourceOffset = Math.min(sourceScaleState.circleRadius, distance / 2);
-                                const targetOffset = Math.min(targetScaleState.circleRadius, distance / 2);
+                                const targetRadius = Math.max(targetScaleState.circleRadius - 1.5, 0);
+                                const sourceRadius = Math.max(sourceScaleState.circleRadius - 1.5, 0);
+                                const sourceOffset = Math.min(sourceRadius, Math.max(0, distance - targetRadius - ARROW_HEAD_LENGTH));
                                 x1 += unitX * sourceOffset;
                                 y1 += unitY * sourceOffset;
-                                x2 -= unitX * targetOffset;
-                                y2 -= unitY * targetOffset;
+                                x2 -= unitX * (targetRadius);
+                                y2 -= unitY * (targetRadius);
                             }
 
                             return (
@@ -1701,26 +1717,17 @@ const ForceDirectedTree = ({
                             const isLightMode = theme === 'light';
                             const isEvenDepth = depth % 2 === 0;
                             let fillColor;
-                            let strokeColor;
                             let textColor;
 
-                            if (isRootNode) {
-                                fillColor = isLightMode ? '#A5B4FC' : '#60A5FA';
-                                strokeColor = isLightMode ? '#7C3AED' : '#93C5FD';
-                                textColor = isLightMode ? '#1F2937' : '#F9FAFB';
-                            } else if (isMemoNode) {
-                                fillColor = isLightMode ? '#F3F4F6' : '#334155';
-                                strokeColor = isLightMode ? '#D1D5DB' : '#64748B';
-                                textColor = isLightMode ? '#111827' : '#E5E7EB';
-                            } else if (isLightMode) {
-                                fillColor = isEvenDepth ? '#1F2937' : '#F3F4F6';
-                                strokeColor = isEvenDepth ? '#111827' : '#9CA3AF';
-                                textColor = isEvenDepth ? '#FFFFFF' : '#1F2937';
+                            if (isLightMode) {
+                                fillColor = isEvenDepth ? NODE_FILL_LIGHT_EVEN : NODE_FILL_LIGHT_ODD;
+                                textColor = isEvenDepth ? LABEL_COLOR_LIGHT_EVEN : LABEL_COLOR_LIGHT_ODD;
                             } else {
-                                fillColor = isEvenDepth ? '#FFFFFF' : '#000000';
-                                strokeColor = isEvenDepth ? '#000000' : '#FFFFFF';
-                                textColor = isEvenDepth ? '#000000' : '#FFFFFF';
+                                fillColor = isEvenDepth ? NODE_FILL_DARK_EVEN : NODE_FILL_DARK_ODD;
+                                textColor = isEvenDepth ? LABEL_COLOR_DARK_EVEN : LABEL_COLOR_DARK_ODD;
                             }
+
+                            const strokeColor = isLightMode ? NODE_STROKE_LIGHT : NODE_STROKE_DARK;
 
                             const opacity = isBeingDragged ? 1 : (isOtherNodeDragging ? 0.25 : 0.95);
                             const baseStrokeWidth = isRootNode ? 0.9 : 0.6;

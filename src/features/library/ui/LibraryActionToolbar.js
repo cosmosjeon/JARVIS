@@ -9,10 +9,8 @@ const LibraryActionToolbar = ({
   activeThemeLabel,
   onCycleTheme,
   onRefresh,
-  onCreateTree,
   onSignOut,
   isRefreshing,
-  canCreateTree,
 }) => {
   const ThemeIcon = ActiveThemeIcon;
   const userLabel = user?.email || user?.user_metadata?.full_name || '로그인 계정';
@@ -51,15 +49,6 @@ const LibraryActionToolbar = ({
           className="border-border bg-background/30 text-card-foreground hover:bg-background/50"
         >
           {isRefreshing ? '새로고침 중' : '새로고침'}
-        </Button>
-
-        <Button
-          variant="default"
-          size="sm"
-          disabled={!canCreateTree || isRefreshing}
-          onClick={onCreateTree}
-        >
-          새 트리 만들기
         </Button>
 
         <Button

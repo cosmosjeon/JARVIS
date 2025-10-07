@@ -79,7 +79,7 @@ const TreeCanvas = ({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <header className="border-b border-border/40 bg-card/80">
+      <header className="border-b border-border bg-card">
         <div className="flex flex-col gap-2 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-lg font-semibold text-foreground">
@@ -99,7 +99,7 @@ const TreeCanvas = ({
         </div>
       </header>
 
-      <div ref={containerRef} className="flex flex-1 overflow-hidden bg-slate-900/40">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden bg-background">
         {nodeCount > 0 ? (
           useLightweightRenderer ? (
             <WidgetTreeView

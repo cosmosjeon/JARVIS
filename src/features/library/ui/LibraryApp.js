@@ -1,5 +1,4 @@
 import React from 'react';
-import Logo from 'assets/admin-widget/logo.svg';
 import LibraryActionToolbar from './LibraryActionToolbar';
 import LibrarySidebar from './LibrarySidebar';
 import LibraryContent from './LibraryContent';
@@ -21,7 +20,6 @@ const LibraryApp = () => {
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       <LibrarySidebar
-        logoSrc={Logo}
         collapsed={state.isSidebarCollapsed}
         folders={state.folders}
         trees={state.trees}
@@ -35,6 +33,9 @@ const LibraryApp = () => {
         dragOverVoranBox={state.dragOverVoranBox}
         onManageVoranBox={handlers.showVoranBox}
         onCreateFolder={() => handlers.openCreateDialog('folder')}
+        onCreateTree={handlers.createTree}
+        canCreateTree={Boolean(user)}
+        isLoading={status.loading}
         onToggleFolder={handlers.folderToggle}
         onSelectTree={handlers.sidebarTreeSelect}
         onOpenTree={handlers.openTree}
@@ -57,10 +58,8 @@ const LibraryApp = () => {
           activeThemeLabel={theme.active.label}
           onCycleTheme={theme.cycle}
           onRefresh={handlers.refreshLibrary}
-          onCreateTree={handlers.createTree}
           onSignOut={signOut}
           isRefreshing={status.loading}
-          canCreateTree={Boolean(user)}
         />
         <div className="flex-1 bg-background overflow-hidden">
           <LibraryContent

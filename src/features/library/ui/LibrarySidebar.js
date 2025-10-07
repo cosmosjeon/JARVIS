@@ -9,11 +9,11 @@ import {
   ChevronRight,
   Folder as FolderIcon,
   Monitor,
+  Plus,
   Sparkles,
 } from 'lucide-react';
 
 const LibrarySidebar = ({
-  logoSrc,
   folders,
   trees,
   voranTrees,
@@ -26,6 +26,9 @@ const LibrarySidebar = ({
   dragOverVoranBox,
   onManageVoranBox,
   onCreateFolder,
+  onCreateTree,
+  canCreateTree = true,
+  isLoading = false,
   onToggleFolder,
   onSelectTree,
   onOpenTree,
@@ -59,20 +62,19 @@ const LibrarySidebar = ({
   };
   const ToggleIcon = collapsed ? ChevronRight : ChevronLeft;
 
-  const toggleButton = (
+  const renderToggleButton = (isCollapsed, className = '') => (
     <button
       type="button"
       onClick={handleToggleCollapsed}
       className={cn(
-        'rounded-full border border-border bg-card shadow-md transition hover:bg-card/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-        collapsed
-          ? 'flex h-10 w-10 items-center justify-center'
-          : 'absolute -right-3 top-6 z-10 flex h-7 w-7 items-center justify-center',
+        'rounded-full border border-border bg-card shadow-md transition hover:bg-card/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background flex items-center justify-center',
+        isCollapsed ? 'h-10 w-10' : 'h-8 w-8',
+        className,
       )}
       aria-label={toggleLabel}
       title={toggleLabel}
     >
-      <ToggleIcon className={collapsed ? 'h-5 w-5' : 'h-4 w-4'} />
+      <ToggleIcon className={isCollapsed ? 'h-5 w-5' : 'h-4 w-4'} />
     </button>
   );
 
@@ -86,33 +88,15 @@ const LibrarySidebar = ({
     >
       {collapsed ? (
         <div className="flex flex-1 items-center justify-center">
-          {toggleButton}
+          {renderToggleButton(true)}
         </div>
       ) : (
         <>
-          {toggleButton}
-
-          <div className="border-b border-border px-5 py-6 space-y-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background">
-                {logoSrc ? <img src={logoSrc} alt="VORAN" className="h-7 w-7" /> : null}
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground/80">
-                  Knowledge Library
-                </p>
-                <h1 className="text-lg font-semibold leading-tight text-card-foreground">
-                  저장된 트리
-                </h1>
-                <p className="text-xs text-muted-foreground">
-                  라이브러리에서 열 트리를 선택하세요.
-                </p>
-              </div>
-            </div>
+          <div className="flex items-center gap-3 border-b border-border px-5 py-6">
             <Button
               type="button"
               variant="outline"
-              className="w-full justify-between rounded-lg border border-border/70 bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
+              className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
               onClick={onManageVoranBox}
             >
               <span className="flex items-center gap-2">
@@ -121,22 +105,35 @@ const LibrarySidebar = ({
               </span>
               <span className="text-xs text-muted-foreground">관리</span>
             </Button>
+            {renderToggleButton(false, 'ml-1 flex-shrink-0')}
           </div>
 
           <ScrollArea className="flex-1">
             <div className="space-y-4 px-4 py-6">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-3 py-2 text-left text-sm text-foreground shadow-sm transition hover:border-border hover:bg-accent/30"
-                onClick={onCreateFolder}
-              >
-                <span className="flex items-center gap-2">
-                  <FolderIcon className="h-4 w-4 text-muted-foreground" />
-                  New Folder
-                </span>
-                <span className="text-xs text-muted-foreground">+</span>
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-3 py-2 text-left text-sm text-foreground shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
+                  onClick={onCreateFolder}
+                >
+                  <span className="flex items-center gap-2">
+                    <FolderIcon className="h-4 w-4 text-muted-foreground" />
+                    New Folder
+                  </span>
+                  <span className="text-xs text-muted-foreground">+</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium shadow-sm sm:w-auto"
+                  onClick={onCreateTree}
+                  disabled={!canCreateTree || isLoading}
+                >
+                  <Plus className="h-4 w-4" />
+                  새 트리 만들기
+                </Button>
+              </div>
 
               {folders.map((folder) => {
                 const folderTrees = folderTreeMap.get(folder.id) || [];

@@ -41,7 +41,6 @@ const createSettingsManager = ({ getLogger, broadcastSettingsToWidgets, getLibra
     getSettings,
     broadcastSettings,
     settingsStore,
-    defaultAccelerator: settingsStoreModule.DEFAULT_ACCELERATOR,
   };
 };
 
