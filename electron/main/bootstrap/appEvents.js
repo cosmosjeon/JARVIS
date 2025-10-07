@@ -3,6 +3,7 @@ const registerAppEventHandlers = ({
   handleOAuthDeepLink,
   getLogger,
   getTrayService,
+  getCaptureService,
   getOAuthServer,
   ensureMainWindowFocus,
   getMainWindow,
@@ -24,6 +25,7 @@ const registerAppEventHandlers = ({
 
   app.on('will-quit', () => {
     getTrayService()?.dispose();
+    getCaptureService()?.dispose?.();
     const oauthServer = getOAuthServer();
     const logger = getLogger?.();
     if (oauthServer?.teardown) {

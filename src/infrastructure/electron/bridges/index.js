@@ -9,3 +9,4 @@ export { createSystemBridge } from './systemBridge';
 export { createOAuthBridge } from './oauthBridge';
 export { createLibraryBridge } from './libraryBridge';
 export { createAdminBridge } from './adminBridge';
+export { createCaptureBridge } from './captureBridge';

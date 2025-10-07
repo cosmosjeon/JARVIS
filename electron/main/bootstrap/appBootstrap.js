@@ -2,6 +2,7 @@ const { app, ipcMain, nativeTheme, screen } = require('electron');
 const accessibility = require('../../accessibility');
 const logs = require('../../logs');
 const { createTrayService } = require('../../services/tray-service');
+const { createCaptureService } = require('../../services/capture-service');
 const { LLMService } = require('../../services/llm-service');
 const { createLogBridge } = require('../logger');
 const {
@@ -36,6 +37,7 @@ const start = () => {
   let logger;
   let llmService;
   let trayService;
+  let captureService;
   let oauthServer;
   let handleOAuthDeepLinkRef = (url) => {
     if (url) {
@@ -108,6 +110,7 @@ const start = () => {
     handleOAuthDeepLink: (url) => handleOAuthDeepLinkRef(url),
     getLogger: () => logger,
     getTrayService: () => trayService,
+    getCaptureService: () => captureService,
     getOAuthServer: () => oauthServer,
     ensureMainWindowFocus,
     getMainWindow,
@@ -131,6 +134,13 @@ const start = () => {
       getMainWindow,
       ensureMainWindowFocus,
       app,
+    });
+
+    captureService = createCaptureService({
+      logger,
+      ensureMainWindowFocus,
+      getMainWindow,
+      getAllWidgetWindows,
     });
 
     const oauthController = createOAuthController({
@@ -176,6 +186,7 @@ const start = () => {
       llmService,
       settingsManager,
       trayService,
+      captureService,
       createLogBridge,
       screen,
       isDev,

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import {
@@ -11,6 +11,7 @@ import {
 import { useAdminWidgetState } from 'features/admin/state/useAdminWidgetState';
 import AdminWidgetControlBar from 'shared/components/admin/AdminWidgetControlBar';
 import adminWidgetLogo from 'assets/admin-widget/logo.svg';
+import { createCaptureBridge } from 'infrastructure/electron/bridges';
 
 const AdminWidgetPanel = () => {
   const { user, loading } = useSupabaseAuth();
@@ -25,6 +26,9 @@ const AdminWidgetPanel = () => {
       setLoadingTrees,
     },
   } = useAdminWidgetState();
+
+  const captureBridge = useMemo(() => createCaptureBridge(), []);
+  const [capturing, setCapturing] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -94,6 +98,22 @@ const AdminWidgetPanel = () => {
     }
   }, [user, creating, beginCreate, endCreate, setError]);
 
+  const handleCapture = useCallback(async () => {
+    try {
+      clearError();
+      setCapturing(true);
+      const response = await captureBridge.requestCapture();
+      if (response?.success === false && response?.reason !== 'busy') {
+        setCapturing(false);
+        logWarning('admin_panel_capture_request_failed', { reason: response.reason });
+      }
+    } catch (error) {
+      setCapturing(false);
+      setError(error);
+      logWarning('admin_panel_capture_request_failed', { message: error?.message });
+    }
+  }, [captureBridge, clearError, setError]);
+
   const handleShowLibrary = useCallback(async () => {
     try {
       clearError();
@@ -132,6 +152,23 @@ const AdminWidgetPanel = () => {
     return null;
   }
 
+  useEffect(() => {
+    const unsubscribes = [
+      captureBridge.onCaptureCompleted(() => {
+        setCapturing(false);
+      }),
+      captureBridge.onCaptureCancelled(() => {
+        setCapturing(false);
+      }),
+      captureBridge.onCaptureFailed(() => {
+        setCapturing(false);
+      }),
+    ];
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe?.());
+    };
+  }, [captureBridge]);
+
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent">
       <div className="flex flex-col items-center gap-2" style={{ WebkitAppRegion: 'drag' }}>
@@ -140,6 +177,8 @@ const AdminWidgetPanel = () => {
           onLogoClick={handleVoranClick}
           onCreateClick={handleCreateWidget}
           creating={creating}
+          onCaptureClick={handleCapture}
+          capturing={capturing}
         />
         {statusText && (
           <div className="text-xs font-medium text-slate-200/85">

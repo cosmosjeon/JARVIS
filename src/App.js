@@ -9,6 +9,7 @@ import { SettingsProvider } from 'shared/hooks/SettingsContext';
 import { SupabaseProvider } from 'shared/hooks/useSupabaseAuth';
 import SupabaseAuthGate from './components/auth/SupabaseAuthGate';
 import OAuthCallbackPage from './views/OAuthCallbackPage';
+import CaptureOverlay from 'features/capture/ui/CaptureOverlay';
 
 function App() {
   const mode = useMemo(() => {
@@ -42,7 +43,9 @@ function App() {
       <SettingsProvider>
         <ThemeProvider defaultTheme="glass" mode={mode}>
           <SupabaseAuthGate mode={mode}>
-            {mode === 'library' ? (
+            {mode === 'capture-overlay' ? (
+              <CaptureOverlay />
+            ) : mode === 'library' ? (
               <LibraryApp />
             ) : mode === 'admin-panel' ? (
               <AdminWidgetPanel />

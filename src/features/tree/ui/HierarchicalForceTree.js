@@ -28,6 +28,7 @@ import {
 import useConversationStore from 'features/tree/state/useConversationStore';
 import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
+import { createCaptureBridge } from 'infrastructure/electron/bridges';
 import AgentClient from 'infrastructure/ai/agentClient';
 import { useTreeState } from 'features/tree/state/useTreeState';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from 'features/tree/services/treeCreation';
@@ -57,6 +58,7 @@ const HierarchicalForceTree = () => {
     saveTreeNodes,
   } = useTreeDataSource();
   const treeBridge = useMemo(() => createTreeWidgetBridge(), []);
+  const captureBridge = useMemo(() => createCaptureBridge(), []);
   const { theme, setTheme, mode } = useTheme();
 
   // 테마 옵션 정의
@@ -437,6 +439,46 @@ const HierarchicalForceTree = () => {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [activeTreeId, loadActiveTree, readSessionTreeId, user]);
+
+  useEffect(() => {
+    const unsubscribes = [
+      captureBridge.onCaptureCompleted((payload) => {
+        if (!payload?.base64) {
+          return;
+        }
+
+        const rootId = getRootNodeId();
+        if (!rootId) {
+          return;
+        }
+
+        handleNodeClickForAssistant({ id: rootId });
+
+        if (typeof window === 'undefined') {
+          return;
+        }
+
+        const dataUrl = `data:${payload.mimeType || 'image/png'};base64,${payload.base64}`;
+        window.setTimeout(() => {
+          const composer = document.querySelector('textarea[data-node-assistant-composer="true"]');
+          if (!composer) {
+            return;
+          }
+          const injection = `![Screenshot](${dataUrl})`;
+          const nextValue = composer.value ? `${composer.value}\n${injection}` : injection;
+          composer.value = nextValue;
+          composer.dispatchEvent(new Event('input', { bubbles: true }));
+          composer.focus();
+        }, 420);
+      }),
+      captureBridge.onCaptureCancelled(() => undefined),
+      captureBridge.onCaptureFailed(() => undefined),
+    ];
+
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe?.());
+    };
+  }, [captureBridge, getRootNodeId, handleNodeClickForAssistant]);
 
   // 노드 추가 함수
   const addNode = (parentId, nodeData) => {

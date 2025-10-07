@@ -131,6 +131,7 @@ const NodeAssistantPanelView = ({
         onCompositionEnd={handleCompositionEnd}
         onPaste={onComposerPaste}
         placeholder="Ask anything..."
+        data-node-assistant-composer="true"
         className={`max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm focus:outline-none ${
           theme === 'light' || theme === 'glass'
             ? 'placeholder:text-gray-500'

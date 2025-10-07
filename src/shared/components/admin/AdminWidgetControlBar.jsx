@@ -1,5 +1,5 @@
 import React from 'react';
-import { GripVertical } from 'lucide-react';
+import { Camera, GripVertical } from 'lucide-react';
 import clsx from 'clsx';
 
 const AdminWidgetControlBar = ({
@@ -7,6 +7,8 @@ const AdminWidgetControlBar = ({
   onLogoClick,
   onCreateClick,
   creating,
+  onCaptureClick,
+  capturing = false,
 }) => (
   <div className="flex h-12 items-center gap-2 rounded-full bg-slate-900/80 px-3 py-2 ring-1 ring-slate-800/50 backdrop-blur-xl">
     <button
@@ -39,6 +41,21 @@ const AdminWidgetControlBar = ({
       }}
     >
       NEW
+    </button>
+
+    <button
+      type="button"
+      onClick={onCaptureClick}
+      disabled={capturing}
+      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1f2937] text-slate-200 transition hover:bg-[#27303f] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:opacity-40"
+      style={{
+        WebkitAppRegion: 'no-drag',
+        boxShadow: '4px 4px 8px rgba(0, 0, 0, 0.3), -4px -4px 8px rgba(255, 255, 255, 0.1)'
+      }}
+      title="화면 캡처"
+      aria-label="화면 캡처"
+    >
+      <Camera className="h-4 w-4" />
     </button>
 
     <button

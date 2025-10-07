@@ -5,6 +5,7 @@ const { registerSettingsHandlers } = require('../ipc-handlers/settings');
 const { registerWindowHandlers } = require('../ipc-handlers/window');
 const { registerLibraryHandlers } = require('../ipc-handlers/library');
 const { registerAdminHandlers } = require('../ipc-handlers/admin');
+const { registerCaptureHandlers } = require('../ipc-handlers/capture');
 
 const registerIpcHandlers = ({
   ipcMain,
@@ -14,6 +15,7 @@ const registerIpcHandlers = ({
   llmService,
   settingsManager,
   trayService,
+  captureService,
   createLogBridge,
   screen,
   isDev,
@@ -87,6 +89,11 @@ const registerIpcHandlers = ({
     screen,
     isDev,
     logger,
+  });
+
+  registerCaptureHandlers({
+    ipcMain,
+    captureService,
   });
 };
 
