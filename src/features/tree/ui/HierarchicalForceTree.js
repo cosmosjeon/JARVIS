@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from 'data/treeData';
 import TreeAnimationService from 'features/tree/services/TreeAnimationService';
 import QuestionService from 'features/tree/services/QuestionService';
-import useTreeViewMode from 'features/tree/state/useTreeViewMode';
+import useTreeViewController from 'features/tree/hooks/useTreeViewController';
 import { markNewLinks } from 'shared/utils/linkAnimationUtils';
 import ChartView from 'features/tree/ui/components/ChartView';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
@@ -73,9 +73,6 @@ const HierarchicalForceTree = () => {
   const activeTheme = themeOptions.find((option) => option.value === theme) || themeOptions[0];
   const ActiveThemeIcon = activeTheme.icon;
 
-  // 뷰 선택 메뉴 상태
-  const [showViewMenu, setShowViewMenu] = useState(false);
-
   // 테마 순환 함수
   const cycleTheme = useCallback(() => {
     const currentIndex = themeOptions.findIndex(option => option.value === theme);
@@ -108,7 +105,14 @@ const HierarchicalForceTree = () => {
   const { dimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
-  const [viewMode, setViewMode] = useTreeViewMode('tree1');
+  const {
+    viewMode,
+    setViewMode,
+    isForceView,
+    isTidyView,
+    isChartView,
+    toolbarProps,
+  } = useTreeViewController({ initialMode: 'tree1', showChart: true });
   const [linkValidationError, setLinkValidationError] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -1974,7 +1978,7 @@ const HierarchicalForceTree = () => {
         className="absolute top-12 left-1/2 z-[1300] -translate-x-1/2"
         style={{ pointerEvents: 'none' }}
       >
-        <TreeWorkspaceToolbar viewMode={viewMode} onChange={setViewMode} showChart />
+        <TreeWorkspaceToolbar {...toolbarProps} />
       </div>
 
       {isTreeSyncing && !initializingTree ? (
@@ -1983,7 +1987,7 @@ const HierarchicalForceTree = () => {
         </div>
       ) : null}
 
-      {viewMode === 'tree2' && showBootstrapChat && (
+      {isForceView && showBootstrapChat && (
         <div
           className="pointer-events-none absolute"
           style={{
@@ -2017,7 +2021,7 @@ const HierarchicalForceTree = () => {
         </div>
       )}
 
-      {viewMode === 'tree2' && (
+      {isForceView && (
         <ForceDirectedTree
           data={data}
           dimensions={dimensions}
@@ -2043,7 +2047,7 @@ const HierarchicalForceTree = () => {
         />
       )}
 
-      {viewMode === 'tree1' && (
+      {isTidyView && (
         <TidyTreeView
           data={data}
           dimensions={dimensions}
@@ -2116,7 +2120,7 @@ const HierarchicalForceTree = () => {
         />
       )}
       {/* 차트 뷰 */}
-      {viewMode === 'chart' && (
+      {isChartView && (
         <ChartView
           data={data}
           dimensions={dimensions}

@@ -29,7 +29,7 @@
   - ✅ `useTreeDataController` 훅을 도입해 트리 로딩·세션 복원·초기화 로직 분리
   - ✅ 트리 위젯 브리지 이벤트 처리와 초기 트리 선택 로직을 훅 내부로 이동해 컴포넌트 책임 축소
 - **리팩터링 전략 (잔여)**
-  1. 뷰 모드 전환과 툴바 상호작용을 `useTreeViewModeController`로 이동
+  1. ✅ 뷰 모드 전환과 툴바 상호작용을 `useTreeViewModeController`(실제 구현: `useTreeViewController`)로 이동
   2. Agent 대화 흐름, theme 토글 등 부가 기능을 컨테이너 컴포넌트에서 분리
   3. D3 제스처 관련 유틸(`applyPanZoomGesture`, `createNodeDragHandler`)을 모듈 별도 파일로 이전하고 테스트 추가
 - **세부 작업**
