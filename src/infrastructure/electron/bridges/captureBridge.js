@@ -32,6 +32,10 @@ export const createCaptureBridge = (bridge = ensureRendererBridge()) => {
       const target = resolveBridge();
       return createSubscription(target?.onCaptureCompleted, listener);
     },
+    onCaptureStarted: (listener) => {
+      const target = resolveBridge();
+      return createSubscription(target?.onCaptureStarted, listener);
+    },
     onCaptureCancelled: (listener) => {
       const target = resolveBridge();
       return createSubscription(target?.onCaptureCancelled, listener);

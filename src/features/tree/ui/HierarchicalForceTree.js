@@ -343,6 +343,25 @@ const HierarchicalForceTree = () => {
   const isIgnoringMouseRef = useRef(false);
   const treeSyncDebounceRef = useRef(null);
   const [showBootstrapChat, setShowBootstrapChat] = useState(false);
+  const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
+  const [isAwaitingCapture, setIsAwaitingCapture] = useState(false);
+
+  const consumePendingCapturePayload = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      const raw = window.localStorage.getItem('jarvis.capture.pending');
+      if (!raw) {
+        return null;
+      }
+      const payload = JSON.parse(raw);
+      window.localStorage.removeItem('jarvis.capture.pending');
+      return payload;
+    } catch (error) {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -352,6 +371,42 @@ const HierarchicalForceTree = () => {
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  const setAttachmentsForNode = useCallback((nodeId, nextAttachments) => {
+    if (!nodeId) {
+      return;
+    }
+
+    setPendingAttachmentsByNode((previous) => {
+      const normalized = Array.isArray(nextAttachments) ? nextAttachments : [];
+      if (normalized.length === 0) {
+        if (!previous[nodeId]) {
+          return previous;
+        }
+        const { [nodeId]: _removed, ...rest } = previous;
+        return rest;
+      }
+      return { ...previous, [nodeId]: normalized };
+    });
+  }, []);
+
+  const addAttachmentForNode = useCallback((nodeId, attachment) => {
+    if (!nodeId || !attachment) {
+      return;
+    }
+
+    setPendingAttachmentsByNode((previous) => {
+      const existing = Array.isArray(previous[nodeId]) ? previous[nodeId] : [];
+      return {
+        ...previous,
+        [nodeId]: [...existing, attachment],
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    setPendingAttachmentsByNode({});
+  }, [activeTreeId]);
 
   const setWindowMousePassthrough = useCallback((shouldIgnore = true) => {
     if (isIgnoringMouseRef.current === shouldIgnore) {
@@ -439,46 +494,6 @@ const HierarchicalForceTree = () => {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [activeTreeId, loadActiveTree, readSessionTreeId, user]);
-
-  useEffect(() => {
-    const unsubscribes = [
-      captureBridge.onCaptureCompleted((payload) => {
-        if (!payload?.base64) {
-          return;
-        }
-
-        const rootId = getRootNodeId();
-        if (!rootId) {
-          return;
-        }
-
-        handleNodeClickForAssistant({ id: rootId });
-
-        if (typeof window === 'undefined') {
-          return;
-        }
-
-        const dataUrl = `data:${payload.mimeType || 'image/png'};base64,${payload.base64}`;
-        window.setTimeout(() => {
-          const composer = document.querySelector('textarea[data-node-assistant-composer="true"]');
-          if (!composer) {
-            return;
-          }
-          const injection = `![Screenshot](${dataUrl})`;
-          const nextValue = composer.value ? `${composer.value}\n${injection}` : injection;
-          composer.value = nextValue;
-          composer.dispatchEvent(new Event('input', { bubbles: true }));
-          composer.focus();
-        }, 420);
-      }),
-      captureBridge.onCaptureCancelled(() => undefined),
-      captureBridge.onCaptureFailed(() => undefined),
-    ];
-
-    return () => {
-      unsubscribes.forEach((unsubscribe) => unsubscribe?.());
-    };
-  }, [captureBridge, getRootNodeId, handleNodeClickForAssistant]);
 
   // 노드 추가 함수
   const addNode = (parentId, nodeData) => {
@@ -731,7 +746,7 @@ const HierarchicalForceTree = () => {
 
   useEffect(() => {
     const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
-    setShowBootstrapChat(isEmpty);
+    setShowBootstrapChat(isEmpty && !isAwaitingCapture);
 
     if (isEmpty) {
       setSelectedNodeId(null);
@@ -740,7 +755,7 @@ const HierarchicalForceTree = () => {
     } else {
       clearBootstrap();
     }
-  }, [data.nodes]);
+  }, [data.nodes, isAwaitingCapture, ensureBootstrap, clearBootstrap]);
 
   const clearPendingExpansion = useCallback(() => {
     pendingFocusNodeIdRef.current = null;
@@ -907,16 +922,22 @@ const HierarchicalForceTree = () => {
     [buildContextMessages, invokeAgent],
   );
 
-  const handleBootstrapSubmit = useCallback(async (text) => {
+  const handleBootstrapSubmit = useCallback(async (text, attachments = []) => {
     const trimmed = typeof text === 'string' ? text.trim() : '';
-    if (!trimmed) {
+    if (!trimmed && (!Array.isArray(attachments) || attachments.length === 0)) {
       return;
     }
 
     const timestamp = Date.now();
 
     setConversationForNode('__bootstrap__', [
-      { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+      {
+        id: `${timestamp}-user`,
+        role: 'user',
+        text: trimmed,
+        attachments: Array.isArray(attachments) && attachments.length ? attachments : undefined,
+        timestamp,
+      },
       { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
     ]);
 
@@ -932,7 +953,13 @@ const HierarchicalForceTree = () => {
       const keyword = await extractImportantKeyword(trimmed);
 
       const rawConversation = [
-        { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+        {
+          id: `${timestamp}-user`,
+          role: 'user',
+          text: trimmed,
+          attachments: Array.isArray(attachments) && attachments.length ? attachments : undefined,
+          timestamp,
+        },
         { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
       ];
 
@@ -1720,13 +1747,98 @@ const HierarchicalForceTree = () => {
           if (pendingFocusNodeIdRef.current === targetId) {
             setExpandedNodeId(targetId);
           }
-          expandTimeoutRef.current = null;
+        expandTimeoutRef.current = null;
           if (pendingFocusNodeIdRef.current === targetId) {
             pendingFocusNodeIdRef.current = null;
           }
         }, 140);
       });
   }, [nodes, focusNodeToCenter]);
+
+  useEffect(() => {
+    const unsubscribeStarted = captureBridge.onCaptureStarted(() => {
+      setIsAwaitingCapture(true);
+      setShowBootstrapChat(false);
+      setWindowMousePassthrough(true);
+    });
+
+    return () => unsubscribeStarted?.();
+  }, [captureBridge, setWindowMousePassthrough]);
+
+  const handleCapturePayload = useCallback((payload) => {
+    if (!payload?.base64) {
+      setIsAwaitingCapture(false);
+      setWindowMousePassthrough(false);
+      return;
+    }
+
+    const rootId = getRootNodeId();
+    const targetNodeId = rootId || '__bootstrap__';
+
+    if (!targetNodeId) {
+      setIsAwaitingCapture(false);
+      setWindowMousePassthrough(false);
+      return;
+    }
+
+    if (rootId) {
+      handleNodeClickForAssistant({ id: rootId });
+    } else {
+      setShowBootstrapChat(true);
+    }
+
+    const dataUrl = `data:${payload.mimeType || 'image/png'};base64,${payload.base64}`;
+    const attachment = {
+      id: `capture-${payload.timestamp || Date.now()}`,
+      type: 'image',
+      mimeType: payload.mimeType || 'image/png',
+      dataUrl,
+      width: payload.width,
+      height: payload.height,
+      createdAt: payload.timestamp || Date.now(),
+      label: 'Screenshot',
+    };
+
+    addAttachmentForNode(targetNodeId, attachment);
+    setIsAwaitingCapture(false);
+    setWindowMousePassthrough(false);
+  }, [addAttachmentForNode, getRootNodeId, handleNodeClickForAssistant]);
+
+  useEffect(() => {
+    const unsubscribes = [
+      captureBridge.onCaptureCompleted((payload) => {
+        handleCapturePayload(payload);
+      }),
+      captureBridge.onCaptureCancelled(() => {
+        setIsAwaitingCapture(false);
+        setWindowMousePassthrough(false);
+      }),
+      captureBridge.onCaptureFailed(() => {
+        setIsAwaitingCapture(false);
+        setWindowMousePassthrough(false);
+      }),
+    ];
+
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe?.());
+    };
+  }, [
+    handleCapturePayload,
+    captureBridge,
+    setShowBootstrapChat,
+    setIsAwaitingCapture,
+    setWindowMousePassthrough,
+  ]);
+
+  useEffect(() => {
+    const pending = consumePendingCapturePayload();
+    if (pending) {
+      handleCapturePayload(pending);
+    }
+    return () => {
+      setWindowMousePassthrough(false);
+    };
+  }, [consumePendingCapturePayload, handleCapturePayload, setWindowMousePassthrough]);
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
@@ -2151,6 +2263,8 @@ const HierarchicalForceTree = () => {
               onBootstrapFirstSend={handleBootstrapSubmit}
               onPanZoomGesture={forwardPanZoomGesture}
               nodeScaleFactor={nodeScaleFactor}
+              attachments={pendingAttachmentsByNode['__bootstrap__'] || []}
+              onAttachmentsChange={(next) => setAttachmentsForNode('__bootstrap__', next)}
             />
           </div>
         </div>
@@ -2180,6 +2294,8 @@ const HierarchicalForceTree = () => {
           onPlaceholderCreate={handlePlaceholderCreate}
           theme={theme}
           isForceSimulationEnabled={isForceSimulationEnabled}
+          attachmentsByNode={pendingAttachmentsByNode}
+          onNodeAttachmentsChange={setAttachmentsForNode}
         />
       )}
 

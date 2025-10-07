@@ -5,7 +5,12 @@ const BOOTSTRAP_KEY = '__bootstrap__';
 
 const cloneMessages = (messages = []) => (
   Array.isArray(messages)
-    ? messages.map((entry) => ({ ...entry }))
+    ? messages.map((entry) => ({
+      ...entry,
+      attachments: Array.isArray(entry.attachments)
+        ? entry.attachments.map((attachment) => ({ ...attachment }))
+        : undefined,
+    }))
     : []
 );
 

@@ -23,11 +23,11 @@ export const loadRecentTrees = async ({ userId, limit = 2 }) => {
   return trees.slice(0, limit);
 };
 
-export const createAndOpenTree = async ({ userId }) => {
+export const createAndOpenTree = async ({ userId, title } = {}) => {
   if (!userId) {
     return null;
   }
-  const newTree = await createTreeForUser({ userId });
+  const newTree = await createTreeForUser({ userId, title });
   await openWidgetForTree({ treeId: newTree.id, fresh: true });
   invokeJarvis('requestLibraryRefresh');
   return newTree;
@@ -35,9 +35,9 @@ export const createAndOpenTree = async ({ userId }) => {
 
 export const openExistingTree = async ({ treeId }) => {
   if (!treeId) {
-    return;
+    return { success: false };
   }
-  await openWidgetForTree({ treeId, fresh: false });
+  return openWidgetForTree({ treeId, fresh: false });
 };
 
 export const showLibraryWindow = async () => {

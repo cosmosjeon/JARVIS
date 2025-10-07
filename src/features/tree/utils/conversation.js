@@ -13,11 +13,28 @@ export const sanitizeConversationMessages = (messages) => {
 
     const role = message.role === 'assistant' ? 'assistant' : 'user';
     const text = typeof message.text === 'string' ? message.text.trim() : '';
-    if (!text) {
+    const attachments = Array.isArray(message.attachments)
+      ? message.attachments.filter((item) => item && typeof item === 'object' && item.id)
+      : [];
+
+    if (!text && attachments.length === 0) {
       return;
     }
 
     const entry = { role, text };
+
+    if (attachments.length) {
+      entry.attachments = attachments.map((item) => ({
+        id: item.id,
+        type: item.type || 'image',
+        mimeType: item.mimeType,
+        dataUrl: item.dataUrl,
+        width: item.width,
+        height: item.height,
+        label: item.label,
+        createdAt: item.createdAt,
+      }));
+    }
 
     if (typeof message.status === 'string' && message.status.trim()) {
       entry.status = message.status.trim();

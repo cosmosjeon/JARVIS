@@ -16,7 +16,7 @@ import { createCaptureBridge } from 'infrastructure/electron/bridges';
 const AdminWidgetPanel = () => {
   const { user, loading } = useSupabaseAuth();
   const {
-    state: { creating, error },
+    state: { creating, error, recentTrees },
     actions: {
       beginCreate,
       endCreate,
@@ -99,20 +99,27 @@ const AdminWidgetPanel = () => {
   }, [user, creating, beginCreate, endCreate, setError]);
 
   const handleCapture = useCallback(async () => {
+    if (!user || capturing) {
+      return;
+    }
+
     try {
       clearError();
       setCapturing(true);
+
       const response = await captureBridge.requestCapture();
-      if (response?.success === false && response?.reason !== 'busy') {
+      if (response?.success === false) {
+        if (response?.reason !== 'busy') {
+          logWarning('admin_panel_capture_request_failed', { reason: response.reason });
+        }
         setCapturing(false);
-        logWarning('admin_panel_capture_request_failed', { reason: response.reason });
       }
     } catch (error) {
       setCapturing(false);
       setError(error);
       logWarning('admin_panel_capture_request_failed', { message: error?.message });
     }
-  }, [captureBridge, clearError, setError]);
+  }, [user, capturing, clearError, captureBridge, setError]);
 
   const handleShowLibrary = useCallback(async () => {
     try {
@@ -154,8 +161,35 @@ const AdminWidgetPanel = () => {
 
   useEffect(() => {
     const unsubscribes = [
-      captureBridge.onCaptureCompleted(() => {
+      captureBridge.onCaptureCompleted((payload) => {
         setCapturing(false);
+        if (!user || !payload?.base64) {
+          return;
+        }
+
+        try {
+          pendingCaptureRef.current = payload;
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('jarvis.capture.pending', JSON.stringify(payload));
+          }
+        } catch (storageError) {
+          logWarning('admin_panel_capture_store_failed', { message: storageError?.message });
+        }
+
+        createAndOpenTree({ userId: user.id, title: '새트리' })
+          .then((newTree) => {
+            if (!newTree?.id) {
+              return;
+            }
+            setRecentTrees((previous) => {
+              const existingTrees = Array.isArray(previous) ? previous : [];
+              const deduped = existingTrees.filter((tree) => tree?.id !== newTree.id);
+              return [newTree, ...deduped];
+            });
+          })
+          .catch((error) => {
+            logWarning('admin_panel_capture_tree_create_failed', { message: error?.message });
+          });
       }),
       captureBridge.onCaptureCancelled(() => {
         setCapturing(false);
@@ -167,7 +201,7 @@ const AdminWidgetPanel = () => {
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe?.());
     };
-  }, [captureBridge]);
+  }, [captureBridge, createAndOpenTree, logWarning, setRecentTrees, user]);
 
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent">

@@ -148,6 +148,7 @@ const createCaptureService = ({
     }
 
     captureInProgress = true;
+    broadcast('capture-area:started', { timestamp: Date.now() });
     createOverlayWindow();
     return { success: true };
   };

@@ -33,59 +33,27 @@ const buildDataUrl = (base64, mimeType = 'image/png') => `data:${mimeType};base6
 const CaptureOverlay = () => {
   const bridge = useMemo(() => createCaptureBridge(), []);
   const params = useMemo(() => parseQueryParams(), []);
-  const selectionRef = useRef(null);
+  const overlayRef = useRef(null);
+  const activePointerIdRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectionRect, setSelectionRect] = useState(null);
   const [dragStart, setDragStart] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('드래그하여 캡처할 영역을 선택하세요');
 
   const resetSelection = useCallback(() => {
+    activePointerIdRef.current = null;
     setIsDragging(false);
     setDragStart(null);
     setSelectionRect(null);
   }, []);
 
-  const handlePointerDown = useCallback((event) => {
-    if (isProcessing) {
-      return;
-    }
-    const startPoint = {
-      x: event.clientX,
-      y: event.clientY,
-    };
-    setDragStart(startPoint);
-    setSelectionRect({ x: startPoint.x, y: startPoint.y, width: 0, height: 0 });
-    setIsDragging(true);
-  }, [isProcessing]);
-
-  const handlePointerMove = useCallback((event) => {
-    if (!isDragging || !dragStart) {
-      return;
-    }
-    const currentPoint = {
-      x: event.clientX,
-      y: event.clientY,
-    };
-
-    const nextRect = {
-      x: Math.min(dragStart.x, currentPoint.x),
-      y: Math.min(dragStart.y, currentPoint.y),
-      width: Math.abs(currentPoint.x - dragStart.x),
-      height: Math.abs(currentPoint.y - dragStart.y),
-    };
-    setSelectionRect(nextRect);
-  }, [dragStart, isDragging]);
-
   const finalizeSelection = useCallback(async (rect) => {
     if (!rect || rect.width < MIN_SELECTION_SIZE || rect.height < MIN_SELECTION_SIZE) {
-      setStatusMessage('선택 영역이 너무 작습니다. 다시 시도해주세요.');
       resetSelection();
       return;
     }
 
     setIsProcessing(true);
-    setStatusMessage('캡처 중...');
 
     const payload = {
       displayId: params.displayId,
@@ -103,34 +71,109 @@ const CaptureOverlay = () => {
     try {
       const response = await bridge.performCapture(payload);
       if (!response?.success) {
-        setStatusMessage('캡처에 실패했습니다. 다시 시도해주세요.');
         setIsProcessing(false);
+        resetSelection();
         return;
       }
 
       const result = response.result;
       if (result?.base64) {
-        setStatusMessage('캡처 완료');
         const dataUrl = buildDataUrl(result.base64, result.mimeType);
-        window.localStorage.setItem('jarvis:lastCapturePreview', dataUrl);
+        try {
+          window.localStorage.setItem('jarvis:lastCapturePreview', dataUrl);
+        } catch (storageError) {
+          // localStorage 접근 실패는 무시
+        }
       }
     } catch (error) {
-      setStatusMessage('캡처에 실패했습니다. 다시 시도해주세요.');
-    } finally {
-      setTimeout(() => {
-        setIsProcessing(false);
-      }, 1200);
-    }
-  }, [bridge, params.boundsX, params.boundsY, params.displayId, params.scaleFactor, resetSelection]);
-
-  const handlePointerUp = useCallback(() => {
-    if (!isDragging || !selectionRect) {
+      setIsProcessing(false);
       resetSelection();
       return;
     }
+
+    setIsProcessing(false);
+    resetSelection();
+  }, [bridge, params.boundsX, params.boundsY, params.displayId, params.scaleFactor, resetSelection]);
+
+  const handlePointerDown = useCallback((event) => {
+    if (isProcessing || (typeof event.button === 'number' && event.button !== 0)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const pointerId = typeof event.pointerId === 'number' ? event.pointerId : 'mouse';
+    activePointerIdRef.current = pointerId;
+
+    const startPoint = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+
+    setDragStart(startPoint);
+    setSelectionRect({ x: startPoint.x, y: startPoint.y, width: 0, height: 0 });
+    setIsDragging(true);
+  }, [isProcessing]);
+
+  const handlePointerMove = useCallback((event) => {
+    if (!isDragging || !dragStart) {
+      return;
+    }
+
+    if (activePointerIdRef.current !== null && event.pointerId !== activePointerIdRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const currentPoint = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+
+    const nextRect = {
+      x: Math.min(dragStart.x, currentPoint.x),
+      y: Math.min(dragStart.y, currentPoint.y),
+      width: Math.abs(currentPoint.x - dragStart.x),
+      height: Math.abs(currentPoint.y - dragStart.y),
+    };
+    setSelectionRect(nextRect);
+  }, [dragStart, isDragging]);
+
+  const handlePointerUp = useCallback((event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (activePointerIdRef.current !== null && event.pointerId !== activePointerIdRef.current) {
+      return;
+    }
+
+    const hasSelection = isDragging && selectionRect;
+
+    activePointerIdRef.current = null;
     setIsDragging(false);
+
+    if (!hasSelection) {
+      resetSelection();
+      return;
+    }
+
     finalizeSelection(selectionRect);
   }, [finalizeSelection, isDragging, resetSelection, selectionRect]);
+
+  const handlePointerCancel = useCallback(() => {
+    resetSelection();
+  }, [resetSelection]);
+
+  const handlePointerLeave = useCallback(() => {
+    if (!isProcessing) {
+      resetSelection();
+    }
+  }, [isProcessing, resetSelection]);
 
   const handleKeyDown = useCallback((event) => {
     if (event.key === 'Escape') {
@@ -139,40 +182,47 @@ const CaptureOverlay = () => {
   }, [bridge]);
 
   useEffect(() => {
-    const currentSelection = selectionRef.current;
-    if (!currentSelection) {
+    const element = overlayRef.current;
+    if (!element) {
       return undefined;
     }
 
-    currentSelection.addEventListener('pointerdown', handlePointerDown);
-    currentSelection.addEventListener('pointermove', handlePointerMove);
-    currentSelection.addEventListener('pointerup', handlePointerUp);
-    currentSelection.addEventListener('pointerleave', handlePointerUp);
+    const pointerDown = (event) => handlePointerDown(event);
+    const pointerMove = (event) => handlePointerMove(event);
+    const pointerUp = (event) => handlePointerUp(event);
+    const pointerCancel = (event) => handlePointerCancel(event);
+    const pointerLeave = () => handlePointerLeave();
+
+    element.addEventListener('pointerdown', pointerDown, { passive: false });
+    element.addEventListener('pointermove', pointerMove, { passive: false });
+    element.addEventListener('pointerup', pointerUp, { passive: false });
+    element.addEventListener('pointercancel', pointerCancel, { passive: false });
+    element.addEventListener('pointerleave', pointerLeave, { passive: false });
 
     return () => {
-      currentSelection.removeEventListener('pointerdown', handlePointerDown);
-      currentSelection.removeEventListener('pointermove', handlePointerMove);
-      currentSelection.removeEventListener('pointerup', handlePointerUp);
-      currentSelection.removeEventListener('pointerleave', handlePointerUp);
+      element.removeEventListener('pointerdown', pointerDown);
+      element.removeEventListener('pointermove', pointerMove);
+      element.removeEventListener('pointerup', pointerUp);
+      element.removeEventListener('pointercancel', pointerCancel);
+      element.removeEventListener('pointerleave', pointerLeave);
     };
-  }, [handlePointerDown, handlePointerMove, handlePointerUp]);
+  }, [handlePointerCancel, handlePointerDown, handlePointerLeave, handlePointerMove, handlePointerUp]);
 
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [handleKeyDown]);
 
   useEffect(() => {
     const unsubscribe = bridge.onCaptureCancelled(() => {
-      setStatusMessage('캡처가 취소되었습니다.');
       resetSelection();
+      setIsProcessing(false);
     });
     return () => unsubscribe();
   }, [bridge, resetSelection]);
 
   useEffect(() => {
     const unsubscribeFailed = bridge.onCaptureFailed(() => {
-      setStatusMessage('캡처에 실패했습니다. 다시 시도해주세요.');
       resetSelection();
       setIsProcessing(false);
     });
@@ -181,20 +231,15 @@ const CaptureOverlay = () => {
 
   return (
     <div
-      ref={selectionRef}
+      ref={overlayRef}
       className="fixed inset-0 cursor-crosshair select-none"
       style={{
         backgroundColor: 'rgba(17, 24, 39, 0.45)',
         backdropFilter: 'blur(2px)',
+        WebkitAppRegion: 'no-drag',
         zIndex: 999999,
       }}
     >
-      <div
-        className="absolute left-1/2 top-12 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-sm text-white shadow-xl"
-      >
-        {isProcessing ? '캡처 중...' : statusMessage}
-      </div>
-
       {selectionRect ? (
         <div
           className={clsx(

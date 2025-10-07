@@ -1,19 +1,47 @@
 import * as d3 from 'd3';
 
 const EDGE_FORCE_DEFAULTS = Object.freeze({
-    sampleRatios: [0.33, 0.5, 0.67],
-    nodePadding: 48,
-    linePadding: 56,
-    nodeStrength: 0.16,
-    lineStrength: 0.12,
-    counterForceRatio: 0.45,
-    sharedNodeStrengthFactor: 0.35,
-    intersectionBoost: 1.5,
-    fallbackRadius: 16,
+    sampleRatios: [0.18, 0.36, 0.54, 0.72, 0.9],
+    nodePadding: 68,
+    linePadding: 92,
+    nodeStrength: 1.2,
+    lineStrength: 0.85,
+    counterForceRatio: 0.62,
+    sharedNodeStrengthFactor: 0.48,
+    intersectionBoost: 2.4,
+    fallbackRadius: 24,
 });
 
 const MIN_SIZE_SCALE = 0.1;
 const MAX_NODE_RADIUS_SCALE = 4;
+
+const NODE_CHARGE_STRENGTH = Object.freeze({
+    memo: -35,
+    default: -130,
+    root: -3200,
+});
+
+const RADIAL_FORCE_CONFIG = Object.freeze({
+    rootRadius: 0,
+    childRadius: 140,
+    grandchildRadius: 280,
+    fallbackGap: 140,
+    strength: 0.24,
+});
+
+const OUTWARD_LINK_DISTANCE = Object.freeze({
+    memo: 18,
+    rootChild: 140,
+    grandChild: 140,
+    leaf: 140,
+    branch: 140,
+});
+
+const ANGLE_FORCE_CONFIG = Object.freeze({
+    defaultStrength: 0.34,
+    memoStrength: 0.12,
+    siblingPadding: 0.05,
+});
 
 const applyVelocity = (node, vx, vy) => {
     if (!node) {
@@ -304,7 +332,6 @@ class ForceSimulationService {
             return { nodes: [], links: [] };
         }
 
-        // Hierarchy를 nodes/links로 변환
         const root = d3.hierarchy(hierarchyData);
         let links = root.links();
         let nodes = root.descendants();
@@ -317,15 +344,12 @@ class ForceSimulationService {
         nodes = nodes.filter((node) => !isVirtualRoot(node));
         links = links.filter((link) => !isVirtualRoot(link.source) && !isVirtualRoot(link.target));
 
-        // 각 노드에 고유 ID 부여 (simulation용)
-        nodes.forEach((node, i) => {
-            node.index = i;
+        nodes.forEach((node, index) => {
+            node.index = index;
         });
 
-        // Force simulation 활성화 여부 확인
         const enableForceSimulation = options.enableForceSimulation !== false;
-        
-        // 기존 simulation 정리
+
         this.cleanup();
 
         const resolveDatum = (item) => {
@@ -335,6 +359,145 @@ class ForceSimulationService {
             }
             return item.data || item;
         };
+
+        const buildAngleMap = (hierarchyNode) => {
+            const map = new Map();
+
+            const assign = (node, startAngle, endAngle) => {
+                if (!node) {
+                    return;
+                }
+
+                const children = Array.isArray(node.children)
+                    ? node.children.filter((child) => !isVirtualRoot(child))
+                    : [];
+
+                if (!isVirtualRoot(node)) {
+                    const datum = resolveDatum(node);
+                    const nodeId = datum?.id || node.data?.id;
+                    if (nodeId) {
+                        map.set(nodeId, (startAngle + endAngle) / 2);
+                    }
+                }
+
+                if (!children.length) {
+                    return;
+                }
+
+                const span = endAngle - startAngle;
+                const baseSlice = span / Math.max(children.length, 1);
+
+                children.forEach((child, index) => {
+                    const effectivePadding = Math.min(ANGLE_FORCE_CONFIG.siblingPadding, baseSlice / 3);
+                    const childStart = startAngle + (index * baseSlice) + effectivePadding;
+                    const childEnd = startAngle + ((index + 1) * baseSlice) - effectivePadding;
+                    assign(child, childStart, childEnd);
+                });
+            };
+
+            assign(hierarchyNode, 0, Math.PI * 2);
+            return map;
+        };
+
+        const angleByNodeId = buildAngleMap(root);
+
+        const resolveNodeLevel = (node, datum) => {
+            if (Number.isFinite(datum?.level)) {
+                return datum.level;
+            }
+            if (Number.isFinite(node?.depth)) {
+                return node.depth;
+            }
+            return 0;
+        };
+
+        const isRootNode = (node, datum) => resolveNodeLevel(node, datum) === 0;
+
+        const computeRadialRadius = (node) => {
+            const datum = resolveDatum(node);
+            const level = resolveNodeLevel(node, datum);
+            if (level <= 0) {
+                return RADIAL_FORCE_CONFIG.rootRadius;
+            }
+            if (level === 1) {
+                return RADIAL_FORCE_CONFIG.childRadius;
+            }
+            if (level === 2) {
+                return RADIAL_FORCE_CONFIG.grandchildRadius;
+            }
+            return RADIAL_FORCE_CONFIG.grandchildRadius + ((level - 2) * RADIAL_FORCE_CONFIG.fallbackGap);
+        };
+
+        const computeLinkDistance = (link) => {
+            const sourceDatum = resolveDatum(link?.source);
+            const targetDatum = resolveDatum(link?.target);
+            if (targetDatum?.nodeType === 'memo') {
+                return OUTWARD_LINK_DISTANCE.memo;
+            }
+            const sourceLevel = resolveNodeLevel(link?.source, sourceDatum);
+            const targetLevel = resolveNodeLevel(link?.target, targetDatum);
+            if (sourceLevel === 0 && targetLevel === 1) {
+                return OUTWARD_LINK_DISTANCE.rootChild;
+            }
+            if (sourceLevel === 1 && targetLevel === 2) {
+                return OUTWARD_LINK_DISTANCE.grandChild;
+            }
+
+            const targetChildren = Array.isArray(targetDatum?.children)
+                ? targetDatum.children.length
+                : (Number.isFinite(targetDatum?.childCount) ? targetDatum.childCount : 0);
+
+            if (!targetChildren) {
+                return OUTWARD_LINK_DISTANCE.leaf;
+            }
+
+            return OUTWARD_LINK_DISTANCE.branch;
+        };
+
+        const computeLinkStrength = (link) => {
+            const targetDatum = resolveDatum(link?.target);
+            if (targetDatum?.nodeType === 'memo') {
+                return 3.1;
+            }
+
+            const sourceDatum = resolveDatum(link?.source);
+            const sourceLevel = resolveNodeLevel(link?.source, sourceDatum);
+            const targetLevel = resolveNodeLevel(link?.target, targetDatum);
+            if (sourceLevel === 0 && targetLevel === 1) {
+                return 0.95;
+            }
+            if (sourceLevel === 1 && targetLevel === 2) {
+                return 0.78;
+            }
+
+            const targetChildren = Array.isArray(targetDatum?.children)
+                ? targetDatum.children.length
+                : (Number.isFinite(targetDatum?.childCount) ? targetDatum.childCount : 0);
+
+            if (!targetChildren) {
+                return 0.68;
+            }
+
+            return 0.5;
+        };
+
+        const targetPositionByNodeId = new Map();
+        nodes.forEach((node) => {
+            const datum = resolveDatum(node);
+            const nodeId = datum?.id;
+            if (!nodeId) {
+                return;
+            }
+            const angle = angleByNodeId.get(nodeId);
+            if (!Number.isFinite(angle)) {
+                return;
+            }
+            const radius = computeRadialRadius(node);
+            targetPositionByNodeId.set(nodeId, {
+                x: Math.cos(angle) * radius,
+                y: Math.sin(angle) * radius,
+            });
+        });
 
         const positionLookup = previousPositions instanceof Map
             ? previousPositions
@@ -355,99 +518,92 @@ class ForceSimulationService {
                     node.y = y;
                     node.vx = 0;
                     node.vy = 0;
-                    restoredCount++;
+                    restoredCount += 1;
                     console.log(`노드 위치 복원: ${nodeId} -> (${x}, ${y})`);
+                    return;
                 }
-            } else if (Number.isFinite(datum?.x) && Number.isFinite(datum?.y)) {
+            }
+
+            if (Number.isFinite(datum?.x) && Number.isFinite(datum?.y)) {
                 node.x = datum.x;
                 node.y = datum.y;
                 node.vx = 0;
                 node.vy = 0;
+                return;
             }
 
-            // Force simulation이 비활성화된 경우에도 드래그를 위해 고정하지 않음
-            // (노드들이 독립적으로 드래그 가능하도록 함)
+            const target = targetPositionByNodeId.get(nodeId);
+            if (target) {
+                node.x = target.x;
+                node.y = target.y;
+                node.vx = 0;
+                node.vy = 0;
+            }
         });
 
         if (restoredCount > 0) {
             console.log(`총 ${restoredCount}개 노드 위치 복원 완료`);
         }
 
-        // Force simulation 생성
         const linkForce = d3.forceLink(links)
-            .id(d => d.id || d.data.id)
-            .distance((link) => {
-                const targetDatum = resolveDatum(link?.target);
-                if (targetDatum?.nodeType === 'memo') {
-                    return 18;
-                }
+            .id((d) => d.id || d.data.id)
+            .distance((link) => computeLinkDistance(link))
+            .strength((link) => computeLinkStrength(link));
 
-                const targetChildren = Array.isArray(targetDatum?.children)
-                    ? targetDatum.children.length
-                    : (Number.isFinite(targetDatum?.childCount) ? targetDatum.childCount : 0);
-
-                if (!targetChildren) {
-                    return 72;
-                }
-
-                return 108;
-            })
-            .strength((link) => {
-                const targetDatum = resolveDatum(link?.target);
-                if (targetDatum?.nodeType === 'memo') {
-                    return 3.1;
-                }
-
-                const targetChildren = Array.isArray(targetDatum?.children)
-                    ? targetDatum.children.length
-                    : (Number.isFinite(targetDatum?.childCount) ? targetDatum.childCount : 0);
-
-                if (!targetChildren) {
-                    return 0.68;
-                }
-
-                return 0.5;
-            });
-
-        const chargeForce = d3.forceManyBody().strength((d) => {
-            const nodeType = resolveDatum(d)?.nodeType;
-            if (nodeType === 'memo') {
-                return -35;
+        const chargeForce = d3.forceManyBody().strength((node) => {
+            const datum = resolveDatum(node);
+            if (datum?.nodeType === 'memo') {
+                return NODE_CHARGE_STRENGTH.memo;
             }
-            return -130;
+            if (isRootNode(node, datum)) {
+                return NODE_CHARGE_STRENGTH.root;
+            }
+            return NODE_CHARGE_STRENGTH.default;
         });
 
-        const collisionForce = d3.forceCollide((d) => {
-            const nodeType = resolveDatum(d)?.nodeType;
+        const collisionForce = d3.forceCollide((node) => {
+            const nodeType = resolveDatum(node)?.nodeType;
             if (nodeType === 'memo') {
                 return 18;
             }
             return 36;
         }).strength(0.9);
 
-        const forceX = d3.forceX((d) => {
-            const datum = resolveDatum(d);
+        const forceX = d3.forceX((node) => {
+            const datum = resolveDatum(node);
+            const nodeId = datum?.id;
+            if (nodeId && targetPositionByNodeId.has(nodeId)) {
+                return targetPositionByNodeId.get(nodeId).x;
+            }
             if (Number.isFinite(datum?.x)) {
                 return datum.x;
             }
             return 0;
-        }).strength((d) => (resolveDatum(d)?.nodeType === 'memo' ? 0.0075 : 0.018));
+        }).strength((node) => (
+            resolveDatum(node)?.nodeType === 'memo'
+                ? ANGLE_FORCE_CONFIG.memoStrength
+                : ANGLE_FORCE_CONFIG.defaultStrength
+        ));
 
-        const forceY = d3.forceY((d) => {
-            const datum = resolveDatum(d);
+        const forceY = d3.forceY((node) => {
+            const datum = resolveDatum(node);
+            const nodeId = datum?.id;
+            if (nodeId && targetPositionByNodeId.has(nodeId)) {
+                return targetPositionByNodeId.get(nodeId).y;
+            }
             if (Number.isFinite(datum?.y)) {
                 return datum.y;
             }
             return 0;
-        }).strength((d) => (resolveDatum(d)?.nodeType === 'memo' ? 0.0075 : 0.018));
+        }).strength((node) => (
+            resolveDatum(node)?.nodeType === 'memo'
+                ? ANGLE_FORCE_CONFIG.memoStrength
+                : ANGLE_FORCE_CONFIG.defaultStrength
+        ));
 
-        const radialForce = d3.forceRadial((d) => {
-            const datum = resolveDatum(d);
-            const level = Number.isFinite(datum?.level) ? datum.level : 0;
-            return 420 + level * 240;
-        }, 0, 0).strength(0.02);
+        const radialForce = d3.forceRadial((node) => computeRadialRadius(node), 0, 0)
+            .strength(RADIAL_FORCE_CONFIG.strength);
 
-        // Force simulation이 비활성화된 경우 simulation을 생성하지 않음
         if (!enableForceSimulation) {
             if (onTick && typeof onTick === 'function') {
                 onTick(nodes, links);
@@ -469,7 +625,6 @@ class ForceSimulationService {
             this.simulation.force('edge-repulsion', edgeRepulsionForce);
         }
 
-        // Tick 콜백 등록
         if (onTick && typeof onTick === 'function') {
             this.onTickCallback = onTick;
             this.simulation.on('tick', () => {

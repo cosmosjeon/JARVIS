@@ -96,6 +96,8 @@
  *   진행 중인 캡처를 취소합니다.
  * @property {(listener: (payload: { base64: string, mimeType: string, width: number, height: number, displayId?: number, timestamp: number }) => void) => (() => void)} onCaptureCompleted
  *   캡처 완료 이벤트를 구독합니다.
+ * @property {(listener: (payload: { timestamp: number }) => void) => (() => void)} onCaptureStarted
+ *   캡처 시작 이벤트를 구독합니다.
  * @property {(listener: (payload: any) => void) => (() => void)} onCaptureCancelled
  *   캡처 취소 이벤트를 구독합니다.
  * @property {(listener: (payload: { message?: string }) => void) => (() => void)} onCaptureFailed

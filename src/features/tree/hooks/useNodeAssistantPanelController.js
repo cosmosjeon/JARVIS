@@ -70,6 +70,8 @@ export const useNodeAssistantPanelController = ({
   disableNavigation = false,
   navigationService: injectedNavigationService,
   highlightStore: injectedHighlightStore,
+  attachments = [],
+  onAttachmentsChange = () => {},
 }) => {
   const { autoPasteEnabled } = useSettings();
   const { theme } = useTheme();
@@ -90,6 +92,10 @@ export const useNodeAssistantPanelController = ({
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const [copiedMap, setCopiedMap] = useState({});
   const [spinningMap, setSpinningMap] = useState({});
+  const [draftAttachments, setDraftAttachments] = useState(() => (
+    Array.isArray(attachments) ? attachments : []
+  ));
+  const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
 
   const scaledPanelSizes = useMemo(
     () => getScaledPanelSizes(nodeScaleFactor),
@@ -138,6 +144,68 @@ export const useNodeAssistantPanelController = ({
   useEffect(() => {
     composerValueRef.current = composerValue;
   }, [composerValue]);
+
+  useEffect(() => {
+    setDraftAttachments(Array.isArray(attachments) ? attachments : []);
+  }, [attachments]);
+
+  const updateAttachments = useCallback((next) => {
+    const normalized = Array.isArray(next) ? next : [];
+    setDraftAttachments(normalized);
+    onAttachmentsChange(normalized);
+  }, [onAttachmentsChange]);
+
+  const handleAttachmentRemove = useCallback((attachmentId) => {
+    updateAttachments(
+      draftAttachments.filter((item) => item && item.id !== attachmentId),
+    );
+  }, [draftAttachments, updateAttachments]);
+
+  const clearAttachments = useCallback(() => {
+    updateAttachments([]);
+  }, [updateAttachments]);
+
+  const handleAttachmentFiles = useCallback(async (fileList) => {
+    if (!fileList || fileList.length === 0) {
+      return;
+    }
+
+    const files = Array.from(fileList).filter((file) => file.type?.startsWith('image/'));
+    if (!files.length) {
+      setPlaceholderNotice({ type: 'warning', message: '이미지 파일만 첨부할 수 있습니다.' });
+      return;
+    }
+
+    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+    setIsAttachmentUploading(true);
+    try {
+      const nextAttachments = await Promise.all(files.map(async (file, index) => {
+        const dataUrl = await readFileAsDataUrl(file);
+        return {
+          id: `upload-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`,
+          type: 'image',
+          mimeType: file.type,
+          dataUrl,
+          name: file.name,
+          label: file.name,
+          size: file.size,
+          createdAt: Date.now(),
+        };
+      }));
+
+      updateAttachments([...draftAttachments, ...nextAttachments]);
+    } catch (error) {
+      setPlaceholderNotice({ type: 'warning', message: '이미지 첨부 중 오류가 발생했습니다.' });
+    } finally {
+      setIsAttachmentUploading(false);
+    }
+  }, [draftAttachments, updateAttachments]);
 
   const getHighlightTexts = useCallback(() => highlightStoreRef.current.getTexts(), []);
 
@@ -335,15 +403,50 @@ export const useNodeAssistantPanelController = ({
 
   const handleSend = useCallback(async () => {
     const trimmed = composerValue.trim();
-    if (!trimmed) return;
+    const hasText = trimmed.length > 0;
+    const hasAttachments = draftAttachments.length > 0;
+
+    if (!hasText && !hasAttachments) {
+      return;
+    }
+
+    const attachmentMarkdown = draftAttachments
+      .filter((item) => item?.dataUrl)
+      .map((item, index) => {
+        const label = item?.label || item?.name || `Attachment ${index + 1}`;
+        return `![${label}](${item.dataUrl})`;
+      })
+      .join('\n');
+
+    const payload = [trimmed, attachmentMarkdown]
+      .filter((segment) => segment && segment.trim().length > 0)
+      .join(hasText && attachmentMarkdown ? '\n\n' : '');
 
     try {
-      await submitMessage(trimmed);
+      await submitMessage(payload);
+      if (hasAttachments) {
+        clearAttachments();
+      }
     } catch (error) {
       console.error('메시지 전송 오류:', error);
       throw error;
     }
-  }, [composerValue, submitMessage]);
+  }, [clearAttachments, composerValue, draftAttachments, submitMessage]);
+
+  const triggerSend = useCallback(() => {
+    const hasText = composerValueRef.current.trim().length > 0;
+    const hasAttachments = draftAttachments.length > 0;
+
+    if (!hasText && !hasAttachments) {
+      return;
+    }
+
+    const latestValue = composerValueRef.current;
+    setComposerValue('');
+    handleSend().catch(() => {
+      setComposerValue(latestValue);
+    });
+  }, [draftAttachments, handleSend]);
 
   useEffect(() => {
     if (!onSizeChange) {
@@ -409,13 +512,7 @@ export const useNodeAssistantPanelController = ({
         return;
       }
 
-      if (composerValue.trim()) {
-        setComposerValue('');
-        const latestValue = composerValueRef.current;
-        handleSend().catch(() => {
-          setComposerValue(latestValue);
-        });
-      }
+      triggerSend();
       return;
     }
 
@@ -425,7 +522,15 @@ export const useNodeAssistantPanelController = ({
         handleNodeNavigation(event.key);
       }
     }
-  }, [attemptHighlightPlaceholderCreate, composerValue, disableNavigation, handleNodeNavigation, handleSend, isComposing, isHighlightMode]);
+  }, [
+    attemptHighlightPlaceholderCreate,
+    composerValue,
+    disableNavigation,
+    handleNodeNavigation,
+    isComposing,
+    isHighlightMode,
+    triggerSend,
+  ]);
 
   const handleCompositionStart = useCallback(() => {
     setIsComposing(true);
@@ -477,25 +582,13 @@ export const useNodeAssistantPanelController = ({
 
   const handleFormSubmit = useCallback((event) => {
     event.preventDefault();
-    if (composerValue.trim()) {
-      setComposerValue('');
-      const latestValue = composerValueRef.current;
-      handleSend().catch(() => {
-        setComposerValue(latestValue);
-      });
-    }
-  }, [composerValue, handleSend]);
+    triggerSend();
+  }, [triggerSend]);
 
   const handleSendClick = useCallback((event) => {
     event.stopPropagation();
-    if (composerValue.trim()) {
-      setComposerValue('');
-      const latestValue = composerValueRef.current;
-      handleSend().catch(() => {
-        setComposerValue(latestValue);
-      });
-    }
-  }, [composerValue, handleSend]);
+    triggerSend();
+  }, [triggerSend]);
 
   const handleComposerChange = useCallback((event) => {
     setComposerValue(event.target.value);
@@ -507,7 +600,8 @@ export const useNodeAssistantPanelController = ({
     }, 0);
   }, []);
 
-  const isSendDisabled = composerValue.trim().length === 0;
+  const isSendDisabled = isAttachmentUploading
+    || (composerValue.trim().length === 0 && draftAttachments.length === 0);
 
   return {
     panelRef,
@@ -522,6 +616,9 @@ export const useNodeAssistantPanelController = ({
     messages,
     spinningMap,
     copiedMap,
+    attachments: draftAttachments,
+    onAttachmentRemove: handleAttachmentRemove,
+    onClearAttachments: clearAttachments,
     handleRetryMessage,
     handleCopyMessage,
     registerMessageContainer,
@@ -539,6 +636,8 @@ export const useNodeAssistantPanelController = ({
     handleSendClick,
     panelWheelHandler,
     isSendDisabled,
+    onAttachmentFiles: handleAttachmentFiles,
+    isAttachmentUploading,
   };
 };
 
