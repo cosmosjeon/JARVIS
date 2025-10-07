@@ -31,7 +31,7 @@ const buildSummary = (node, fallbackSummary) => {
   };
 };
 
-const NodeAssistantPanelContainer = ({ node, nodeSummary, nodeScaleFactor, ...rest }) => {
+const NodeAssistantPanelContainer = ({ node, nodeSummary, nodeScaleFactor, showHeaderControls = true, ...rest }) => {
   const summary = useMemo(() => buildSummary(node, nodeSummary), [node, nodeSummary]);
 
   const controller = useNodeAssistantPanelController({
@@ -44,6 +44,7 @@ const NodeAssistantPanelContainer = ({ node, nodeSummary, nodeScaleFactor, ...re
   return (
     <NodeAssistantPanelView
       {...controller}
+      showHeaderControls={showHeaderControls}
     />
   );
 };

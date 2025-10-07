@@ -10,6 +10,7 @@ const AssistantPanelHeader = ({
   bootstrapMode,
   onClose,
   onPanZoomGesture,
+  showCloseButton = true,
 }) => (
   <div
     className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
@@ -53,7 +54,7 @@ const AssistantPanelHeader = ({
         </div>
       </div>
     </div>
-    {!bootstrapMode && (
+    {!bootstrapMode && showCloseButton && (
       <div className="flex items-center gap-2" data-block-pan="true">
         <button
           type="button"

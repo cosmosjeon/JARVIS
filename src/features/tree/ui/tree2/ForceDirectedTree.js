@@ -24,6 +24,10 @@ const DEFAULT_NODE_SIZE_STATE = {
     sizeValue: 50, // 0-100 범위, 기본값 50
 };
 
+const SPLIT_DEFAULT_RATIO = 0.38;
+const SPLIT_MIN_RATIO = 0.25;
+const SPLIT_MAX_RATIO = 0.7;
+
 const NODE_SHAPES = {
     RECTANGLE: 'rectangle',
     DOT: 'dot',
@@ -173,6 +177,139 @@ const normalizeLinkEndpoint = (endpoint) => {
     return null;
 };
 
+const getNodeSizeScale = (datum = {}) => {
+    const rawValue = typeof datum?.sizeValue === 'number' ? datum.sizeValue : 50;
+    return Math.max(0.1, rawValue / 50);
+};
+
+const estimateNodeRadius = (datum = {}) => {
+    if (datum?.nodeShape === NODE_SHAPES.DOT) {
+        return 4;
+    }
+
+    const base = datum?.nodeType === 'memo' || (Number.isFinite(datum?.level) && datum.level === 0)
+        ? 18
+        : 14;
+
+    return base * getNodeSizeScale(datum);
+};
+
+const computeDeterministicOffset = (seed, magnitude = 0) => {
+    if (!seed || magnitude <= 0) {
+        return 0;
+    }
+
+    let hash = 0;
+    const input = String(seed);
+    for (let i = 0; i < input.length; i += 1) {
+        hash = ((hash << 5) - hash) + input.charCodeAt(i);
+        hash |= 0;
+    }
+
+    const normalized = ((hash % 200) / 100) - 1; // [-1, 1) 범위
+    return normalized * magnitude;
+};
+
+const deriveTrimmedLine = (source, target, options = {}) => {
+    if (!source || !target) {
+        return null;
+    }
+
+    const sx = Number.isFinite(source.x) ? source.x : 0;
+    const sy = Number.isFinite(source.y) ? source.y : 0;
+    const tx = Number.isFinite(target.x) ? target.x : 0;
+    const ty = Number.isFinite(target.y) ? target.y : 0;
+
+    const dx = tx - sx;
+    const dy = ty - sy;
+    const distance = Math.hypot(dx, dy);
+
+    if (!Number.isFinite(distance) || distance === 0) {
+        return {
+            x1: sx,
+            y1: sy,
+            x2: tx,
+            y2: ty,
+        };
+    }
+
+    const unitX = dx / distance;
+    const unitY = dy / distance;
+    const normalX = -unitY;
+    const normalY = unitX;
+
+    let startRadius = Math.max(0, options.sourceRadius || 0);
+    let endRadius = Math.max(0, options.targetRadius || 0);
+
+    const maxRadius = distance * 0.45;
+    startRadius = Math.min(startRadius, maxRadius);
+    endRadius = Math.min(endRadius, maxRadius);
+
+    if (startRadius + endRadius > distance * 0.9) {
+        const scale = (distance * 0.9) / (startRadius + endRadius);
+        startRadius *= scale;
+        endRadius *= scale;
+    }
+
+    const baseX1 = sx + unitX * startRadius;
+    const baseY1 = sy + unitY * startRadius;
+    const baseX2 = tx - unitX * endRadius;
+    const baseY2 = ty - unitY * endRadius;
+
+    const offset = options.offset || 0;
+    const offsetX = normalX * offset;
+    const offsetY = normalY * offset;
+
+    return {
+        x1: baseX1 + offsetX,
+        y1: baseY1 + offsetY,
+        x2: baseX2 + offsetX,
+        y2: baseY2 + offsetY,
+    };
+};
+
+const getHierarchicalLinkCoordinates = (link) => {
+    if (!link?.source || !link?.target) {
+        return null;
+    }
+
+    const sourceDatum = getNodeDatum(link.source);
+    const targetDatum = getNodeDatum(link.target);
+    const depth = Number.isFinite(link.target.depth) ? link.target.depth : 0;
+
+    const sourceRadius = estimateNodeRadius(sourceDatum) + 6;
+    const targetRadius = estimateNodeRadius(targetDatum) + 6;
+
+    const offsetMagnitude = depth <= 1 ? 0 : Math.min(12, depth * 2.5);
+    const offsetSeed = `${targetDatum?.id || targetDatum?.name || ''}:${depth}`;
+    const offset = computeDeterministicOffset(offsetSeed, offsetMagnitude);
+
+    return deriveTrimmedLine(link.source, link.target, {
+        sourceRadius,
+        targetRadius,
+        offset,
+    });
+};
+
+const getConnectionLinkCoordinates = (sourceNode, targetNode) => {
+    if (!sourceNode || !targetNode) {
+        return null;
+    }
+
+    const sourceDatum = getNodeDatum(sourceNode);
+    const targetDatum = getNodeDatum(targetNode);
+    const sourceRadius = estimateNodeRadius(sourceDatum) + 4;
+    const targetRadius = estimateNodeRadius(targetDatum) + 4;
+    const orderedPair = [getNodeId(sourceNode) || '', getNodeId(targetNode) || ''].sort().join('::');
+    const offset = computeDeterministicOffset(orderedPair, 9);
+
+    return deriveTrimmedLine(sourceNode, targetNode, {
+        sourceRadius,
+        targetRadius,
+        offset,
+    });
+};
+
 /**
  * ForceDirectedTree Component
  * 
@@ -201,6 +338,7 @@ const ForceDirectedTree = ({
     theme = 'dark',
     treeId,
     userId,
+    isForceSimulationEnabled = true,
     // 라이브러리에서 우측 패널 사용 시, 캔버스 위젯 어시스턴트 패널 숨김
     hideAssistantPanel = false,
 }) => {
@@ -224,15 +362,16 @@ const ForceDirectedTree = ({
     const selectionBoxDidDragRef = useRef(false);
     const [linkCreationState, setLinkCreationState] = useState({ active: false, sourceId: null });
     const [memoEditorState, setMemoEditorState] = useState({ isOpen: false, memo: null });
-    const memoEditorSize = useMemo(() => {
-        const baseWidth = Math.max(dimensions?.width || 0, 640);
-        const baseHeight = Math.max(dimensions?.height || 0, 480);
-
-        return {
-            width: baseWidth * 0.95,
-            height: baseHeight * 0.95,
-        };
-    }, [dimensions?.width, dimensions?.height]);
+    const layoutRef = useRef(null);
+    const splitPanelDragStateRef = useRef({ isDragging: false, rect: null });
+    const [splitPanelRatio, setSplitPanelRatio] = useState(SPLIT_DEFAULT_RATIO);
+    const [lastNonMaximizedRatio, setLastNonMaximizedRatio] = useState(SPLIT_DEFAULT_RATIO);
+    const [isSplitPanelMaximized, setIsSplitPanelMaximized] = useState(false);
+    const [isSplitPanelResizing, setIsSplitPanelResizing] = useState(false);
+    const clampPanelRatio = useCallback(
+        (value) => Math.min(Math.max(value, SPLIT_MIN_RATIO), SPLIT_MAX_RATIO),
+        [],
+    );
     const isLinking = linkCreationState.active;
     const linkingSourceId = linkCreationState.sourceId;
 
@@ -266,7 +405,6 @@ const ForceDirectedTree = ({
     const draggedMemoSnapshotRef = useRef([]);
     const pendingCenterNodeIdRef = useRef(null);
     const previousPositionsRef = useRef(new Map());
-    const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
 
     const hierarchicalLinks = useMemo(() => (
         Array.isArray(data?.links)
@@ -297,6 +435,124 @@ const ForceDirectedTree = ({
         previousPositionsRef,
         simulationServiceRef,
     });
+
+    const selectedNode = useMemo(() => (
+        selectedNodeId
+            ? simulatedNodes.find((candidate) => getNodeId(candidate) === selectedNodeId)
+            : null
+    ), [selectedNodeId, simulatedNodes]);
+
+    const selectedDatum = useMemo(
+        () => (selectedNode ? getNodeDatum(selectedNode) : null),
+        [selectedNode],
+    );
+
+    const isMemoSelection = selectedDatum?.nodeType === 'memo';
+    const isAssistantHiddenByMode = hideAssistantPanel && !isMemoSelection;
+    const isMemoEditorOpen = memoEditorState.isOpen && memoEditorState.memo;
+    const isAssistantPanelVisible = Boolean(selectedNodeId && selectedNode && !isAssistantHiddenByMode);
+    const activePanelMode = isMemoEditorOpen
+        ? 'editor'
+        : isAssistantPanelVisible
+            ? (isMemoSelection ? 'memo' : 'assistant')
+            : null;
+    const isSplitPanelVisible = Boolean(activePanelMode);
+
+    useEffect(() => {
+        if (!isSplitPanelVisible) {
+            setIsSplitPanelMaximized(false);
+            document.body.style.cursor = '';
+        }
+    }, [isSplitPanelVisible]);
+
+    const handleSplitPanelDragMove = useCallback((event) => {
+        if (!splitPanelDragStateRef.current.isDragging) {
+            return;
+        }
+
+        const { rect } = splitPanelDragStateRef.current;
+        if (!rect) {
+            return;
+        }
+
+        event.preventDefault();
+
+        const relativeX = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+        const nextRatio = clampPanelRatio((rect.width - relativeX) / rect.width);
+
+        setSplitPanelRatio(nextRatio);
+        setLastNonMaximizedRatio(nextRatio);
+    }, [clampPanelRatio]);
+
+    const handleSplitPanelDragEnd = useCallback(() => {
+        if (!splitPanelDragStateRef.current.isDragging) {
+            return;
+        }
+
+        splitPanelDragStateRef.current = { isDragging: false, rect: null };
+        setIsSplitPanelResizing(false);
+        document.body.style.cursor = '';
+        window.removeEventListener('pointermove', handleSplitPanelDragMove);
+        window.removeEventListener('pointerup', handleSplitPanelDragEnd);
+    }, [handleSplitPanelDragMove]);
+
+    const handleSplitPanelDragStart = useCallback((event) => {
+        if (!isSplitPanelVisible || isSplitPanelMaximized) {
+            return;
+        }
+
+        const layoutElement = layoutRef.current;
+        if (!layoutElement) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const rect = layoutElement.getBoundingClientRect();
+        splitPanelDragStateRef.current = {
+            isDragging: true,
+            rect,
+        };
+
+        setIsSplitPanelResizing(true);
+        setIsSplitPanelMaximized(false);
+        document.body.style.cursor = 'col-resize';
+        window.addEventListener('pointermove', handleSplitPanelDragMove);
+        window.addEventListener('pointerup', handleSplitPanelDragEnd);
+    }, [handleSplitPanelDragEnd, handleSplitPanelDragMove, isSplitPanelMaximized, isSplitPanelVisible]);
+
+    const handleSplitPanelToggleMaximize = useCallback(() => {
+        if (!isSplitPanelVisible) {
+            return;
+        }
+
+        setIsSplitPanelMaximized((current) => {
+            if (current) {
+                setSplitPanelRatio((prev) => clampPanelRatio(lastNonMaximizedRatio || prev));
+                return false;
+            }
+
+            setLastNonMaximizedRatio((prev) => clampPanelRatio(splitPanelRatio || prev));
+            document.body.style.cursor = '';
+            return true;
+        });
+    }, [clampPanelRatio, isSplitPanelVisible, lastNonMaximizedRatio, splitPanelRatio]);
+
+    const handlePanelClose = useCallback(() => {
+        if (activePanelMode === 'editor') {
+            handleMemoEditorClose();
+            return;
+        }
+
+        setSelectedNodeId(null);
+    }, [activePanelMode, handleMemoEditorClose]);
+
+    useEffect(() => () => {
+        window.removeEventListener('pointermove', handleSplitPanelDragMove);
+        window.removeEventListener('pointerup', handleSplitPanelDragEnd);
+        document.body.style.cursor = '';
+    }, [handleSplitPanelDragEnd, handleSplitPanelDragMove]);
 
     // SVG 중심 위치 계산
     const centerX = dimensions.width / 2;
@@ -1255,7 +1511,7 @@ const ForceDirectedTree = ({
     const canAddMemo = typeof onMemoCreate === 'function' && !isMemoContextTarget;
     const isBackgroundContext = !contextMenuState.nodeId;
 
-    return (
+    const treeCanvas = (
         <div
             ref={containerRef}
             className="relative h-full w-full"
@@ -1267,19 +1523,6 @@ const ForceDirectedTree = ({
             }}
             onContextMenu={handleBackgroundContextMenu}
         >
-            {/* Force Simulation 토글 버튼 */}
-            <div className="absolute top-4 left-4 z-10">
-                <button
-                    onClick={() => setIsForceSimulationEnabled(!isForceSimulationEnabled)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${isForceSimulationEnabled
-                        ? 'bg-blue-500 text-white shadow-lg hover:bg-blue-600'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                    title={isForceSimulationEnabled ? '유기적 작용 끄기' : '유기적 작용 켜기'}
-                >
-                    {isForceSimulationEnabled ? '유기적 작용 ON' : '유기적 작용 OFF'}
-                </button>
-            </div>
             <svg
                 ref={svgRef}
                 width="100%"
@@ -1387,11 +1630,6 @@ const ForceDirectedTree = ({
                     {/* 링크 렌더링 */}
                     <g className="links">
                         {simulatedLinks.map((link, index) => {
-                            const sourceX = link.source.x || 0;
-                            const sourceY = link.source.y || 0;
-                            const targetX = link.target.x || 0;
-                            const targetY = link.target.y || 0;
-
                             const targetDatum = getNodeDatum(link.target);
                             const isMemoLink = targetDatum?.nodeType === 'memo';
 
@@ -1421,17 +1659,24 @@ const ForceDirectedTree = ({
 
                             const linkWidth = isMemoLink ? 1.1 : 1.5;
                             const linkOpacity = isMemoLink ? 0.75 : 1;
+                            const coordinates = getHierarchicalLinkCoordinates(link);
+
+                            if (!coordinates) {
+                                return null;
+                            }
 
                             return (
                                 <motion.line
                                     key={`link-${index}`}
-                                    x1={sourceX}
-                                    y1={sourceY}
-                                    x2={targetX}
-                                    y2={targetY}
+                                    x1={coordinates.x1}
+                                    y1={coordinates.y1}
+                                    x2={coordinates.x2}
+                                    y2={coordinates.y2}
                                     stroke={linkStroke}
                                     strokeWidth={linkWidth}
                                     strokeDasharray={isMemoLink ? '2,3' : undefined}
+                                    strokeLinecap="round"
+                                    vectorEffect="non-scaling-stroke"
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: linkOpacity }}
                                     transition={{ duration: 0.3 }}
@@ -1462,17 +1707,23 @@ const ForceDirectedTree = ({
                                 : (involvesMemo ? 'rgba(45, 212, 191, 0.82)' : 'rgba(147, 197, 253, 0.88)');
 
                             const strokeWidth = involvesMemo ? 0.8 : 1.1;
+                            const coordinates = getConnectionLinkCoordinates(sourceNode, targetNode);
+
+                            if (!coordinates) {
+                                return null;
+                            }
 
                             return (
                                 <motion.line
                                     key={`connection-${sourceId}-${targetId}-${index}`}
-                                    x1={sourceNode.x || 0}
-                                    y1={sourceNode.y || 0}
-                                    x2={targetNode.x || 0}
-                                    y2={targetNode.y || 0}
+                                    x1={coordinates.x1}
+                                    y1={coordinates.y1}
+                                    x2={coordinates.x2}
+                                    y2={coordinates.y2}
                                     stroke={strokeColor}
                                     strokeWidth={strokeWidth}
                                     strokeLinecap="round"
+                                    vectorEffect="non-scaling-stroke"
                                     style={{ pointerEvents: 'none' }}
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 0.85 }}
@@ -1977,109 +2228,135 @@ const ForceDirectedTree = ({
                 </div>
             )}
 
-            {/* AI 대화 패널 */}
-            {selectedNodeId && (() => {
-                const selectedNode = simulatedNodes.find((candidate) => getNodeId(candidate) === selectedNodeId);
-                if (!selectedNode) return null;
+        </div>
+    );
 
-                const selectedDatum = getNodeDatum(selectedNode);
-                const isMemoSelection = selectedDatum?.nodeType === 'memo';
-                // 패널을 숨겨야 하는 경우(메모 선택이 아니고, 보조 패널 숨김 옵션이 켜진 경우) 전체 컨테이너 자체를 렌더링하지 않음
-                if (!isMemoSelection && hideAssistantPanel) {
-                    return null;
-                }
-                const panelWidth = isMemoSelection
-                    ? Math.min(Math.max(dimensions.width * 0.45, 360), 520)
-                    : dimensions.width * 0.95;
-                const panelHeight = isMemoSelection
-                    ? Math.min(Math.max(dimensions.height * 0.45, 320), 520)
-                    : dimensions.height * 0.95;
+    const effectivePanelRatio = isSplitPanelMaximized ? 1 : splitPanelRatio;
+    const panelWidthPercent = Math.round(effectivePanelRatio * 10000) / 100;
+    const panelFlexStyle = {
+        flex: isSplitPanelMaximized ? '1 1 100%' : `0 0 ${panelWidthPercent}%`,
+        width: isSplitPanelMaximized ? '100%' : `${panelWidthPercent}%`,
+        minWidth: isSplitPanelMaximized ? '100%' : '320px',
+        maxWidth: '100%',
+    };
 
-                return (
-                    <div
-                        className="pointer-events-none absolute"
-                        style={{
-                            left: '50%',
-                            top: '52%',
-                            transform: 'translate(-50%, -50%)',
-                            width: panelWidth,
-                            height: panelHeight,
-                            zIndex: 1000,
-                        }}
-                        data-interactive-zone="true"
-                    >
-                        <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
-                            {isMemoSelection ? (
-                                <MemoPanel
-                                    memo={selectedDatum}
-                                    onClose={() => setSelectedNodeId(null)}
-                                    onUpdate={(updates) => {
-                                        if (!onMemoUpdate) return;
-                                        onMemoUpdate(selectedDatum.id, updates);
-                                    }}
-                                />
-                            ) : (
-                                <NodeAssistantPanel
-                                    node={selectedDatum}
-                                    color={d3.schemeCategory10[0]}
-                                    onSizeChange={() => { }}
-                                    onSecondQuestion={onSecondQuestion || (() => { })}
-                                    onPlaceholderCreate={onPlaceholderCreate || (() => { })}
-                                    questionService={questionServiceRef.current}
-                                    initialConversation={getInitialConversationForNode(selectedNodeId)}
-                                    onConversationChange={(messages) => handleConversationChange(selectedNodeId, messages)}
-                                    onRequestAnswer={onRequestAnswer || (() => { })}
-                                    onAnswerComplete={onAnswerComplete || (() => { })}
-                                    onAnswerError={onAnswerError || (() => { })}
-                                    nodeSummary={{
-                                        label: selectedDatum.keyword || selectedDatum.id,
-                                        intro: selectedDatum.fullText || '',
-                                        bullets: []
-                                    }}
-                                    isRootNode={false}
-                                    bootstrapMode={false}
-                                    onBootstrapFirstSend={() => { }}
-                                    onCloseNode={() => setSelectedNodeId(null)}
-                                    onPanZoomGesture={() => { }}
-                                    nodeScaleFactor={1}
-                                    treeNodes={data?.nodes || []}
-                                    treeLinks={hierarchicalLinks}
-                                    onNodeSelect={(targetNode) => {
-                                        const targetNodeId = targetNode?.id;
-                                        if (targetNodeId) {
-                                            setSelectedNodeId(targetNodeId);
-                                        }
-                                    }}
-                                    disableNavigation={isMemoSelection}
-                                />
-                            )}
-                        </div>
-                    </div>
-                );
-            })()}
+    let panelContent = null;
 
-            {/* 메모 에디터 */}
-            {memoEditorState.isOpen && memoEditorState.memo && (
+    if (activePanelMode === 'memo' && selectedDatum) {
+        panelContent = (
+            <MemoPanel
+                memo={selectedDatum}
+                onClose={() => setSelectedNodeId(null)}
+                onUpdate={(updates) => {
+                    if (!onMemoUpdate) return;
+                    onMemoUpdate(selectedDatum.id, updates);
+                }}
+                showHeaderControls={false}
+            />
+        );
+    } else if (activePanelMode === 'assistant' && selectedDatum && selectedNodeId) {
+        panelContent = (
+            <NodeAssistantPanel
+                node={selectedDatum}
+                color={d3.schemeCategory10[0]}
+                onSizeChange={() => { }}
+                onSecondQuestion={onSecondQuestion || (() => { })}
+                onPlaceholderCreate={onPlaceholderCreate || (() => { })}
+                questionService={questionServiceRef.current}
+                initialConversation={getInitialConversationForNode(selectedNodeId)}
+                onConversationChange={(messages) => handleConversationChange(selectedNodeId, messages)}
+                onRequestAnswer={onRequestAnswer || (() => { })}
+                onAnswerComplete={onAnswerComplete || (() => { })}
+                onAnswerError={onAnswerError || (() => { })}
+                nodeSummary={{
+                    label: selectedDatum.keyword || selectedDatum.id,
+                    intro: selectedDatum.fullText || '',
+                    bullets: [],
+                }}
+                isRootNode={false}
+                bootstrapMode={false}
+                onBootstrapFirstSend={() => { }}
+                onCloseNode={() => setSelectedNodeId(null)}
+                onPanZoomGesture={() => { }}
+                nodeScaleFactor={1}
+                treeNodes={data?.nodes || []}
+                treeLinks={hierarchicalLinks}
+                onNodeSelect={(targetNode) => {
+                    const targetNodeId = targetNode?.id;
+                    if (targetNodeId) {
+                        setSelectedNodeId(targetNodeId);
+                    }
+                }}
+                disableNavigation={isMemoSelection}
+                showHeaderControls={false}
+            />
+        );
+    } else if (activePanelMode === 'editor' && memoEditorState.memo) {
+        panelContent = (
+            <MemoEditor
+                memo={memoEditorState.memo}
+                isVisible={memoEditorState.isOpen}
+                onClose={handleMemoEditorClose}
+                onUpdate={handleMemoUpdate}
+                onDelete={handleMemoDelete}
+            />
+        );
+    }
+
+    const splitControlButtonClassName = theme === 'light'
+        ? 'rounded-full border border-slate-300/60 bg-white/90 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-white'
+        : 'rounded-full border border-white/15 bg-slate-900/70 px-3 py-1 text-xs font-medium text-slate-100 shadow-lg transition hover:bg-slate-900';
+    const maximizeLabel = isSplitPanelMaximized ? '원래대로' : '전체 화면';
+
+    return (
+        <div
+            ref={layoutRef}
+            className="flex h-full w-full overflow-hidden"
+            style={{ background: themeBackground }}
+        >
+            <div
+                className="relative flex-1 min-w-0"
+                style={{ display: isSplitPanelVisible && isSplitPanelMaximized ? 'none' : undefined }}
+            >
+                {treeCanvas}
+            </div>
+
+            {isSplitPanelVisible && !isSplitPanelMaximized && (
                 <div
-                    className="pointer-events-none absolute"
-                    style={{
-                        left: '50%',
-                        top: '52%',
-                        transform: 'translate(-50%, -50%)',
-                        width: memoEditorSize.width,
-                        height: memoEditorSize.height,
-                        zIndex: 1100,
-                    }}
-                    data-interactive-zone="true"
+                    role="separator"
+                    aria-orientation="vertical"
+                    onPointerDown={handleSplitPanelDragStart}
+                    className={`relative z-[1500] h-full w-3 cursor-col-resize select-none transition ${isSplitPanelResizing ? 'bg-slate-500/40' : 'bg-transparent hover:bg-slate-500/20'}`}
                 >
-                    <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
-                        <MemoEditor
-                            memo={memoEditorState.memo}
-                            isVisible={memoEditorState.isOpen}
-                            onClose={handleMemoEditorClose}
-                            onUpdate={handleMemoUpdate}
-                            onDelete={handleMemoDelete}
-                        />
+                    <div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-200/80" />
+                </div>
+            )}
+
+            {isSplitPanelVisible && panelContent && (
+                <div
+                    className="relative flex h-full"
+                    style={panelFlexStyle}
+                >
+                    <div className="relative flex h-full w-full min-w-0">
+                        <div className="absolute right-4 top-4 z-[2000] flex gap-2">
+                            <button
+                                type="button"
+                                onClick={handleSplitPanelToggleMaximize}
+                                className={splitControlButtonClassName}
+                            >
+                                {maximizeLabel}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handlePanelClose}
+                                className={splitControlButtonClassName}
+                            >
+                                닫기
+                            </button>
+                        </div>
+                        <div className="flex h-full w-full overflow-hidden">
+                            {panelContent}
+                        </div>
                     </div>
                 </div>
             )}

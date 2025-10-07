@@ -12,14 +12,13 @@ import TreeAnimationService from 'features/tree/services/TreeAnimationService';
 import QuestionService from 'features/tree/services/QuestionService';
 import useTreeViewController from 'features/tree/hooks/useTreeViewController';
 import { markNewLinks } from 'shared/utils/linkAnimationUtils';
-import ChartView from 'features/tree/ui/components/ChartView';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
 import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
 import TreeWorkspaceToolbar from 'features/tree/ui/components/TreeWorkspaceToolbar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from 'shared/components/library/ThemeProvider';
-import { Sun, Moon, Sparkles } from 'lucide-react';
+import { Sun, Moon, Sparkles, Settings } from 'lucide-react';
 import { useTreeViewport } from 'features/tree/hooks/useTreeViewport';
 import { useTreePersistence } from 'features/tree/hooks/useTreePersistence';
 import useTreeDataController from 'features/tree/hooks/useTreeDataController';
@@ -103,6 +102,10 @@ const HierarchicalForceTree = () => {
 
   const svgRef = useRef(null);
   const { dimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
+  const [isHandleMenuOpen, setIsHandleMenuOpen] = useState(false);
+  const handleMenuRef = useRef(null);
+  const handleMenuButtonRef = useRef(null);
+  const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const {
@@ -110,9 +113,60 @@ const HierarchicalForceTree = () => {
     setViewMode,
     isForceView,
     isTidyView,
-    isChartView,
     toolbarProps,
-  } = useTreeViewController({ initialMode: 'tree1', showChart: true });
+  } = useTreeViewController({ initialMode: 'tree1' });
+  const closeHandleMenu = useCallback(() => {
+    setIsHandleMenuOpen(false);
+  }, []);
+  const toggleHandleMenu = useCallback(() => {
+    setIsHandleMenuOpen((previous) => !previous);
+  }, []);
+  const handleForceSimulationToggle = useCallback(() => {
+    setIsForceSimulationEnabled((previous) => !previous);
+    setIsHandleMenuOpen(false);
+  }, []);
+  const handleViewSwitch = useCallback((nextMode) => {
+    if (!nextMode || nextMode === viewMode) {
+      setIsHandleMenuOpen(false);
+      return;
+    }
+    setViewMode(nextMode);
+    setIsHandleMenuOpen(false);
+  }, [setViewMode, viewMode]);
+  useEffect(() => {
+    setIsHandleMenuOpen(false);
+  }, [viewMode]);
+  useEffect(() => {
+    if (!isHandleMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event) => {
+      const menuElement = handleMenuRef.current;
+      const buttonElement = handleMenuButtonRef.current;
+      if (menuElement && menuElement.contains(event.target)) {
+        return;
+      }
+      if (buttonElement && buttonElement.contains(event.target)) {
+        return;
+      }
+      closeHandleMenu();
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        closeHandleMenu();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isHandleMenuOpen, closeHandleMenu]);
   const [linkValidationError, setLinkValidationError] = useState(null);
   const [expandedNodeId, setExpandedNodeId] = useState(null);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -1813,7 +1867,10 @@ const HierarchicalForceTree = () => {
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
         style={{ WebkitAppRegion: 'drag' }}
       >
-        <div className="flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3" style={{ width: '224px' }}>
+        <div
+          className="relative flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3"
+          style={{ width: '240px' }}
+        >
           {/* 왼쪽: 드래그 점들 & 테마 버튼 */}
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
             {/* 드래그 점들 */}
@@ -1832,6 +1889,21 @@ const HierarchicalForceTree = () => {
               title={`테마 변경 (현재: ${activeTheme.label})`}
             >
               <ActiveThemeIcon className="h-3 w-3 text-white/90" />
+            </button>
+
+            <button
+              ref={handleMenuButtonRef}
+              type="button"
+              className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/60 bg-black/40 transition-all duration-200 hover:bg-gray-700/80"
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleHandleMenu();
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+              title="트리 설정"
+            >
+              <Settings className="h-3 w-3 text-white/90" aria-hidden="true" />
+              <span className="sr-only">트리 설정</span>
             </button>
           </div>
 
@@ -1970,6 +2042,46 @@ const HierarchicalForceTree = () => {
               </svg>
             </button>
           </div>
+
+          {isHandleMenuOpen ? (
+            <div
+              ref={handleMenuRef}
+              className="absolute right-0 top-10 w-48 rounded-lg border border-white/15 bg-black/85 p-2 text-xs text-white/90 shadow-xl backdrop-blur"
+              style={{ WebkitAppRegion: 'no-drag' }}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={handleForceSimulationToggle}
+                className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition hover:bg-white/10"
+              >
+                <span className="font-medium text-white/85">유기적 상호작용</span>
+                <span className={isForceSimulationEnabled ? 'text-emerald-300 font-semibold' : 'text-slate-300'}>
+                  {isForceSimulationEnabled ? 'ON' : 'OFF'}
+                </span>
+              </button>
+              <div className="mt-2 border-t border-white/10 pt-2">
+                <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">뷰 모드</p>
+                <button
+                  type="button"
+                  onClick={() => handleViewSwitch('tree1')}
+                  className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree1' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                >
+                  <span>트리 1</span>
+                  {viewMode === 'tree1' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleViewSwitch('tree2')}
+                  className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree2' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                >
+                  <span>트리 2</span>
+                  {viewMode === 'tree2' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -2044,6 +2156,7 @@ const HierarchicalForceTree = () => {
           onSecondQuestion={handleSecondQuestion}
           onPlaceholderCreate={handlePlaceholderCreate}
           theme={theme}
+          isForceSimulationEnabled={isForceSimulationEnabled}
         />
       )}
 
@@ -2119,16 +2232,6 @@ const HierarchicalForceTree = () => {
           }}
         />
       )}
-      {/* 차트 뷰 */}
-      {isChartView && (
-        <ChartView
-          data={data}
-          dimensions={dimensions}
-          viewTransform={viewTransform}
-          nodeScaleFactor={nodeScaleFactor}
-        />
-      )}
-
       {/* 디버그 패널 제거됨 */}
       <div
         ref={overlayContainerRef}

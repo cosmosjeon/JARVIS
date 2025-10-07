@@ -3,7 +3,7 @@ import { Input } from 'shared/ui/input';
 import { Textarea } from 'shared/ui/textarea';
 import { useTheme } from 'shared/components/library/ThemeProvider';
 
-const MemoPanel = ({ memo, onClose, onUpdate }) => {
+const MemoPanel = ({ memo, onClose, onUpdate, showHeaderControls = true }) => {
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const debounceRef = useRef(null);
@@ -137,24 +137,26 @@ const MemoPanel = ({ memo, onClose, onUpdate }) => {
                             <div className="absolute right-full top-2 h-0 w-0 transform border-t-4 border-b-4 border-r-4 border-transparent border-r-slate-600/30" />
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onClose();
-                        }}
-                        className="rounded-full px-3 py-1 text-xs font-medium transition"
-                        style={{
-                            borderColor: panelStyles.borderColor,
-                            backgroundColor: panelStyles.background,
-                            borderWidth: '1px',
-                            borderStyle: 'solid',
-                            color: panelStyles.textColor,
-                        }}
-                    >
-                        닫기
-                    </button>
+                    {showHeaderControls && (
+                        <button
+                            type="button"
+                            onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onClose();
+                            }}
+                            className="rounded-full px-3 py-1 text-xs font-medium transition"
+                            style={{
+                                borderColor: panelStyles.borderColor,
+                                backgroundColor: panelStyles.background,
+                                borderWidth: '1px',
+                                borderStyle: 'solid',
+                                color: panelStyles.textColor,
+                            }}
+                        >
+                            닫기
+                        </button>
+                    )}
                 </div>
             </div>
 

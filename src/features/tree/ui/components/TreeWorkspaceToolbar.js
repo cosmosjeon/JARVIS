@@ -4,20 +4,15 @@ const BUTTON_BASE = 'rounded-full px-3 py-1 transition';
 
 const resolveButtonClass = (viewMode, target) => {
   if (viewMode === target) {
-    switch (target) {
-      case 'tree1':
-        return `${BUTTON_BASE} bg-amber-300/90 text-black shadow-lg`;
-      case 'tree2':
-        return `${BUTTON_BASE} bg-purple-400/90 text-black shadow-lg`;
-      case 'chart':
-      default:
-        return `${BUTTON_BASE} bg-emerald-400/90 text-black shadow-lg`;
+    if (target === 'tree1') {
+      return `${BUTTON_BASE} bg-amber-300/90 text-black shadow-lg`;
     }
+    return `${BUTTON_BASE} bg-purple-400/90 text-black shadow-lg`;
   }
   return `${BUTTON_BASE} hover:bg-white/10 hover:text-white`;
 };
 
-const TreeWorkspaceToolbar = ({ viewMode, onChange, showChart = true }) => {
+const TreeWorkspaceToolbar = ({ viewMode, onChange }) => {
   const handleChange = (mode) => {
     if (typeof onChange === 'function') {
       onChange(mode);
@@ -43,17 +38,6 @@ const TreeWorkspaceToolbar = ({ viewMode, onChange, showChart = true }) => {
       >
         트리2
       </button>
-
-      {showChart ? (
-        <button
-          type="button"
-          onClick={() => handleChange('chart')}
-          className={resolveButtonClass(viewMode, 'chart')}
-          aria-pressed={viewMode === 'chart'}
-        >
-          차트
-        </button>
-      ) : null}
     </div>
   );
 };

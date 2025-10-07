@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const STORAGE_KEY = 'jarvis.view.mode';
-const VALID_MODES = new Set(['tree2', 'tree1', 'chart']);
+const VALID_MODES = new Set(['tree2', 'tree1']);
 const ALIASES = {
   tree1: 'tree1',
 };

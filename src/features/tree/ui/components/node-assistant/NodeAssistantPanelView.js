@@ -32,6 +32,7 @@ const NodeAssistantPanelView = ({
   handleSendClick,
   panelWheelHandler,
   isSendDisabled,
+  showHeaderControls = true,
 }) => (
   <div
     ref={panelRef}
@@ -61,6 +62,7 @@ const NodeAssistantPanelView = ({
       bootstrapMode={bootstrapMode}
       onClose={onCloseNode}
       onPanZoomGesture={onPanZoomGesture}
+      showCloseButton={showHeaderControls}
     />
 
     <div
