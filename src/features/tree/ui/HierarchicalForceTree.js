@@ -22,6 +22,7 @@ import { useTheme } from 'shared/components/library/ThemeProvider';
 import { Sun, Moon, Sparkles } from 'lucide-react';
 import { useTreeViewport } from 'features/tree/hooks/useTreeViewport';
 import { useTreePersistence } from 'features/tree/hooks/useTreePersistence';
+import useTreeDataController from 'features/tree/hooks/useTreeDataController';
 import {
   sanitizeConversationMessages,
   buildFallbackConversation,
@@ -191,7 +192,6 @@ const HierarchicalForceTree = () => {
     sessionInfo.sessionId ? `jarvis.widget.session.${sessionInfo.sessionId}.activeTreeId` : null
   ), [sessionInfo.sessionId]);
 
-  const requestedTreeIdRef = useRef(sessionInfo.initialTreeId);
   const readSessionTreeId = useCallback(() => {
     if (!sessionStorageKey || typeof window === 'undefined') {
       return null;
@@ -242,8 +242,6 @@ const HierarchicalForceTree = () => {
     }
   }, []);
 
-  const hasResolvedInitialTreeRef = useRef(false);
-
   const createClientGeneratedId = useCallback((prefix = 'tree') => {
     try {
       const uuid = crypto?.randomUUID?.();
@@ -255,6 +253,26 @@ const HierarchicalForceTree = () => {
     }
     return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
   }, []);
+
+  const { loadActiveTree, requestedTreeIdRef } = useTreeDataController({
+    user,
+    baseTreeData: treeData,
+    loadTrees,
+    loadTree,
+    hydrateFromNodes,
+    clearConversationStore,
+    setData,
+    setActiveTreeId,
+    writeSessionTreeId,
+    readSessionTreeId,
+    setTreeSyncError,
+    setInitializingTree,
+    treeBridge,
+    sessionInfo,
+    createClientGeneratedId,
+    treeLibrarySyncRef,
+    saveTreeMetadata,
+  });
 
 
   const linkKeysRef = useRef(new Set());
@@ -348,158 +366,6 @@ const HierarchicalForceTree = () => {
     initializingTree,
   });
 
-  const loadActiveTree = useCallback(async ({ treeId: explicitTreeId } = {}) => {
-    if (!user) {
-      setActiveTreeId(null);
-      clearConversationStore();
-      setData(treeData);
-      setInitializingTree(false);
-      return;
-    }
-
-    setInitializingTree(true);
-    setTreeSyncError(null);
-
-    const resolvedTreeId = typeof explicitTreeId === 'string' && explicitTreeId.trim()
-      ? explicitTreeId.trim()
-      : (requestedTreeIdRef.current || readSessionTreeId());
-
-    if (!resolvedTreeId) {
-      clearConversationStore();
-      setActiveTreeId(null);
-      loadTree({ nodes: [], links: [] });
-      writeSessionTreeId(null);
-      if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.removeItem('jarvis.activeTreeId');
-        } catch (error) {
-          // ignore storage errors
-        }
-      }
-      setInitializingTree(false);
-      requestedTreeIdRef.current = null;
-      return;
-    }
-
-    try {
-      const trees = await loadTrees();
-      const targetTree = trees.find((tree) => tree.id === resolvedTreeId);
-
-      if (targetTree) {
-        const mappedNodes = Array.isArray(targetTree.treeData?.nodes)
-          ? targetTree.treeData.nodes.map((node) => ({
-            ...node,
-            conversation: sanitizeConversationMessages(node.conversation),
-          }))
-          : [];
-
-        hydrateFromNodes(mappedNodes);
-        loadTree({
-          nodes: mappedNodes,
-          links: Array.isArray(targetTree.treeData?.links) ? targetTree.treeData.links : [],
-        });
-        treeLibrarySyncRef.current.set(targetTree.id, {
-          lastCount: mappedNodes.length,
-          refreshed: mappedNodes.length > 0,
-        });
-        setActiveTreeId(targetTree.id);
-        writeSessionTreeId(targetTree.id);
-        if (typeof window !== 'undefined') {
-          try {
-            window.localStorage.setItem('jarvis.activeTreeId', targetTree.id);
-          } catch (error) {
-            // ignore storage errors
-          }
-        }
-      } else {
-        clearConversationStore();
-        setActiveTreeId(null);
-        loadTree({ nodes: [], links: [] });
-        writeSessionTreeId(null);
-        if (resolvedTreeId) {
-          treeLibrarySyncRef.current.delete(resolvedTreeId);
-        }
-      }
-    } catch (error) {
-      setTreeSyncError(error);
-    } finally {
-      requestedTreeIdRef.current = null;
-      setInitializingTree(false);
-    }
-  }, [user, clearConversationStore, hydrateFromNodes, loadTree, loadTrees, readSessionTreeId, writeSessionTreeId]);
-
-  useEffect(() => {
-    if (!user || hasResolvedInitialTreeRef.current) {
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const resolveInitialTree = async () => {
-      if (hasResolvedInitialTreeRef.current || cancelled) {
-        return;
-      }
-
-      const initialTreeId = sessionInfo.initialTreeId || readSessionTreeId();
-      if (initialTreeId) {
-        hasResolvedInitialTreeRef.current = true;
-        await loadActiveTree({ treeId: initialTreeId });
-        return;
-      }
-
-      try {
-        const existingTrees = await loadTrees();
-        const shouldCreateNewTree = sessionInfo.fresh || !Array.isArray(existingTrees) || existingTrees.length === 0;
-
-        if (!shouldCreateNewTree && Array.isArray(existingTrees) && existingTrees.length > 0) {
-          const [mostRecent] = existingTrees;
-          writeSessionTreeId(mostRecent.id);
-          if (typeof window !== 'undefined') {
-            try {
-              window.localStorage.setItem('jarvis.activeTreeId', mostRecent.id);
-            } catch (error) {
-              // ignore storage errors
-            }
-          }
-
-          requestedTreeIdRef.current = mostRecent.id;
-          hasResolvedInitialTreeRef.current = true;
-          await loadActiveTree({ treeId: mostRecent.id });
-          return;
-        }
-
-        const freshTreeId = createClientGeneratedId('tree');
-        await saveTreeMetadata({
-          treeId: freshTreeId,
-          title: '새 지식 트리',
-        });
-
-        writeSessionTreeId(freshTreeId);
-        if (typeof window !== 'undefined') {
-          try {
-            window.localStorage.setItem('jarvis.activeTreeId', freshTreeId);
-          } catch (error) {
-            // ignore storage errors
-          }
-        }
-
-        requestedTreeIdRef.current = freshTreeId;
-        hasResolvedInitialTreeRef.current = true;
-        await loadActiveTree({ treeId: freshTreeId });
-      } catch (error) {
-        setTreeSyncError(error);
-        setInitializingTree(false);
-        hasResolvedInitialTreeRef.current = true;
-      }
-    };
-
-    resolveInitialTree();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [createClientGeneratedId, loadActiveTree, loadTrees, readSessionTreeId, sessionInfo.initialTreeId, user, writeSessionTreeId]);
-
   useEffect(() => {
     if (typeof window === 'undefined') {
       return undefined;
@@ -515,19 +381,6 @@ const HierarchicalForceTree = () => {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [activeTreeId, loadActiveTree, readSessionTreeId, user]);
-
-  useEffect(() => {
-    const unsubscribe = treeBridge.onSetActiveTree((payload) => {
-      if (payload && typeof payload.treeId === 'string') {
-        requestedTreeIdRef.current = payload.treeId;
-        loadActiveTree({ treeId: payload.treeId });
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [loadActiveTree, treeBridge]);
 
   // 노드 추가 함수
   const addNode = (parentId, nodeData) => {

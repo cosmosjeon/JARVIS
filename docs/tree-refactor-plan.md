@@ -25,11 +25,13 @@
 ## HierarchicalForceTree (src/features/tree/ui/HierarchicalForceTree.js)
 - **주요 문제**
   - 계층형/force 모드 전환, 에이전트 호출, 뷰포트, 제스처 처리 등 모든 오케스트레이션 집중
-- **리팩터링 전략**
-  1. 데이터 로딩과 퍼시스턴스를 `useTreeDataController` 훅으로 묶어 load/save를 추상화
-  2. 뷰 모드 전환과 툴바 상호작용을 `useTreeViewModeController`로 이동
-  3. Agent 대화 흐름, theme 토글 등 부가 기능을 컨테이너 컴포넌트에서 분리
-  4. D3 제스처 관련 유틸(`applyPanZoomGesture`, `createNodeDragHandler`)을 모듈 별도 파일로 이전하고 테스트 추가
+- **현재 진행 상황**
+  - ✅ `useTreeDataController` 훅을 도입해 트리 로딩·세션 복원·초기화 로직 분리
+  - ✅ 트리 위젯 브리지 이벤트 처리와 초기 트리 선택 로직을 훅 내부로 이동해 컴포넌트 책임 축소
+- **리팩터링 전략 (잔여)**
+  1. 뷰 모드 전환과 툴바 상호작용을 `useTreeViewModeController`로 이동
+  2. Agent 대화 흐름, theme 토글 등 부가 기능을 컨테이너 컴포넌트에서 분리
+  3. D3 제스처 관련 유틸(`applyPanZoomGesture`, `createNodeDragHandler`)을 모듈 별도 파일로 이전하고 테스트 추가
 - **세부 작업**
   - 기능별 이벤트 흐름 다이어그램 작성 후 인터페이스 정의
   - Electron bridge 의존성 주입 방식 설계 (테스트 대체용 목업 제공)
