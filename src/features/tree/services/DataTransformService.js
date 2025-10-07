@@ -5,6 +5,98 @@
  * nodes/links 배열을 D3 hierarchy 형태로 변환
  */
 
+const VIRTUAL_ROOT_ID = '__virtual_root__';
+const AUTO_SCALE_AMPLIFIER = 1.6;
+
+const clampScale = (value, min = 1, max = 1 + AUTO_SCALE_AMPLIFIER) => {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+};
+
+const computeDescendantScale = (count, maxCount) => {
+  if (!maxCount || count <= 0) {
+    return 1;
+  }
+
+  const normalized = Math.log1p(count) / Math.log1p(maxCount);
+  const scaled = 1 + normalized * AUTO_SCALE_AMPLIFIER;
+  return clampScale(scaled);
+};
+
+const annotateHierarchyMetrics = (root, nodeMap) => {
+  if (!root) {
+    return;
+  }
+
+  const roots = Array.isArray(root) ? root : [root];
+  const visited = [];
+
+  const computeCounts = (node) => {
+    if (!node || typeof node !== 'object') {
+      return 0;
+    }
+
+    const children = Array.isArray(node.children) ? node.children : [];
+    let descendantTotal = 0;
+
+    children.forEach((child) => {
+      descendantTotal += 1 + computeCounts(child);
+    });
+
+    if (node.data && typeof node.data === 'object') {
+      node.data.childCount = children.length;
+      node.data.descendantCount = descendantTotal;
+      visited.push(node);
+
+      const nodeId = node.data.id;
+      if (nodeId && nodeMap?.has(nodeId)) {
+        const sourceNode = nodeMap.get(nodeId);
+        if (sourceNode) {
+          sourceNode.childCount = node.data.childCount;
+          sourceNode.descendantCount = descendantTotal;
+        }
+      }
+    }
+
+    return descendantTotal;
+  };
+
+  roots.forEach((rootNode) => {
+    computeCounts(rootNode);
+  });
+
+  const relevantNodes = visited.filter((node) => {
+    const nodeId = node?.id || node?.data?.id;
+    return nodeId && nodeId !== VIRTUAL_ROOT_ID;
+  });
+
+  const maxDescendantCount = relevantNodes.reduce((max, node) => {
+    const descendantCount = node?.data?.descendantCount || 0;
+    return descendantCount > max ? descendantCount : max;
+  }, 0);
+
+  relevantNodes.forEach((node) => {
+    const data = node.data;
+    if (!data || typeof data !== 'object') {
+      return;
+    }
+
+    const descendantCount = data.descendantCount || 0;
+    const scale = computeDescendantScale(descendantCount, maxDescendantCount);
+    data.descendantSizeScale = scale;
+
+    const nodeId = data.id;
+    if (nodeId && nodeMap?.has(nodeId)) {
+      const sourceNode = nodeMap.get(nodeId);
+      if (sourceNode) {
+        sourceNode.descendantSizeScale = scale;
+      }
+    }
+  });
+};
+
 const nodeToHierarchy = (node) => {
     const isMemoNode = node?.nodeType === 'memo';
     const memoTitle = isMemoNode ? (node?.memo?.title || '') : '';
@@ -75,16 +167,18 @@ const transformToHierarchy = (nodes, links) => {
         return null;
     }
 
-    if (roots.length === 1) {
-        return roots[0];
-    }
+    const hierarchyRoot = roots.length === 1
+        ? roots[0]
+        : {
+            name: VIRTUAL_ROOT_ID,
+            id: VIRTUAL_ROOT_ID,
+            data: { id: VIRTUAL_ROOT_ID, name: VIRTUAL_ROOT_ID },
+            children: roots,
+        };
 
-    return {
-        name: '__virtual_root__',
-        id: '__virtual_root__',
-        data: { id: '__virtual_root__', name: '__virtual_root__' },
-        children: roots,
-    };
+    annotateHierarchyMetrics(hierarchyRoot, nodeMap);
+
+    return hierarchyRoot;
 };
 
 const isValidHierarchy = (hierarchy) => {

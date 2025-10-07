@@ -29,6 +29,9 @@ const SPLIT_DEFAULT_RATIO = 0.38;
 const SPLIT_MIN_RATIO = 0.25;
 const SPLIT_MAX_RATIO = 0.7;
 
+const MIN_NODE_SCALE = 0.1;
+const MAX_NODE_SCALE = 4;
+
 const NODE_SHAPES = {
     RECTANGLE: 'rectangle',
     DOT: 'dot',
@@ -1650,9 +1653,13 @@ const ForceDirectedTree = ({
                             const baseWidth = Math.max(minWidth, Math.min(maxWidth, textWidth));
                             const baseHeight = isMemoStyledNode ? 22 : 20;
 
-                            // sizeValue 적용 (0-100을 0.1-2.0 스케일로 변환, 최소 0.1로 제한)
-                            const sizeValue = datum?.sizeValue || 50;
-                            const sizeScale = Math.max(0.1, sizeValue / 50); // 최소 0.1로 제한 (50이 기본값 1.0)
+                            // 노드 크기 스케일: 사용자 설정 + 자손 수 기반 자동 보정
+                            const sizeValue = typeof datum?.sizeValue === 'number' ? datum.sizeValue : 50;
+                            const sliderScale = Math.max(MIN_NODE_SCALE, sizeValue / 50);
+                            const descendantScale = Number.isFinite(datum?.descendantSizeScale)
+                                ? Math.max(1, datum.descendantSizeScale)
+                                : 1;
+                            const sizeScale = Math.min(MAX_NODE_SCALE, sliderScale * descendantScale);
                             const scaledBaseWidth = baseWidth * sizeScale;
                             const scaledBaseHeight = baseHeight * sizeScale;
                             const scaledFontSize = fontSize * sizeScale; // 글자 크기도 스케일에 맞춰 조절

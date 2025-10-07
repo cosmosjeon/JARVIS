@@ -12,6 +12,9 @@ const EDGE_FORCE_DEFAULTS = Object.freeze({
     fallbackRadius: 16,
 });
 
+const MIN_SIZE_SCALE = 0.1;
+const MAX_NODE_RADIUS_SCALE = 4;
+
 const applyVelocity = (node, vx, vy) => {
     if (!node) {
         return;
@@ -28,8 +31,14 @@ const computeNodeRadius = (datum, fallback) => {
         return 4;
     }
     const base = (datum.nodeType === 'memo' || (Number.isFinite(datum.level) && datum.level === 0)) ? 18 : 14;
-    const scale = typeof datum.sizeValue === 'number' ? Math.max(0.1, datum.sizeValue / 50) : 1;
-    return base * scale;
+    const sliderScale = typeof datum.sizeValue === 'number'
+        ? Math.max(MIN_SIZE_SCALE, datum.sizeValue / 50)
+        : 1;
+    const descendantScale = Number.isFinite(datum.descendantSizeScale)
+        ? Math.max(1, datum.descendantSizeScale)
+        : 1;
+    const combinedScale = Math.min(MAX_NODE_RADIUS_SCALE, sliderScale * descendantScale);
+    return base * combinedScale;
 };
 
 const buildSampleCache = (linkCount, sampleCount) => (
