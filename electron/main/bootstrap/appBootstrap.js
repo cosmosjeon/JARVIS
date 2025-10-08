@@ -1,4 +1,4 @@
-const { app, ipcMain, nativeTheme, screen } = require('electron');
+const { app, ipcMain, nativeTheme, screen, globalShortcut } = require('electron');
 const accessibility = require('../../accessibility');
 const logs = require('../../logs');
 const { createTrayService } = require('../../services/tray-service');
@@ -206,6 +206,22 @@ const start = () => {
       closeAdminPanelWindow,
       positionAdminPanelWindow,
     });
+
+    // 전역 단축키 등록: Alt+1로 위젯 토글
+    const toggleShortcut = 'Alt+1';
+    const registered = globalShortcut.register(toggleShortcut, () => {
+      try {
+        toggleWidgetVisibility();
+      } catch (error) {
+        logger?.error?.('shortcut_toggle_failed', { message: error?.message });
+      }
+    });
+
+    if (registered) {
+      logger?.info?.('global_shortcut_registered', { shortcut: toggleShortcut });
+    } else {
+      logger?.warn?.('global_shortcut_registration_failed', { shortcut: toggleShortcut });
+    }
 
     app.on('activate', () => {
       const existingMain = getMainWindow();

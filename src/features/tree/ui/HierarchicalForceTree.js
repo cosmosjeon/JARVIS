@@ -15,6 +15,7 @@ import { markNewLinks } from 'shared/utils/linkAnimationUtils';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
 import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
+import TreeTabBar from 'features/tree/ui/components/TreeTabBar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from 'shared/components/library/ThemeProvider';
 import { Sun, Moon, Sparkles, Settings } from 'lucide-react';
@@ -50,12 +51,18 @@ import {
   buildOrthogonalPath,
 } from 'features/tree/ui/renderUtils';
 
+const TIDY_ASSISTANT_PANEL_RATIO = 0.38;
+const TIDY_ASSISTANT_PANEL_MIN_WIDTH = 360;
+const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
+const TIDY_ASSISTANT_PANEL_GAP = 24;
+
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
   const {
     loadTrees,
     saveTreeMetadata,
     saveTreeNodes,
+    removeTree,
   } = useTreeDataSource();
   const treeBridge = useMemo(() => createTreeWidgetBridge(), []);
   const captureBridge = useMemo(() => createCaptureBridge(), []);
@@ -109,12 +116,14 @@ const HierarchicalForceTree = () => {
   const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
+  const [sessionTabs, setSessionTabs] = useState([]);
   const {
     viewMode,
     setViewMode,
     isForceView,
     isTidyView,
   } = useTreeViewController({ initialMode: 'tree1' });
+
   const closeHandleMenu = useCallback(() => {
     setIsHandleMenuOpen(false);
   }, []);
@@ -186,10 +195,55 @@ const HierarchicalForceTree = () => {
   } = treeState;
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(data);
+
+  // activeTreeId 변경 시 탭 목록에 추가
+  useEffect(() => {
+    if (!activeTreeId) return;
+
+    setSessionTabs((prev) => {
+      // 이미 있는 탭이면 추가하지 않음
+      if (prev.some(tab => tab.id === activeTreeId)) {
+        return prev;
+      }
+
+      // 새 탭 추가
+      return [...prev, { id: activeTreeId, title: `트리 ${prev.length + 1}` }];
+    });
+  }, [activeTreeId]);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
+
+  // 키보드 탭(→ 다음 탭), Shift+Tab(← 이전 탭)으로 탭 전환 (Ref를 통해 안전 호출)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const target = event.target;
+      const tag = (target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) {
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const tabs = Array.isArray(sessionTabs) ? sessionTabs : [];
+      if (tabs.length === 0) return;
+
+      event.preventDefault();
+
+      const currentIndex = Math.max(0, tabs.findIndex(t => t?.id === activeTreeId));
+      const delta = event.shiftKey ? -1 : 1;
+      const nextIndex = (currentIndex + delta + tabs.length) % tabs.length;
+      const next = tabs[nextIndex];
+      const nextId = next?.id;
+      if (nextId && nextId !== activeTreeId) {
+        loadActiveTreeRef.current?.({ treeId: nextId });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [sessionTabs, activeTreeId]);
+
   const {
     hydrateFromNodes,
     getConversation,
@@ -332,6 +386,12 @@ const HierarchicalForceTree = () => {
     saveTreeMetadata,
   });
 
+  // loadActiveTree를 안정적으로 참조하기 위한 Ref (초기화 순서 이슈 방지)
+  const loadActiveTreeRef = useRef(loadActiveTree);
+  useEffect(() => {
+    loadActiveTreeRef.current = loadActiveTree;
+  }, [loadActiveTree]);
+
 
   const linkKeysRef = useRef(new Set());
   const hasCleanedQ2Ref = useRef(false);
@@ -345,6 +405,15 @@ const HierarchicalForceTree = () => {
   const [showBootstrapChat, setShowBootstrapChat] = useState(false);
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
   const [isAwaitingCapture, setIsAwaitingCapture] = useState(false);
+  const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
+  const [isTidyPanelResizing, setIsTidyPanelResizing] = useState(false);
+  const tidyPanelResizeStateRef = useRef({
+    isDragging: false,
+    pointerId: null,
+    startX: 0,
+    startWidth: TIDY_ASSISTANT_PANEL_MIN_WIDTH,
+  });
+  const tidyPanelResizeCleanupRef = useRef(null);
 
   const consumePendingCapturePayload = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -365,6 +434,12 @@ const HierarchicalForceTree = () => {
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
+  }, []);
+
+  useEffect(() => () => {
+    if (typeof tidyPanelResizeCleanupRef.current === 'function') {
+      tidyPanelResizeCleanupRef.current();
+    }
   }, []);
 
 
@@ -738,6 +813,120 @@ const HierarchicalForceTree = () => {
     };
   }, [visibleGraph.nodes, visibleGraph.links]);
 
+  const tidyAssistantNode = useMemo(() => {
+    if (!expandedNodeId) {
+      return null;
+    }
+    const safeVisibleNodes = Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : [];
+    const candidateInVisible = safeVisibleNodes.find((node) => node.id === expandedNodeId);
+    if (candidateInVisible) {
+      return candidateInVisible;
+    }
+    const safeAllNodes = Array.isArray(data.nodes) ? data.nodes : [];
+    return safeAllNodes.find((node) => node.id === expandedNodeId) || null;
+  }, [expandedNodeId, visibleGraph.nodes, data.nodes]);
+
+  const viewportWidth = Number.isFinite(dimensions?.width) ? dimensions.width : null;
+  const clampTidyPanelWidth = useCallback((rawWidth) => {
+    const safeRaw = Number.isFinite(rawWidth) ? rawWidth : TIDY_ASSISTANT_PANEL_MIN_WIDTH;
+    const minWidth = TIDY_ASSISTANT_PANEL_MIN_WIDTH;
+    const viewportAllowance = viewportWidth
+      ? Math.max(minWidth, viewportWidth - 320)
+      : TIDY_ASSISTANT_PANEL_MAX_WIDTH;
+    const maxWidth = Math.max(minWidth, Math.min(TIDY_ASSISTANT_PANEL_MAX_WIDTH, viewportAllowance));
+    return Math.max(minWidth, Math.min(safeRaw, maxWidth));
+  }, [viewportWidth]);
+  const tidyAssistantPanelVisible = isTidyView && Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
+  const tidyAssistantDefaultWidth = useMemo(() => {
+    const referenceWidth = viewportWidth && viewportWidth > 0
+      ? viewportWidth * TIDY_ASSISTANT_PANEL_RATIO
+      : (typeof window !== 'undefined' ? window.innerWidth * TIDY_ASSISTANT_PANEL_RATIO : TIDY_ASSISTANT_PANEL_MAX_WIDTH);
+    return clampTidyPanelWidth(referenceWidth);
+  }, [viewportWidth, clampTidyPanelWidth]);
+  const tidyAssistantPanelWidth = tidyAssistantPanelVisible
+    ? clampTidyPanelWidth(tidyPanelWidthOverride ?? tidyAssistantDefaultWidth)
+    : 0;
+  const tidyAssistantPanelOffset = tidyAssistantPanelVisible
+    ? tidyAssistantPanelWidth + TIDY_ASSISTANT_PANEL_GAP
+    : 0;
+  const tidyAssistantAttachments = useMemo(() => {
+    if (!expandedNodeId) {
+      return [];
+    }
+    const candidate = pendingAttachmentsByNode[expandedNodeId];
+    return Array.isArray(candidate) ? candidate : [];
+  }, [expandedNodeId, pendingAttachmentsByNode]);
+  const tidyAssistantIsRoot = tidyAssistantNode ? !parentByChild.has(tidyAssistantNode.id) : false;
+  const beginTidyPanelResize = useCallback((event) => {
+    if (!tidyAssistantPanelVisible) {
+      return;
+    }
+    if (typeof tidyPanelResizeCleanupRef.current === 'function') {
+      tidyPanelResizeCleanupRef.current();
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    const pointerId = typeof event.pointerId === 'number' ? event.pointerId : null;
+    const startX = typeof event.clientX === 'number' ? event.clientX : 0;
+    tidyPanelResizeStateRef.current = {
+      isDragging: true,
+      pointerId,
+      startX,
+      startWidth: tidyAssistantPanelWidth,
+    };
+
+    setIsTidyPanelResizing(true);
+
+    const cleanup = () => {
+      tidyPanelResizeStateRef.current = {
+        isDragging: false,
+        pointerId: null,
+        startX: 0,
+        startWidth: TIDY_ASSISTANT_PANEL_MIN_WIDTH,
+      };
+      document.removeEventListener('pointermove', handlePointerMove, true);
+      document.removeEventListener('pointerup', handlePointerUp, true);
+      document.removeEventListener('pointercancel', handlePointerUp, true);
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.style.cursor = '';
+      }
+      setIsTidyPanelResizing(false);
+      tidyPanelResizeCleanupRef.current = null;
+    };
+
+    function handlePointerMove(moveEvent) {
+      if (!tidyPanelResizeStateRef.current.isDragging) {
+        cleanup();
+        return;
+      }
+      if (pointerId !== null && moveEvent.pointerId !== pointerId) {
+        return;
+      }
+      moveEvent.preventDefault();
+      const currentX = typeof moveEvent.clientX === 'number' ? moveEvent.clientX : tidyPanelResizeStateRef.current.startX;
+      const delta = tidyPanelResizeStateRef.current.startX - currentX;
+      const nextWidth = clampTidyPanelWidth(tidyPanelResizeStateRef.current.startWidth + delta);
+      setTidyPanelWidthOverride(nextWidth);
+    }
+
+    function handlePointerUp(upEvent) {
+      if (pointerId !== null && upEvent.pointerId !== pointerId) {
+        return;
+      }
+      upEvent.preventDefault();
+      cleanup();
+    }
+
+    document.addEventListener('pointermove', handlePointerMove, true);
+    document.addEventListener('pointerup', handlePointerUp, true);
+    document.addEventListener('pointercancel', handlePointerUp, true);
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.style.cursor = 'col-resize';
+    }
+    tidyPanelResizeCleanupRef.current = cleanup;
+  }, [tidyAssistantPanelVisible, tidyAssistantPanelWidth, clampTidyPanelWidth]);
+
   const getInitialConversationForNode = useCallback((nodeId) => getConversation(nodeId), [getConversation]);
 
   const setConversationForNode = useCallback((nodeId, messages) => {
@@ -785,10 +974,15 @@ const HierarchicalForceTree = () => {
   };
 
   const handleCloseNode = (nodeId) => {
-    // 특정 노드를 닫기
+    if (!nodeId) {
+      collapseAssistantPanel();
+      setSelectedNodeId(null);
+      return;
+    }
     if (expandedNodeId === nodeId) {
       collapseAssistantPanel();
     }
+    setSelectedNodeId((current) => (current === nodeId ? null : current));
   };
 
   const buildContextMessages = useCallback((nodeId) => {
@@ -1747,7 +1941,7 @@ const HierarchicalForceTree = () => {
           if (pendingFocusNodeIdRef.current === targetId) {
             setExpandedNodeId(targetId);
           }
-        expandTimeoutRef.current = null;
+          expandTimeoutRef.current = null;
           if (pendingFocusNodeIdRef.current === targetId) {
             pendingFocusNodeIdRef.current = null;
           }
@@ -1949,6 +2143,23 @@ const HierarchicalForceTree = () => {
     };
   }, [expandedNodeId, collapseAssistantPanel]);
 
+  // ESC 키로 트리1 채팅창 닫기
+  useEffect(() => {
+    if (!isTidyView || !expandedNodeId) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        collapseAssistantPanel();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTidyView, expandedNodeId, collapseAssistantPanel]);
+
   // 컴포넌트 언마운트 시 애니메이션 정리
   useEffect(() => {
     return () => {
@@ -2014,6 +2225,69 @@ const HierarchicalForceTree = () => {
           </div>
         </div>
       ) : null}
+      {tidyAssistantPanelVisible && tidyAssistantNode && (
+        <div className="absolute inset-y-0 right-0 z-[1200] flex"
+          style={{ width: tidyAssistantPanelWidth, overflow: 'visible' }}
+          data-interactive-zone="true"
+        >
+          <div className="pointer-events-auto relative flex h-full w-full">
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              onPointerDown={beginTidyPanelResize}
+              className={`absolute inset-y-0 left-0 w-3 cursor-col-resize select-none transition ${isTidyPanelResizing ? 'bg-white/15' : 'bg-transparent hover:bg-white/10'}`}
+              style={{ touchAction: 'none', transform: 'translateX(-50%)' }}
+            >
+              <div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/70" />
+              <span className="sr-only">Resize assistant panel</span>
+            </div>
+            <div className="flex h-full w-full overflow-hidden">
+              <NodeAssistantPanel
+                node={tidyAssistantNode}
+                color={d3.schemeCategory10[0]}
+                onSizeChange={() => { }}
+                onSecondQuestion={handleSecondQuestion}
+                onPlaceholderCreate={handlePlaceholderCreate}
+                questionService={questionService.current}
+                initialConversation={getInitialConversationForNode(expandedNodeId)}
+                onConversationChange={(messages) => {
+                  if (expandedNodeId) {
+                    handleConversationChange(expandedNodeId, messages);
+                  }
+                }}
+                onRequestAnswer={handleRequestAnswer}
+                onAnswerComplete={handleAnswerComplete}
+                onAnswerError={handleAnswerError}
+                isRootNode={tidyAssistantIsRoot}
+                bootstrapMode={false}
+                onCloseNode={() => handleCloseNode(expandedNodeId)}
+                onPanZoomGesture={forwardPanZoomGesture}
+                nodeScaleFactor={nodeScaleFactor}
+                nodeSummary={{
+                  label: tidyAssistantNode.keyword || tidyAssistantNode.id,
+                  intro: tidyAssistantNode.fullText || '',
+                  bullets: [],
+                }}
+                treeNodes={Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : []}
+                treeLinks={Array.isArray(visibleGraph.links) ? visibleGraph.links : []}
+                onNodeSelect={(targetNode) => {
+                  const targetId = targetNode?.id;
+                  if (targetId && targetId !== expandedNodeId) {
+                    handleNodeClickForAssistant({ id: targetId, source: 'assistant-panel' });
+                  }
+                }}
+                attachments={tidyAssistantAttachments}
+                onAttachmentsChange={(nextAttachments) => {
+                  if (expandedNodeId) {
+                    setAttachmentsForNode(expandedNodeId, nextAttachments);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 창 드래그 핸들 - 중앙 최상단 */}
       <div
         className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
@@ -2034,6 +2308,7 @@ const HierarchicalForceTree = () => {
                 toggleHandleMenu();
               }}
               onMouseDown={(event) => event.stopPropagation()}
+              tabIndex={-1}
               title="트리 설정"
             >
               <Settings className="h-3.5 w-3.5 text-white/90" aria-hidden="true" />
@@ -2044,6 +2319,7 @@ const HierarchicalForceTree = () => {
               className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
               onClick={cycleTheme}
               onMouseDown={(e) => e.stopPropagation()}
+              tabIndex={-1}
               title={`테마 변경 (현재: ${activeTheme.label})`}
             >
               <ActiveThemeIcon className="h-3 w-3 text-white/90" />
@@ -2063,10 +2339,11 @@ const HierarchicalForceTree = () => {
                 }
                 const maybeResult = handler();
                 if (maybeResult && typeof maybeResult.catch === 'function') {
-                  maybeResult.catch(() => {});
+                  maybeResult.catch(() => { });
                 }
               }}
               onMouseDown={(e) => e.stopPropagation()}
+              tabIndex={-1}
               title="최대화"
             >
               <svg className="h-3 w-3 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2092,7 +2369,7 @@ const HierarchicalForceTree = () => {
                   try {
                     const toggleResult = treeBridge.toggleWindow();
                     if (toggleResult && typeof toggleResult.then === 'function') {
-                      toggleResult.catch(() => {});
+                      toggleResult.catch(() => { });
                       return;
                     }
                     if (toggleResult !== null && toggleResult !== undefined) {
@@ -2169,6 +2446,7 @@ const HierarchicalForceTree = () => {
                 hideWindow();
               }}
               onMouseDown={(e) => e.stopPropagation()}
+              tabIndex={-1}
             >
               <svg
                 className="h-3 w-3 text-white group-hover:text-black"
@@ -2198,6 +2476,7 @@ const HierarchicalForceTree = () => {
                 type="button"
                 onClick={handleForceSimulationToggle}
                 className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition hover:bg-white/10"
+                tabIndex={-1}
               >
                 <span className="font-medium text-white/85">유기적 상호작용</span>
                 <span className={isForceSimulationEnabled ? 'text-emerald-300 font-semibold' : 'text-slate-300'}>
@@ -2210,6 +2489,7 @@ const HierarchicalForceTree = () => {
                   type="button"
                   onClick={() => handleViewSwitch('tree1')}
                   className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree1' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                  tabIndex={-1}
                 >
                   <span>트리 1</span>
                   {viewMode === 'tree1' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
@@ -2218,6 +2498,7 @@ const HierarchicalForceTree = () => {
                   type="button"
                   onClick={() => handleViewSwitch('tree2')}
                   className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree2' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                  tabIndex={-1}
                 >
                   <span>트리 2</span>
                   {viewMode === 'tree2' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
@@ -2226,6 +2507,43 @@ const HierarchicalForceTree = () => {
             </div>
           ) : null}
         </div>
+      </div>
+
+      {/* 트리 탭 바: 상단 핸들 왼쪽 끝과 정렬 */}
+      <div
+        className="absolute z-[1250]"
+        style={{
+          top: '3.25rem',
+          left: 'calc(50% - 120px)',
+        }}
+      >
+        <TreeTabBar
+          theme={theme}
+          activeTreeId={activeTreeId}
+          tabs={sessionTabs}
+          onTabChange={(tab) => {
+            if (tab?.treeId) {
+              loadActiveTree({ treeId: tab.treeId });
+            } else {
+              // 새 트리 생성
+              loadActiveTree({ treeId: undefined });
+            }
+          }}
+          onTabDelete={(treeId) => {
+            // 세션 탭 목록에서 제거
+            setSessionTabs((prev) => prev.filter(tab => tab.id !== treeId));
+
+            // 삭제한 트리가 현재 활성 트리면 다른 트리로 전환
+            if (treeId === activeTreeId) {
+              const remaining = sessionTabs.filter(tab => tab.id !== treeId);
+              if (remaining.length > 0) {
+                loadActiveTree({ treeId: remaining[0].id });
+              } else {
+                loadActiveTree({ treeId: undefined });
+              }
+            }
+          }}
+        />
       </div>
 
       {isTreeSyncing && !initializingTree ? (
@@ -2300,77 +2618,79 @@ const HierarchicalForceTree = () => {
       )}
 
       {isTidyView && (
-        <TidyTreeView
-          data={data}
-          dimensions={dimensions}
-          theme={theme}
-          background={currentTheme.background}
-          onNodeClick={handleNodeClickForAssistant}
-          selectedNodeId={selectedNodeId}
-          onReorderSiblings={(parentId, orderedChildIds) => {
-            if (!parentId || !Array.isArray(orderedChildIds)) return;
-
-            const normalize = (v) => (typeof v === 'object' && v !== null ? v.id : v);
-
-            // 가상 루트인 경우: 루트 노드들의 순서 변경
-            if (parentId === '__virtual_root__') {
-              // 루트 노드들 찾기 (링크의 target이 아닌 노드들)
-              const targetIds = new Set(hierarchicalLinks.map(l => normalize(l.target)));
-              const rootNodes = (data.nodes || []).filter(n => !targetIds.has(n.id));
-
-              if (rootNodes.length <= 1) return;
-
-              // orderedChildIds 순서로 노드 배열 재정렬
-              const orderedRoots = orderedChildIds
-                .map(id => rootNodes.find(n => n.id === id))
-                .filter(Boolean);
-
-              const nonRootNodes = (data.nodes || []).filter(n => targetIds.has(n.id));
-
-              // 루트 노드들을 앞에, 나머지 노드들을 뒤에 배치
-              setData((prev) => ({
-                ...prev,
-                nodes: [...orderedRoots, ...nonRootNodes]
-              }));
-              return;
-            }
-
-            // 일반 노드의 자식 순서 변경
-            const currentChildIds = (hierarchicalLinks
-              .filter((l) => normalize(l.source) === parentId)
-              .map((l) => normalize(l.target)));
-
-            if (currentChildIds.length <= 1) return;
-
-            // orderedChildIds 순서로 재배열된 링크 구성
-            const nextLinks = (data.links || []).map((l) => ({ ...l }));
-            // 부모의 자식 링크 인덱스 수집
-            const indices = [];
-            for (let i = 0; i < nextLinks.length; i++) {
-              const s = normalize(nextLinks[i].source);
-              const t = normalize(nextLinks[i].target);
-              if (s === parentId && currentChildIds.includes(t) && nextLinks[i].relationship !== 'connection') {
-                indices.push(i);
-              }
-            }
-            if (indices.length <= 1) return;
-
-            // 기존 자식 링크를 제거 후 새 순서로 다시 삽입
-            const childLinkObjs = indices.map((idx) => nextLinks[idx]);
-            // 뒤에서부터 제거
-            indices.sort((a, b) => b - a).forEach((idx) => nextLinks.splice(idx, 1));
-
-            const template = childLinkObjs[0] || { value: 1 };
-            const rebuilt = orderedChildIds.map((cid) => ({ source: parentId, target: cid, value: template.value }));
-
-            // 부모 인접한 위치에 삽입: 처음 제거된 위치 앞쪽에 삽입
-            const insertAt = Math.min(...indices);
-            nextLinks.splice(insertAt, 0, ...rebuilt);
-
-            setData((prev) => ({ ...prev, links: nextLinks }));
+        <div
+          className="absolute inset-0"
+          style={{
+            right: tidyAssistantPanelOffset,
+            transition: 'right 200ms ease-in-out',
           }}
-        />
+        >
+          <TidyTreeView
+            data={data}
+            dimensions={dimensions}
+            fitRequestVersion={data?.nodes?.length || 0}
+            theme={theme}
+            background={currentTheme.background}
+            onNodeClick={handleNodeClickForAssistant}
+            selectedNodeId={selectedNodeId}
+            activeTreeId={activeTreeId}
+            onBackgroundClick={collapseAssistantPanel}
+            onReorderSiblings={(parentId, orderedChildIds) => {
+              if (!parentId || !Array.isArray(orderedChildIds)) return;
+
+              const normalize = (v) => (typeof v === 'object' && v !== null ? v.id : v);
+
+              if (parentId === '__virtual_root__') {
+                const targetIds = new Set(hierarchicalLinks.map(l => normalize(l.target)));
+                const rootNodes = (data.nodes || []).filter(n => !targetIds.has(n.id));
+
+                if (rootNodes.length <= 1) return;
+
+                const orderedRoots = orderedChildIds
+                  .map(id => rootNodes.find(n => n.id === id))
+                  .filter(Boolean);
+
+                const nonRootNodes = (data.nodes || []).filter(n => targetIds.has(n.id));
+
+                setData((prev) => ({
+                  ...prev,
+                  nodes: [...orderedRoots, ...nonRootNodes]
+                }));
+                return;
+              }
+
+              const currentChildIds = (hierarchicalLinks
+                .filter((l) => normalize(l.source) === parentId)
+                .map((l) => normalize(l.target)));
+
+              if (currentChildIds.length <= 1) return;
+
+              const nextLinks = (data.links || []).map((l) => ({ ...l }));
+              const indices = [];
+              for (let i = 0; i < nextLinks.length; i++) {
+                const s = normalize(nextLinks[i].source);
+                const t = normalize(nextLinks[i].target);
+                if (s === parentId && currentChildIds.includes(t) && nextLinks[i].relationship !== 'connection') {
+                  indices.push(i);
+                }
+              }
+              if (indices.length <= 1) return;
+
+              const childLinkObjs = indices.map((idx) => nextLinks[idx]);
+              indices.sort((a, b) => b - a).forEach((idx) => nextLinks.splice(idx, 1));
+
+              const template = childLinkObjs[0] || { value: 1 };
+              const rebuilt = orderedChildIds.map((cid) => ({ source: parentId, target: cid, value: template.value }));
+
+              const insertAt = Math.min(...indices);
+              nextLinks.splice(insertAt, 0, ...rebuilt);
+
+              setData((prev) => ({ ...prev, links: nextLinks }));
+            }}
+          />
+        </div>
       )}
+
       {/* 디버그 패널 제거됨 */}
       <div
         ref={overlayContainerRef}
@@ -2382,3 +2702,4 @@ const HierarchicalForceTree = () => {
 };
 
 export default HierarchicalForceTree;
+

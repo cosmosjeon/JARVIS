@@ -3,6 +3,7 @@ import {
   fetchTreesWithNodes,
   upsertTreeMetadata,
   upsertTreeNodes,
+  deleteTree,
 } from 'infrastructure/supabase/services/treeService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 
@@ -49,12 +50,23 @@ export const useTreeDataSource = (overrides = {}) => {
     return upsertTreeNodes({ treeId, nodes, userId });
   }, [userId]);
 
+  const removeTree = useCallback(async (treeId) => {
+    if (!userId) {
+      return null;
+    }
+    if (!treeId) {
+      throw new Error('removeTree requires a treeId');
+    }
+    return deleteTree({ treeId });
+  }, [userId]);
+
   return useMemo(() => ({
     userId,
     loadTrees,
     saveTreeMetadata,
     saveTreeNodes,
-  }), [userId, loadTrees, saveTreeMetadata, saveTreeNodes]);
+    removeTree,
+  }), [userId, loadTrees, saveTreeMetadata, saveTreeNodes, removeTree]);
 };
 
 export default useTreeDataSource;
