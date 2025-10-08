@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, FileText } from 'lucide-react';
 
 import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
@@ -45,13 +45,17 @@ const TreeCanvas = ({
     const el = containerRef.current;
     if (!el) return;
     const updateSize = () => {
+      const rect = el.getBoundingClientRect();
       setDimensions({
-        width: el.clientWidth || 800,
-        height: el.clientHeight || 600,
+        width: rect.width || 800,
+        height: rect.height || 600,
       });
     };
     updateSize();
-    const ro = new ResizeObserver(updateSize);
+    const ro = new ResizeObserver(() => {
+      // 약간의 지연을 두어 ResizablePanel 크기 변화가 완전히 적용된 후 감지
+      setTimeout(updateSize, 10);
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -71,6 +75,54 @@ const TreeCanvas = ({
     setAutoLightweight(false);
   };
 
+  const nodesById = useMemo(() => {
+    const nodes = selectedMemo?.treeData?.nodes ?? [];
+    return nodes.reduce((acc, node) => {
+      if (node?.id) {
+        acc.set(node.id, node);
+      }
+      return acc;
+    }, new Map());
+  }, [selectedMemo?.treeData?.nodes]);
+
+  const resolveNodeCandidate = useCallback((candidate) => {
+    if (!candidate) {
+      return null;
+    }
+    if (typeof candidate === 'string') {
+      return nodesById.get(candidate) ?? null;
+    }
+    if (candidate?.id && nodesById.has(candidate.id)) {
+      return nodesById.get(candidate.id);
+    }
+    if (candidate?.node) {
+      const inner = candidate.node;
+      if (inner?.id && nodesById.has(inner.id)) {
+        return nodesById.get(inner.id);
+      }
+      return inner;
+    }
+    if (candidate?.raw) {
+      const raw = candidate.raw;
+      if (raw?.id && nodesById.has(raw.id)) {
+        return nodesById.get(raw.id);
+      }
+      return raw;
+    }
+    if (candidate?.id) {
+      return nodesById.get(candidate.id) ?? candidate;
+    }
+    return candidate;
+  }, [nodesById]);
+
+  const handleNodeSelect = useCallback((payload) => {
+    if (!onNodeSelect) {
+      return;
+    }
+    const resolved = resolveNodeCandidate(payload);
+    onNodeSelect(resolved ?? null);
+  }, [onNodeSelect, resolveNodeCandidate]);
+
   if (!selectedMemo) {
     return (
       <div className="flex h-full items-center justify-center bg-muted/10">
@@ -84,37 +136,39 @@ const TreeCanvas = ({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <header className="border-b border-border bg-card relative z-10">
-        <div className="flex flex-col gap-2 px-4 py-6">
-          <div className="flex items-center justify-between gap-3 relative">
-            <div className="flex-1 min-w-0">
-              <EditableTitle
-                title={selectedMemo.title}
-                onUpdate={(newTitle) => {
-                  if (onTreeRename && selectedMemo.id) {
-                    onTreeRename(selectedMemo.id, newTitle);
-                  }
-                }}
-              />
+      <header className="relative z-10 m-4">
+        <div className="rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur-sm">
+          <div className="flex flex-col gap-2 px-4 py-6">
+            <div className="flex items-center justify-between gap-3 relative">
+              <div className="flex-1 min-w-0">
+                <EditableTitle
+                  title={selectedMemo.title}
+                  onUpdate={(newTitle) => {
+                    if (onTreeRename && selectedMemo.id) {
+                      onTreeRename(selectedMemo.id, newTitle);
+                    }
+                  }}
+                />
+              </div>
+              <div className="shrink-0">
+                <TreeWorkspaceToolbar
+                  viewMode={viewMode}
+                  onChange={(mode) => setViewMode(mode)}
+                  variant="library"
+                />
+              </div>
             </div>
-            <div className="shrink-0">
-              <TreeWorkspaceToolbar
-                viewMode={viewMode}
-                onChange={(mode) => setViewMode(mode)}
-                variant="library"
-              />
+            <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" /> 생성 {formatDate(selectedMemo.createdAt)}
+              </span>
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" /> 수정 {formatDate(selectedMemo.updatedAt)}
+              </span>
+              <span>{nodeCount}개 노드</span>
             </div>
+            {/* 경량화 배지/설명 숨김 */}
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" /> 생성 {formatDate(selectedMemo.createdAt)}
-            </span>
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" /> 수정 {formatDate(selectedMemo.updatedAt)}
-            </span>
-            <span>{nodeCount}개 노드</span>
-          </div>
-          {/* 경량화 배지/설명 숨김 */}
         </div>
       </header>
 
@@ -123,23 +177,23 @@ const TreeCanvas = ({
           <div className="relative z-0 h-full w-full overflow-hidden">
             {viewMode === 'tree1'
               ? (
-                <TidyTreeView
-                  key={`tidy-${selectedMemo.id}`}
-                  data={selectedMemo.treeData}
-                  dimensions={dimensions}
-                  onNodeClick={({ id }) => onNodeSelect?.(id)}
-                  selectedNodeId={null}
-                  activeTreeId={selectedMemo.id}
-                  onBackgroundClick={() => {}}
-                  onReorderSiblings={() => {}}
-                />
+                  <TidyTreeView
+                    key={`tidy-${selectedMemo.id}`}
+                    data={selectedMemo.treeData}
+                    dimensions={dimensions}
+                    onNodeClick={handleNodeSelect}
+                    selectedNodeId={null}
+                    activeTreeId={selectedMemo.id}
+                    onBackgroundClick={() => {}}
+                    onReorderSiblings={() => {}}
+                  />
               )
               : useLightweightRenderer
                 ? (
                   <WidgetTreeView
                     key={`light-${selectedMemo.id}`}
                     treeData={selectedMemo.treeData}
-                    onNodeClick={onNodeSelect}
+                    onNodeClick={handleNodeSelect}
                     className="h-full w-full"
                   />
                 )
@@ -148,7 +202,7 @@ const TreeCanvas = ({
                     key={selectedMemo.id}
                     data={selectedMemo.treeData}
                     dimensions={dimensions}
-                    onNodeClick={onNodeSelect}
+                    onNodeClick={handleNodeSelect}
                     onNodeRemove={onNodeRemove}
                     onNodeUpdate={onNodeUpdate}
                     onMemoCreate={onMemoCreate}

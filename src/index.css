@@ -60,24 +60,24 @@
 
   /* 다크 모드 - 진짜 어두운 모드 */
   .dark {
-    --background: 0 0% 0%;
+    --background: 0 0% 10%;
     --foreground: 0 0% 98%;
-    --card: 0 0% 8%;
+    --card: 0 0% 15%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 8%;
+    --popover: 0 0% 15%;
     --popover-foreground: 0 0% 98%;
     --primary: 213 70% 62%;
-    --primary-foreground: 0 0% 8%;
-    --secondary: 0 0% 15%;
+    --primary-foreground: 0 0% 15%;
+    --secondary: 0 0% 25%;
     --secondary-foreground: 0 0% 85%;
-    --muted: 0 0% 15%;
+    --muted: 0 0% 25%;
     --muted-foreground: 0 0% 70%;
-    --accent: 0 0% 20%;
+    --accent: 0 0% 30%;
     --accent-foreground: 0 0% 88%;
     --destructive: 354 65% 55%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
+    --border: 0 0% 30%;
+    --input: 0 0% 30%;
     --ring: 213 70% 62%;
     --radius: 0.75rem;
     --backdrop-blur: 0px;

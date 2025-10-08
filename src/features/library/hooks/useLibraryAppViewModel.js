@@ -76,8 +76,12 @@ export const useLibraryAppViewModel = () => {
     voranTrees: selectors.voranTrees,
     isSidebarCollapsed: state.isSidebarCollapsed,
     isQAPanelVisible: state.isQAPanelVisible,
+    libraryIntroTreeId: selectors.libraryIntroTreeId,
+    isLibraryIntroActive: selectors.isLibraryIntroActive,
   }), [
     selectors.selectedTree,
+    selectors.libraryIntroTreeId,
+    selectors.isLibraryIntroActive,
     selectors.voranTrees,
     state.dragOverFolderId,
     state.dragOverVoranBox,

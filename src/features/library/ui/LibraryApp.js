@@ -33,7 +33,8 @@ const LibraryApp = () => {
         dragOverVoranBox={state.dragOverVoranBox}
         onManageVoranBox={handlers.showVoranBox}
         onCreateFolder={() => handlers.openCreateDialog('folder')}
-        onCreateTree={handlers.createTree}
+        onCreateTreeWidget={handlers.createTreeWidget}
+        onCreateTreeInApp={handlers.createTreeInApp}
         onCycleTheme={theme.cycle}
         onRefresh={handlers.refreshLibrary}
         onSignOut={signOut}
@@ -69,6 +70,9 @@ const LibraryApp = () => {
             folders={state.folders}
             selectedNode={state.selectedNode}
             isQAPanelVisible={state.isQAPanelVisible}
+            libraryIntroTreeId={state.libraryIntroTreeId}
+            isLibraryIntroActive={state.isLibraryIntroActive}
+            onLibraryIntroComplete={handlers.completeLibraryIntro}
             onNodeSelect={handlers.nodeSelect}
             onNodeRemove={handlers.nodeRemove}
             onNodeUpdate={handlers.nodeUpdate}

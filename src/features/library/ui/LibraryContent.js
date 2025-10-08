@@ -20,6 +20,9 @@ const LibraryContent = ({
   folders,
   selectedNode,
   isQAPanelVisible,
+  libraryIntroTreeId,
+  isLibraryIntroActive,
+  onLibraryIntroComplete,
   onNodeSelect,
   onNodeRemove,
   onNodeUpdate,
@@ -47,6 +50,36 @@ const LibraryContent = ({
     return <EmptyState message={error?.message || '트리를 불러오지 못했습니다.'} />;
   }
 
+  const treeNodeCount = selectedTree?.treeData?.nodes?.length ?? 0;
+  const isIntroMode = Boolean(
+    isLibraryIntroActive && selectedTree && libraryIntroTreeId === selectedTree.id,
+  );
+  const isTreeEmpty = Boolean(selectedTree && treeNodeCount === 0);
+  const shouldShowIntroLayout = Boolean(selectedTree && (isIntroMode || isTreeEmpty));
+
+  if (shouldShowIntroLayout) {
+    const introSelectedNode = selectedNode ?? {
+      id: selectedTree.id,
+      keyword: selectedTree.title || '새 트리',
+      question: '',
+      level: 0,
+    };
+    return (
+      <div className="flex h-full flex-col bg-gradient-to-b from-background via-background to-muted/30">
+        <LibraryQAPanel
+          selectedNode={introSelectedNode}
+          selectedTree={selectedTree}
+          onNodeUpdate={onNodeUpdate}
+          onNewNodeCreated={onNewNodeCreated}
+          onNodeSelect={onNodeSelect}
+          onClose={onQAPanelClose}
+          isLibraryIntroActive={isIntroMode || isTreeEmpty}
+          onLibraryIntroComplete={onLibraryIntroComplete}
+        />
+      </div>
+    );
+  }
+
   if (selectedTree) {
     // isQAPanelVisible이 명시적으로 false일 때만 패널을 숨김 (undefined는 true로 처리)
     if (isQAPanelVisible === false) {
@@ -67,7 +100,7 @@ const LibraryContent = ({
 
     return (
       <ResizablePanelGroup direction="horizontal" className="h-full overflow-hidden">
-        <ResizablePanel defaultSize={70} minSize={30} className="min-h-0 bg-background overflow-hidden">
+        <ResizablePanel defaultSize={70} minSize={30} className="min-h-0 bg-background">
           <TreeCanvas
             selectedMemo={selectedTree}
             onNodeSelect={onNodeSelect}
@@ -81,7 +114,7 @@ const LibraryContent = ({
           />
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-border/80 hover:bg-border" />
-        <ResizablePanel defaultSize={30} minSize={20} maxSize={80} className="bg-card overflow-hidden">
+        <ResizablePanel defaultSize={30} minSize={20} maxSize={80} className="bg-card">
           <LibraryQAPanel
             selectedNode={selectedNode}
             selectedTree={selectedTree}
@@ -89,6 +122,8 @@ const LibraryContent = ({
             onNewNodeCreated={onNewNodeCreated}
             onNodeSelect={onNodeSelect}
             onClose={onQAPanelClose}
+            isLibraryIntroActive={false}
+            onLibraryIntroComplete={onLibraryIntroComplete}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

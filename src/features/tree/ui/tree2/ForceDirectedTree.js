@@ -148,7 +148,6 @@ const ForceDirectedTree = ({
   hideAssistantPanel = false,
   attachmentsByNode = {},
   onNodeAttachmentsChange = () => {},
-  isForceSimulationEnabled, // kept for compatibility
   selectedNodeId: externalSelectedNodeId,
   onBackgroundClick,
   disableAutoFocus = false, // 자동 포커스 비활성화 옵션

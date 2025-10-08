@@ -21,6 +21,7 @@ const ACTIONS = {
   SET_CREATE_TYPE: 'setCreateType',
   SET_SIDEBAR_COLLAPSED: 'setSidebarCollapsed',
   SET_QA_PANEL_VISIBLE: 'setQAPanelVisible',
+  SET_LIBRARY_INTRO_TREE_ID: 'setLibraryIntroTreeId',
 };
 
 const BASE_STATE = {
@@ -41,6 +42,7 @@ const BASE_STATE = {
   createType: 'folder',
   isSidebarCollapsed: false,
   isQAPanelVisible: true,
+  libraryIntroTreeId: null,
 };
 
 const createInitialState = (overrides = {}) => {
@@ -108,6 +110,8 @@ const reducer = (state, action) => {
       return { ...state, isSidebarCollapsed: resolveNext(action.payload, state.isSidebarCollapsed) };
     case ACTIONS.SET_QA_PANEL_VISIBLE:
       return { ...state, isQAPanelVisible: resolveNext(action.payload, state.isQAPanelVisible) };
+    case ACTIONS.SET_LIBRARY_INTRO_TREE_ID:
+      return { ...state, libraryIntroTreeId: resolveNext(action.payload, state.libraryIntroTreeId) };
     default:
       return state;
   }
@@ -134,6 +138,7 @@ const buildActions = (dispatch) => {
   const setCreateType = dispatchAction(ACTIONS.SET_CREATE_TYPE);
   const setSidebarCollapsed = dispatchAction(ACTIONS.SET_SIDEBAR_COLLAPSED);
   const setQAPanelVisible = dispatchAction(ACTIONS.SET_QA_PANEL_VISIBLE);
+  const setLibraryIntroTreeId = dispatchAction(ACTIONS.SET_LIBRARY_INTRO_TREE_ID);
 
   const toggleFolder = (folderId) => {
     if (!folderId) {
@@ -205,6 +210,25 @@ const buildActions = (dispatch) => {
   const hideQAPanel = () => setQAPanelVisible(false);
   const showQAPanel = () => setQAPanelVisible(true);
 
+  const startLibraryIntro = (treeId) => {
+    if (!treeId) {
+      return;
+    }
+    setLibraryIntroTreeId(treeId);
+  };
+
+  const clearLibraryIntro = (treeId) => {
+    setLibraryIntroTreeId((previous) => {
+      if (!previous) {
+        return previous;
+      }
+      if (treeId && previous !== treeId) {
+        return previous;
+      }
+      return null;
+    });
+  };
+
   return {
     data: {
       setTrees,
@@ -247,6 +271,11 @@ const buildActions = (dispatch) => {
       hideQAPanel,
       showQAPanel,
     },
+    flow: {
+      startLibraryIntro,
+      clearLibraryIntro,
+      setLibraryIntroTreeId,
+    },
   };
 };
 
@@ -257,6 +286,7 @@ const buildSelectors = (state) => {
     trees,
     folders,
     expandedFolders,
+    libraryIntroTreeId,
   } = state;
 
   const selectedTree = selectedTreeId
@@ -285,6 +315,9 @@ const buildSelectors = (state) => {
     getTreesByFolder: (folderId) => treesByFolder.get(folderId) ?? EMPTY_ARRAY,
     isFolderExpanded: (folderId) => expandedFolders.has(folderId),
     hasSelectedTree: Boolean(selectedTreeId),
+    libraryIntroTreeId,
+    isLibraryIntroActive: Boolean(libraryIntroTreeId),
+    isLibraryIntroTree: (treeId) => Boolean(treeId && libraryIntroTreeId === treeId),
   };
 };
 

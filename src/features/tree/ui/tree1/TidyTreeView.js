@@ -7,7 +7,7 @@ import PreviewLayoutCalculator from 'features/tree/services/drag/PreviewLayoutCa
 import SiblingReorderService from 'features/tree/services/drag/SiblingReorderService';
 
 const MIN_SCALE = 0.18;
-const MAX_SCALE = 2.6;
+const MAX_SCALE = 4;
 const VIRTUAL_ROOT_ID = '__virtual_root__';
 const DEFAULT_TREE_KEY = '__default_tree__';
 const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
@@ -412,7 +412,7 @@ const TidyTreeView = ({
 
   const isLightTheme = theme === "light";
   const linkStroke = isLightTheme ? "rgba(100, 116, 139, 0.95)" : "rgba(148, 163, 184, 0.95)";
-  const labelColor = isLightTheme ? "#0f172a" : "#e2e8f0";
+  const labelColor = "#000000";
   const labelStroke = isLightTheme ? "rgba(255, 255, 255, 0.9)" : "rgba(15, 23, 42, 0.7)";
   const parentFill = isLightTheme ? "rgba(59, 130, 246, 0.88)" : "rgba(125, 211, 252, 0.95)";
   const leafFill = isLightTheme ? "rgba(148, 163, 184, 0.88)" : "rgba(148, 163, 184, 0.92)";

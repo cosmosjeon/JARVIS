@@ -1,13 +1,25 @@
 import { useCallback, useMemo } from 'react';
 
+import { DEFAULT_TREE_CREATION_MODE, TREE_CREATION_MODES } from 'features/library/constants/creationModes';
+
 export const useLibraryTreeOperations = ({ actions, dataApi }) => {
-  const createTree = useCallback(async () => {
-    const created = await dataApi.handleCreateTree();
+  const createTree = useCallback(async ({ mode = DEFAULT_TREE_CREATION_MODE } = {}) => {
+    const created = await dataApi.handleCreateTree({ mode });
     if (created?.id) {
       actions.selection.selectTree(created.id);
+      if (mode === TREE_CREATION_MODES.LIBRARY_APP) {
+        actions.flow.startLibraryIntro(created.id);
+        actions.layout.showQAPanel();
+      } else {
+        actions.flow.clearLibraryIntro();
+      }
     }
     return created;
-  }, [actions.selection, dataApi]);
+  }, [actions.flow, actions.layout, actions.selection, dataApi]);
+
+  const createTreeWidget = useCallback(() => createTree({ mode: TREE_CREATION_MODES.WIDGET }), [createTree]);
+
+  const createTreeInApp = useCallback(() => createTree({ mode: TREE_CREATION_MODES.LIBRARY_APP }), [createTree]);
 
   const openTree = useCallback(async (treeId) => {
     if (!treeId) {
@@ -27,12 +39,14 @@ export const useLibraryTreeOperations = ({ actions, dataApi }) => {
   const createFolder = useCallback((payload) => dataApi.handleFolderCreate(payload), [dataApi]);
 
   return useMemo(() => ({
-    createTree,
+    createTree: createTreeWidget,
+    createTreeWidget,
+    createTreeInApp,
     openTree,
     deleteTree,
     renameTree,
     createFolder,
-  }), [createFolder, createTree, deleteTree, openTree, renameTree]);
+  }), [createFolder, createTree, createTreeInApp, createTreeWidget, deleteTree, openTree, renameTree]);
 };
 
 export default useLibraryTreeOperations;

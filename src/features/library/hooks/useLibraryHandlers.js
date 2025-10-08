@@ -48,7 +48,10 @@ export const useLibraryHandlers = ({
       // 새 노드를 추가하고 선택하면 AI 패널을 자동으로 켬
       actions.layout.showQAPanel();
     }
-  }, [actions.selection, actions.layout, addNode]);
+    if (node?.treeId) {
+      actions.flow.clearLibraryIntro(node.treeId);
+    }
+  }, [actions.flow, actions.layout, actions.selection, addNode]);
 
   const toggleCreateDialog = useCallback((open) => {
     if (open) {
@@ -69,6 +72,8 @@ export const useLibraryHandlers = ({
   return useMemo(() => ({
     refreshLibrary: dataApi.refreshLibrary,
     createTree: treeOperations.createTree,
+    createTreeWidget: treeOperations.createTreeWidget,
+    createTreeInApp: treeOperations.createTreeInApp,
     openTree: treeOperations.openTree,
     deleteTree: treeOperations.deleteTree,
     renameTree: treeOperations.renameTree,
@@ -100,6 +105,8 @@ export const useLibraryHandlers = ({
     showQAPanel: actions.layout.showQAPanel,
     toggleQAPanel: actions.layout.toggleQAPanel,
     moveTreesToFolder: dataApi.moveTreesToFolder,
+    startLibraryIntro: actions.flow.startLibraryIntro,
+    completeLibraryIntro: actions.flow.clearLibraryIntro,
   }), [
     actions.modal.hideVoranBox,
     actions.modal.openCreateDialog,
@@ -109,6 +116,8 @@ export const useLibraryHandlers = ({
     actions.layout.hideQAPanel,
     actions.layout.showQAPanel,
     actions.layout.toggleQAPanel,
+    actions.flow.startLibraryIntro,
+    actions.flow.clearLibraryIntro,
     dataApi.moveTreesToFolder,
     dataApi.refreshLibrary,
     folderDragLeave,
@@ -130,6 +139,8 @@ export const useLibraryHandlers = ({
     toggleCreateDialog,
     treeOperations.createFolder,
     treeOperations.createTree,
+    treeOperations.createTreeInApp,
+    treeOperations.createTreeWidget,
     treeOperations.deleteTree,
     treeOperations.openTree,
     treeOperations.renameTree,

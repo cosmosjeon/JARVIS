@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Send, Loader2, X } from 'lucide-react';
+import { Loader2, X, Paperclip, Network, Shield } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
@@ -9,8 +9,41 @@ import EditableTitle, { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTit
 import AgentClient from 'infrastructure/ai/agentClient';
 import Highlighter from 'web-highlighter';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
+import { cn } from 'shared/utils';
+import { useTheme } from 'shared/components/library/ThemeProvider';
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputButton,
+  PromptInputSubmit,
+} from 'shared/ui/shadcn-io/ai/prompt-input';
 
 const TYPING_INTERVAL_MS = 18;
+const AGENT_RESPONSE_TIMEOUT_MS = 30000;
+
+const withTimeout = (promise, timeoutMs = 0, timeoutMessage = 'AI 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.') => {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || typeof window === 'undefined') {
+    return promise;
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      const error = new Error(timeoutMessage);
+      error.code = 'AGENT_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      });
+  });
+};
 
 const LibraryQAPanel = ({
   selectedNode,
@@ -19,8 +52,11 @@ const LibraryQAPanel = ({
   onNewNodeCreated,
   onNodeSelect,
   onClose,
+  isLibraryIntroActive = false,
+  onLibraryIntroComplete,
 }) => {
   const { user } = useSupabaseAuth();
+  const { theme } = useTheme();
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
@@ -38,7 +74,9 @@ const LibraryQAPanel = ({
   const highlightHandlersRef = useRef({ create: null, remove: null });
   const highlightStoreRef = useRef(new HighlightSelectionStore());
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
   const [highlightNotice, setHighlightNotice] = useState(null);
+
 
   const handleRegisterMessageContainer = useCallback((element) => {
     messageContainerRef.current = element;
@@ -213,17 +251,46 @@ const LibraryQAPanel = ({
     setAttachments([]);
   }, []);
 
-  const panelStyle = useMemo(() => ({
-    fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    position: 'relative',
-    zIndex: 1001,
-    background: DEFAULT_CHAT_PANEL_STYLES.background,
-    borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    color: DEFAULT_CHAT_PANEL_STYLES.textColor,
-  }), []);
-  const subtleTextColor = DEFAULT_CHAT_PANEL_STYLES.subtleTextColor;
+  const isDarkTheme = theme === 'dark';
+  
+  const chatPanelStyles = useMemo(() => ({
+    ...DEFAULT_CHAT_PANEL_STYLES,
+    background: isDarkTheme ? 'rgba(45, 45, 45, 0.85)' : DEFAULT_CHAT_PANEL_STYLES.background,
+    borderColor: isDarkTheme ? 'rgba(255, 255, 255, 0.2)' : DEFAULT_CHAT_PANEL_STYLES.borderColor,
+    textColor: isDarkTheme ? 'rgba(255, 255, 255, 0.92)' : DEFAULT_CHAT_PANEL_STYLES.textColor,
+    subtleTextColor: isDarkTheme ? 'rgba(255, 255, 255, 0.7)' : DEFAULT_CHAT_PANEL_STYLES.subtleTextColor,
+  }), [isDarkTheme]);
+
+  const panelStyle = useMemo(() => {
+    const baseStyle = {
+      fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      position: 'relative',
+      zIndex: 1001,
+      color: chatPanelStyles.textColor,
+    };
+
+    if (isLibraryIntroActive) {
+      return {
+        ...baseStyle,
+        background: 'transparent',
+        borderColor: 'transparent',
+        borderWidth: 0,
+        borderStyle: 'none',
+      };
+    }
+
+    return {
+      ...baseStyle,
+      background: chatPanelStyles.background,
+    };
+  }, [isLibraryIntroActive, chatPanelStyles]);
+  
+  const subtleTextColor = chatPanelStyles.subtleTextColor;
+
+  const containerClassName = useMemo(() => cn(
+    'relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden p-6 backdrop-blur-3xl',
+    isLibraryIntroActive && 'justify-center gap-6 rounded-none border-none bg-transparent p-0 backdrop-blur-0 shadow-none'
+  ), [isLibraryIntroActive]);
 
   const handleNodeTitleUpdate = useCallback(async (nextTitle) => {
     if (!selectedNode || !selectedTree) {
@@ -300,6 +367,7 @@ const LibraryQAPanel = ({
           createdAt: timestamp,
           sourceText: label,
         },
+        treeId: selectedTree.id,
       };
     });
 
@@ -333,7 +401,7 @@ const LibraryQAPanel = ({
       console.log('⚙️ setIsMultiQuestionMode(false) 호출 전');
       setIsMultiQuestionMode(false);
       console.log('⚙️ setIsMultiQuestionMode(false) 호출 후');
-      setHighlightNotice({ type: 'info', message: '다중 질문 모드를 종료했습니다. 이제 텍스트를 자유롭게 선택할 수 있습니다.' });
+      setHighlightNotice(null);
       console.log('✅ 다중 질문 모드 종료 완료');
       return;
     }
@@ -357,7 +425,6 @@ const LibraryQAPanel = ({
   const questionServiceRef = useRef(new QuestionService());
   const typingTimers = useRef([]);
   const messagesEndRef = useRef(null);
-  const textareaRef = useRef(null);
 
   const isApiAvailable = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -470,9 +537,13 @@ const LibraryQAPanel = ({
     if (typeof window === 'undefined') {
       return undefined;
     }
+    // 다중 질문 모드가 켜져있을 때는 안내 메시지 유지
+    if (isMultiQuestionMode) {
+      return undefined;
+    }
     const timeoutId = window.setTimeout(() => setHighlightNotice(null), 2400);
     return () => window.clearTimeout(timeoutId);
-  }, [highlightNotice]);
+  }, [highlightNotice, isMultiQuestionMode]);
 
   // LLM API 호출
   const invokeAgent = useCallback(async (channel, payload = {}) => {
@@ -562,7 +633,16 @@ const LibraryQAPanel = ({
       return;
     }
 
-    if ((question.length === 0 && !hasAttachmentSnapshot) || isProcessing || !selectedNode || !selectedTree || !user) {
+    if ((question.length === 0 && !hasAttachmentSnapshot) || isProcessing || !selectedTree || !user) {
+      return;
+    }
+
+    if (!selectedNode && !isLibraryIntroActive) {
+      return;
+    }
+
+    if (!isApiAvailable) {
+      setError('AI 응답을 사용할 수 없습니다. 환경 설정을 확인한 뒤 다시 시도해주세요.');
       return;
     }
 
@@ -606,6 +686,8 @@ const LibraryQAPanel = ({
 
     const newNodeId = `node_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
     const keyword = question.split(' ').slice(0, 3).join(' ') || 'Q';
+    const parentId = selectedNode?.id ?? null;
+    const level = selectedNode ? (selectedNode.level || 0) + 1 : 0;
 
     const newNode = {
       id: newNodeId,
@@ -616,8 +698,9 @@ const LibraryQAPanel = ({
       createdAt: timestamp,
       updatedAt: timestamp,
       conversation: [userMessage, assistantMessage],
-      parentId: selectedNode.id,
-      level: (selectedNode.level || 0) + 1,
+      parentId,
+      level,
+      treeId: selectedTree.id,
     };
 
     setMessages([userMessage, assistantMessage]);
@@ -628,6 +711,10 @@ const LibraryQAPanel = ({
         target: newNode.id,
         value: 1,
       });
+    }
+
+    if (isLibraryIntroActive && onLibraryIntroComplete) {
+      onLibraryIntroComplete(selectedTree.id);
     }
 
     const mapToOpenAIMessage = (msg) => {
@@ -703,27 +790,40 @@ const LibraryQAPanel = ({
 
       console.log('변환된 OpenAI 메시지:', openaiMessages);
 
-      const response = await invokeAgent('askRoot', {
-        messages: openaiMessages,
-        attachments: hasAttachments ? sanitizedAttachments : undefined,
-      });
+      const response = await withTimeout(
+        invokeAgent('askRoot', {
+          messages: openaiMessages,
+          attachments: hasAttachments ? sanitizedAttachments : undefined,
+        }),
+        AGENT_RESPONSE_TIMEOUT_MS,
+      );
 
-      if (!response.answer) {
+      if (response?.success === false && response?.error?.message) {
+        throw new Error(response.error.message);
+      }
+
+      const answerText = response?.answer
+        || response?.data?.answer
+        || response?.result?.answer
+        || response?.message?.answer
+        || '';
+
+      if (!answerText) {
         throw new Error('답변을 받지 못했습니다.');
       }
 
-      animateAssistantResponse(assistantId, response.answer);
+      animateAssistantResponse(assistantId, answerText);
 
       const updatedMessages = [userMessage, {
         ...assistantMessage,
-        text: response.answer,
+        text: answerText,
         status: 'complete',
       }];
 
       const updatedNode = {
         ...newNode,
         conversation: updatedMessages,
-        answer: response.answer,
+        answer: answerText,
         status: 'answered',
         updatedAt: timestamp,
       };
@@ -769,23 +869,15 @@ const LibraryQAPanel = ({
     invokeAgent,
     isMultiQuestionMode,
     isProcessing,
+    isLibraryIntroActive,
     messages,
     onNewNodeCreated,
     onNodeUpdate,
+    onLibraryIntroComplete,
     selectedNode,
     selectedTree,
     user,
   ]);
-
-  // 키보드 이벤트 처리
-  const handleKeyDown = useCallback((e) => {
-    console.log('⌨️ [handleKeyDown] 키 입력:', e.key, 'Shift:', e.shiftKey);
-    if (e.key === 'Enter' && !e.shiftKey) {
-      console.log('✅ Enter 키 감지, handleSendMessage 호출');
-      e.preventDefault();
-      handleSendMessage();
-    }
-  }, [handleSendMessage]);
 
   // 다중 질문 모드에서 전역 키보드 이벤트 감지
   useEffect(() => {
@@ -822,10 +914,10 @@ const LibraryQAPanel = ({
     setIsComposing(false);
   }, []);
 
-  if (!selectedNode) {
+  if (!selectedNode && !isLibraryIntroActive) {
     return (
       <div
-        className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
+        className={containerClassName}
         style={panelStyle}
         data-interactive-zone="true"
       >
@@ -834,7 +926,7 @@ const LibraryQAPanel = ({
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-lg font-semibold" style={{ color: DEFAULT_CHAT_PANEL_STYLES.textColor }}>
+              <p className="truncate text-lg font-semibold" style={{ color: chatPanelStyles.textColor }}>
                 질문 답변
               </p>
             </div>
@@ -847,7 +939,7 @@ const LibraryQAPanel = ({
               type="button"
               onClick={onClose}
               className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
-              style={{ color: DEFAULT_CHAT_PANEL_STYLES.textColor }}
+              style={{ color: chatPanelStyles.textColor }}
               aria-label="AI 패널 닫기"
             >
               <X className="h-5 w-5" />
@@ -860,7 +952,7 @@ const LibraryQAPanel = ({
 
   return (
     <div
-      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
+      className={containerClassName}
       style={{
         ...panelStyle, 
         userSelect: 'text',
@@ -913,63 +1005,69 @@ const LibraryQAPanel = ({
         }, 100);
       }}
     >
-      <div
-        className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <div
-              className="min-w-0 flex-1"
-              style={{ color: DEFAULT_CHAT_PANEL_STYLES.textColor }}
-            >
-              <EditableTitle
-                title={(selectedNode.keyword && selectedNode.keyword.trim()) || selectedNode.id || '질문 답변'}
-                onUpdate={handleNodeTitleUpdate}
-                className="truncate text-lg font-semibold"
-                placeholder="노드 제목을 입력하세요"
-              />
+      {!isLibraryIntroActive && (
+        <div
+          className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div
+                className="min-w-0 flex-1"
+                style={{ color: chatPanelStyles.textColor }}
+              >
+                <EditableTitle
+                  title={(selectedNode.keyword && selectedNode.keyword.trim()) || selectedNode.id || '질문 답변'}
+                  onUpdate={handleNodeTitleUpdate}
+                  className="truncate text-lg font-semibold"
+                  placeholder="노드 제목을 입력하세요"
+                />
+              </div>
+            </div>
+            <p className="mt-1 text-xs" style={{ color: subtleTextColor }}>
+              {selectedNode.question || selectedNode.keyword || '대화를 시작해보세요.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-medium" style={{ color: subtleTextColor }}>
+            {isProcessing && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-black/5 px-2 py-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                처리 중…
+              </span>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+                style={{ color: chatPanelStyles.textColor }}
+                aria-label="AI 패널 닫기"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isLibraryIntroActive && (
+        messages.length === 0 ? (
+          <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+            <div className="py-8 text-center text-sm" style={{ color: subtleTextColor }}>
+              질문을 입력해보세요.
             </div>
           </div>
-          <p className="mt-1 text-xs" style={{ color: subtleTextColor }}>
-            {selectedNode.question || selectedNode.keyword || '대화를 시작해보세요.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-medium" style={{ color: subtleTextColor }}>
-          {isProcessing && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-black/5 px-2 py-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              처리 중…
-            </span>
-          )}
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
-              style={{ color: DEFAULT_CHAT_PANEL_STYLES.textColor }}
-              aria-label="AI 패널 닫기"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {messages.length === 0 ? (
-        <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
-          <div className="text-center text-sm py-8" style={{ color: subtleTextColor }}>
-            질문을 입력해보세요.
-          </div>
-        </div>
-      ) : (
-        <ChatMessageList
-          title="Assistant"
-          messages={messages}
-          endRef={messagesEndRef}
-          className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
-          onContainerRef={handleRegisterMessageContainer}
-          isScrollable={false}
-        />
+        ) : (
+          <ChatMessageList
+            title="Assistant"
+            messages={messages}
+            endRef={messagesEndRef}
+            className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
+            onContainerRef={handleRegisterMessageContainer}
+            isScrollable={false}
+            theme={theme}
+            panelStyles={chatPanelStyles}
+          />
+        )
       )}
 
       {error && (
@@ -983,8 +1081,8 @@ const LibraryQAPanel = ({
           className="flex w-full flex-wrap gap-3 rounded-xl border px-3 py-3"
           style={{
             pointerEvents: 'auto',
-            borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
-            backgroundColor: 'rgba(255, 255, 255, 0.85)',
+            borderColor: chatPanelStyles.borderColor,
+            backgroundColor: isDarkTheme ? 'rgba(55, 55, 55, 0.85)' : 'rgba(255, 255, 255, 0.85)',
           }}
           data-block-pan="true"
         >
@@ -993,8 +1091,8 @@ const LibraryQAPanel = ({
               key={attachment.id}
               className="relative h-24 w-32 overflow-hidden rounded-lg border"
               style={{
-                borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
-                backgroundColor: 'rgba(15, 23, 42, 0.35)',
+                borderColor: chatPanelStyles.borderColor,
+                backgroundColor: isDarkTheme ? 'rgba(65, 65, 65, 0.75)' : 'rgba(15, 23, 42, 0.35)',
               }}
             >
               <img
@@ -1016,8 +1114,11 @@ const LibraryQAPanel = ({
             <button
               type="button"
               onClick={clearAttachments}
-              className="flex h-10 items-center justify-center rounded-lg border border-dashed px-3 text-[11px] font-medium text-slate-700 transition hover:bg-white/40"
-              style={{ borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor }}
+              className="flex h-10 items-center justify-center rounded-lg border border-dashed px-3 text-[11px] font-medium transition hover:bg-white/40"
+              style={{ 
+                borderColor: chatPanelStyles.borderColor,
+                color: chatPanelStyles.textColor,
+              }}
             >
               전체 제거
             </button>
@@ -1025,55 +1126,99 @@ const LibraryQAPanel = ({
         </div>
       ) : null}
 
-      <div
-        className="flex -mb-2 flex-shrink-0 justify-start"
-        style={{ position: 'relative', zIndex: 1002, pointerEvents: 'auto' }}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            console.log('🖱️ [버튼 DOM] onClick 이벤트 발생!', e);
-            console.log('이벤트 타겟:', e.target);
-            console.log('현재 타겟:', e.currentTarget);
-            toggleMultiQuestionMode();
-          }}
-          onMouseDown={(e) => {
-            console.log('🖱️ [버튼 DOM] onMouseDown 이벤트 발생!');
-          }}
-          aria-pressed={isMultiQuestionMode}
-          aria-label="하이라이트 모드"
-          className="px-3 py-1 rounded-xl border text-xs font-medium transition-all duration-200"
-          style={{
-            cursor: 'pointer',
-            pointerEvents: 'auto',
-            backgroundColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.6)' : 'rgba(255, 255, 255, 0.8)',
-            borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.6)' : DEFAULT_CHAT_PANEL_STYLES.borderColor,
-            borderWidth: '1px',
-            borderStyle: 'solid',
-            color: DEFAULT_CHAT_PANEL_STYLES.textColor,
-          }}
-        >
-          다중 질문 {isMultiQuestionMode ? '(켜짐)' : '(꺼짐)'}
-        </button>
-      </div>
-
-      {highlightNotice && (
+      {!isLibraryIntroActive && (
         <div
-          className="text-xs px-2 py-1 rounded"
-          style={{
-            color: highlightNotice.type === 'warning'
-              ? 'rgba(180, 83, 9, 0.9)'
-              : highlightNotice.type === 'success'
-                ? 'rgba(16, 185, 129, 0.9)'
-                : subtleTextColor,
-            backgroundColor: highlightNotice.type === 'warning'
-              ? 'rgba(254, 243, 199, 0.5)'
-              : highlightNotice.type === 'success'
-                ? 'rgba(209, 250, 229, 0.5)'
-                : 'rgba(0, 0, 0, 0.1)',
-          }}
+          className="flex -mb-2 flex-shrink-0 items-center gap-2"
+          style={{ position: 'relative', zIndex: 1002, pointerEvents: 'auto' }}
         >
-          {highlightNotice.message}
+          <button
+            type="button"
+            onClick={(e) => {
+              console.log('🖱️ [버튼 DOM] onClick 이벤트 발생!', e);
+              console.log('이벤트 타겟:', e.target);
+              console.log('현재 타겟:', e.currentTarget);
+              toggleMultiQuestionMode();
+            }}
+            onMouseDown={(e) => {
+              console.log('🖱️ [버튼 DOM] onMouseDown 이벤트 발생!');
+            }}
+            aria-pressed={isMultiQuestionMode}
+            aria-label="하이라이트 모드"
+            className="rounded-xl border px-3 py-1 text-xs font-medium transition-all duration-200"
+            style={{
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              backgroundColor: isMultiQuestionMode 
+                ? 'rgba(16, 185, 129, 0.6)' 
+                : isDarkTheme 
+                  ? 'rgba(65, 65, 65, 0.8)' 
+                  : 'rgba(255, 255, 255, 0.8)',
+              borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.6)' : chatPanelStyles.borderColor,
+              borderWidth: '1px',
+              borderStyle: 'solid',
+              color: chatPanelStyles.textColor,
+            }}
+          >
+            다중 질문
+          </button>
+
+          {highlightNotice && (
+            <div
+              className="rounded px-2 py-1 text-xs"
+              style={{
+                color: highlightNotice.type === 'warning'
+                  ? 'rgba(180, 83, 9, 0.9)'
+                  : highlightNotice.type === 'success'
+                    ? 'rgba(16, 185, 129, 0.9)'
+                    : subtleTextColor,
+                backgroundColor: highlightNotice.type === 'warning'
+                  ? 'rgba(254, 243, 199, 0.5)'
+                  : highlightNotice.type === 'success'
+                    ? 'rgba(209, 250, 229, 0.5)'
+                    : 'rgba(0, 0, 0, 0.1)',
+              }}
+            >
+              {highlightNotice.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isLibraryIntroActive && (
+        <div className="flex flex-col items-center justify-center gap-6 text-center max-w-md mx-auto px-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 backdrop-blur-sm">
+            <Network className="h-8 w-8 text-violet-600" strokeWidth={2} />
+          </div>
+          <div className="flex flex-col gap-3">
+            <h2 className="text-2xl font-bold tracking-tight" style={{ color: chatPanelStyles.textColor }}>
+              첫 트리를 시작하세요
+            </h2>
+            <p className="text-base leading-relaxed" style={{ color: subtleTextColor }}>
+              궁금한 것을 질문하거나 탐구하고 싶은 주제를 입력해보세요
+            </p>
+          </div>
+          <div 
+            className="relative w-full rounded-xl border px-4 py-3 backdrop-blur-sm"
+            style={{
+              backgroundColor: isDarkTheme ? 'rgba(139, 92, 246, 0.12)' : 'rgba(139, 92, 246, 0.08)',
+              borderColor: isDarkTheme ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.2)',
+              zIndex: 1,
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <Shield className="h-5 w-5 text-violet-600" strokeWidth={2} />
+              </div>
+              <div className="flex flex-col gap-1 text-left text-sm leading-relaxed" style={{ color: subtleTextColor }}>
+                <p className="font-medium" style={{ color: chatPanelStyles.textColor }}>
+                  각 대화는 독립된 문맥을 가집니다
+                </p>
+                <p className="text-xs">
+                  수많은 질문을 해도 문맥이 오염되지 않습니다
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1082,83 +1227,49 @@ const LibraryQAPanel = ({
           VORAN API를 사용할 수 없습니다. Electron 환경에서 실행해주세요.
         </div>
       ) : (
-        <form
+        <PromptInput
           onSubmit={(e) => {
             e.preventDefault();
             handleSendMessage();
           }}
-          className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border px-3 py-2"
-          style={{
-            zIndex: 1002,
-            backgroundColor: 'rgba(255, 255, 255, 0.8)',
-            borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
-            borderWidth: '1px',
-            borderStyle: 'solid',
-          }}
+          className={cn(
+            isLibraryIntroActive && "mx-auto w-full max-w-2xl relative"
+          )}
+          style={{ zIndex: 10 }}
         >
-          <div className="flex w-full items-end gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                handleAttachmentFiles(event.target.files);
-                event.target.value = '';
-              }}
-            />
-            <button
-              type="button"
-              onClick={handleAttachmentButtonClick}
-              disabled={isAttachmentUploading || isProcessing}
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border text-sm shadow-sm transition disabled:opacity-50"
-              aria-label="이미지 첨부"
-              style={{
-                borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
-                color: DEFAULT_CHAT_PANEL_STYLES.textColor,
-                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-              }}
-            >
-              {isAttachmentUploading ? '…' : '📎'}
-            </button>
-            <textarea
-              ref={textareaRef}
-              value={composerValue}
-              onChange={(e) => setComposerValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={handleComposerFocus}
-              onBlur={handleComposerBlur}
-              placeholder="질문을 입력하세요... (Enter로 전송)"
-              className="max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm focus:outline-none placeholder:text-gray-500"
-              disabled={isProcessing}
-              rows={2}
-              autoComplete="off"
-              spellCheck="false"
-              style={{
-                userSelect: 'text',
-                color: DEFAULT_CHAT_PANEL_STYLES.textColor,
-                fontFamily: 'inherit',
-                outline: 'none',
-                border: 'none',
-                resize: 'none',
-              }}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={(composerValue.trim().length === 0 && attachments.length === 0) || isProcessing}
-            className="flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-opacity disabled:opacity-40"
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.8)',
-              color: DEFAULT_CHAT_PANEL_STYLES.textColor,
-              border: '1px solid ' + DEFAULT_CHAT_PANEL_STYLES.borderColor,
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              handleAttachmentFiles(event.target.files);
+              event.target.value = '';
             }}
-            aria-label="메시지 전송"
+          />
+          <PromptInputButton
+            onClick={handleAttachmentButtonClick}
+            disabled={isAttachmentUploading || isProcessing}
           >
-            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
-        </form>
+            <Paperclip size={16} />
+          </PromptInputButton>
+          <PromptInputTextarea
+            ref={textareaRef}
+            value={composerValue}
+            onChange={(e) => setComposerValue(e.target.value)}
+            onFocus={handleComposerFocus}
+            onBlur={handleComposerBlur}
+            placeholder="질문을 입력하세요... (Enter로 전송)"
+            disabled={isProcessing}
+            minHeight={40}
+            maxHeight={164}
+          />
+          <PromptInputSubmit
+            disabled={(composerValue.trim().length === 0 && attachments.length === 0) || isProcessing}
+            status={isProcessing ? 'streaming' : 'ready'}
+          />
+        </PromptInput>
       )}
     </div>
   );

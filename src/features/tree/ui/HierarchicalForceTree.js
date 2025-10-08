@@ -113,7 +113,6 @@ const HierarchicalForceTree = () => {
   const [isHandleMenuOpen, setIsHandleMenuOpen] = useState(false);
   const handleMenuRef = useRef(null);
   const handleMenuButtonRef = useRef(null);
-  const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [sessionTabs, setSessionTabs] = useState([]);
@@ -129,10 +128,6 @@ const HierarchicalForceTree = () => {
   }, []);
   const toggleHandleMenu = useCallback(() => {
     setIsHandleMenuOpen((previous) => !previous);
-  }, []);
-  const handleForceSimulationToggle = useCallback(() => {
-    setIsForceSimulationEnabled((previous) => !previous);
-    setIsHandleMenuOpen(false);
   }, []);
   const handleViewSwitch = useCallback((nextMode) => {
     if (!nextMode || nextMode === viewMode) {
@@ -2550,18 +2545,7 @@ const HierarchicalForceTree = () => {
               onMouseDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
-              <button
-                type="button"
-                onClick={handleForceSimulationToggle}
-                className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition hover:bg-white/10"
-                tabIndex={-1}
-              >
-                <span className="font-medium text-white/85">유기적 상호작용</span>
-                <span className={isForceSimulationEnabled ? 'text-emerald-300 font-semibold' : 'text-slate-300'}>
-                  {isForceSimulationEnabled ? 'ON' : 'OFF'}
-                </span>
-              </button>
-              <div className="mt-2 border-t border-white/10 pt-2">
+              <div>
                 <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">뷰 모드</p>
                 <button
                   type="button"
@@ -2696,7 +2680,6 @@ const HierarchicalForceTree = () => {
             onSecondQuestion={handleSecondQuestion}
             onPlaceholderCreate={handlePlaceholderCreate}
             theme={theme}
-            isForceSimulationEnabled={isForceSimulationEnabled}
             attachmentsByNode={pendingAttachmentsByNode}
             onNodeAttachmentsChange={setAttachmentsForNode}
             hideAssistantPanel={true}
