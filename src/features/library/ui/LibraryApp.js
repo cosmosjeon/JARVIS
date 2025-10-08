@@ -68,6 +68,7 @@ const LibraryApp = () => {
             selectedFolderId={state.selectedFolderId}
             folders={state.folders}
             selectedNode={state.selectedNode}
+            isQAPanelVisible={state.isQAPanelVisible}
             onNodeSelect={handlers.nodeSelect}
             onNodeRemove={handlers.nodeRemove}
             onNodeUpdate={handlers.nodeUpdate}
@@ -76,6 +77,7 @@ const LibraryApp = () => {
             onMemoUpdate={handlers.memoUpdate}
             onMemoRemove={handlers.memoRemove}
             onTreeRename={handlers.renameTree}
+            onQAPanelClose={handlers.hideQAPanel}
           />
         </div>
       </main>

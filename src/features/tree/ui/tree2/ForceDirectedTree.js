@@ -11,12 +11,54 @@ import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
-const MIN_ZOOM = 0.4;
+const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 4;
 const NODE_RADIUS = 2.6;
 const sanitizeLabel = (value) => {
   if (typeof value !== 'string') return '';
   return value.trim();
+};
+
+const VIEWPORT_STORAGE_PREFIX = 'forceTreeView.viewTransform';
+
+const buildViewStorageKey = (treeKey) => `${VIEWPORT_STORAGE_PREFIX}.${treeKey}`;
+
+const readStoredViewTransform = (storageKey) => {
+  if (typeof window === 'undefined' || !storageKey) {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y) || !Number.isFinite(parsed?.k)) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+};
+
+const persistViewTransform = (storageKey, transform) => {
+  if (typeof window === 'undefined' || !storageKey || !transform) {
+    return;
+  }
+  try {
+    const payload = JSON.stringify({ x: transform.x, y: transform.y, k: transform.k });
+    window.localStorage.setItem(storageKey, payload);
+  } catch (error) {
+    // ignore persistence failures
+  }
+};
+
+const toZoomTransform = (rawTransform) => {
+  if (!rawTransform || !Number.isFinite(rawTransform.x) || !Number.isFinite(rawTransform.y) || !Number.isFinite(rawTransform.k)) {
+    return null;
+  }
+  return d3.zoomIdentity.translate(rawTransform.x, rawTransform.y).scale(rawTransform.k);
 };
 
 const resolveNodeDatum = (node) => {
@@ -109,6 +151,7 @@ const ForceDirectedTree = ({
   isForceSimulationEnabled, // kept for compatibility
   selectedNodeId: externalSelectedNodeId,
   onBackgroundClick,
+  disableAutoFocus = false, // 자동 포커스 비활성화 옵션
 }) => {
   const baseWidth = Number.isFinite(dimensions?.width)
     ? dimensions.width
@@ -168,7 +211,12 @@ const ForceDirectedTree = ({
   const selectedNodeId = externalSelectedNodeId !== undefined ? externalSelectedNodeId : internalSelectedNodeId;
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const svgRef = useRef(null);
+  const zoomBehaviorRef = useRef(null);
   const questionServiceRef = useRef(questionService || new QuestionService());
+  const hasInitializedViewRef = useRef(false);
+  const lastViewTransformRef = useRef(d3.zoomIdentity);
+  const lastFitSignatureRef = useRef(null);
+  const viewStorageKeyRef = useRef(null);
 
   useEffect(() => {
     if (questionService) {
@@ -176,6 +224,9 @@ const ForceDirectedTree = ({
     }
   }, [questionService]);
 
+  const resetToDefaultView = useCallback(() => {}, []);
+
+  // Zoom behavior 설정
   useEffect(() => {
     const svgElement = svgRef.current;
     if (!svgElement) {
@@ -186,19 +237,111 @@ const ForceDirectedTree = ({
       .scaleExtent([MIN_ZOOM, MAX_ZOOM])
       .on('zoom', (event) => {
         setViewTransform(event.transform);
+        lastViewTransformRef.current = event.transform;
         if (typeof onPanZoomGesture === 'function') {
           onPanZoomGesture(event.transform);
+        }
+        const storageKey = viewStorageKeyRef.current;
+        if (storageKey) {
+          persistViewTransform(storageKey, event.transform);
         }
       });
 
     const selection = d3.select(svgElement);
     selection.call(zoom);
-    selection.on('dblclick.zoom', null);
+
+    zoomBehaviorRef.current = zoom;
 
     return () => {
       selection.on('.zoom', null);
+      zoomBehaviorRef.current = null;
     };
-  }, [onPanZoomGesture]);
+  }, [onPanZoomGesture, resetToDefaultView]);
+
+  // 초기 로딩 시 전체 트리가 화면에 보이도록 설정
+  useEffect(() => {
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+
+    if (!svgElement || !zoom || !layout || layout.nodes.length === 0) {
+      return;
+    }
+
+    const rect = svgElement.getBoundingClientRect();
+    const viewportWidth = Number.isFinite(dimensions?.width) && dimensions.width > 0
+      ? dimensions.width
+      : (rect.width || baseWidth);
+    const viewportHeight = Number.isFinite(dimensions?.height) && dimensions.height > 0
+      ? dimensions.height
+      : (rect.height || baseHeight);
+
+    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0 || !Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+      return;
+    }
+
+    const treeKey = typeof treeId === 'string' && treeId.trim().length > 0 ? treeId : 'default';
+    const signature = [
+      treeKey,
+      viewportWidth.toFixed(2),
+      viewportHeight.toFixed(2),
+      layout.nodes.length,
+      layout.links.length,
+    ].join('|');
+
+    const storageKey = buildViewStorageKey(treeKey);
+    viewStorageKeyRef.current = storageKey;
+
+    const storedTransform = readStoredViewTransform(storageKey);
+    const storedZoom = toZoomTransform(storedTransform);
+
+    if (!hasInitializedViewRef.current || lastFitSignatureRef.current !== signature) {
+      let initialTransform = storedZoom;
+
+      if (!initialTransform) {
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        layout.nodes.forEach(node => {
+          const x = node.y * Math.cos(node.x - Math.PI / 2);
+          const y = node.y * Math.sin(node.x - Math.PI / 2);
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        });
+
+        const padding = 60;
+        const contentWidth = maxX - minX + padding * 2;
+        const contentHeight = maxY - minY + padding * 2;
+
+        const scale = Math.min(viewportWidth / contentWidth, viewportHeight / contentHeight, MAX_ZOOM);
+        const finalScale = Math.max(scale, MIN_ZOOM);
+
+        const contentCenterX = (minX + maxX) / 2;
+        const contentCenterY = (minY + maxY) / 2;
+
+        initialTransform = d3.zoomIdentity
+          .translate(viewportWidth / 2 - contentCenterX * finalScale, viewportHeight / 2 - contentCenterY * finalScale)
+          .scale(finalScale);
+      }
+
+      const selection = d3.select(svgElement);
+      selection
+        .transition()
+        .duration(0)
+        .call(zoom.transform, initialTransform);
+
+      setViewTransform(initialTransform);
+      lastViewTransformRef.current = initialTransform;
+      hasInitializedViewRef.current = true;
+      lastFitSignatureRef.current = signature;
+      if (!storedZoom && storageKey) {
+        persistViewTransform(storageKey, initialTransform);
+      }
+    }
+  }, [layout, baseWidth, baseHeight, dimensions?.width, dimensions?.height, treeId, onPanZoomGesture]);
 
   const radialLink = useMemo(
     () => d3.linkRadial()

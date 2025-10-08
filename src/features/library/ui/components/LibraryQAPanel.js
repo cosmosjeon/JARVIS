@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, X } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
@@ -18,6 +18,7 @@ const LibraryQAPanel = ({
   onNodeUpdate,
   onNewNodeCreated,
   onNodeSelect,
+  onClose,
 }) => {
   const { user } = useSupabaseAuth();
   const [messages, setMessages] = useState([]);
@@ -29,11 +30,14 @@ const LibraryQAPanel = ({
     console.log('🎬 [상태 초기화] isMultiQuestionMode 초기값: false');
     return false;
   });
+  const [attachments, setAttachments] = useState([]);
+  const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
 
   const messageContainerRef = useRef(null);
   const highlighterRef = useRef(null);
   const highlightHandlersRef = useRef({ create: null, remove: null });
   const highlightStoreRef = useRef(new HighlightSelectionStore());
+  const fileInputRef = useRef(null);
   const [highlightNotice, setHighlightNotice] = useState(null);
 
   const handleRegisterMessageContainer = useCallback((element) => {
@@ -151,6 +155,63 @@ const LibraryQAPanel = ({
       return false;
     }
   }, [handleHighlighterCreate, handleHighlighterRemove]);
+
+  const handleAttachmentButtonClick = useCallback(() => {
+    fileInputRef.current?.click?.();
+  }, []);
+
+  const handleAttachmentFiles = useCallback(async (fileList) => {
+    if (!fileList || fileList.length === 0) {
+      return;
+    }
+
+    const files = Array.from(fileList).filter((file) => file.type?.startsWith('image/'));
+    if (!files.length) {
+      setHighlightNotice({ type: 'warning', message: '이미지 파일만 첨부할 수 있습니다.' });
+      return;
+    }
+
+    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+    const baseTimestamp = Date.now();
+    setIsAttachmentUploading(true);
+    try {
+      const nextAttachments = await Promise.all(
+        files.map(async (file, index) => {
+          const dataUrl = await readFileAsDataUrl(file);
+          return {
+            id: `upload-${baseTimestamp}-${index}-${Math.random().toString(16).slice(2, 8)}`,
+            type: 'image',
+            mimeType: file.type,
+            dataUrl,
+            name: file.name,
+            label: file.name,
+            size: file.size,
+            createdAt: baseTimestamp,
+          };
+        }),
+      );
+      setAttachments((prev) => [...prev, ...nextAttachments]);
+    } catch (uploadError) {
+      console.error('이미지 첨부 중 오류 발생:', uploadError);
+      setHighlightNotice({ type: 'warning', message: '이미지 첨부에 실패했습니다.' });
+    } finally {
+      setIsAttachmentUploading(false);
+    }
+  }, []);
+
+  const handleAttachmentRemove = useCallback((attachmentId) => {
+    setAttachments((prev) => prev.filter((item) => item && item.id !== attachmentId));
+  }, []);
+
+  const clearAttachments = useCallback(() => {
+    setAttachments([]);
+  }, []);
 
   const panelStyle = useMemo(() => ({
     fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -321,10 +382,18 @@ const LibraryQAPanel = ({
     
     if (selectedNode) {
       const initialMessages = Array.isArray(selectedNode.conversation)
-        ? selectedNode.conversation.map(msg => ({
-          ...msg,
-          content: msg.content || msg.text || ''
-        }))
+        ? selectedNode.conversation.map((msg) => {
+          const fallbackText = typeof msg.text === 'string' && msg.text.trim()
+            ? msg.text
+            : typeof msg.content === 'string'
+              ? msg.content
+              : '';
+          return {
+            ...msg,
+            text: fallbackText,
+            content: msg.content || fallbackText,
+          };
+        })
         : [];
       setMessages(initialMessages);
     } else {
@@ -461,6 +530,16 @@ const LibraryQAPanel = ({
     const question = composerValue.trim();
     console.log('입력된 질문:', question);
 
+    const attachmentSnapshot = attachments
+      .filter((item) => item && typeof item === 'object' && typeof item.dataUrl === 'string' && item.dataUrl)
+      .map((item) => ({ ...item }));
+    const hasAttachmentSnapshot = attachmentSnapshot.length > 0;
+
+    if (highlightTexts.length > 0 && hasAttachmentSnapshot) {
+      setHighlightNotice({ type: 'warning', message: '다중 질문 모드에서는 이미지 첨부를 사용할 수 없습니다.' });
+      return;
+    }
+
     if (highlightTexts.length > 0 && !question) {
       console.log('✅ 플레이스홀더 생성 시작...');
       setComposerValue('');
@@ -483,11 +562,12 @@ const LibraryQAPanel = ({
       return;
     }
 
-    if (!question || isProcessing || !selectedNode || !selectedTree || !user) {
+    if ((question.length === 0 && !hasAttachmentSnapshot) || isProcessing || !selectedNode || !selectedTree || !user) {
       return;
     }
 
     setComposerValue('');
+    clearAttachments();
     setError(null);
     setIsProcessing(true);
 
@@ -495,12 +575,25 @@ const LibraryQAPanel = ({
     const userId = `${timestamp}-user`;
     const assistantId = `${timestamp}-assistant`;
 
+    const sanitizedAttachments = attachmentSnapshot.map((item, index) => ({
+      id: item.id || `attachment-${timestamp}-${index}`,
+      type: item.type || 'image',
+      mimeType: item.mimeType,
+      dataUrl: item.dataUrl,
+      name: item.name,
+      label: item.label || item.name || `첨부 이미지 ${index + 1}`,
+      size: item.size,
+      createdAt: item.createdAt || timestamp,
+    }));
+    const hasAttachments = sanitizedAttachments.length > 0;
+
     const userMessage = {
       id: userId,
       role: 'user',
       content: question,
       text: question,
-      timestamp
+      timestamp,
+      attachments: hasAttachments ? sanitizedAttachments : undefined,
     };
 
     const assistantMessage = {
@@ -508,7 +601,7 @@ const LibraryQAPanel = ({
       role: 'assistant',
       text: '생각 중…',
       status: 'pending',
-      timestamp: timestamp + 1
+      timestamp: timestamp + 1,
     };
 
     const newNodeId = `node_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
@@ -516,15 +609,15 @@ const LibraryQAPanel = ({
 
     const newNode = {
       id: newNodeId,
-      keyword: keyword,
-      question: question,
+      keyword,
+      question,
       answer: '',
       status: 'asking',
       createdAt: timestamp,
       updatedAt: timestamp,
       conversation: [userMessage, assistantMessage],
       parentId: selectedNode.id,
-      level: (selectedNode.level || 0) + 1
+      level: (selectedNode.level || 0) + 1,
     };
 
     setMessages([userMessage, assistantMessage]);
@@ -533,22 +626,86 @@ const LibraryQAPanel = ({
       onNewNodeCreated(newNode, {
         source: newNode.parentId,
         target: newNode.id,
-        value: 1
+        value: 1,
       });
     }
 
+    const mapToOpenAIMessage = (msg) => {
+      const role = msg.role === 'assistant' ? 'assistant' : 'user';
+
+      if (Array.isArray(msg.content)) {
+        const normalizedContent = msg.content
+          .map((item) => {
+            if (!item || typeof item !== 'object') {
+              return null;
+            }
+            if (item.type === 'input_text' || item.type === 'text') {
+              const text = typeof item.text === 'string' ? item.text.trim() : '';
+              return text ? { type: 'input_text', text } : null;
+            }
+            if (item.type === 'input_image' || item.type === 'image_url') {
+              const urlCandidate = typeof item.image_url?.url === 'string'
+                ? item.image_url.url
+                : typeof item.url === 'string'
+                  ? item.url
+                  : typeof item.dataUrl === 'string'
+                    ? item.dataUrl
+                    : '';
+              const url = urlCandidate.trim();
+              return url ? { type: 'input_image', image_url: { url } } : null;
+            }
+            return null;
+          })
+          .filter(Boolean);
+        if (normalizedContent.length) {
+          return { role, content: normalizedContent };
+        }
+      }
+
+      const textCandidate = typeof msg.content === 'string'
+        ? msg.content
+        : typeof msg.text === 'string'
+          ? msg.text
+          : '';
+      const trimmed = textCandidate.trim();
+      const contentParts = [];
+
+      if (trimmed) {
+        contentParts.push({ type: 'input_text', text: trimmed });
+      }
+
+      const messageAttachments = Array.isArray(msg.attachments)
+        ? msg.attachments.filter((item) => item && typeof item === 'object' && typeof item.dataUrl === 'string' && item.dataUrl)
+        : [];
+
+      messageAttachments.forEach((item) => {
+        contentParts.push({
+          type: 'input_image',
+          image_url: { url: item.dataUrl },
+        });
+      });
+
+      if (contentParts.length === 0) {
+        return null;
+      }
+
+      if (contentParts.length === 1 && contentParts[0].type === 'input_text') {
+        return { role, content: contentParts[0].text };
+      }
+
+      return { role, content: contentParts };
+    };
+
     try {
       const openaiMessages = [...messages, userMessage]
-        .map(msg => ({
-          role: msg.role,
-          content: msg.content || msg.text || ''
-        }))
-        .filter(msg => msg.content && msg.content.trim());
+        .map(mapToOpenAIMessage)
+        .filter(Boolean);
 
       console.log('변환된 OpenAI 메시지:', openaiMessages);
 
       const response = await invokeAgent('askRoot', {
-        messages: openaiMessages
+        messages: openaiMessages,
+        attachments: hasAttachments ? sanitizedAttachments : undefined,
       });
 
       if (!response.answer) {
@@ -560,7 +717,7 @@ const LibraryQAPanel = ({
       const updatedMessages = [userMessage, {
         ...assistantMessage,
         text: response.answer,
-        status: 'complete'
+        status: 'complete',
       }];
 
       const updatedNode = {
@@ -568,35 +725,57 @@ const LibraryQAPanel = ({
         conversation: updatedMessages,
         answer: response.answer,
         status: 'answered',
-        updatedAt: timestamp
+        updatedAt: timestamp,
       };
 
       await upsertTreeNodes({
         treeId: selectedTree.id,
         nodes: [updatedNode],
-        userId: user.id
+        userId: user.id,
       });
 
       if (onNodeUpdate) {
         onNodeUpdate(updatedNode);
       }
-
+      if (onNodeSelect) {
+        onNodeSelect(updatedNode);
+      }
     } catch (error) {
       console.error('질문 처리 실패:', error);
       const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
       setError(errorMessage);
+      setComposerValue(question);
+      if (hasAttachments) {
+        setAttachments(sanitizedAttachments);
+      }
 
-      setMessages(prev =>
-        prev.map(msg =>
+      setMessages((prev) =>
+        prev.map((msg) =>
           msg.id === assistantId
             ? { ...msg, text: `오류: ${errorMessage}`, status: 'error' }
-            : msg
-        )
+            : msg,
+        ),
       );
     } finally {
       setIsProcessing(false);
     }
-  }, [animateAssistantResponse, composerValue, createPlaceholderNodes, disableHighlightMode, invokeAgent, isMultiQuestionMode, isProcessing, messages, onNodeUpdate, selectedNode, selectedTree, user]);
+  }, [
+    animateAssistantResponse,
+    attachments,
+    clearAttachments,
+    composerValue,
+    createPlaceholderNodes,
+    disableHighlightMode,
+    invokeAgent,
+    isMultiQuestionMode,
+    isProcessing,
+    messages,
+    onNewNodeCreated,
+    onNodeUpdate,
+    selectedNode,
+    selectedTree,
+    user,
+  ]);
 
   // 키보드 이벤트 처리
   const handleKeyDown = useCallback((e) => {
@@ -663,6 +842,17 @@ const LibraryQAPanel = ({
               노드를 선택하면 질문 답변을 시작할 수 있습니다.
             </p>
           </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+              style={{ color: DEFAULT_CHAT_PANEL_STYLES.textColor }}
+              aria-label="AI 패널 닫기"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </div>
     );
@@ -751,6 +941,17 @@ const LibraryQAPanel = ({
               처리 중…
             </span>
           )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+              style={{ color: DEFAULT_CHAT_PANEL_STYLES.textColor }}
+              aria-label="AI 패널 닫기"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -776,6 +977,53 @@ const LibraryQAPanel = ({
           {error}
         </div>
       )}
+
+      {attachments.length > 0 ? (
+        <div
+          className="flex w-full flex-wrap gap-3 rounded-xl border px-3 py-3"
+          style={{
+            pointerEvents: 'auto',
+            borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
+            backgroundColor: 'rgba(255, 255, 255, 0.85)',
+          }}
+          data-block-pan="true"
+        >
+          {attachments.map((attachment) => (
+            <div
+              key={attachment.id}
+              className="relative h-24 w-32 overflow-hidden rounded-lg border"
+              style={{
+                borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
+                backgroundColor: 'rgba(15, 23, 42, 0.35)',
+              }}
+            >
+              <img
+                src={attachment.dataUrl}
+                alt={attachment.label || attachment.name || '첨부 이미지'}
+                className="h-full w-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => handleAttachmentRemove(attachment.id)}
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-xs font-bold text-white transition hover:bg-black/80"
+                aria-label="첨부 이미지 제거"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {attachments.length > 1 ? (
+            <button
+              type="button"
+              onClick={clearAttachments}
+              className="flex h-10 items-center justify-center rounded-lg border border-dashed px-3 text-[11px] font-medium text-slate-700 transition hover:bg-white/40"
+              style={{ borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor }}
+            >
+              전체 제거
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className="flex -mb-2 flex-shrink-0 justify-start"
@@ -849,6 +1097,31 @@ const LibraryQAPanel = ({
           }}
         >
           <div className="flex w-full items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                handleAttachmentFiles(event.target.files);
+                event.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleAttachmentButtonClick}
+              disabled={isAttachmentUploading || isProcessing}
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border text-sm shadow-sm transition disabled:opacity-50"
+              aria-label="이미지 첨부"
+              style={{
+                borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
+                color: DEFAULT_CHAT_PANEL_STYLES.textColor,
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              }}
+            >
+              {isAttachmentUploading ? '…' : '📎'}
+            </button>
             <textarea
               ref={textareaRef}
               value={composerValue}
@@ -874,7 +1147,7 @@ const LibraryQAPanel = ({
           </div>
           <button
             type="submit"
-            disabled={!composerValue.trim() || isProcessing}
+            disabled={(composerValue.trim().length === 0 && attachments.length === 0) || isProcessing}
             className="flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-opacity disabled:opacity-40"
             style={{
               backgroundColor: 'rgba(255, 255, 255, 0.8)',

@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, FileText } from 'lucide-react';
 
 import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
+import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
+import TreeWorkspaceToolbar from 'features/tree/ui/components/TreeWorkspaceToolbar';
 import WidgetTreeView from 'features/treeCanvas/WidgetTreeView';
 import EditableTitle from 'shared/ui/EditableTitle';
 
@@ -28,6 +30,7 @@ const TreeCanvas = ({
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [useLightweightRenderer, setUseLightweightRenderer] = useState(false);
   const [autoLightweight, setAutoLightweight] = useState(false);
+  const [viewMode, setViewMode] = useState('tree2'); // 'tree1' | 'tree2'
 
   useEffect(() => {
     if (userOverrideRef.current) {
@@ -94,6 +97,13 @@ const TreeCanvas = ({
                 }}
               />
             </div>
+            <div className="shrink-0">
+              <TreeWorkspaceToolbar
+                viewMode={viewMode}
+                onChange={(mode) => setViewMode(mode)}
+                variant="library"
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
@@ -110,45 +120,62 @@ const TreeCanvas = ({
 
       <div ref={containerRef} className="flex flex-1 overflow-hidden bg-background">
         {nodeCount > 0 ? (
-          useLightweightRenderer ? (
-            <WidgetTreeView
-              key={`light-${selectedMemo.id}`}
-              treeData={selectedMemo.treeData}
-              onNodeClick={onNodeSelect}
-              className="h-full w-full"
-            />
-          ) : (
-            <ForceDirectedTree
-              key={selectedMemo.id}
-              data={selectedMemo.treeData}
-              dimensions={dimensions}
-              onNodeClick={onNodeSelect}
-              onNodeRemove={onNodeRemove}
-              onNodeUpdate={onNodeUpdate}
-              onMemoCreate={onMemoCreate}
-              onMemoUpdate={onMemoUpdate}
-              onMemoRemove={onMemoRemove}
-              onNodeCreate={(newNode) => onNewNodeCreated?.(newNode, null)}
-              onLinkCreate={(newLink) => onNewNodeCreated?.(null, newLink)}
-              onRootCreate={({ position }) => {
-                const id = `node_${Date.now()}_${Math.random()
-                  .toString(36)
-                  .slice(2, 9)}`;
-                const newRootNode = {
-                  id,
-                  keyword: "New Root",
-                  x: position?.x ?? dimensions.width / 2,
-                  y: position?.y ?? dimensions.height / 2,
-                  level: 0,
-                };
-                onNewNodeCreated?.(newRootNode, null);
-                return id;
-              }}
-              treeId={selectedMemo.id}
-              userId={selectedMemo.userId}
-              hideAssistantPanel
-            />
-          )
+          <div className="relative z-0 h-full w-full overflow-hidden">
+            {viewMode === 'tree1'
+              ? (
+                <TidyTreeView
+                  key={`tidy-${selectedMemo.id}`}
+                  data={selectedMemo.treeData}
+                  dimensions={dimensions}
+                  onNodeClick={({ id }) => onNodeSelect?.(id)}
+                  selectedNodeId={null}
+                  activeTreeId={selectedMemo.id}
+                  onBackgroundClick={() => {}}
+                  onReorderSiblings={() => {}}
+                />
+              )
+              : useLightweightRenderer
+                ? (
+                  <WidgetTreeView
+                    key={`light-${selectedMemo.id}`}
+                    treeData={selectedMemo.treeData}
+                    onNodeClick={onNodeSelect}
+                    className="h-full w-full"
+                  />
+                )
+                : (
+                  <ForceDirectedTree
+                    key={selectedMemo.id}
+                    data={selectedMemo.treeData}
+                    dimensions={dimensions}
+                    onNodeClick={onNodeSelect}
+                    onNodeRemove={onNodeRemove}
+                    onNodeUpdate={onNodeUpdate}
+                    onMemoCreate={onMemoCreate}
+                    onMemoUpdate={onMemoUpdate}
+                    onMemoRemove={onMemoRemove}
+                    onNodeCreate={(newNode) => onNewNodeCreated?.(newNode, null)}
+                    onLinkCreate={(newLink) => onNewNodeCreated?.(null, newLink)}
+                    onRootCreate={({ position }) => {
+                      const id = `node_${Date.now()}_${Math.random()
+                        .toString(36)
+                        .slice(2, 9)}`;
+                      const newRootNode = {
+                        id,
+                        keyword: "New Root",
+                        x: position?.x ?? dimensions.width / 2,
+                        y: position?.y ?? dimensions.height / 2,
+                        level: 0,
+                      };
+                      onNewNodeCreated?.(newRootNode, null);
+                      return id;
+                    }}
+                    treeId={selectedMemo.id}
+                    userId={selectedMemo.userId}
+                    hideAssistantPanel
+                  />
+                )}
+          </div>
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
             표시할 노드가 없습니다.

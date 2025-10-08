@@ -75,6 +75,7 @@ export const useLibraryAppViewModel = () => {
     dragOverVoranBox: state.dragOverVoranBox,
     voranTrees: selectors.voranTrees,
     isSidebarCollapsed: state.isSidebarCollapsed,
+    isQAPanelVisible: state.isQAPanelVisible,
   }), [
     selectors.selectedTree,
     selectors.voranTrees,
@@ -89,6 +90,7 @@ export const useLibraryAppViewModel = () => {
     state.selectedTreeId,
     state.trees,
     state.isSidebarCollapsed,
+    state.isQAPanelVisible,
   ]);
 
   const status = useMemo(() => ({

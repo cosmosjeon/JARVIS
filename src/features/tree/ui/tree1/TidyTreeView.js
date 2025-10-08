@@ -6,9 +6,127 @@ import InsertionCalculator from 'features/tree/services/drag/InsertionCalculator
 import PreviewLayoutCalculator from 'features/tree/services/drag/PreviewLayoutCalculator';
 import SiblingReorderService from 'features/tree/services/drag/SiblingReorderService';
 
-const MIN_SCALE = 0.4;
+const MIN_SCALE = 0.18;
 const MAX_SCALE = 2.6;
 const VIRTUAL_ROOT_ID = '__virtual_root__';
+const DEFAULT_TREE_KEY = '__default_tree__';
+const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
+
+const buildTransformStorageKey = (treeKey) => `${VIEWPORT_STORAGE_PREFIX}.${treeKey}`;
+
+const readStoredTransform = (storageKey) => {
+  if (typeof window === 'undefined' || !storageKey) {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y) || !Number.isFinite(parsed?.k)) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+};
+
+const persistTransform = (storageKey, transform) => {
+  if (typeof window === 'undefined' || !storageKey || !transform) {
+    return;
+  }
+  try {
+    const payload = JSON.stringify({ x: transform.x, y: transform.y, k: transform.k });
+    window.localStorage.setItem(storageKey, payload);
+  } catch (error) {
+    // ignore persistence failures
+  }
+};
+
+const toZoomTransform = (rawTransform) => {
+  if (!rawTransform || !Number.isFinite(rawTransform.x) || !Number.isFinite(rawTransform.y) || !Number.isFinite(rawTransform.k)) {
+    return null;
+  }
+  return d3.zoomIdentity.translate(rawTransform.x, rawTransform.y).scale(rawTransform.k);
+};
+
+// Calculate a zoom transform that fits the entire hierarchy snugly inside the viewport
+// while keeping the tree centered.
+const computeDefaultTransform = (layout, viewportDimensions) => {
+  if (!layout || !Array.isArray(layout.nodes) || layout.nodes.length === 0) {
+    return null;
+  }
+
+  const nodes = layout.nodes.filter((node) => {
+    if (!node) return false;
+    const nodeId = node.data?.id;
+    if (nodeId === VIRTUAL_ROOT_ID) {
+      return false;
+    }
+    return true;
+  });
+  if (nodes.length === 0) {
+    return null;
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  nodes.forEach((node) => {
+    const { x, y } = node;
+    if (Number.isFinite(x)) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+    }
+    if (Number.isFinite(y)) {
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+  });
+
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    return null;
+  }
+
+  const viewportWidth = Number.isFinite(viewportDimensions?.width)
+    ? Math.max(1, viewportDimensions.width)
+    : Math.max(1, layout?.width || 0);
+  const viewportHeight = Number.isFinite(viewportDimensions?.height)
+    ? Math.max(1, viewportDimensions.height)
+    : Math.max(1, layout?.height || 0);
+
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return null;
+  }
+
+  const horizontalPadding = Number.isFinite(layout?.dy) ? layout.dy * 1.2 : 80;
+  const verticalPadding = Number.isFinite(layout?.dx) ? layout.dx * 1.2 : 80;
+
+  const contentWidth = Math.max(1, (maxY - minY) + horizontalPadding * 2);
+  const contentHeight = Math.max(1, (maxX - minX) + verticalPadding * 2);
+
+  const scaleX = viewportWidth / contentWidth;
+  const scaleY = viewportHeight / contentHeight;
+  const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleX, scaleY)));
+
+  // 바운딩 박스 중심 기준 기본 이동값 계산
+  const rootNode = nodes.find((node) => node.depth === 0) || null;
+  const rootX = Number.isFinite(rootNode?.y) ? rootNode.y : (minY + maxY) / 2;
+  const rootY = Number.isFinite(rootNode?.x) ? rootNode.x : (minX + maxX) / 2;
+
+  const translateX = viewportWidth / 2 - rootX * targetScale;
+  const translateY = viewportHeight / 2 - rootY * targetScale;
+
+  if (!Number.isFinite(translateX) || !Number.isFinite(translateY) || !Number.isFinite(targetScale)) {
+    return null;
+  }
+
+  return d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+};
 
 const estimateLabelWidth = (label) => {
   if (typeof label !== "string") {
@@ -31,6 +149,7 @@ const TidyTreeView = ({
   activeTreeId,
   onBackgroundClick,
   onReorderSiblings,
+  disableAutoFocus = false,
 }) => {
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
@@ -41,7 +160,9 @@ const TidyTreeView = ({
   const nodesGroupRef = useRef(null);
   const linksGroupRef = useRef(null);
   const previousLayoutRef = useRef(null);
-  const defaultViewTransformRef = useRef(null);
+  const lastViewTransformRef = useRef(null);
+  const lastAppliedTreeIdRef = useRef(null);
+  const storageKeyRef = useRef(null);
 
   // 드래그 관련 서비스 인스턴스
   const dragStateManager = useRef(new DragStateManager()).current;
@@ -219,23 +340,7 @@ const TidyTreeView = ({
   }, [layout, linkGenerator, dragPreview]);
 
   // 기본 뷰포트로 복원하는 함수
-  const resetToDefaultView = () => {
-    const svgElement = svgRef.current;
-    const zoom = zoomBehaviorRef.current;
-
-    if (!svgElement || !zoom || !defaultViewTransformRef.current) {
-      return;
-    }
-
-    const selection = d3.select(svgElement);
-
-    // 부드러운 transition으로 기본 뷰포트로 복귀
-    selection
-      .transition()
-      .duration(600)
-      .ease(d3.easeCubicInOut)
-      .call(zoom.transform, defaultViewTransformRef.current);
-  };
+  const resetToDefaultView = () => {};
 
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
@@ -249,9 +354,7 @@ const TidyTreeView = ({
     const zoom = d3
       .zoom()
       .filter((event) => {
-        // 노드 드래그 중에는 줌/팬 비활성화
         if (dragStateManager.isDragging()) return false;
-        // 노드 영역에서 시작된 이벤트면 줌/팬 비활성화
         const t = event?.target;
         if (t && typeof t.closest === "function") {
           if (t.closest('g[data-node-interactive="true"]')) return false;
@@ -266,60 +369,46 @@ const TidyTreeView = ({
       .on("start", () => setIsZooming(true))
       .on("zoom", (event) => {
         setViewTransform(event.transform);
+        lastViewTransformRef.current = event.transform;
+        const storageKey = storageKeyRef.current;
+        if (storageKey) {
+          persistTransform(storageKey, event.transform);
+        }
       })
       .on("end", () => setIsZooming(false));
 
     selection.call(zoom);
 
-    // 더블클릭 시 기본 뷰포트로 복원
-    selection.on("dblclick.zoom", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+    const treeKey = typeof activeTreeId === "string" && activeTreeId.trim().length > 0
+      ? activeTreeId
+      : DEFAULT_TREE_KEY;
+    const storageKey = buildTransformStorageKey(treeKey);
+    storageKeyRef.current = storageKey;
 
-      // 노드 영역 더블클릭은 무시 (노드 활성화 우선)
-      const target = event?.target;
-      if (target && typeof target.closest === "function") {
-        if (target.closest('g[data-node-interactive="true"]')) {
-          return;
-        }
-      }
-
-      resetToDefaultView();
-    });
+    const defaultTransform = computeDefaultTransform(layout, dimensions) || d3.zoomIdentity;
+    const storedTransform = readStoredTransform(storageKey);
+    const storedZoom = toZoomTransform(storedTransform);
+    const initialTransform = storedZoom || lastViewTransformRef.current || defaultTransform;
+    lastViewTransformRef.current = initialTransform;
 
     zoomBehaviorRef.current = zoom;
 
-    // 초기 마운트 시에만 identity로 리셋 (이후 layout 변경 시에는 현재 transform 유지)
-    if (isInitialMountRef.current) {
-      const identity = d3.zoomIdentity;
-      selection.call(zoom.transform, identity);
-      setViewTransform(identity);
+    const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
 
-      // 기본 뷰포트 저장
-      defaultViewTransformRef.current = identity;
-
+    if (shouldApplyInitial) {
+      selection.call(zoom.transform, initialTransform);
+      lastAppliedTreeIdRef.current = treeKey;
       isInitialMountRef.current = false;
+      if (!storedZoom && storageKey) {
+        persistTransform(storageKey, initialTransform);
+      }
     }
 
     return () => {
       selection.on(".zoom", null);
-      selection.on("dblclick.zoom", null);
       zoomBehaviorRef.current = null;
     };
-  }, [layout, dragStateManager]);
-
-  // 탭 전환 시 기본 화면으로 복귀
-  useEffect(() => {
-    // 초기 마운트는 제외 (위의 zoom behavior useEffect에서 이미 처리함)
-    if (isInitialMountRef.current) {
-      return;
-    }
-
-    // activeTreeId가 변경되면 기본 뷰포트로 복귀
-    if (activeTreeId && defaultViewTransformRef.current) {
-      resetToDefaultView();
-    }
-  }, [activeTreeId]);
+  }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height]);
 
   const isLightTheme = theme === "light";
   const linkStroke = isLightTheme ? "rgba(100, 116, 139, 0.95)" : "rgba(148, 163, 184, 0.95)";

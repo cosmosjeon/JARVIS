@@ -195,8 +195,13 @@ const HierarchicalForceTree = () => {
   } = treeState;
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(data);
+  const simulationRef = useRef(null);
+  const treeAnimationService = useRef(new TreeAnimationService());
+  const animationRef = useRef(null);
+  const questionService = useRef(new QuestionService());
+  const hasInitializedViewRef = useRef(false);
 
-  // activeTreeId 변경 시 탭 목록에 추가
+  // activeTreeId 변경 시 탭 목록에 추가 및 뷰 초기화
   useEffect(() => {
     if (!activeTreeId) return;
 
@@ -209,11 +214,10 @@ const HierarchicalForceTree = () => {
       // 새 탭 추가
       return [...prev, { id: activeTreeId, title: `트리 ${prev.length + 1}` }];
     });
+
+    // activeTreeId가 변경되면 뷰 초기화 플래그 리셋 (새 트리 로딩 시 자동 중심 설정)
+    hasInitializedViewRef.current = false;
   }, [activeTreeId]);
-  const simulationRef = useRef(null);
-  const treeAnimationService = useRef(new TreeAnimationService());
-  const animationRef = useRef(null);
-  const questionService = useRef(new QuestionService());
 
   // 키보드 탭(→ 다음 탭), Shift+Tab(← 이전 탭)으로 탭 전환 (Ref를 통해 안전 호출)
   useEffect(() => {
@@ -1871,6 +1875,67 @@ const HierarchicalForceTree = () => {
         const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
         linkKeysRef.current = nextKeys;
         setLinks(annotatedLinks);
+
+        // 초기 로딩 시 전체 트리가 화면에 보이도록 설정 (TidyTreeView는 자체 computeDefaultTransform 사용)
+        if (!isTidyView && !hasInitializedViewRef.current && animatedNodes.length > 0) {
+          hasInitializedViewRef.current = true;
+          
+          // 약간의 지연을 두어 레이아웃 계산이 완료된 후 전체 트리 fit
+          setTimeout(() => {
+            const svgElement = svgRef.current;
+            const zoom = zoomBehaviourRef.current;
+            
+            if (!svgElement || !zoom) return;
+            
+            // 전체 노드의 경계 계산
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+            
+            animatedNodes.forEach(node => {
+              if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                minX = Math.min(minX, node.x);
+                maxX = Math.max(maxX, node.x);
+                minY = Math.min(minY, node.y);
+                maxY = Math.max(maxY, node.y);
+              }
+            });
+            
+            if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return;
+            
+            // 여백 추가
+            const padding = 80;
+            const contentWidth = maxX - minX + padding * 2;
+            const contentHeight = maxY - minY + padding * 2;
+            const contentCenterX = (minX + maxX) / 2;
+            const contentCenterY = (minY + maxY) / 2;
+            
+            // 화면에 맞는 scale 계산
+            const viewportWidth = dimensions?.width || 800;
+            const viewportHeight = dimensions?.height || 600;
+            const scaleX = viewportWidth / contentWidth;
+            const scaleY = viewportHeight / contentHeight;
+            const scale = Math.min(scaleX, scaleY, 4); // max zoom
+            const finalScale = Math.max(scale, 0.3); // min zoom
+            
+            // 중앙 정렬을 위한 translate 계산
+            const translateX = viewportWidth / 2 - contentCenterX * finalScale;
+            const translateY = viewportHeight / 2 - contentCenterY * finalScale;
+            
+            const initialTransform = d3.zoomIdentity
+              .translate(translateX, translateY)
+              .scale(finalScale);
+            
+            const selection = d3.select(svgElement);
+            selection
+              .transition()
+              .duration(0)
+              .call(zoom.transform, initialTransform);
+            
+            setViewTransform(initialTransform);
+          }, 100);
+        }
       },
       { orientation: 'vertical' }
     );
@@ -1887,18 +1952,22 @@ const HierarchicalForceTree = () => {
         animationRef.current.stop();
       }
     };
-  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
+  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links, isTidyView, hierarchicalLinks, viewTransform, setViewTransform]);
 
-  const focusNodeToCenter = useCallback((node, options = {}) => focusNodeToCenterUtil({
-    node,
-    svgElement: svgRef.current,
-    zoomBehaviour: zoomBehaviourRef.current,
-    dimensions,
-    viewTransform,
-    setViewTransform,
-    duration: options.duration,
-    scale: options.scale,
-  }), [dimensions, viewTransform, setViewTransform]);
+  const focusNodeToCenter = useCallback((node, options = {}) => {
+    // 기본 duration을 600ms로 설정 (부드러운 애니메이션)
+    const defaultDuration = 600;
+    return focusNodeToCenterUtil({
+      node,
+      svgElement: svgRef.current,
+      zoomBehaviour: zoomBehaviourRef.current,
+      dimensions,
+      viewTransform,
+      setViewTransform,
+      duration: options.duration !== undefined ? options.duration : defaultDuration,
+      scale: options.scale,
+    });
+  }, [dimensions, viewTransform, setViewTransform]);
 
   // Handle node click for assistant focus
   const handleNodeClickForAssistant = useCallback((payload) => {
@@ -1928,7 +1997,7 @@ const HierarchicalForceTree = () => {
       return current;
     });
 
-    Promise.resolve(focusNodeToCenter(layoutNode, { duration: 620 }))
+    Promise.resolve(focusNodeToCenter(layoutNode, { duration: 600 }))
       .catch(() => undefined)
       .then(() => {
         if (pendingFocusNodeIdRef.current !== targetId) {
@@ -2633,6 +2702,7 @@ const HierarchicalForceTree = () => {
             hideAssistantPanel={true}
             selectedNodeId={selectedNodeId}
             onBackgroundClick={collapseAssistantPanel}
+            disableAutoFocus={true}
           />
         </div>
       )}
@@ -2655,6 +2725,7 @@ const HierarchicalForceTree = () => {
             selectedNodeId={selectedNodeId}
             activeTreeId={activeTreeId}
             onBackgroundClick={collapseAssistantPanel}
+            disableAutoFocus={true}
             onReorderSiblings={(parentId, orderedChildIds) => {
               if (!parentId || !Array.isArray(orderedChildIds)) return;
 

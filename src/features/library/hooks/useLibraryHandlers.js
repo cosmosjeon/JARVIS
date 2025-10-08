@@ -45,8 +45,10 @@ export const useLibraryHandlers = ({
     addNode(node, link);
     if (options.select !== false) {
       actions.selection.setSelectedNode(node);
+      // 새 노드를 추가하고 선택하면 AI 패널을 자동으로 켬
+      actions.layout.showQAPanel();
     }
-  }, [actions.selection, addNode]);
+  }, [actions.selection, actions.layout, addNode]);
 
   const toggleCreateDialog = useCallback((open) => {
     if (open) {
@@ -55,6 +57,14 @@ export const useLibraryHandlers = ({
     }
     actions.modal.setShowCreateDialog(false);
   }, [actions.modal]);
+
+  const nodeSelect = useCallback((node) => {
+    actions.selection.setSelectedNode(node);
+    // 노드를 선택하면 AI 패널을 자동으로 다시 켬
+    if (node) {
+      actions.layout.showQAPanel();
+    }
+  }, [actions.selection, actions.layout]);
 
   return useMemo(() => ({
     refreshLibrary: dataApi.refreshLibrary,
@@ -66,7 +76,7 @@ export const useLibraryHandlers = ({
     folderSelect,
     folderToggle,
     sidebarTreeSelect,
-    nodeSelect: actions.selection.setSelectedNode,
+    nodeSelect,
     nodeUpdate: updateNode,
     nodeAdd,
     nodeRemove: nodeRemoval,
@@ -86,6 +96,9 @@ export const useLibraryHandlers = ({
     openCreateDialog: actions.modal.openCreateDialog,
     toggleCreateDialog,
     toggleSidebar: actions.layout.toggleSidebar,
+    hideQAPanel: actions.layout.hideQAPanel,
+    showQAPanel: actions.layout.showQAPanel,
+    toggleQAPanel: actions.layout.toggleQAPanel,
     moveTreesToFolder: dataApi.moveTreesToFolder,
   }), [
     actions.modal.hideVoranBox,
@@ -93,7 +106,9 @@ export const useLibraryHandlers = ({
     actions.modal.setShowCreateDialog,
     actions.modal.showVoranBox,
     actions.layout.toggleSidebar,
-    actions.selection.setSelectedNode,
+    actions.layout.hideQAPanel,
+    actions.layout.showQAPanel,
+    actions.layout.toggleQAPanel,
     dataApi.moveTreesToFolder,
     dataApi.refreshLibrary,
     folderDragLeave,
@@ -108,6 +123,7 @@ export const useLibraryHandlers = ({
     navDropToFolder,
     navDropToVoran,
     nodeAdd,
+    nodeSelect,
     updateNode,
     nodeRemoval,
     sidebarTreeSelect,

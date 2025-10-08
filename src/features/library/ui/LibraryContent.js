@@ -19,6 +19,7 @@ const LibraryContent = ({
   selectedFolderId,
   folders,
   selectedNode,
+  isQAPanelVisible,
   onNodeSelect,
   onNodeRemove,
   onNodeUpdate,
@@ -27,6 +28,7 @@ const LibraryContent = ({
   onMemoUpdate,
   onMemoRemove,
   onTreeRename,
+  onQAPanelClose,
 }) => {
   if (loading) {
     return (
@@ -46,6 +48,23 @@ const LibraryContent = ({
   }
 
   if (selectedTree) {
+    // isQAPanelVisible이 명시적으로 false일 때만 패널을 숨김 (undefined는 true로 처리)
+    if (isQAPanelVisible === false) {
+      return (
+        <TreeCanvas
+          selectedMemo={selectedTree}
+          onNodeSelect={onNodeSelect}
+          onNodeRemove={onNodeRemove}
+          onNodeUpdate={onNodeUpdate}
+          onNewNodeCreated={onNewNodeCreated}
+          onMemoCreate={onMemoCreate}
+          onMemoUpdate={onMemoUpdate}
+          onMemoRemove={onMemoRemove}
+          onTreeRename={onTreeRename}
+        />
+      );
+    }
+
     return (
       <ResizablePanelGroup direction="horizontal" className="h-full overflow-hidden">
         <ResizablePanel defaultSize={70} minSize={30} className="min-h-0 bg-background overflow-hidden">
@@ -69,6 +88,7 @@ const LibraryContent = ({
             onNodeUpdate={onNodeUpdate}
             onNewNodeCreated={onNewNodeCreated}
             onNodeSelect={onNodeSelect}
+            onClose={onQAPanelClose}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
