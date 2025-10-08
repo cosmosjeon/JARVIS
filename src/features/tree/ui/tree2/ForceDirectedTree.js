@@ -678,10 +678,13 @@ const ForceDirectedTree = ({
                 >
                   <circle
                     fill={nodeFill(node)}
-                    r={NODE_RADIUS}
+                    r={isHovered ? NODE_RADIUS * 1.6 : NODE_RADIUS}
                     fillOpacity={isHovered ? 1 : circleOpacity}
+                    stroke={isHovered ? 'rgba(59, 130, 246, 0.6)' : 'transparent'}
+                    strokeWidth={isHovered ? 1.2 : 0}
                     style={{
                       transition: 'all 200ms ease',
+                      filter: isHovered ? 'drop-shadow(0 0 3px rgba(59, 130, 246, 0.5))' : 'none',
                     }}
                   />
                   {label ? (
@@ -694,8 +697,8 @@ const ForceDirectedTree = ({
                       fillOpacity={isHovered ? 1 : textOpacity}
                       style={{
                         fontFamily: 'sans-serif',
-                        fontSize: isHovered ? 12 : 11,
-                        fontWeight: isHovered ? 600 : 400,
+                        fontSize: isHovered ? 13 : 11,
+                        fontWeight: isHovered ? 700 : 400,
                         transition: 'all 200ms ease',
                       }}
                     >
