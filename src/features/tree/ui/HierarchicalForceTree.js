@@ -214,6 +214,36 @@ const HierarchicalForceTree = () => {
   const treeAnimationService = useRef(new TreeAnimationService());
   const animationRef = useRef(null);
   const questionService = useRef(new QuestionService());
+
+  // 키보드 탭(→ 다음 탭), Shift+Tab(← 이전 탭)으로 탭 전환 (Ref를 통해 안전 호출)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const target = event.target;
+      const tag = (target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) {
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const tabs = Array.isArray(sessionTabs) ? sessionTabs : [];
+      if (tabs.length === 0) return;
+
+      event.preventDefault();
+
+      const currentIndex = Math.max(0, tabs.findIndex(t => t?.id === activeTreeId));
+      const delta = event.shiftKey ? -1 : 1;
+      const nextIndex = (currentIndex + delta + tabs.length) % tabs.length;
+      const next = tabs[nextIndex];
+      const nextId = next?.id;
+      if (nextId && nextId !== activeTreeId) {
+        loadActiveTreeRef.current?.({ treeId: nextId });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [sessionTabs, activeTreeId]);
+
   const {
     hydrateFromNodes,
     getConversation,
@@ -355,6 +385,12 @@ const HierarchicalForceTree = () => {
     treeLibrarySyncRef,
     saveTreeMetadata,
   });
+
+  // loadActiveTree를 안정적으로 참조하기 위한 Ref (초기화 순서 이슈 방지)
+  const loadActiveTreeRef = useRef(loadActiveTree);
+  useEffect(() => {
+    loadActiveTreeRef.current = loadActiveTree;
+  }, [loadActiveTree]);
 
 
   const linkKeysRef = useRef(new Set());
@@ -2227,6 +2263,11 @@ const HierarchicalForceTree = () => {
                 onCloseNode={() => handleCloseNode(expandedNodeId)}
                 onPanZoomGesture={forwardPanZoomGesture}
                 nodeScaleFactor={nodeScaleFactor}
+                nodeSummary={{
+                  label: tidyAssistantNode.keyword || tidyAssistantNode.id,
+                  intro: tidyAssistantNode.fullText || '',
+                  bullets: [],
+                }}
                 treeNodes={Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : []}
                 treeLinks={Array.isArray(visibleGraph.links) ? visibleGraph.links : []}
                 onNodeSelect={(targetNode) => {
@@ -2661,5 +2702,4 @@ const HierarchicalForceTree = () => {
 };
 
 export default HierarchicalForceTree;
-
 
