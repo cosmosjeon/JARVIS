@@ -109,6 +109,7 @@ const ForceDirectedTree = ({
   isForceSimulationEnabled, // kept for compatibility
   selectedNodeId: externalSelectedNodeId,
   onBackgroundClick,
+  isChatPanelOpen = false,
 }) => {
   const baseWidth = Number.isFinite(dimensions?.width)
     ? dimensions.width
@@ -169,7 +170,9 @@ const ForceDirectedTree = ({
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const [clickedNodeId, setClickedNodeId] = useState(null);
   const clickTimerRef = useRef(null);
+  const backgroundClickTimerRef = useRef(null);
   const svgRef = useRef(null);
+  const zoomBehaviorRef = useRef(null);
   const questionServiceRef = useRef(questionService || new QuestionService());
 
   useEffect(() => {
@@ -197,8 +200,11 @@ const ForceDirectedTree = ({
     selection.call(zoom);
     selection.on('dblclick.zoom', null);
 
+    zoomBehaviorRef.current = zoom;
+
     return () => {
       selection.on('.zoom', null);
+      zoomBehaviorRef.current = null;
     };
   }, [onPanZoomGesture]);
 
@@ -302,15 +308,58 @@ const ForceDirectedTree = ({
         viewBox={[-width / 2, -height / 2, width, height].join(' ')}
         style={{ touchAction: 'pan-x pan-y pinch-zoom', cursor: 'grab' }}
         onClick={(event) => {
-          // 배경 클릭 시 하이라이트 해제
+          // 배경 클릭 처리
           if (event.target === event.currentTarget || event.target.tagName === 'svg') {
-            setClickedNodeId(null);
-            setHoveredNodeId(null);
-            if (externalSelectedNodeId === undefined) {
-              setInternalSelectedNodeId(null);
-            }
-            if (typeof onBackgroundClick === 'function') {
-              onBackgroundClick();
+            // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
+            if (backgroundClickTimerRef.current) {
+              clearTimeout(backgroundClickTimerRef.current);
+              backgroundClickTimerRef.current = null;
+
+              if (isChatPanelOpen) {
+                // 채팅창이 열려있으면: 채팅창만 닫기 (줌 유지)
+                setClickedNodeId(null);
+                setHoveredNodeId(null);
+                if (externalSelectedNodeId === undefined) {
+                  setInternalSelectedNodeId(null);
+                }
+                if (typeof onBackgroundClick === 'function') {
+                  onBackgroundClick();
+                }
+              } else {
+                // 채팅창이 닫혀있으면: 줌 초기화
+                const svgElement = svgRef.current;
+                const zoom = zoomBehaviorRef.current;
+                if (svgElement && zoom) {
+                  d3.select(svgElement)
+                    .transition()
+                    .duration(600)
+                    .ease(d3.easeCubicInOut)
+                    .call(zoom.transform, d3.zoomIdentity);
+                }
+              }
+            } else {
+              // 싱글 클릭: 타이머 시작
+              backgroundClickTimerRef.current = setTimeout(() => {
+                const hasHighlight = clickedNodeId !== null;
+
+                if (hasHighlight) {
+                  // 하이라이트가 있으면 하이라이트만 해제 (채팅창과 테두리 유지)
+                  setClickedNodeId(null);
+                  setHoveredNodeId(null);
+                  // 선택(테두리)은 유지, 채팅창도 유지
+                } else {
+                  // 하이라이트가 없으면 채팅창 닫기
+                  setClickedNodeId(null);
+                  setHoveredNodeId(null);
+                  if (externalSelectedNodeId === undefined) {
+                    setInternalSelectedNodeId(null);
+                  }
+                  if (typeof onBackgroundClick === 'function') {
+                    onBackgroundClick();
+                  }
+                }
+                backgroundClickTimerRef.current = null;
+              }, 250);
             }
           }
         }}
@@ -395,6 +444,14 @@ const ForceDirectedTree = ({
                   }}
                   onClick={(event) => {
                     event.stopPropagation();
+
+                    // 채팅창이 열려있으면 싱글 클릭만으로도 전환
+                    if (isChatPanelOpen) {
+                      setClickedNodeId(nodeId);
+                      setHoveredNodeId(nodeId);
+                      handleNodeClick(node);
+                      return;
+                    }
 
                     // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
                     if (clickTimerRef.current) {

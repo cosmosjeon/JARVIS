@@ -976,6 +976,13 @@ const HierarchicalForceTree = () => {
     setExpandedNodeId(null);
   }, [clearPendingExpansion]);
 
+  // 배경 클릭 핸들러 (채팅창 닫기)
+  const handleBackgroundClick = useCallback(() => {
+    // 채팅창 닫기 + 선택 해제
+    collapseAssistantPanel();
+    setSelectedNodeId(null);
+  }, [collapseAssistantPanel]);
+
   const forwardPanZoomGesture = useCallback((event) => applyPanZoomGesture({
     event,
     svgElement: svgRef.current,
@@ -2669,7 +2676,8 @@ const HierarchicalForceTree = () => {
             onNodeAttachmentsChange={setAttachmentsForNode}
             hideAssistantPanel={true}
             selectedNodeId={selectedNodeId}
-            onBackgroundClick={collapseAssistantPanel}
+            onBackgroundClick={handleBackgroundClick}
+            isChatPanelOpen={Boolean(expandedNodeId)}
           />
         </div>
       )}
@@ -2687,7 +2695,8 @@ const HierarchicalForceTree = () => {
             onNodeClick={handleNodeClickForAssistant}
             selectedNodeId={selectedNodeId}
             activeTreeId={activeTreeId}
-            onBackgroundClick={collapseAssistantPanel}
+            onBackgroundClick={handleBackgroundClick}
+            isChatPanelOpen={Boolean(expandedNodeId)}
             onReorderSiblings={(parentId, orderedChildIds) => {
               if (!parentId || !Array.isArray(orderedChildIds)) return;
 

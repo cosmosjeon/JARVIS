@@ -31,6 +31,7 @@ const TidyTreeView = ({
   activeTreeId,
   onBackgroundClick,
   onReorderSiblings,
+  isChatPanelOpen = false,
 }) => {
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
@@ -57,6 +58,8 @@ const TidyTreeView = ({
   const [clickedNodeId, setClickedNodeId] = useState(null);
   const [internalSelectedNodeId, setInternalSelectedNodeId] = useState(null);
   const clickTimerRef = useRef(null);
+  const backgroundClickTimerRef = useRef(null);
+  const recentDragEndRef = useRef(false);
 
   // 외부에서 selectedNodeId가 제공되면 사용, 아니면 내부 상태 사용
   // null이 아닌 값이 제공되거나, undefined가 아니고 null인 경우에는 외부 값 사용
@@ -280,21 +283,8 @@ const TidyTreeView = ({
 
     selection.call(zoom);
 
-    // 더블클릭 시 기본 뷰포트로 복원
-    selection.on("dblclick.zoom", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      // 노드 영역 더블클릭은 무시 (노드 활성화 우선)
-      const target = event?.target;
-      if (target && typeof target.closest === "function") {
-        if (target.closest('g[data-node-interactive="true"]')) {
-          return;
-        }
-      }
-
-      resetToDefaultView();
-    });
+    // d3의 기본 더블클릭 줌 동작 비활성화 (배경 더블클릭은 onClick에서 처리)
+    selection.on("dblclick.zoom", null);
 
     zoomBehaviorRef.current = zoom;
 
@@ -415,12 +405,8 @@ const TidyTreeView = ({
       svgY,
     );
 
-    if (!isValidDrop) {
-      setDragPreview(null);
-      return;
-    }
-
-    // 미리보기 레이아웃 계산
+    // 원래 자리로 돌아가는 경우에도 애니메이션 적용
+    // 미리보기 레이아웃 계산 (원래 위치든 새 위치든 항상 계산)
     const { previewNodes } = previewLayoutCalculator.calculatePreviewLayout(
       siblings,
       node,
@@ -430,6 +416,7 @@ const TidyTreeView = ({
     setDragPreview({
       active: true,
       nodes: previewNodes,
+      isValidDrop, // 유효한 드롭인지 표시 (드롭 시 사용)
     });
   };
 
@@ -468,6 +455,12 @@ const TidyTreeView = ({
     // 드래그 상태 초기화
     dragStateManager.endDrag();
     setDragPreview(null);
+
+    // 드래그 직후 클릭 이벤트 방지
+    recentDragEndRef.current = true;
+    setTimeout(() => {
+      recentDragEndRef.current = false;
+    }, 100);
   };
 
   if (!layout) {
@@ -507,11 +500,44 @@ const TidyTreeView = ({
           // SVG 배경 클릭 (노드나 링크가 아닌 경우)
           const target = event.target;
           if (target === svgRef.current || target.tagName === 'g') {
-            setClickedNodeId(null);
-            setHoveredNodeId(null);
-            setInternalSelectedNodeId(null);
-            if (typeof onBackgroundClick === "function") {
-              onBackgroundClick();
+            // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
+            if (backgroundClickTimerRef.current) {
+              clearTimeout(backgroundClickTimerRef.current);
+              backgroundClickTimerRef.current = null;
+
+              if (isChatPanelOpen) {
+                // 채팅창이 열려있으면: 채팅창만 닫기 (줌 유지)
+                setClickedNodeId(null);
+                setHoveredNodeId(null);
+                setInternalSelectedNodeId(null);
+                if (typeof onBackgroundClick === "function") {
+                  onBackgroundClick();
+                }
+              } else {
+                // 채팅창이 닫혀있으면: 줌 초기화
+                resetToDefaultView();
+              }
+            } else {
+              // 싱글 클릭: 타이머 시작
+              backgroundClickTimerRef.current = setTimeout(() => {
+                const hasHighlight = clickedNodeId !== null;
+
+                if (hasHighlight) {
+                  // 하이라이트가 있으면 하이라이트만 해제 (채팅창과 테두리 유지)
+                  setClickedNodeId(null);
+                  setHoveredNodeId(null);
+                  // 선택(테두리)은 유지, 채팅창도 유지
+                } else {
+                  // 하이라이트가 없으면 채팅창 닫기
+                  setClickedNodeId(null);
+                  setHoveredNodeId(null);
+                  setInternalSelectedNodeId(null);
+                  if (typeof onBackgroundClick === "function") {
+                    onBackgroundClick();
+                  }
+                }
+                backgroundClickTimerRef.current = null;
+              }, 250);
             }
           }
         }}
@@ -624,6 +650,19 @@ const TidyTreeView = ({
                   data-node-interactive="true"
                   onClick={(event) => {
                     event.stopPropagation();
+
+                    // 드래그 직후에는 클릭 이벤트 무시
+                    if (recentDragEndRef.current) {
+                      return;
+                    }
+
+                    // 채팅창이 열려있으면 싱글 클릭만으로도 전환
+                    if (isChatPanelOpen) {
+                      setClickedNodeId(node.data.id);
+                      setHoveredNodeId(node.data.id);
+                      handleNodeActivate(node);
+                      return;
+                    }
 
                     // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
                     if (clickTimerRef.current) {
