@@ -450,7 +450,7 @@ const TidyTreeView = ({
 
   const isDarkTheme = theme === "dark";
   const linkStroke = isDarkTheme ? "rgba(148, 163, 184, 0.95)" : "rgba(100, 116, 139, 0.95)";
-  const labelColor = "#000000";
+  const labelColor = isDarkTheme ? "#f8fafc" : "#000000";
   const labelStroke = isDarkTheme ? "rgba(15, 23, 42, 0.7)" : "rgba(255, 255, 255, 0.9)";
   const parentFill = isDarkTheme ? "rgba(125, 211, 252, 0.95)" : "rgba(59, 130, 246, 0.88)";
   const leafFill = isDarkTheme ? "rgba(148, 163, 184, 0.92)" : "rgba(148, 163, 184, 0.88)";

@@ -6,6 +6,8 @@ import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
 import TreeWorkspaceToolbar from 'features/tree/ui/components/TreeWorkspaceToolbar';
 import WidgetTreeView from 'features/treeCanvas/WidgetTreeView';
 import EditableTitle from 'shared/ui/EditableTitle';
+import { useTheme } from 'shared/components/library/ThemeProvider';
+import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 
 const LIGHTWEIGHT_THRESHOLD = 250;
 
@@ -20,6 +22,9 @@ const TreeCanvas = ({
   onMemoRemove,
   onTreeRename,
 }) => {
+  const { theme } = useTheme();
+  const treeBackground = useMemo(() => resolveTreeBackground(theme), [theme]);
+
   const nodeCount = useMemo(
     () => selectedMemo?.treeData?.nodes?.length ?? 0,
     [selectedMemo]
@@ -181,6 +186,8 @@ const TreeCanvas = ({
                     key={`tidy-${selectedMemo.id}`}
                     data={selectedMemo.treeData}
                     dimensions={dimensions}
+                    theme={theme}
+                    background={treeBackground}
                     onNodeClick={handleNodeSelect}
                     selectedNodeId={null}
                     activeTreeId={selectedMemo.id}
@@ -202,6 +209,8 @@ const TreeCanvas = ({
                     key={selectedMemo.id}
                     data={selectedMemo.treeData}
                     dimensions={dimensions}
+                    theme={theme}
+                    background={treeBackground}
                     onNodeClick={handleNodeSelect}
                     onNodeRemove={onNodeRemove}
                     onNodeUpdate={onNodeUpdate}

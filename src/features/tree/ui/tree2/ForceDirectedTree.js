@@ -9,6 +9,7 @@ import * as d3 from 'd3';
 import DataTransformService from 'features/tree/services/DataTransformService';
 import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
+import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
@@ -145,6 +146,7 @@ const ForceDirectedTree = ({
   onPlaceholderCreate,
   onPanZoomGesture,
   theme = 'light',
+  background,
   hideAssistantPanel = false,
   attachmentsByNode = {},
   onNodeAttachmentsChange = () => { },
@@ -185,7 +187,7 @@ const ForceDirectedTree = ({
   const effectiveRadius = Math.max(baseRadius, layout.requiredRadius + levelSpacing);
   const width = Math.max(baseWidth, effectiveRadius * 2 + 160);
   const height = Math.max(baseHeight, effectiveRadius * 2 + 160);
-  const background = theme === 'glass' ? 'transparent' : (theme === 'dark' ? '#0f172a' : '#ffffff');
+  const resolvedBackground = background || resolveTreeBackground(theme);
 
   const nodeMap = useMemo(() => {
     if (!Array.isArray(data?.nodes)) {
@@ -476,7 +478,7 @@ const ForceDirectedTree = ({
   }, [clickedAncestorIds, hoveredAncestorIds]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden" style={{ background }}>
+    <div className="relative h-full w-full overflow-hidden" style={{ background: resolvedBackground }}>
       <svg
         ref={svgRef}
         width={width}

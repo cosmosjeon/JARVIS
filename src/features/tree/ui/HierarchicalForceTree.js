@@ -40,6 +40,7 @@ import {
   applyNodeDragHandlers,
   raiseNodeLayer,
 } from 'features/tree/ui/d3Renderer';
+import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 
 const ORTHO_PATH_DEFAULTS = {
   cornerRadius: 20,
@@ -87,26 +88,7 @@ const HierarchicalForceTree = () => {
     setTheme(themeOptions[nextIndex].value);
   }, [theme, themeOptions, setTheme]);
 
-  // 테마 색상 (새로운 CSS 변수 시스템 사용)
-  const themeColors = useMemo(() => ({
-    glass: {
-      background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.12), rgba(30, 41, 59, 0.18))',
-      text: 'rgba(226, 232, 240, 0.9)',
-      border: 'rgba(51, 65, 85, 0.1)',
-    },
-    light: {
-      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))',
-      text: '#000000',
-      border: 'rgba(0, 0, 0, 0.1)',
-    },
-    dark: {
-      background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(20, 20, 20, 0.95))',
-      text: '#FFFFFF',
-      border: 'rgba(255, 255, 255, 0.1)',
-    },
-  }), []);
-
-  const currentTheme = themeColors[theme] || themeColors.glass;
+  const treeBackground = useMemo(() => resolveTreeBackground(theme), [theme]);
 
   const svgRef = useRef(null);
   const { dimensions: baseDimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
@@ -2283,7 +2265,7 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: currentTheme.background,
+        background: treeBackground,
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         // 창틀 여유 공간까지 완전히 채우기
@@ -2723,6 +2705,7 @@ const HierarchicalForceTree = () => {
             onSecondQuestion={handleSecondQuestion}
             onPlaceholderCreate={handlePlaceholderCreate}
             theme={theme}
+            background={treeBackground}
             attachmentsByNode={pendingAttachmentsByNode}
             onNodeAttachmentsChange={setAttachmentsForNode}
             hideAssistantPanel={true}
@@ -2742,7 +2725,7 @@ const HierarchicalForceTree = () => {
             dimensions={dimensions}
             fitRequestVersion={data?.nodes?.length || 0}
             theme={theme}
-            background={currentTheme.background}
+            background={treeBackground}
             onNodeClick={handleNodeClickForAssistant}
             selectedNodeId={selectedNodeId}
             activeTreeId={activeTreeId}
