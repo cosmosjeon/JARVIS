@@ -117,6 +117,7 @@ const HierarchicalForceTree = () => {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [sessionTabs, setSessionTabs] = useState([]);
+  const [activeTabId, setActiveTabId] = useState(null);
   const {
     viewMode,
     setViewMode,
@@ -196,19 +197,27 @@ const HierarchicalForceTree = () => {
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(data);
 
-  // activeTreeId 변경 시 탭 목록에 추가
+  // activeTreeId 변경 시 탭 목록에 추가 (초기 로드 시에만)
+  const isInitialLoadRef = useRef(true);
   useEffect(() => {
     if (!activeTreeId) return;
 
-    setSessionTabs((prev) => {
-      // 이미 있는 탭이면 추가하지 않음
-      if (prev.some(tab => tab.id === activeTreeId)) {
-        return prev;
-      }
-
-      // 새 탭 추가
-      return [...prev, { id: activeTreeId, title: `트리 ${prev.length + 1}` }];
-    });
+    // 초기 로드 시에만 탭 추가
+    if (isInitialLoadRef.current) {
+      setSessionTabs((prev) => {
+        if (prev.some(tab => tab.treeId === activeTreeId)) {
+          return prev;
+        }
+        const newTabId = `${activeTreeId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        setActiveTabId(newTabId);
+        return [...prev, {
+          id: newTabId,
+          treeId: activeTreeId,
+          title: `트리 ${prev.length + 1}`
+        }];
+      });
+      isInitialLoadRef.current = false;
+    }
   }, [activeTreeId]);
   const simulationRef = useRef(null);
   const treeAnimationService = useRef(new TreeAnimationService());
@@ -230,19 +239,19 @@ const HierarchicalForceTree = () => {
 
       event.preventDefault();
 
-      const currentIndex = Math.max(0, tabs.findIndex(t => t?.id === activeTreeId));
+      const currentIndex = Math.max(0, tabs.findIndex(t => t?.id === activeTabId));
       const delta = event.shiftKey ? -1 : 1;
       const nextIndex = (currentIndex + delta + tabs.length) % tabs.length;
       const next = tabs[nextIndex];
-      const nextId = next?.id;
-      if (nextId && nextId !== activeTreeId) {
-        loadActiveTreeRef.current?.({ treeId: nextId });
+      if (next && next.id !== activeTabId) {
+        setActiveTabId(next.id);
+        loadActiveTreeRef.current?.({ treeId: next.treeId });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [sessionTabs, activeTreeId]);
+  }, [sessionTabs, activeTabId]);
 
   const {
     hydrateFromNodes,
@@ -849,7 +858,7 @@ const HierarchicalForceTree = () => {
   const tidyAssistantPanelOffset = tidyAssistantPanelVisible
     ? tidyAssistantPanelWidth + TIDY_ASSISTANT_PANEL_GAP
     : 0;
-  
+
   // 패널이 열렸을 때 뷰포트 크기 조정
   const dimensions = useMemo(() => {
     if (!baseDimensions) return baseDimensions;
@@ -2522,32 +2531,56 @@ const HierarchicalForceTree = () => {
       <div
         className="absolute z-[1250]"
         style={{
-          top: '3.25rem',
-          left: 'calc(50% - 120px)',
+          top: '2.75rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
         }}
       >
         <TreeTabBar
           theme={theme}
           activeTreeId={activeTreeId}
+          activeTabId={activeTabId}
           tabs={sessionTabs}
           onTabChange={(tab) => {
             if (tab?.treeId) {
+              // 기존 탭 클릭이 아닌 경우에만 새 탭 추가
+              if (!tab.isExistingTab) {
+                setSessionTabs((prev) => {
+                  // 새 트리 선택 시 항상 새 탭으로 추가 (같은 트리를 여러 탭에서 열 수 있음)
+                  const newTabId = `${tab.treeId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                  setActiveTabId(newTabId);
+                  return [...prev, {
+                    id: newTabId,
+                    treeId: tab.treeId,
+                    title: tab.title || `트리 ${prev.length + 1}`
+                  }];
+                });
+              } else {
+                // 기존 탭 클릭 시 해당 탭의 ID로 설정
+                setActiveTabId(tab.tabId);
+              }
+              // 모든 탭에서 같은 treeId를 공유하므로 단순히 treeId로 로드
               loadActiveTree({ treeId: tab.treeId });
             } else {
               // 새 트리 생성
               loadActiveTree({ treeId: undefined });
             }
           }}
-          onTabDelete={(treeId) => {
-            // 세션 탭 목록에서 제거
-            setSessionTabs((prev) => prev.filter(tab => tab.id !== treeId));
+          onTabDelete={(tabId) => {
+            // 삭제 전에 남은 탭 확인
+            const remaining = sessionTabs.filter(tab => tab.id !== tabId);
 
-            // 삭제한 트리가 현재 활성 트리면 다른 트리로 전환
-            if (treeId === activeTreeId) {
-              const remaining = sessionTabs.filter(tab => tab.id !== treeId);
+            // 세션 탭 목록에서 제거
+            setSessionTabs(remaining);
+
+            // 삭제한 탭이 현재 활성 탭이면 다른 탭으로 전환
+            if (tabId === activeTabId) {
               if (remaining.length > 0) {
-                loadActiveTree({ treeId: remaining[0].id });
+                const nextTab = remaining[0];
+                setActiveTabId(nextTab.id);
+                loadActiveTree({ treeId: nextTab.treeId });
               } else {
+                setActiveTabId(null);
                 loadActiveTree({ treeId: undefined });
               }
             }
@@ -2722,4 +2755,3 @@ const HierarchicalForceTree = () => {
 };
 
 export default HierarchicalForceTree;
-
