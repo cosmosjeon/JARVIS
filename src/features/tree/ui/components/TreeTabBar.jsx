@@ -27,10 +27,11 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
 
     const handleTabClick = (tab) => {
         if (onTabChange && tab?.id) {
-            onTabChange({
-                treeId: tab.treeId || tab.id,
-                title: tab.title,
-                isExistingTab: true
+            onTabChange({ 
+                treeId: tab.treeId || tab.id, 
+                tabId: tab.id,
+                title: tab.title, 
+                isExistingTab: true 
             });
         }
     };

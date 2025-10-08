@@ -54,7 +54,7 @@ import {
 const TIDY_ASSISTANT_PANEL_RATIO = 0.38;
 const TIDY_ASSISTANT_PANEL_MIN_WIDTH = 360;
 const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
-const TIDY_ASSISTANT_PANEL_GAP = 24;
+const TIDY_ASSISTANT_PANEL_GAP = 0;
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
@@ -109,7 +109,7 @@ const HierarchicalForceTree = () => {
   const currentTheme = themeColors[theme] || themeColors.glass;
 
   const svgRef = useRef(null);
-  const { dimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
+  const { dimensions: baseDimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
   const [isHandleMenuOpen, setIsHandleMenuOpen] = useState(false);
   const handleMenuRef = useRef(null);
   const handleMenuButtonRef = useRef(null);
@@ -117,6 +117,7 @@ const HierarchicalForceTree = () => {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [sessionTabs, setSessionTabs] = useState([]);
+  const [activeTabId, setActiveTabId] = useState(null);
   const {
     viewMode,
     setViewMode,
@@ -208,10 +209,11 @@ const HierarchicalForceTree = () => {
           return prev;
         }
         const newTabId = `${activeTreeId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        return [...prev, {
-          id: newTabId,
-          treeId: activeTreeId,
-          title: `트리 ${prev.length + 1}`
+        setActiveTabId(newTabId);
+        return [...prev, { 
+          id: newTabId, 
+          treeId: activeTreeId, 
+          title: `트리 ${prev.length + 1}` 
         }];
       });
       isInitialLoadRef.current = false;
@@ -237,19 +239,19 @@ const HierarchicalForceTree = () => {
 
       event.preventDefault();
 
-      const currentIndex = Math.max(0, tabs.findIndex(t => t?.treeId === activeTreeId));
+      const currentIndex = Math.max(0, tabs.findIndex(t => t?.id === activeTabId));
       const delta = event.shiftKey ? -1 : 1;
       const nextIndex = (currentIndex + delta + tabs.length) % tabs.length;
       const next = tabs[nextIndex];
-      const nextTreeId = next?.treeId;
-      if (nextTreeId && nextTreeId !== activeTreeId) {
-        loadActiveTreeRef.current?.({ treeId: nextTreeId });
+      if (next && next.id !== activeTabId) {
+        setActiveTabId(next.id);
+        loadActiveTreeRef.current?.({ treeId: next.treeId });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [sessionTabs, activeTreeId]);
+  }, [sessionTabs, activeTabId]);
 
   const {
     hydrateFromNodes,
@@ -833,7 +835,7 @@ const HierarchicalForceTree = () => {
     return safeAllNodes.find((node) => node.id === expandedNodeId) || null;
   }, [expandedNodeId, visibleGraph.nodes, data.nodes]);
 
-  const viewportWidth = Number.isFinite(dimensions?.width) ? dimensions.width : null;
+  const viewportWidth = Number.isFinite(baseDimensions?.width) ? baseDimensions.width : null;
   const clampTidyPanelWidth = useCallback((rawWidth) => {
     const safeRaw = Number.isFinite(rawWidth) ? rawWidth : TIDY_ASSISTANT_PANEL_MIN_WIDTH;
     const minWidth = TIDY_ASSISTANT_PANEL_MIN_WIDTH;
@@ -843,7 +845,7 @@ const HierarchicalForceTree = () => {
     const maxWidth = Math.max(minWidth, Math.min(TIDY_ASSISTANT_PANEL_MAX_WIDTH, viewportAllowance));
     return Math.max(minWidth, Math.min(safeRaw, maxWidth));
   }, [viewportWidth]);
-  const tidyAssistantPanelVisible = isTidyView && Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
+  const tidyAssistantPanelVisible = Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
   const tidyAssistantDefaultWidth = useMemo(() => {
     const referenceWidth = viewportWidth && viewportWidth > 0
       ? viewportWidth * TIDY_ASSISTANT_PANEL_RATIO
@@ -856,6 +858,15 @@ const HierarchicalForceTree = () => {
   const tidyAssistantPanelOffset = tidyAssistantPanelVisible
     ? tidyAssistantPanelWidth + TIDY_ASSISTANT_PANEL_GAP
     : 0;
+  
+  // 패널이 열렸을 때 뷰포트 크기 조정
+  const dimensions = useMemo(() => {
+    if (!baseDimensions) return baseDimensions;
+    return {
+      ...baseDimensions,
+      width: Math.max(320, (baseDimensions.width || 0) - tidyAssistantPanelOffset),
+    };
+  }, [baseDimensions, tidyAssistantPanelOffset]);
   const tidyAssistantAttachments = useMemo(() => {
     if (!expandedNodeId) {
       return [];
@@ -2536,12 +2547,16 @@ const HierarchicalForceTree = () => {
                 setSessionTabs((prev) => {
                   // 새 트리 선택 시 항상 새 탭으로 추가 (같은 트리를 여러 탭에서 열 수 있음)
                   const newTabId = `${tab.treeId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                  return [...prev, {
-                    id: newTabId,
-                    treeId: tab.treeId,
-                    title: tab.title || `트리 ${prev.length + 1}`
+                  setActiveTabId(newTabId);
+                  return [...prev, { 
+                    id: newTabId, 
+                    treeId: tab.treeId, 
+                    title: tab.title || `트리 ${prev.length + 1}` 
                   }];
                 });
+              } else {
+                // 기존 탭 클릭 시 해당 탭의 ID로 설정
+                setActiveTabId(tab.tabId);
               }
               // 모든 탭에서 같은 treeId를 공유하므로 단순히 treeId로 로드
               loadActiveTree({ treeId: tab.treeId });
@@ -2558,12 +2573,13 @@ const HierarchicalForceTree = () => {
             setSessionTabs(remaining);
 
             // 삭제한 탭이 현재 활성 탭이면 다른 탭으로 전환
-            const deletedTab = sessionTabs.find(tab => tab.id === tabId);
-            if (deletedTab && deletedTab.treeId === activeTreeId) {
+            if (tabId === activeTabId) {
               if (remaining.length > 0) {
                 const nextTab = remaining[0];
+                setActiveTabId(nextTab.id);
                 loadActiveTree({ treeId: nextTab.treeId });
               } else {
+                setActiveTabId(null);
                 loadActiveTree({ treeId: undefined });
               }
             }
@@ -2614,32 +2630,43 @@ const HierarchicalForceTree = () => {
       )}
 
       {isForceView && (
-        <ForceDirectedTree
-          data={data}
-          dimensions={dimensions}
-          onNodeClick={handleNodeClickForAssistant}
-          onNodeRemove={removeNodeAndDescendants}
-          onNodeUpdate={handleNodeUpdate}
-          onMemoCreate={handleMemoCreate}
-          onMemoUpdate={handleMemoUpdate}
-          onNodeCreate={handleManualNodeCreate}
-          onLinkCreate={handleManualLinkCreate}
-          onRootCreate={handleManualRootCreate}
-          treeId={activeTreeId}
-          userId={user?.id}
-          questionService={questionService.current}
-          getInitialConversation={getInitialConversationForNode}
-          onConversationChange={handleConversationChange}
-          onRequestAnswer={handleRequestAnswer}
-          onAnswerComplete={handleAnswerComplete}
-          onAnswerError={handleAnswerError}
-          onSecondQuestion={handleSecondQuestion}
-          onPlaceholderCreate={handlePlaceholderCreate}
-          theme={theme}
-          isForceSimulationEnabled={isForceSimulationEnabled}
-          attachmentsByNode={pendingAttachmentsByNode}
-          onNodeAttachmentsChange={setAttachmentsForNode}
-        />
+        <div
+          className="absolute inset-0"
+          style={{
+            right: tidyAssistantPanelOffset,
+            transition: 'right 200ms ease-in-out',
+          }}
+        >
+          <ForceDirectedTree
+            data={data}
+            dimensions={dimensions}
+            onNodeClick={handleNodeClickForAssistant}
+            onNodeRemove={removeNodeAndDescendants}
+            onNodeUpdate={handleNodeUpdate}
+            onMemoCreate={handleMemoCreate}
+            onMemoUpdate={handleMemoUpdate}
+            onNodeCreate={handleManualNodeCreate}
+            onLinkCreate={handleManualLinkCreate}
+            onRootCreate={handleManualRootCreate}
+            treeId={activeTreeId}
+            userId={user?.id}
+            questionService={questionService.current}
+            getInitialConversation={getInitialConversationForNode}
+            onConversationChange={handleConversationChange}
+            onRequestAnswer={handleRequestAnswer}
+            onAnswerComplete={handleAnswerComplete}
+            onAnswerError={handleAnswerError}
+            onSecondQuestion={handleSecondQuestion}
+            onPlaceholderCreate={handlePlaceholderCreate}
+            theme={theme}
+            isForceSimulationEnabled={isForceSimulationEnabled}
+            attachmentsByNode={pendingAttachmentsByNode}
+            onNodeAttachmentsChange={setAttachmentsForNode}
+            hideAssistantPanel={true}
+            selectedNodeId={selectedNodeId}
+            onBackgroundClick={collapseAssistantPanel}
+          />
+        </div>
       )}
 
       {isTidyView && (
