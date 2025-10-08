@@ -3,8 +3,8 @@ import { Plus, X } from 'lucide-react';
 import TreeSelectModal from './TreeSelectModal';
 import { useTreeSelection } from 'features/tree/hooks/useTreeSelection';
 
-const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => {
-    const [contextMenu, setContextMenu] = useState({ open: false, treeId: null, x: 0, y: 0 });
+const TreeTabBar = ({ theme, activeTreeId, activeTabId, tabs, onTabChange, onTabDelete }) => {
+    const [contextMenu, setContextMenu] = useState({ open: false, tabId: null, x: 0, y: 0 });
     const [isSelectModalOpen, setIsSelectModalOpen] = useState(false);
 
     const existingTabIds = tabs.map(tab => tab.id);
@@ -18,7 +18,7 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
         if (!contextMenu.open) return;
 
         const handleClickOutside = () => {
-            setContextMenu({ open: false, treeId: null, x: 0, y: 0 });
+            setContextMenu({ open: false, tabId: null, x: 0, y: 0 });
         };
 
         document.addEventListener('click', handleClickOutside);
@@ -27,7 +27,12 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
 
     const handleTabClick = (tab) => {
         if (onTabChange && tab?.id) {
-            onTabChange({ treeId: tab.id, title: tab.title });
+            onTabChange({
+                treeId: tab.treeId || tab.id,
+                tabId: tab.id,
+                title: tab.title,
+                isExistingTab: true
+            });
         }
     };
 
@@ -37,17 +42,17 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
 
         setContextMenu({
             open: true,
-            treeId: tab.id,
+            tabId: tab.id,
             x: event.clientX,
             y: event.clientY,
         });
     };
 
     const handleDeleteTab = async () => {
-        if (onTabDelete && contextMenu.treeId) {
-            await onTabDelete(contextMenu.treeId);
+        if (onTabDelete && contextMenu.tabId) {
+            await onTabDelete(contextMenu.tabId);
         }
-        setContextMenu({ open: false, treeId: null, x: 0, y: 0 });
+        setContextMenu({ open: false, tabId: null, x: 0, y: 0 });
     };
 
     const handleAddNew = async () => {
@@ -75,14 +80,14 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
             {/* 트리 탭들 - 작은 원 형태 (숫자 없음) */}
             <div className="flex items-center gap-1">
                 {tabs.map((tab, index) => {
-                    const isActive = tab.id === activeTreeId;
+                    const isActive = tab.id === activeTabId;
                     return (
                         <button
                             key={tab.id}
                             onClick={() => handleTabClick(tab)}
                             onContextMenu={(e) => handleTabContextMenu(e, tab)}
                             className={`
-                w-3.5 h-3.5 rounded-full transition-all
+                w-3.5 h-3.5 flex-shrink-0 rounded-full transition-all
                 ${isActive
                                     ? isLightMode
                                         ? 'bg-black border border-black'
@@ -103,7 +108,7 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
                 <button
                     onClick={handleAddNew}
                     className={`
-          flex items-center justify-center w-3.5 h-3.5 rounded-full border transition-all
+          flex items-center justify-center w-3.5 h-3.5 flex-shrink-0 rounded-full border transition-all
           ${isLightMode
                             ? 'bg-black/15 border-black/35 text-black/55 hover:bg-black/25 hover:border-black/45'
                             : 'bg-white/15 border-white/35 text-white/55 hover:bg-white/25 hover:border-white/45'
@@ -162,4 +167,3 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
 };
 
 export default TreeTabBar;
-

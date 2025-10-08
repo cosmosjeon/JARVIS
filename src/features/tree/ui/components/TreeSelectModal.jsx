@@ -45,27 +45,22 @@ const TreeSelectModal = ({
     if (!isOpen) return null;
 
     const handleTreeClick = (tree) => {
-        // 이미 열린 탭이면 선택 불가
-        if (existingTabIds.includes(tree.id)) {
-            return;
-        }
-
         onSelectTree(tree);
         onClose();
     };
 
     return (
         <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center"
+            className="fixed inset-0 z-[9999] flex items-start justify-center pt-16"
             onClick={onClose}
         >
             {/* 배경 오버레이 */}
-            <div className={`absolute inset-0 ${isLightMode ? 'bg-black/30' : 'bg-black/60'} backdrop-blur-sm`} />
+            <div className="absolute inset-0 -z-10" />
 
             {/* 모달 콘텐츠 */}
             <div
                 className={`
-          relative w-[480px] max-h-[600px] rounded-xl shadow-2xl overflow-hidden
+          relative z-10 w-[480px] min-w-[480px] max-h-[600px] rounded-xl shadow-2xl overflow-hidden
           ${isLightMode
                         ? 'bg-white border border-gray-200'
                         : 'bg-slate-900/95 border border-white/10'
@@ -108,31 +103,20 @@ const TreeSelectModal = ({
                             </div>
                             <div className="space-y-1">
                                 {groupedTrees.get(null).map(tree => {
-                                    const isDisabled = existingTabIds.includes(tree.id);
                                     return (
                                         <button
                                             key={tree.id}
                                             onClick={() => handleTreeClick(tree)}
-                                            disabled={isDisabled}
                                             className={`
                         w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-colors
-                        ${isDisabled
-                                                    ? isLightMode
-                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                        : 'bg-white/5 text-white/30 cursor-not-allowed'
-                                                    : isLightMode
-                                                        ? 'hover:bg-gray-50 text-gray-900'
-                                                        : 'hover:bg-white/5 text-white'
+                        ${isLightMode
+                                                    ? 'hover:bg-gray-50 text-gray-900'
+                                                    : 'hover:bg-white/5 text-white'
                                                 }
                       `}
                                         >
                                             <FileText className="w-4 h-4 flex-shrink-0" />
                                             <span className="text-sm truncate">{tree.title || '제목 없음'}</span>
-                                            {isDisabled && (
-                                                <span className={`ml-auto text-[10px] ${isLightMode ? 'text-gray-400' : 'text-white/30'}`}>
-                                                    열림
-                                                </span>
-                                            )}
                                         </button>
                                     );
                                 })}
@@ -156,31 +140,20 @@ const TreeSelectModal = ({
                                 </div>
                                 <div className="space-y-1">
                                     {folderTrees.map(tree => {
-                                        const isDisabled = existingTabIds.includes(tree.id);
                                         return (
                                             <button
                                                 key={tree.id}
                                                 onClick={() => handleTreeClick(tree)}
-                                                disabled={isDisabled}
                                                 className={`
                           w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-colors
-                          ${isDisabled
-                                                        ? isLightMode
-                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                            : 'bg-white/5 text-white/30 cursor-not-allowed'
-                                                        : isLightMode
-                                                            ? 'hover:bg-gray-50 text-gray-900'
-                                                            : 'hover:bg-white/5 text-white'
+                          ${isLightMode
+                                                        ? 'hover:bg-gray-50 text-gray-900'
+                                                        : 'hover:bg-white/5 text-white'
                                                     }
                         `}
                                             >
                                                 <FileText className="w-4 h-4 flex-shrink-0" />
                                                 <span className="text-sm truncate">{tree.title || '제목 없음'}</span>
-                                                {isDisabled && (
-                                                    <span className={`ml-auto text-[10px] ${isLightMode ? 'text-gray-400' : 'text-white/30'}`}>
-                                                        열림
-                                                    </span>
-                                                )}
                                             </button>
                                         );
                                     })}
