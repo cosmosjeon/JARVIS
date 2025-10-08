@@ -308,6 +308,31 @@ const components = {
   },
 };
 
+const areResponsePropsEqual = (prevProps, nextProps) => {
+  if (prevProps.children !== nextProps.children) {
+    return false;
+  }
+
+  const prevKeys = Object.keys(prevProps);
+  const nextKeys = Object.keys(nextProps);
+
+  if (prevKeys.length !== nextKeys.length) {
+    return false;
+  }
+
+  for (const key of prevKeys) {
+    if (key === 'children') {
+      continue;
+    }
+
+    if (!Object.is(prevProps[key], nextProps[key])) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export const Response = memo(({
   className,
   options,
@@ -340,6 +365,6 @@ export const Response = memo(({
       </HardenedMarkdown>
     </div>
   );
-}, (prevProps, nextProps) => prevProps.children === nextProps.children);
+}, areResponsePropsEqual);
 
 Response.displayName = 'Response';
