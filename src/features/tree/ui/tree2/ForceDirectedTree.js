@@ -82,7 +82,7 @@ const buildRadialLayout = (data, baseRadius, levelSpacing = 96) => {
 const ForceDirectedTree = ({
   data,
   dimensions = DEFAULT_DIMENSIONS,
-  onNodeClick = () => {},
+  onNodeClick = () => { },
   onNodeRemove,
   onNodeUpdate,
   onMemoCreate,
@@ -95,7 +95,7 @@ const ForceDirectedTree = ({
   userId,
   questionService,
   getInitialConversation,
-  onConversationChange = () => {},
+  onConversationChange = () => { },
   onRequestAnswer,
   onAnswerComplete,
   onAnswerError,
@@ -105,10 +105,11 @@ const ForceDirectedTree = ({
   theme = 'light',
   hideAssistantPanel = false,
   attachmentsByNode = {},
-  onNodeAttachmentsChange = () => {},
+  onNodeAttachmentsChange = () => { },
   isForceSimulationEnabled, // kept for compatibility
   selectedNodeId: externalSelectedNodeId,
   onBackgroundClick,
+  isChatPanelOpen = false,
 }) => {
   const baseWidth = Number.isFinite(dimensions?.width)
     ? dimensions.width
@@ -122,11 +123,21 @@ const ForceDirectedTree = ({
   const layout = useMemo(() => {
     const nodesArray = Array.isArray(data?.nodes) ? data.nodes : [];
     const linksArray = Array.isArray(data?.links) ? data.links : [];
+    console.log('[ForceDirectedTree] Layout calculation:', {
+      nodesCount: nodesArray.length,
+      linksCount: linksArray.length,
+      firstNode: nodesArray[0]
+    });
     const mappedHierarchy = DataTransformService.transformToHierarchy(
       nodesArray,
       linksArray,
     );
-    return buildRadialLayout(mappedHierarchy, baseRadius, levelSpacing);
+    const result = buildRadialLayout(mappedHierarchy, baseRadius, levelSpacing);
+    console.log('[ForceDirectedTree] Layout result:', {
+      layoutNodesCount: result.nodes.length,
+      hasRoot: !!result.root
+    });
+    return result;
   }, [data, baseRadius, levelSpacing]);
 
   const effectiveRadius = Math.max(baseRadius, layout.requiredRadius + levelSpacing);
@@ -167,7 +178,11 @@ const ForceDirectedTree = ({
   const [internalSelectedNodeId, setInternalSelectedNodeId] = useState(null);
   const selectedNodeId = externalSelectedNodeId !== undefined ? externalSelectedNodeId : internalSelectedNodeId;
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
+  const [clickedNodeId, setClickedNodeId] = useState(null);
+  const clickTimerRef = useRef(null);
+  const backgroundClickTimerRef = useRef(null);
   const svgRef = useRef(null);
+  const zoomBehaviorRef = useRef(null);
   const questionServiceRef = useRef(questionService || new QuestionService());
 
   useEffect(() => {
@@ -195,8 +210,11 @@ const ForceDirectedTree = ({
     selection.call(zoom);
     selection.on('dblclick.zoom', null);
 
+    zoomBehaviorRef.current = zoom;
+
     return () => {
       selection.on('.zoom', null);
+      zoomBehaviorRef.current = null;
     };
   }, [onPanZoomGesture]);
 
@@ -277,19 +295,19 @@ const ForceDirectedTree = ({
 
   const textFill = theme === 'dark' ? '#e2e8f0' : '#0f172a';
   const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
-  const hoveredAncestorIds = useMemo(() => {
-    if (!hoveredNodeId) {
+  const clickedAncestorIds = useMemo(() => {
+    if (!clickedNodeId) {
       return new Set();
     }
     const result = new Set();
-    let currentId = hoveredNodeId;
+    let currentId = clickedNodeId;
     while (currentId) {
       result.add(currentId);
       currentId = parentById.get(currentId);
     }
     return result;
-  }, [hoveredNodeId, parentById]);
-  const isHighlightMode = hoveredAncestorIds.size > 0;
+  }, [clickedNodeId, parentById]);
+  const isHighlightMode = clickedAncestorIds.size > 0;
 
   return (
     <div className="relative h-full w-full overflow-hidden" style={{ background }}>
@@ -299,6 +317,62 @@ const ForceDirectedTree = ({
         height={height}
         viewBox={[-width / 2, -height / 2, width, height].join(' ')}
         style={{ touchAction: 'pan-x pan-y pinch-zoom', cursor: 'grab' }}
+        onClick={(event) => {
+          // 배경 클릭 처리
+          if (event.target === event.currentTarget || event.target.tagName === 'svg') {
+            // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
+            if (backgroundClickTimerRef.current) {
+              clearTimeout(backgroundClickTimerRef.current);
+              backgroundClickTimerRef.current = null;
+
+              if (isChatPanelOpen) {
+                // 채팅창이 열려있으면: 채팅창만 닫기 (줌 유지)
+                setClickedNodeId(null);
+                setHoveredNodeId(null);
+                if (externalSelectedNodeId === undefined) {
+                  setInternalSelectedNodeId(null);
+                }
+                if (typeof onBackgroundClick === 'function') {
+                  onBackgroundClick();
+                }
+              } else {
+                // 채팅창이 닫혀있으면: 줌 초기화
+                const svgElement = svgRef.current;
+                const zoom = zoomBehaviorRef.current;
+                if (svgElement && zoom) {
+                  d3.select(svgElement)
+                    .transition()
+                    .duration(600)
+                    .ease(d3.easeCubicInOut)
+                    .call(zoom.transform, d3.zoomIdentity);
+                }
+              }
+            } else {
+              // 싱글 클릭: 타이머 시작
+              backgroundClickTimerRef.current = setTimeout(() => {
+                const hasHighlight = clickedNodeId !== null;
+
+                if (hasHighlight) {
+                  // 하이라이트가 있으면 하이라이트만 해제 (채팅창과 테두리 유지)
+                  setClickedNodeId(null);
+                  setHoveredNodeId(null);
+                  // 선택(테두리)은 유지, 채팅창도 유지
+                } else {
+                  // 하이라이트가 없으면 채팅창 닫기
+                  setClickedNodeId(null);
+                  setHoveredNodeId(null);
+                  if (externalSelectedNodeId === undefined) {
+                    setInternalSelectedNodeId(null);
+                  }
+                  if (typeof onBackgroundClick === 'function') {
+                    onBackgroundClick();
+                  }
+                }
+                backgroundClickTimerRef.current = null;
+              }, 250);
+            }
+          }
+        }}
       >
         <defs>
           <style>
@@ -323,7 +397,7 @@ const ForceDirectedTree = ({
               const linkSourceId = resolveNodeId(link.source);
               const linkTargetId = resolveNodeId(link.target);
               const isHighlightedLink = !isHighlightMode
-                || (hoveredAncestorIds.has(linkTargetId)
+                || (clickedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
               const strokeWidth = isHighlightedLink
                 ? Math.max(0.75, 1.9 - targetDepth * 0.2)
@@ -362,7 +436,7 @@ const ForceDirectedTree = ({
               const textAnchor = isRootNode ? 'middle' : (node.x < Math.PI === isLeaf ? 'start' : 'end');
               const textOffset = isRootNode ? 0 : (node.x < Math.PI === isLeaf ? 8 : -8);
               const isHovered = hoveredNodeId === nodeId;
-              const isNodeHighlighted = nodeId ? hoveredAncestorIds.has(nodeId) : false;
+              const isNodeHighlighted = nodeId ? clickedAncestorIds.has(nodeId) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
               const circleOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.28) : 1;
@@ -372,10 +446,63 @@ const ForceDirectedTree = ({
                   key={nodeId || `node-${node.x}-${node.y}`}
                   transform={`rotate(${rotation}) ${translation}`}
                   onMouseEnter={() => setHoveredNodeId(nodeId)}
-                  onMouseLeave={() => setHoveredNodeId((current) => (current === nodeId ? null : current))}
+                  onMouseLeave={() => {
+                    // 클릭된 노드는 호버 효과 유지
+                    if (clickedNodeId !== nodeId) {
+                      setHoveredNodeId((current) => (current === nodeId ? null : current));
+                    }
+                  }}
                   onClick={(event) => {
                     event.stopPropagation();
-                    handleNodeClick(node);
+                    console.log('[ForceDirectedTree] Node clicked:', {
+                      nodeId,
+                      isChatPanelOpen,
+                      datum: resolveNodeDatum(node)
+                    });
+
+                    // 채팅창이 열려있으면 싱글 클릭만으로도 전환
+                    if (isChatPanelOpen) {
+                      setClickedNodeId(nodeId);
+                      setHoveredNodeId(nodeId);
+                      handleNodeClick(node);
+                      return;
+                    }
+
+                    // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
+                    if (clickTimerRef.current) {
+                      clearTimeout(clickTimerRef.current);
+                      clickTimerRef.current = null;
+                      // 더블 클릭: 하이라이트 효과 + 채팅창 열기
+                      setClickedNodeId(nodeId);
+                      setHoveredNodeId(nodeId);
+                      handleNodeClick(node);
+                    } else {
+                      // 싱글 클릭: 타이머 시작
+                      clickTimerRef.current = setTimeout(() => {
+                        const isCurrentlyClicked = clickedNodeId === nodeId;
+
+                        // 싱글 클릭: 부모 체인 하이라이트 + 호버 효과 + 테두리 표시 (채팅창은 열지 않음)
+                        setClickedNodeId(isCurrentlyClicked ? null : nodeId);
+                        setHoveredNodeId(isCurrentlyClicked ? null : nodeId);
+                        // 선택 상태 업데이트 (테두리 표시용, 채팅창은 열지 않음)
+                        const datum = resolveNodeDatum(node);
+                        const targetNodeId = datum?.id;
+                        if (targetNodeId) {
+                          // 상위 컴포넌트에 선택 상태 알림 (토글)
+                          if (externalSelectedNodeId === undefined) {
+                            setInternalSelectedNodeId(isCurrentlyClicked ? null : targetNodeId);
+                          } else {
+                            // 외부 상태 사용 시 onNodeClick 호출하여 상위에 알림 (채팅창은 열지 않음)
+                            onNodeClick({
+                              id: isCurrentlyClicked ? null : targetNodeId,
+                              node: datum,
+                              suppressPanelOpen: true
+                            });
+                          }
+                        }
+                        clickTimerRef.current = null;
+                      }, 250);
+                    }
                   }}
                   style={{
                     cursor: 'pointer',
@@ -383,32 +510,10 @@ const ForceDirectedTree = ({
                     transition: 'opacity 120ms ease',
                   }}
                 >
-                  {isHovered && (
-                    <circle
-                      fill="none"
-                      stroke={nodeFill(node)}
-                      strokeWidth={1.2}
-                      r={NODE_RADIUS + 3.5}
-                      strokeOpacity={0.6}
-                      style={{
-                        animation: 'pulse 1.5s ease-in-out infinite',
-                      }}
-                    />
-                  )}
-                  {isHovered && (
-                    <circle
-                      fill={nodeFill(node)}
-                      r={NODE_RADIUS + 1.5}
-                      fillOpacity={0.3}
-                      style={{
-                        transition: 'all 200ms ease',
-                      }}
-                    />
-                  )}
                   <circle
                     fill={nodeFill(node)}
-                    r={isHovered ? NODE_RADIUS * 1.4 : NODE_RADIUS}
-                    fillOpacity={circleOpacity}
+                    r={NODE_RADIUS}
+                    fillOpacity={isHovered ? 1 : circleOpacity}
                     style={{
                       transition: 'all 200ms ease',
                     }}
@@ -443,7 +548,7 @@ const ForceDirectedTree = ({
           <NodeAssistantPanel
             node={selectedNodeDatum}
             color={selectedColor}
-            onSizeChange={() => {}}
+            onSizeChange={() => { }}
             onSecondQuestion={onSecondQuestion}
             onPlaceholderCreate={onPlaceholderCreate}
             questionService={questionServiceRef.current}
@@ -458,7 +563,7 @@ const ForceDirectedTree = ({
             nodeSummary={null}
             isRootNode={selectedHierarchyNode?.depth === 0}
             bootstrapMode={false}
-            onBootstrapFirstSend={() => {}}
+            onBootstrapFirstSend={() => { }}
             onPanZoomGesture={onPanZoomGesture}
             nodeScaleFactor={1}
             treeNodes={Array.isArray(data?.nodes) ? data.nodes : []}

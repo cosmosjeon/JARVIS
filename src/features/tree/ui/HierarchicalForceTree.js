@@ -859,14 +859,13 @@ const HierarchicalForceTree = () => {
     ? tidyAssistantPanelWidth + TIDY_ASSISTANT_PANEL_GAP
     : 0;
 
-  // 패널이 열렸을 때 뷰포트 크기 조정
+  // 트리는 항상 전체 화면 사용 (채팅창은 오버레이로 표시)
   const dimensions = useMemo(() => {
     if (!baseDimensions) return baseDimensions;
     return {
       ...baseDimensions,
-      width: Math.max(320, (baseDimensions.width || 0) - tidyAssistantPanelOffset),
     };
-  }, [baseDimensions, tidyAssistantPanelOffset]);
+  }, [baseDimensions]);
   const tidyAssistantAttachments = useMemo(() => {
     if (!expandedNodeId) {
       return [];
@@ -976,6 +975,13 @@ const HierarchicalForceTree = () => {
     clearPendingExpansion();
     setExpandedNodeId(null);
   }, [clearPendingExpansion]);
+
+  // 배경 클릭 핸들러 (채팅창 닫기)
+  const handleBackgroundClick = useCallback(() => {
+    // 채팅창 닫기 + 선택 해제
+    collapseAssistantPanel();
+    setSelectedNodeId(null);
+  }, [collapseAssistantPanel]);
 
   const forwardPanZoomGesture = useCallback((event) => applyPanZoomGesture({
     event,
@@ -1921,6 +1927,14 @@ const HierarchicalForceTree = () => {
     }
 
     const targetId = payload.id;
+
+    // 싱글 클릭인 경우 (suppressPanelOpen === true) 선택 상태만 업데이트하고 패널은 열지 않음
+    if (payload.suppressPanelOpen) {
+      // targetId가 null이면 선택 해제
+      setSelectedNodeId(targetId || null);
+      return;
+    }
+
     if (!targetId) {
       return;
     }
@@ -1931,8 +1945,9 @@ const HierarchicalForceTree = () => {
     setSelectedNodeId(targetId);
 
     setExpandedNodeId((current) => {
-      if (current && current !== targetId) {
-        return null;
+      // 이미 패널이 열려있으면 즉시 새 노드로 교체
+      if (current) {
+        return targetId;
       }
       return current;
     });
@@ -2633,10 +2648,6 @@ const HierarchicalForceTree = () => {
       {isForceView && (
         <div
           className="absolute inset-0"
-          style={{
-            right: tidyAssistantPanelOffset,
-            transition: 'right 200ms ease-in-out',
-          }}
         >
           <ForceDirectedTree
             data={data}
@@ -2665,7 +2676,8 @@ const HierarchicalForceTree = () => {
             onNodeAttachmentsChange={setAttachmentsForNode}
             hideAssistantPanel={true}
             selectedNodeId={selectedNodeId}
-            onBackgroundClick={collapseAssistantPanel}
+            onBackgroundClick={handleBackgroundClick}
+            isChatPanelOpen={Boolean(expandedNodeId)}
           />
         </div>
       )}
@@ -2673,10 +2685,6 @@ const HierarchicalForceTree = () => {
       {isTidyView && (
         <div
           className="absolute inset-0"
-          style={{
-            right: tidyAssistantPanelOffset,
-            transition: 'right 200ms ease-in-out',
-          }}
         >
           <TidyTreeView
             data={data}
@@ -2687,7 +2695,8 @@ const HierarchicalForceTree = () => {
             onNodeClick={handleNodeClickForAssistant}
             selectedNodeId={selectedNodeId}
             activeTreeId={activeTreeId}
-            onBackgroundClick={collapseAssistantPanel}
+            onBackgroundClick={handleBackgroundClick}
+            isChatPanelOpen={Boolean(expandedNodeId)}
             onReorderSiblings={(parentId, orderedChildIds) => {
               if (!parentId || !Array.isArray(orderedChildIds)) return;
 
