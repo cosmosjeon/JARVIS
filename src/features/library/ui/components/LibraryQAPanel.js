@@ -25,7 +25,10 @@ const LibraryQAPanel = ({
   const [isComposing, setIsComposing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
-  const [isMultiQuestionMode, setIsMultiQuestionMode] = useState(false);
+  const [isMultiQuestionMode, setIsMultiQuestionMode] = useState(() => {
+    console.log('🎬 [상태 초기화] isMultiQuestionMode 초기값: false');
+    return false;
+  });
 
   const messageContainerRef = useRef(null);
   const highlighterRef = useRef(null);
@@ -71,10 +74,12 @@ const LibraryQAPanel = ({
   }, []);
 
   const disableHighlightMode = useCallback(() => {
+    console.log('🔧 [disableHighlightMode] 호출됨, highlighter 존재:', Boolean(highlighterRef.current));
     const instance = highlighterRef.current;
     const { create, remove } = highlightHandlersRef.current;
 
     if (instance) {
+      console.log('🔧 highlighter 정리 시작...');
       if (create) {
         instance.off(Highlighter.event.CREATE, create);
       }
@@ -84,9 +89,16 @@ const LibraryQAPanel = ({
       try {
         instance.removeAll();
       } catch (error) {
-        // cleanup failure does not impact user experience
+        console.warn('🔧 removeAll 실패:', error);
       }
-      instance.dispose();
+      try {
+        instance.dispose();
+      } catch (error) {
+        console.warn('🔧 dispose 실패:', error);
+      }
+      console.log('🔧 highlighter 정리 완료');
+    } else {
+      console.log('🔧 highlighter 없음, 정리 스킵');
     }
 
     highlighterRef.current = null;
@@ -144,8 +156,6 @@ const LibraryQAPanel = ({
     fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     position: 'relative',
     zIndex: 1001,
-    pointerEvents: 'auto',
-    WebkitAppRegion: 'no-drag',
     background: DEFAULT_CHAT_PANEL_STYLES.background,
     borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
     borderWidth: '1px',
@@ -250,23 +260,36 @@ const LibraryQAPanel = ({
   }, [onNewNodeCreated, onNodeSelect, selectedNode, selectedTree, user]);
 
   const toggleMultiQuestionMode = useCallback(() => {
-    console.debug('[LibraryQAPanel] toggleMultiQuestionMode click', {
-      isMultiQuestionMode,
-      containerExists: Boolean(messageContainerRef.current),
-    });
+    console.log('=================================');
+    console.log('🔥 [다중질문버튼] 클릭됨!');
+    console.log('현재 모드:', isMultiQuestionMode ? '켜짐' : '꺼짐');
+    console.log('메시지 컨테이너 존재:', Boolean(messageContainerRef.current));
+    console.log('=================================');
+    
     if (isMultiQuestionMode) {
+      console.log('✅ 다중 질문 모드 종료 시작...');
       disableHighlightMode();
+      console.log('⚙️ setIsMultiQuestionMode(false) 호출 전');
       setIsMultiQuestionMode(false);
-      setHighlightNotice({ type: 'info', message: '다중 질문 모드를 종료했습니다.' });
+      console.log('⚙️ setIsMultiQuestionMode(false) 호출 후');
+      setHighlightNotice({ type: 'info', message: '다중 질문 모드를 종료했습니다. 이제 텍스트를 자유롭게 선택할 수 있습니다.' });
+      console.log('✅ 다중 질문 모드 종료 완료');
       return;
     }
+    
+    console.log('🚀 다중 질문 모드 활성화 시작...');
     const enabled = enableHighlightMode();
-    console.debug('[LibraryQAPanel] enableHighlightMode invoked', { container: messageContainerRef.current, button: document.querySelector('button[aria-label="하이라이트 모드"]') });
-    console.debug('[LibraryQAPanel] enableHighlightMode result', enabled, {
-      container: messageContainerRef.current,
-    });
+    console.log('하이라이트 모드 활성화 결과:', enabled);
+    console.log('메시지 컨테이너:', messageContainerRef.current);
+    
     if (enabled) {
+      console.log('⚙️ setIsMultiQuestionMode(true) 호출 전');
       setIsMultiQuestionMode(true);
+      console.log('⚙️ setIsMultiQuestionMode(true) 호출 후');
+      setHighlightNotice({ type: 'info', message: '다중 질문 모드: 텍스트를 드래그하면 하이라이트됩니다. 일반 복사는 불가능합니다.' });
+      console.log('✅ 다중 질문 모드 활성화 완료');
+    } else {
+      console.error('❌ 다중 질문 모드 활성화 실패!');
     }
   }, [disableHighlightMode, enableHighlightMode, isMultiQuestionMode]);
 
@@ -287,6 +310,15 @@ const LibraryQAPanel = ({
 
   // 선택된 노드가 변경될 때 메시지 초기화
   useEffect(() => {
+    console.log('🔄 [useEffect] 노드 변경 감지 - selectedNode 변경됨');
+    
+    // 다중 질문 모드가 켜져있으면 끄기
+    if (isMultiQuestionMode) {
+      console.log('🔄 노드 변경으로 다중 질문 모드 종료');
+      disableHighlightMode();
+      setIsMultiQuestionMode(false);
+    }
+    
     if (selectedNode) {
       const initialMessages = Array.isArray(selectedNode.conversation)
         ? selectedNode.conversation.map(msg => ({
@@ -300,13 +332,9 @@ const LibraryQAPanel = ({
     }
     setComposerValue('');
     setError(null);
-    disableHighlightMode();
     highlightStoreRef.current.clear();
     setHighlightNotice(null);
-    if (isMultiQuestionMode) {
-      setIsMultiQuestionMode(false);
-    }
-  }, [disableHighlightMode, isMultiQuestionMode, selectedNode]);
+  }, [selectedNode, disableHighlightMode]); // isMultiQuestionMode 제거!
 
   // 메시지가 변경될 때 스크롤을 맨 아래로
   useEffect(() => {
@@ -315,7 +343,7 @@ const LibraryQAPanel = ({
     }
   }, [messages]);
 
-  // 노드가 선택되거나 변경되면 입력창에 포커스
+  // 노드가 선택되거나 변경되면 입력창에 포커스 (선택 중이 아닐 때만)
   useEffect(() => {
     if (selectedNode && textareaRef.current) {
       const timer = setTimeout(() => {
@@ -323,6 +351,12 @@ const LibraryQAPanel = ({
           return;
         }
         if (isEditableTitleActive()) {
+          return;
+        }
+        // 사용자가 텍스트를 선택 중이면 포커스하지 않음
+        const selection = window.getSelection();
+        if (selection && selection.toString().length > 0) {
+          console.log('⚠️ 텍스트 선택 중이므로 포커스 스킵');
           return;
         }
         textareaRef.current.focus();
@@ -344,7 +378,21 @@ const LibraryQAPanel = ({
     return () => clearTypingTimers();
   }, [clearTypingTimers]);
 
-  useEffect(() => () => disableHighlightMode(), [disableHighlightMode]);
+  // 상태 변경 감지
+  useEffect(() => {
+    console.log('📊 [상태 변경] isMultiQuestionMode:', isMultiQuestionMode);
+  }, [isMultiQuestionMode]);
+
+  // 컴포넌트 마운트 시 초기화
+  useEffect(() => {
+    console.log('🎬 [마운트] 컴포넌트 마운트됨');
+    // 마운트 시에는 highlighter 정리하지 않음 (아직 없음)
+    return () => {
+      console.log('🎬 [언마운트] 컴포넌트 언마운트됨');
+      // 언마운트 시에만 정리
+      disableHighlightMode();
+    };
+  }, [disableHighlightMode]);
 
   useEffect(() => {
     if (!highlightNotice) {
@@ -405,17 +453,24 @@ const LibraryQAPanel = ({
 
   // 질문 전송 처리
   const handleSendMessage = useCallback(async () => {
+    console.log('📨 [handleSendMessage] 호출됨');
+    console.log('다중 질문 모드:', isMultiQuestionMode);
     const highlightTexts = isMultiQuestionMode ? highlightStoreRef.current.getTexts() : [];
+    console.log('하이라이트된 텍스트 개수:', highlightTexts.length);
+    console.log('하이라이트된 텍스트:', highlightTexts);
     const question = composerValue.trim();
+    console.log('입력된 질문:', question);
 
     if (highlightTexts.length > 0 && !question) {
+      console.log('✅ 플레이스홀더 생성 시작...');
       setComposerValue('');
       setIsProcessing(true);
       try {
         await createPlaceholderNodes(highlightTexts);
+        console.log('✅ 플레이스홀더 생성 완료');
         setHighlightNotice({ type: 'success', message: `${highlightTexts.length}개의 플레이스홀더를 생성했습니다.` });
       } catch (placeholderError) {
-        console.error('플레이스홀더 생성 실패:', placeholderError);
+        console.error('❌ 플레이스홀더 생성 실패:', placeholderError);
         const message = placeholderError.message || '다중 질문 플레이스홀더 생성 중 오류가 발생했습니다.';
         setError(message);
         setHighlightNotice({ type: 'warning', message });
@@ -545,11 +600,39 @@ const LibraryQAPanel = ({
 
   // 키보드 이벤트 처리
   const handleKeyDown = useCallback((e) => {
+    console.log('⌨️ [handleKeyDown] 키 입력:', e.key, 'Shift:', e.shiftKey);
     if (e.key === 'Enter' && !e.shiftKey) {
+      console.log('✅ Enter 키 감지, handleSendMessage 호출');
       e.preventDefault();
       handleSendMessage();
     }
   }, [handleSendMessage]);
+
+  // 다중 질문 모드에서 전역 키보드 이벤트 감지
+  useEffect(() => {
+    if (!isMultiQuestionMode) return;
+    
+    const handleGlobalKeyDown = (e) => {
+      console.log('⌨️ [글로벌] 키 입력:', e.key, '다중 질문 모드:', isMultiQuestionMode);
+      if (e.key === 'Enter' && !e.shiftKey) {
+        console.log('✅ 다중 질문 모드에서 Enter 감지');
+        e.preventDefault();
+        const highlightTexts = highlightStoreRef.current.getTexts();
+        console.log('하이라이트된 텍스트:', highlightTexts);
+        if (highlightTexts.length > 0) {
+          handleSendMessage();
+        }
+      }
+    };
+    
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    console.log('👂 전역 키보드 리스너 등록됨');
+    
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown);
+      console.log('👂 전역 키보드 리스너 제거됨');
+    };
+  }, [isMultiQuestionMode, handleSendMessage]);
 
   // 컴포저 포커스 처리
   const handleComposerFocus = useCallback(() => {
@@ -569,8 +652,6 @@ const LibraryQAPanel = ({
       >
         <div
           className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
-          data-pan-handle="true"
-          style={{ cursor: 'grab', userSelect: 'none' }}
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -590,13 +671,60 @@ const LibraryQAPanel = ({
   return (
     <div
       className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
-      style={panelStyle}
+      style={{
+        ...panelStyle, 
+        userSelect: 'text',
+        WebkitUserSelect: 'text',
+        MozUserSelect: 'text',
+        msUserSelect: 'text',
+      }}
       data-interactive-zone="true"
+      onMouseDown={(e) => {
+        console.log('🖱️ [패널] mouseDown 이벤트', {
+          target: e.target,
+          button: e.button,
+          defaultPrevented: e.defaultPrevented,
+        });
+      }}
+      onSelectStart={(e) => {
+        console.log('🖱️ [패널] selectStart 이벤트', {
+          target: e.target,
+          defaultPrevented: e.defaultPrevented,
+        });
+      }}
+      onDoubleClick={(e) => {
+        console.log('🖱️ [패널] doubleClick 이벤트', {
+          target: e.target,
+          targetTag: e.target.tagName,
+          defaultPrevented: e.defaultPrevented,
+        });
+      }}
+      onSelect={(e) => {
+        const selection = window.getSelection();
+        console.log('🖱️ [패널] select 이벤트', {
+          selection: selection.toString(),
+          rangeCount: selection.rangeCount,
+        });
+      }}
+      onMouseUp={(e) => {
+        const selection = window.getSelection();
+        console.log('🖱️ [패널] mouseUp 이벤트', {
+          selection: selection.toString(),
+          rangeCount: selection.rangeCount,
+        });
+        // 선택이 사라지는지 추적
+        setTimeout(() => {
+          const laterSelection = window.getSelection();
+          console.log('⏱️ [100ms 후] selection:', {
+            selection: laterSelection.toString(),
+            rangeCount: laterSelection.rangeCount,
+            cleared: laterSelection.toString() === '' && selection.toString() !== '',
+          });
+        }, 100);
+      }}
     >
       <div
         className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
-        data-pan-handle="true"
-        style={{ cursor: 'grab', userSelect: 'none' }}
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -651,16 +779,25 @@ const LibraryQAPanel = ({
 
       <div
         className="flex -mb-2 flex-shrink-0 justify-start"
-        data-block-pan="true"
-        style={{ position: 'relative', zIndex: 2 }}
+        style={{ position: 'relative', zIndex: 1002, pointerEvents: 'auto' }}
       >
         <button
           type="button"
-          onClick={toggleMultiQuestionMode}
+          onClick={(e) => {
+            console.log('🖱️ [버튼 DOM] onClick 이벤트 발생!', e);
+            console.log('이벤트 타겟:', e.target);
+            console.log('현재 타겟:', e.currentTarget);
+            toggleMultiQuestionMode();
+          }}
+          onMouseDown={(e) => {
+            console.log('🖱️ [버튼 DOM] onMouseDown 이벤트 발생!');
+          }}
           aria-pressed={isMultiQuestionMode}
           aria-label="하이라이트 모드"
           className="px-3 py-1 rounded-xl border text-xs font-medium transition-all duration-200"
           style={{
+            cursor: 'pointer',
+            pointerEvents: 'auto',
             backgroundColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.6)' : 'rgba(255, 255, 255, 0.8)',
             borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.6)' : DEFAULT_CHAT_PANEL_STYLES.borderColor,
             borderWidth: '1px',
@@ -668,19 +805,24 @@ const LibraryQAPanel = ({
             color: DEFAULT_CHAT_PANEL_STYLES.textColor,
           }}
         >
-          다중 질문
+          다중 질문 {isMultiQuestionMode ? '(켜짐)' : '(꺼짐)'}
         </button>
       </div>
 
       {highlightNotice && (
         <div
-          className="text-xs"
+          className="text-xs px-2 py-1 rounded"
           style={{
             color: highlightNotice.type === 'warning'
               ? 'rgba(180, 83, 9, 0.9)'
               : highlightNotice.type === 'success'
                 ? 'rgba(16, 185, 129, 0.9)'
                 : subtleTextColor,
+            backgroundColor: highlightNotice.type === 'warning'
+              ? 'rgba(254, 243, 199, 0.5)'
+              : highlightNotice.type === 'success'
+                ? 'rgba(209, 250, 229, 0.5)'
+                : 'rgba(0, 0, 0, 0.1)',
           }}
         >
           {highlightNotice.message}
@@ -699,7 +841,6 @@ const LibraryQAPanel = ({
           }}
           className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border px-3 py-2"
           style={{
-            pointerEvents: 'auto',
             zIndex: 1002,
             backgroundColor: 'rgba(255, 255, 255, 0.8)',
             borderColor: DEFAULT_CHAT_PANEL_STYLES.borderColor,
@@ -722,7 +863,7 @@ const LibraryQAPanel = ({
               autoComplete="off"
               spellCheck="false"
               style={{
-                pointerEvents: 'auto',
+                userSelect: 'text',
                 color: DEFAULT_CHAT_PANEL_STYLES.textColor,
                 fontFamily: 'inherit',
                 outline: 'none',
@@ -736,7 +877,6 @@ const LibraryQAPanel = ({
             disabled={!composerValue.trim() || isProcessing}
             className="flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-opacity disabled:opacity-40"
             style={{
-              pointerEvents: 'auto',
               backgroundColor: 'rgba(255, 255, 255, 0.8)',
               color: DEFAULT_CHAT_PANEL_STYLES.textColor,
               border: '1px solid ' + DEFAULT_CHAT_PANEL_STYLES.borderColor,
