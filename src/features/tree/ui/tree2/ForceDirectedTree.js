@@ -694,8 +694,8 @@ const ForceDirectedTree = ({
                       fillOpacity={isHovered ? 1 : textOpacity}
                       style={{
                         fontFamily: 'sans-serif',
-                        fontSize: isRootNode ? 13 : (isHovered ? 12 : 11),
-                        fontWeight: isRootNode ? 700 : (isHovered ? 600 : 400),
+                        fontSize: isHovered ? 12 : 11,
+                        fontWeight: isHovered ? 600 : 400,
                         transition: 'all 200ms ease',
                       }}
                     >
