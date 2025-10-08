@@ -51,9 +51,18 @@ const TidyTreeView = ({
 
   // 드래그 미리보기 상태
   const [dragPreview, setDragPreview] = useState(null);
-  
+
   // 호버 상태
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
+  const [clickedNodeId, setClickedNodeId] = useState(null);
+  const [internalSelectedNodeId, setInternalSelectedNodeId] = useState(null);
+  const clickTimerRef = useRef(null);
+
+  // 외부에서 selectedNodeId가 제공되면 사용, 아니면 내부 상태 사용
+  // null이 아닌 값이 제공되거나, undefined가 아니고 null인 경우에는 외부 값 사용
+  const effectiveSelectedNodeId = selectedNodeId !== undefined && selectedNodeId !== null
+    ? selectedNodeId
+    : internalSelectedNodeId;
 
   // Measure text width using canvas
   const getTextWidth = (text) => {
@@ -114,21 +123,21 @@ const TidyTreeView = ({
     return map;
   }, [layout?.nodes]);
 
-  // 호버된 노드의 조상 체인 계산
-  const hoveredAncestorIds = useMemo(() => {
-    if (!hoveredNodeId) {
+  // 클릭된 노드의 조상 체인 계산 (부모 노드들 연결 하이라이트용)
+  const clickedAncestorIds = useMemo(() => {
+    if (!clickedNodeId) {
       return new Set();
     }
     const result = new Set();
-    let currentId = hoveredNodeId;
+    let currentId = clickedNodeId;
     while (currentId) {
       result.add(currentId);
       currentId = parentById.get(currentId);
     }
     return result;
-  }, [hoveredNodeId, parentById]);
-  
-  const isHighlightMode = hoveredAncestorIds.size > 0;
+  }, [clickedNodeId, parentById]);
+
+  const isHighlightMode = clickedAncestorIds.size > 0;
 
   // 컴포넌트 언마운트 시 드래그 상태 정리
   useEffect(() => {
@@ -498,6 +507,9 @@ const TidyTreeView = ({
           // SVG 배경 클릭 (노드나 링크가 아닌 경우)
           const target = event.target;
           if (target === svgRef.current || target.tagName === 'g') {
+            setClickedNodeId(null);
+            setHoveredNodeId(null);
+            setInternalSelectedNodeId(null);
             if (typeof onBackgroundClick === "function") {
               onBackgroundClick();
             }
@@ -530,10 +542,10 @@ const TidyTreeView = ({
               const linkSourceId = link.source.data.id;
               const linkTargetId = link.target.data.id;
               const isHighlightedLink = !isHighlightMode
-                || (hoveredAncestorIds.has(linkTargetId)
+                || (clickedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
               const linkOpacity = isHighlightedLink ? 1 : 0.15;
-              
+
               return (
                 <path
                   key={linkKey}
@@ -551,7 +563,7 @@ const TidyTreeView = ({
                     event.stopPropagation();
                     handleNodeActivate(link.target);
                   }}
-                  style={{ 
+                  style={{
                     cursor: "pointer",
                     transition: "stroke-opacity 120ms ease",
                   }}
@@ -578,16 +590,16 @@ const TidyTreeView = ({
 
               const hasChildren = Array.isArray(node.children) && node.children.length > 0;
               const isRootNode = node.depth === 0;
-              const isSelected = selectedNodeId && node.data.id === selectedNodeId;
+              const isSelected = effectiveSelectedNodeId && node.data.id === effectiveSelectedNodeId;
               const isHovered = hoveredNodeId === node.data.id;
-              const isNodeHighlighted = node.data.id ? hoveredAncestorIds.has(node.data.id) : false;
+              const isNodeHighlighted = node.data.id ? clickedAncestorIds.has(node.data.id) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
-              
+
               const labelText = typeof node.data?.name === "string" ? node.data.name : "";
               const measuredWidth = getTextWidth(labelText);
               const hitboxPaddingY = 6;
-              const baseRadius = isSelected ? 4 : (isHovered ? 4.2 : 3);
+              const baseRadius = isSelected ? 4 : 3;
               const interactiveRadius = baseRadius + 3;
               const labelSpacing = 8;
               const textWidth = Math.max(0, measuredWidth);
@@ -612,15 +624,36 @@ const TidyTreeView = ({
                   data-node-interactive="true"
                   onClick={(event) => {
                     event.stopPropagation();
-                    handleNodeActivate(node);
-                  }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    handleNodeActivate(node);
+
+                    // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
+                    if (clickTimerRef.current) {
+                      clearTimeout(clickTimerRef.current);
+                      clickTimerRef.current = null;
+                      // 더블 클릭: 채팅창 열기
+                      setHoveredNodeId(node.data.id);
+                      handleNodeActivate(node);
+                    } else {
+                      // 싱글 클릭: 타이머 시작
+                      clickTimerRef.current = setTimeout(() => {
+                        const isCurrentlyClicked = clickedNodeId === node.data.id;
+
+                        // 싱글 클릭: 부모 체인 하이라이트 + 호버 효과 + 테두리 표시 (채팅창은 열지 않음)
+                        setClickedNodeId(isCurrentlyClicked ? null : node.data.id);
+                        setHoveredNodeId(isCurrentlyClicked ? null : node.data.id);
+                        // 내부 선택 상태 업데이트 (테두리 표시용) - 토글
+                        setInternalSelectedNodeId(isCurrentlyClicked ? null : node.data.id);
+                        clickTimerRef.current = null;
+                      }, 250);
+                    }
                   }}
                   onMouseDown={(event) => beginDrag(event, node)}
                   onMouseEnter={() => setHoveredNodeId(node.data.id)}
-                  onMouseLeave={() => setHoveredNodeId((current) => (current === node.data.id ? null : current))}
+                  onMouseLeave={() => {
+                    // 클릭된 노드는 호버 효과 유지
+                    if (clickedNodeId !== node.data.id) {
+                      setHoveredNodeId((current) => (current === node.data.id ? null : current));
+                    }
+                  }}
                   style={{
                     cursor: onNodeClick ? "pointer" : "default",
                     transition: previewNode
@@ -647,32 +680,9 @@ const TidyTreeView = ({
                     vectorEffect="non-scaling-stroke"
                     style={{ pointerEvents: "all" }}
                   />
-                  {isHovered && (
-                    <circle
-                      fill="none"
-                      stroke={hasChildren ? parentFill : leafFill}
-                      strokeWidth={1.2}
-                      r={baseRadius + 3.5}
-                      strokeOpacity={0.6}
-                      vectorEffect="non-scaling-stroke"
-                      style={{
-                        animation: 'pulse 1.5s ease-in-out infinite',
-                      }}
-                    />
-                  )}
-                  {isHovered && (
-                    <circle
-                      fill={hasChildren ? parentFill : leafFill}
-                      r={baseRadius + 1.5}
-                      fillOpacity={0.3}
-                      vectorEffect="non-scaling-stroke"
-                      style={{
-                        transition: 'all 200ms ease',
-                      }}
-                    />
-                  )}
                   <circle
                     fill={hasChildren ? parentFill : leafFill}
+                    fillOpacity={isHovered ? 1 : 0.9}
                     r={baseRadius}
                     stroke={isSelected ? selectionStroke : baseStroke}
                     strokeWidth={isSelected ? 2 : 1}

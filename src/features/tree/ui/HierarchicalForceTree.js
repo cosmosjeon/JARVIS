@@ -1931,8 +1931,9 @@ const HierarchicalForceTree = () => {
     setSelectedNodeId(targetId);
 
     setExpandedNodeId((current) => {
-      if (current && current !== targetId) {
-        return null;
+      // 이미 패널이 열려있으면 즉시 새 노드로 교체
+      if (current) {
+        return targetId;
       }
       return current;
     });
