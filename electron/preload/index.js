@@ -19,6 +19,7 @@ if (process.env.ELECTRON_RUN_AS_NODE === '1') {
     tray: require('./channels/tray'),
     widget: require('./channels/widget'),
     oauth: require('./channels/oauth'),
+    capture: require('./channels/capture'),
   };
 
   console.log('[preload] Channel modules loaded successfully');

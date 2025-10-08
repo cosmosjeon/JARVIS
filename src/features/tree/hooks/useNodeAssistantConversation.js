@@ -108,12 +108,19 @@ export const useNodeAssistantConversation = ({
     typingTimersRef.current.push(intervalId);
   }, [node.id, onAnswerComplete]);
 
-  const sendResponse = useCallback(async (question, { skipSecondQuestionCheck = false, overrideAnswerText } = {}) => {
+  const sendResponse = useCallback(async (question, {
+    skipSecondQuestionCheck = false,
+    overrideAnswerText,
+    attachments = [],
+  } = {}) => {
     clearTypingTimers();
 
     const resolvedIsRootNode = isRootNode;
     const normalizedQuestion = typeof question === 'string' ? question.trim() : '';
     const questionText = normalizedQuestion || (typeof question === 'string' ? question : '');
+    const sanitizedAttachments = Array.isArray(attachments)
+      ? attachments.filter((item) => item && typeof item === 'object' && item.id)
+      : [];
 
     let shouldCreateChild = false;
     if (!skipSecondQuestionCheck) {
@@ -128,10 +135,15 @@ export const useNodeAssistantConversation = ({
 
     const isFirstQuestion = !messages.some((m) => m.role === 'user');
 
-    if (isFirstQuestion) {
-      setMessages((prev) => [
-        ...prev,
-        { id: userId, role: 'user', text: question },
+  if (isFirstQuestion) {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: userId,
+          role: 'user',
+          text: questionText,
+          attachments: sanitizedAttachments.length ? sanitizedAttachments : undefined,
+        },
         { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
       ]);
     } else {
@@ -140,9 +152,16 @@ export const useNodeAssistantConversation = ({
         await onSecondQuestion(node.id, question, '', {});
         return;
       }
-    }
 
-    if (!isFirstQuestion) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: userId,
+          role: 'user',
+          text: questionText,
+          attachments: sanitizedAttachments.length ? sanitizedAttachments : undefined,
+        },
+      ]);
       return;
     }
 
@@ -209,9 +228,18 @@ export const useNodeAssistantConversation = ({
     summary,
   ]);
 
-  const submitMessage = useCallback(async (question) => {
-    const trimmed = question.trim();
-    if (!trimmed) {
+  const submitMessage = useCallback(async (input) => {
+    const payload = typeof input === 'string'
+      ? { text: input }
+      : (input || {});
+
+    const text = typeof payload.text === 'string' ? payload.text : '';
+    const attachments = Array.isArray(payload.attachments)
+      ? payload.attachments.filter((item) => item && typeof item === 'object' && item.id)
+      : [];
+
+    const trimmed = text.trim();
+    if (!trimmed && attachments.length === 0) {
       return;
     }
 
@@ -224,12 +252,17 @@ export const useNodeAssistantConversation = ({
 
         setMessages((prev) => [
           ...prev,
-          { id: userId, role: 'user', text: trimmed },
+          {
+            id: userId,
+            role: 'user',
+            text: trimmed,
+            attachments: attachments.length ? attachments : undefined,
+          },
           { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
         ]);
 
         try {
-          await onBootstrapFirstSend(trimmed);
+          await onBootstrapFirstSend(trimmed, attachments);
         } catch (rawError) {
           const error = mapError(rawError);
           setMessages((prev) =>
@@ -249,7 +282,7 @@ export const useNodeAssistantConversation = ({
       }
     }
 
-    await sendResponse(trimmed);
+    await sendResponse(trimmed, { attachments });
   }, [bootstrapMode, messages, onBootstrapFirstSend, sendResponse]);
 
   useEffect(() => {

@@ -1,16 +1,21 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScrollArea } from 'shared/ui/scroll-area';
 import { Button } from 'shared/ui/button';
 import { Badge } from 'shared/ui/badge';
 import { cn } from 'shared/utils';
+import ContextMenu from 'shared/ui/ContextMenu';
+import FolderSelectModal from 'shared/ui/FolderSelectModal';
 import {
+  Box,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Folder as FolderIcon,
+  GitBranch,
   Monitor,
+  Move,
   Plus,
-  Sparkles,
+  Trash2,
 } from 'lucide-react';
 
 const FALLBACK_THEME_LABEL = '테마';
@@ -68,11 +73,53 @@ const LibrarySidebar = ({
 
   const canSignOut = Boolean(user);
 
+  // 컨텍스트 메뉴 상태
+  const [folderSelectModal, setFolderSelectModal] = useState({
+    open: false,
+    targetTreeId: null,
+    targetTreeName: '',
+  });
+
   const toggleLabel = collapsed ? '사이드바 펼치기' : '사이드바 접기';
   const handleToggleCollapsed = () => {
     if (onToggleCollapsed) {
       onToggleCollapsed();
     }
+  };
+
+  // 컨텍스트 메뉴 핸들러들
+  const handleMoveTree = (treeId, treeName) => {
+    setFolderSelectModal({
+      open: true,
+      targetTreeId: treeId,
+      targetTreeName: treeName,
+    });
+  };
+
+  const handleDeleteTree = (treeId) => {
+    if (onDeleteTree) {
+      onDeleteTree(treeId);
+    }
+  };
+
+  const handleFolderSelect = (folderId, folderName) => {
+    // 트리를 선택된 폴더로 이동
+    if (onMoveTreesToFolder) {
+      onMoveTreesToFolder([folderSelectModal.targetTreeId], folderId);
+    }
+    setFolderSelectModal({
+      open: false,
+      targetTreeId: null,
+      targetTreeName: '',
+    });
+  };
+
+  const handleFolderSelectCancel = () => {
+    setFolderSelectModal({
+      open: false,
+      targetTreeId: null,
+      targetTreeName: '',
+    });
   };
   const ToggleIcon = collapsed ? ChevronRight : ChevronLeft;
 
@@ -96,7 +143,7 @@ const LibrarySidebar = ({
     <aside
       className={cn(
         'relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
-        collapsed ? 'w-[60px]' : 'w-[320px]',
+        collapsed ? 'w-[60px]' : 'w-[240px]',
       )}
       aria-expanded={!collapsed}
     >
@@ -106,46 +153,49 @@ const LibrarySidebar = ({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-4 border-b border-border px-6 py-8">
+          <div className="flex items-center gap-2 border-b border-border px-3 pt-8 pb-4">
             <Button
               type="button"
               variant="outline"
-              className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
+              className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
               onClick={onManageVoranBox}
             >
-              <span className="flex items-center gap-2">
-                <FolderIcon className="h-4 w-4 text-muted-foreground" />
-                VORAN BOX
+              <span className="flex items-center gap-1.5">
+                <Box className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="truncate">BOX</span>
               </span>
-              <span className="text-xs text-muted-foreground">관리</span>
+              <span className="text-[10px] text-muted-foreground flex-shrink-0">관리</span>
             </Button>
             {renderToggleButton(false, 'ml-4 flex-shrink-0')}
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="space-y-4 px-4 py-6">
+            <div className="space-y-2 px-2 py-3">
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-3 py-2 text-left text-sm text-foreground shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
+                  className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-left text-xs text-foreground shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
                   onClick={onCreateFolder}
                 >
-                  <span className="flex items-center gap-2">
-                    <FolderIcon className="h-4 w-4 text-muted-foreground" />
-                    New Folder
+                  <span className="flex items-center gap-1.5">
+                    <FolderIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate">새 폴더</span>
                   </span>
                   <span className="text-xs text-muted-foreground">+</span>
                 </Button>
                 <Button
                   type="button"
-                  variant="default"
-                  className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium shadow-sm sm:w-auto"
+                  variant="outline"
+                  className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-xs font-medium shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
                   onClick={onCreateTree}
                   disabled={!canCreateTree || isLoading}
                 >
-                  <Plus className="h-4 w-4" />
-                  새 트리 만들기
+                  <span className="flex items-center gap-1.5">
+                    <GitBranch className="h-3.5 w-3.5" />
+                    <span className="truncate">새 트리</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">+</span>
                 </Button>
               </div>
 
@@ -170,64 +220,76 @@ const LibrarySidebar = ({
                       onDragLeave={() => onFolderDragLeave(folder.id)}
                       onDrop={(event) => onDropToFolder(event, folder.id)}
                       className={cn(
-                        'group flex w-full items-center gap-2 rounded-lg border border-transparent bg-card/70 px-3 py-2 text-left text-sm font-medium shadow-sm transition-colors',
+                        'group flex w-full items-center gap-1.5 rounded-lg border border-transparent bg-card/70 px-1.5 py-1.5 text-left text-xs font-medium shadow-sm transition-colors',
                         isActiveFolder && 'border-primary/60 bg-primary/10 text-foreground',
                         !isActiveFolder && 'text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
                         isDragTarget && 'ring-2 ring-primary/50',
                       )}
                     >
                       {folderTrees.length > 0 ? (
-                        isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
+                        isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
                       ) : (
-                        <FolderIcon className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+                        <FolderIcon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground" />
                       )}
-                      <span className="flex-1 truncate">{folder.name}</span>
+                      <span className="flex-1 truncate text-xs">{folder.name}</span>
                       <Badge
                         variant="secondary"
-                        className="ml-auto rounded-full border border-border/60 bg-card px-2 py-0 text-[11px] font-medium text-muted-foreground"
+                        className="ml-auto rounded-full border border-border/60 bg-card px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
                       >
                         {folderTrees.length}
                       </Badge>
                     </button>
 
                     {isExpanded && folderTrees.length > 0 && (
-                      <div className="ml-5 space-y-1.5">
+                      <div className="ml-4 space-y-1.5">
                         {folderTrees.map((tree) => {
                           const isActiveTree = tree.id === selectedTreeId;
                           const isSelectedInNav = navSelectedIds.includes(tree.id);
                           const isDragging = draggedTreeIds.includes(tree.id);
 
                           return (
-                            <button
+                            <ContextMenu
                               key={tree.id}
-                              type="button"
-                              tabIndex={-1}
-                              draggable
-                              onClick={() => onSelectTree(tree.id, { folderId: folder.id })}
-                              onDoubleClick={() => onOpenTree(tree.id)}
-                              onContextMenu={(event) => {
-                                event.preventDefault();
-                                onDeleteTree(tree.id);
-                              }}
-                              onDragStart={(event) => onDragStart(event, tree.id)}
-                              onDragEnd={onDragEnd}
-                              className={cn(
-                                'group flex w-full items-center gap-2 rounded-md border border-transparent bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors',
-                                isActiveTree && 'border-primary/60 bg-primary/10 text-foreground',
-                                !isActiveTree && 'text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
-                                !isActiveTree && isSelectedInNav && 'border-primary/40 text-foreground/90',
-                                isDragging && 'opacity-60',
-                              )}
+                              items={[
+                                {
+                                  label: '옮기기',
+                                  icon: <Move className="h-4 w-4" />,
+                                  onClick: () => handleMoveTree(tree.id, tree.title),
+                                },
+                                {
+                                  label: '삭제',
+                                  icon: <Trash2 className="h-4 w-4" />,
+                                  onClick: () => handleDeleteTree(tree.id),
+                                  danger: true,
+                                },
+                              ]}
                             >
-                              <span
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                draggable
+                                onClick={() => onSelectTree(tree.id, { folderId: folder.id })}
+                                onDoubleClick={() => onOpenTree(tree.id)}
+                                onDragStart={(event) => onDragStart(event, tree.id)}
+                                onDragEnd={onDragEnd}
                                 className={cn(
-                                  'h-2 w-2 rounded-full bg-primary/50 transition-colors',
-                                  (isActiveTree || isSelectedInNav) && 'bg-primary',
-                                  'group-hover:bg-primary',
+                                  'group flex w-full items-center gap-1.5 rounded-md border border-transparent bg-card px-1.5 py-1.5 text-left text-xs shadow-sm transition-colors',
+                                  isActiveTree && 'border-primary/60 bg-primary/10 text-foreground',
+                                  !isActiveTree && 'text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
+                                  !isActiveTree && isSelectedInNav && 'border-primary/40 text-foreground/90',
+                                  isDragging && 'opacity-60',
                                 )}
-                              />
-                              <span className="flex-1 truncate">{tree.title}</span>
-                            </button>
+                              >
+                                <span
+                                  className={cn(
+                                    'h-2 w-2 rounded-full bg-primary/50 transition-colors',
+                                    (isActiveTree || isSelectedInNav) && 'bg-primary',
+                                    'group-hover:bg-primary',
+                                  )}
+                                />
+                                <span className="flex-1 truncate text-xs">{tree.title}</span>
+                              </button>
+                            </ContextMenu>
                           );
                         })}
                       </div>
@@ -253,8 +315,8 @@ const LibrarySidebar = ({
                   }}
                 >
                   <span className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-muted-foreground" />
-                    VORAN BOX
+                    <Box className="h-4 w-4 text-muted-foreground" />
+                    BOX
                   </span>
                   <Badge
                     variant="outline"
@@ -271,40 +333,52 @@ const LibrarySidebar = ({
                     const isDragging = draggedTreeIds.includes(tree.id);
 
                     return (
-                      <button
+                      <ContextMenu
                         key={tree.id}
-                        type="button"
-                        tabIndex={-1}
-                        draggable
-                        onClick={() => onSelectTree(tree.id)}
-                        onDoubleClick={() => onOpenTree(tree.id)}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          onDeleteTree(tree.id);
-                        }}
-                        onDragStart={(event) => onDragStart(event, tree.id)}
-                        onDragEnd={onDragEnd}
-                        className={cn(
-                          'group flex w-full items-center gap-2 rounded-md border border-transparent bg-card px-3 py-2 text-left text-sm shadow-sm transition-colors',
-                          isActiveTree && 'border-primary/60 bg-primary/10 text-foreground',
-                          !isActiveTree && 'text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
-                          !isActiveTree && isSelectedInNav && 'border-primary/40 text-foreground/90',
-                          isDragging && 'opacity-60',
-                        )}
+                        items={[
+                          {
+                            label: '옮기기',
+                            icon: <Move className="h-4 w-4" />,
+                            onClick: () => handleMoveTree(tree.id, tree.title),
+                          },
+                          {
+                            label: '삭제',
+                            icon: <Trash2 className="h-4 w-4" />,
+                            onClick: () => handleDeleteTree(tree.id),
+                            danger: true,
+                          },
+                        ]}
                       >
-                        <Monitor
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          draggable
+                          onClick={() => onSelectTree(tree.id)}
+                          onDoubleClick={() => onOpenTree(tree.id)}
+                          onDragStart={(event) => onDragStart(event, tree.id)}
+                          onDragEnd={onDragEnd}
                           className={cn(
-                            'h-4 w-4 text-muted-foreground transition-colors',
-                            (isActiveTree || isSelectedInNav) && 'text-primary',
-                            'group-hover:text-primary',
+                            'group flex w-full items-center gap-1.5 rounded-md border border-transparent bg-card px-1.5 py-1.5 text-left text-xs shadow-sm transition-colors',
+                            isActiveTree && 'border-primary/60 bg-primary/10 text-foreground',
+                            !isActiveTree && 'text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
+                            !isActiveTree && isSelectedInNav && 'border-primary/40 text-foreground/90',
+                            isDragging && 'opacity-60',
                           )}
-                        />
-                        <span className="flex-1 truncate">{tree.title}</span>
-                      </button>
+                        >
+                          <Monitor
+                            className={cn(
+                              'h-3.5 w-3.5 text-muted-foreground transition-colors',
+                              (isActiveTree || isSelectedInNav) && 'text-primary',
+                              'group-hover:text-primary',
+                            )}
+                          />
+                          <span className="flex-1 truncate text-xs">{tree.title}</span>
+                        </button>
+                      </ContextMenu>
                     );
                   })
                 ) : (
-                  <p className="px-3 py-2 text-xs text-muted-foreground/70">
+                  <p className="px-1.5 py-1.5 text-[11px] text-muted-foreground/70">
                     폴더 밖에 있는 트리가 없습니다.
                   </p>
                 )}
@@ -312,7 +386,7 @@ const LibrarySidebar = ({
             </div>
           </ScrollArea>
 
-          <div className="border-t border-border px-5 py-4 space-y-3">
+          <div className="border-t border-border px-2 py-2 space-y-1.5">
             <div className="text-xs text-muted-foreground/80">
               {canSignOut ? (
                 <span className="font-medium text-foreground">{userLabel}</span>
@@ -353,6 +427,15 @@ const LibrarySidebar = ({
           </div>
         </>
       )}
+
+      <FolderSelectModal
+        open={folderSelectModal.open}
+        onOpenChange={(open) => setFolderSelectModal(prev => ({ ...prev, open }))}
+        folders={folders}
+        onSelect={handleFolderSelect}
+        onCancel={handleFolderSelectCancel}
+        selectedItemName={folderSelectModal.targetTreeName}
+      />
     </aside>
   );
 };

@@ -457,7 +457,7 @@ const useVoranBoxManagerState = ({
       const failureCount = result?.failures?.length || 0;
       const folderName = targetType === 'folder'
         ? (folders.find((folder) => folder.id === targetId)?.name || '폴더')
-        : 'VORAN BOX';
+        : 'BOX';
 
       if (successCount > 0) {
         let message;

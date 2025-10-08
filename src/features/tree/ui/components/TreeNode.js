@@ -56,6 +56,8 @@ const TreeNode = ({
   treeNodes = [],
   treeLinks = [],
   onNodeSelect = () => { },
+  attachments = [],
+  onAttachmentsChange = () => { },
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -356,6 +358,8 @@ const TreeNode = ({
             treeLinks={treeLinks}
             onNodeSelect={onNodeSelect}
             disableNavigation={node?.nodeType === 'memo'}
+            attachments={attachments}
+            onAttachmentsChange={onAttachmentsChange}
           />
         </div>
       </motion.div>,
@@ -530,6 +534,8 @@ const TreeNode = ({
                   onCloseNode={handleAssistantPanelClose}
                   onPanZoomGesture={onPanZoomGesture}
                   nodeScaleFactor={nodeScaleFactor}
+                  attachments={attachments}
+                  onAttachmentsChange={onAttachmentsChange}
                 />
               </div>
             </foreignObject>

@@ -3,6 +3,7 @@ import { Calendar, FileText } from 'lucide-react';
 
 import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
 import WidgetTreeView from 'features/treeCanvas/WidgetTreeView';
+import EditableTitle from 'shared/ui/EditableTitle';
 
 const LIGHTWEIGHT_THRESHOLD = 250;
 
@@ -15,6 +16,7 @@ const TreeCanvas = ({
   onMemoCreate,
   onMemoUpdate,
   onMemoRemove,
+  onTreeRename,
 }) => {
   const nodeCount = useMemo(
     () => selectedMemo?.treeData?.nodes?.length ?? 0,
@@ -79,12 +81,19 @@ const TreeCanvas = ({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="flex flex-col gap-2 px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="text-lg font-semibold text-foreground">
-              {selectedMemo.title}
-            </h1>
+      <header className="border-b border-border bg-card relative z-10">
+        <div className="flex flex-col gap-2 px-4 py-6">
+          <div className="flex items-center justify-between gap-3 relative">
+            <div className="flex-1 min-w-0">
+              <EditableTitle
+                title={selectedMemo.title}
+                onUpdate={(newTitle) => {
+                  if (onTreeRename && selectedMemo.id) {
+                    onTreeRename(selectedMemo.id, newTitle);
+                  }
+                }}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">

@@ -270,6 +270,8 @@ const ForceDirectedTree = ({
     isForceSimulationEnabled = true,
     // 라이브러리에서 우측 패널 사용 시, 캔버스 위젯 어시스턴트 패널 숨김
     hideAssistantPanel = false,
+    attachmentsByNode = {},
+    onNodeAttachmentsChange = () => { },
 }) => {
     const themeBackground = theme === 'light'
         ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))'
@@ -2084,10 +2086,10 @@ const ForceDirectedTree = ({
             />
         );
     } else if (activePanelMode === 'assistant' && selectedDatum && selectedNodeId) {
-        panelContent = (
-            <NodeAssistantPanel
-                node={selectedDatum}
-                color={d3.schemeCategory10[0]}
+                panelContent = (
+                    <NodeAssistantPanel
+                        node={selectedDatum}
+                        color={d3.schemeCategory10[0]}
                 onSizeChange={() => { }}
                 onSecondQuestion={onSecondQuestion || (() => { })}
                 onPlaceholderCreate={onPlaceholderCreate || (() => { })}
@@ -2110,16 +2112,22 @@ const ForceDirectedTree = ({
                 nodeScaleFactor={1}
                 treeNodes={data?.nodes || []}
                 treeLinks={hierarchicalLinks}
-                onNodeSelect={(targetNode) => {
-                    const targetNodeId = targetNode?.id;
-                    if (targetNodeId) {
-                        setSelectedNodeId(targetNodeId);
-                    }
-                }}
-                disableNavigation={isMemoSelection}
-                showHeaderControls={false}
-            />
-        );
+                        onNodeSelect={(targetNode) => {
+                            const targetNodeId = targetNode?.id;
+                            if (targetNodeId) {
+                                setSelectedNodeId(targetNodeId);
+                            }
+                        }}
+                        disableNavigation={isMemoSelection}
+                        attachments={attachmentsByNode?.[selectedNodeId] || []}
+                        onAttachmentsChange={(nextAttachments) => {
+                            if (selectedNodeId) {
+                                onNodeAttachmentsChange(selectedNodeId, nextAttachments);
+                            }
+                        }}
+                        showHeaderControls={false}
+                    />
+                );
     } else if (activePanelMode === 'editor' && memoEditorState.memo) {
         panelContent = (
             <MemoEditor

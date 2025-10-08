@@ -9,6 +9,7 @@ import { SettingsProvider } from 'shared/hooks/SettingsContext';
 import { SupabaseProvider } from 'shared/hooks/useSupabaseAuth';
 import SupabaseAuthGate from './components/auth/SupabaseAuthGate';
 import OAuthCallbackPage from './views/OAuthCallbackPage';
+import CaptureOverlay from 'features/capture/ui/CaptureOverlay';
 
 function App() {
   const mode = useMemo(() => {
@@ -35,6 +36,18 @@ function App() {
 
   if (pathname.startsWith('/auth/callback')) {
     return <OAuthCallbackPage />;
+  }
+
+  if (mode === 'capture-overlay') {
+    return (
+      <SupabaseProvider>
+        <SettingsProvider>
+          <ThemeProvider defaultTheme="glass" mode={mode}>
+            <CaptureOverlay />
+          </ThemeProvider>
+        </SettingsProvider>
+      </SupabaseProvider>
+    );
   }
 
   return (

@@ -26,6 +26,7 @@ const LibraryContent = ({
   onMemoCreate,
   onMemoUpdate,
   onMemoRemove,
+  onTreeRename,
 }) => {
   if (loading) {
     return (
@@ -57,6 +58,7 @@ const LibraryContent = ({
             onMemoCreate={onMemoCreate}
             onMemoUpdate={onMemoUpdate}
             onMemoRemove={onMemoRemove}
+            onTreeRename={onTreeRename}
           />
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-border/80 hover:bg-border" />
@@ -66,6 +68,7 @@ const LibraryContent = ({
             selectedTree={selectedTree}
             onNodeUpdate={onNodeUpdate}
             onNewNodeCreated={onNewNodeCreated}
+            onNodeSelect={onNodeSelect}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -84,7 +87,7 @@ const LibraryContent = ({
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>이 폴더에 트리를 추가하거나 트리를 선택해주세요.</p>
             <p className="text-xs text-muted-foreground/80">
-              VORAN BOX에서 트리를 이 폴더로 이동할 수 있습니다.
+              BOX에서 트리를 이 폴더로 이동할 수 있습니다.
             </p>
           </CardContent>
         </Card>
