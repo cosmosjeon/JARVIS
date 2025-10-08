@@ -28,6 +28,8 @@ const TidyTreeView = ({
   background,
   onNodeClick,
   selectedNodeId,
+  activeTreeId,
+  onBackgroundClick,
   onReorderSiblings,
 }) => {
   const svgRef = useRef(null);
@@ -39,6 +41,7 @@ const TidyTreeView = ({
   const nodesGroupRef = useRef(null);
   const linksGroupRef = useRef(null);
   const previousLayoutRef = useRef(null);
+  const defaultViewTransformRef = useRef(null);
 
   // 드래그 관련 서비스 인스턴스
   const dragStateManager = useRef(new DragStateManager()).current;
@@ -184,6 +187,25 @@ const TidyTreeView = ({
     previousLayoutRef.current = layout;
   }, [layout, linkGenerator, dragPreview]);
 
+  // 기본 뷰포트로 복원하는 함수
+  const resetToDefaultView = () => {
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+
+    if (!svgElement || !zoom || !defaultViewTransformRef.current) {
+      return;
+    }
+
+    const selection = d3.select(svgElement);
+
+    // 부드러운 transition으로 기본 뷰포트로 복귀
+    selection
+      .transition()
+      .duration(600)
+      .ease(d3.easeCubicInOut)
+      .call(zoom.transform, defaultViewTransformRef.current);
+  };
+
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
     const svgElement = svgRef.current;
@@ -217,7 +239,23 @@ const TidyTreeView = ({
       .on("end", () => setIsZooming(false));
 
     selection.call(zoom);
-    selection.on("dblclick.zoom", null);
+
+    // 더블클릭 시 기본 뷰포트로 복원
+    selection.on("dblclick.zoom", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      // 노드 영역 더블클릭은 무시 (노드 활성화 우선)
+      const target = event?.target;
+      if (target && typeof target.closest === "function") {
+        if (target.closest('g[data-node-interactive="true"]')) {
+          return;
+        }
+      }
+
+      resetToDefaultView();
+    });
+
     zoomBehaviorRef.current = zoom;
 
     // 초기 마운트 시에만 identity로 리셋 (이후 layout 변경 시에는 현재 transform 유지)
@@ -225,14 +263,32 @@ const TidyTreeView = ({
       const identity = d3.zoomIdentity;
       selection.call(zoom.transform, identity);
       setViewTransform(identity);
+
+      // 기본 뷰포트 저장
+      defaultViewTransformRef.current = identity;
+
       isInitialMountRef.current = false;
     }
 
     return () => {
       selection.on(".zoom", null);
+      selection.on("dblclick.zoom", null);
       zoomBehaviorRef.current = null;
     };
   }, [layout, dragStateManager]);
+
+  // 탭 전환 시 기본 화면으로 복귀
+  useEffect(() => {
+    // 초기 마운트는 제외 (위의 zoom behavior useEffect에서 이미 처리함)
+    if (isInitialMountRef.current) {
+      return;
+    }
+
+    // activeTreeId가 변경되면 기본 뷰포트로 복귀
+    if (activeTreeId && defaultViewTransformRef.current) {
+      resetToDefaultView();
+    }
+  }, [activeTreeId]);
 
   const isLightTheme = theme === "light";
   const linkStroke = isLightTheme ? "rgba(71, 85, 105, 0.45)" : "rgba(148, 163, 184, 0.55)";
@@ -241,7 +297,7 @@ const TidyTreeView = ({
   const parentFill = isLightTheme ? "#1f2937" : "rgba(226, 232, 240, 0.85)";
   const leafFill = isLightTheme ? "#64748b" : "rgba(148, 163, 184, 0.82)";
   const baseStroke = isLightTheme ? "rgba(15, 23, 42, 0.3)" : "rgba(255, 255, 255, 0.25)";
-  const selectionStroke = isLightTheme ? "rgba(30, 64, 175, 0.7)" : "rgba(226, 232, 240, 0.75)";
+  const selectionStroke = isLightTheme ? "rgba(0, 0, 0, 0.8)" : "rgba(226, 232, 240, 0.75)";
 
   const handleNodeActivate = (node) => {
     if (typeof onNodeClick === "function" && node?.data?.id) {
@@ -406,6 +462,15 @@ const TidyTreeView = ({
           font: "10px sans-serif",
           cursor: isZooming ? "grabbing" : "grab",
           touchAction: "none",
+        }}
+        onClick={(event) => {
+          // SVG 배경 클릭 (노드나 링크가 아닌 경우)
+          const target = event.target;
+          if (target === svgRef.current || target.tagName === 'g') {
+            if (typeof onBackgroundClick === "function") {
+              onBackgroundClick();
+            }
+          }
         }}
       >
         <g transform={transformString}>

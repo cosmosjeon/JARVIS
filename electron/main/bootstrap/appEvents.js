@@ -1,3 +1,5 @@
+const { globalShortcut } = require('electron');
+
 const registerAppEventHandlers = ({
   app,
   handleOAuthDeepLink,
@@ -24,6 +26,9 @@ const registerAppEventHandlers = ({
   });
 
   app.on('will-quit', () => {
+    // 전역 단축키 해제
+    globalShortcut.unregisterAll();
+
     getTrayService()?.dispose();
     getCaptureService()?.dispose?.();
     const oauthServer = getOAuthServer();
