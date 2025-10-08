@@ -58,7 +58,7 @@ body.widget-mode {
   -webkit-app-region: no-drag;
 }
 
-.App::before {
+.widget-mode .App::before {
   content: '';
   position: absolute;
   top: 0;
