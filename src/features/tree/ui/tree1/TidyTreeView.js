@@ -794,43 +794,10 @@ const TidyTreeView = ({
                       return;
                     }
 
-                    // 채팅창이 열려있으면 싱글 클릭만으로도 전환
-                    if (isChatPanelOpen) {
-                      setClickedNodeId(node.data.id);
-                      setHoveredNodeId(node.data.id);
-                      handleNodeActivate(node);
-                      return;
-                    }
-
-                    // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
-                    if (clickTimerRef.current) {
-                      clearTimeout(clickTimerRef.current);
-                      clickTimerRef.current = null;
-                      // 더블 클릭: 하이라이트 효과 + 채팅창 열기
-                      setClickedNodeId(node.data.id);
-                      setHoveredNodeId(node.data.id);
-                      handleNodeActivate(node);
-                    } else {
-                      // 싱글 클릭: 타이머 시작
-                      clickTimerRef.current = setTimeout(() => {
-                        const isCurrentlyClicked = clickedNodeId === node.data.id;
-
-                        // 싱글 클릭: 부모 체인 하이라이트 + 호버 효과 + 테두리 표시 (채팅창은 열지 않음)
-                        setClickedNodeId(isCurrentlyClicked ? null : node.data.id);
-                        setHoveredNodeId(isCurrentlyClicked ? null : node.data.id);
-                        // 선택 상태 업데이트 (테두리 표시용)
-                        if (typeof onNodeClick === "function") {
-                          // 상위 컴포넌트에 선택 상태 알림 (suppressPanelOpen으로 채팅창 열지 않음, 토글 지원)
-                          onNodeClick({
-                            id: isCurrentlyClicked ? null : node.data.id,
-                            source: "tidy-tree",
-                            suppressPanelOpen: true
-                          });
-                        }
-                        setInternalSelectedNodeId(isCurrentlyClicked ? null : node.data.id);
-                        clickTimerRef.current = null;
-                      }, 250);
-                    }
+                    // 싱글 클릭으로 채팅창 열기/전환
+                    setClickedNodeId(node.data.id);
+                    setHoveredNodeId(node.data.id);
+                    handleNodeActivate(node);
                   }}
                   onMouseDown={(event) => beginDrag(event, node)}
                   onMouseEnter={() => setHoveredNodeId(node.data.id)}

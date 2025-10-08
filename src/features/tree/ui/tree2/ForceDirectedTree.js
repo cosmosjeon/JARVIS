@@ -620,55 +620,11 @@ const ForceDirectedTree = ({
                   }}
                   onClick={(event) => {
                     event.stopPropagation();
-                    console.log('[ForceDirectedTree] Node clicked:', {
-                      nodeId,
-                      isChatPanelOpen,
-                      datum: resolveNodeDatum(node)
-                    });
 
-                    // 채팅창이 열려있으면 싱글 클릭만으로도 전환
-                    if (isChatPanelOpen) {
-                      setClickedNodeId(nodeId);
-                      setHoveredNodeId(nodeId);
-                      handleNodeClick(node);
-                      return;
-                    }
-
-                    // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
-                    if (clickTimerRef.current) {
-                      clearTimeout(clickTimerRef.current);
-                      clickTimerRef.current = null;
-                      // 더블 클릭: 하이라이트 효과 + 채팅창 열기
-                      setClickedNodeId(nodeId);
-                      setHoveredNodeId(nodeId);
-                      handleNodeClick(node);
-                    } else {
-                      // 싱글 클릭: 타이머 시작
-                      clickTimerRef.current = setTimeout(() => {
-                        const isCurrentlyClicked = clickedNodeId === nodeId;
-
-                        // 싱글 클릭: 부모 체인 하이라이트 + 호버 효과 + 테두리 표시 (채팅창은 열지 않음)
-                        setClickedNodeId(isCurrentlyClicked ? null : nodeId);
-                        setHoveredNodeId(isCurrentlyClicked ? null : nodeId);
-                        // 선택 상태 업데이트 (테두리 표시용, 채팅창은 열지 않음)
-                        const datum = resolveNodeDatum(node);
-                        const targetNodeId = datum?.id;
-                        if (targetNodeId) {
-                          // 상위 컴포넌트에 선택 상태 알림 (토글)
-                          if (externalSelectedNodeId === undefined) {
-                            setInternalSelectedNodeId(isCurrentlyClicked ? null : targetNodeId);
-                          } else {
-                            // 외부 상태 사용 시 onNodeClick 호출하여 상위에 알림 (채팅창은 열지 않음)
-                            onNodeClick({
-                              id: isCurrentlyClicked ? null : targetNodeId,
-                              node: datum,
-                              suppressPanelOpen: true
-                            });
-                          }
-                        }
-                        clickTimerRef.current = null;
-                      }, 250);
-                    }
+                    // 싱글 클릭으로 채팅창 열기/전환
+                    setClickedNodeId(nodeId);
+                    setHoveredNodeId(nodeId);
+                    handleNodeClick(node);
                   }}
                   style={{
                     cursor: 'pointer',
