@@ -400,7 +400,8 @@ const ForceDirectedTree = ({
                     if (clickTimerRef.current) {
                       clearTimeout(clickTimerRef.current);
                       clickTimerRef.current = null;
-                      // 더블 클릭: 채팅창 열기
+                      // 더블 클릭: 하이라이트 효과 + 채팅창 열기
+                      setClickedNodeId(nodeId);
                       setHoveredNodeId(nodeId);
                       handleNodeClick(node);
                     } else {
@@ -411,9 +412,21 @@ const ForceDirectedTree = ({
                         // 싱글 클릭: 부모 체인 하이라이트 + 호버 효과 + 테두리 표시 (채팅창은 열지 않음)
                         setClickedNodeId(isCurrentlyClicked ? null : nodeId);
                         setHoveredNodeId(isCurrentlyClicked ? null : nodeId);
-                        // 선택 상태 업데이트 (테두리 표시용, 채팅창은 열지 않음) - 토글
-                        if (externalSelectedNodeId === undefined) {
-                          setInternalSelectedNodeId(isCurrentlyClicked ? null : nodeId);
+                        // 선택 상태 업데이트 (테두리 표시용, 채팅창은 열지 않음)
+                        const datum = resolveNodeDatum(node);
+                        const targetNodeId = datum?.id;
+                        if (targetNodeId) {
+                          // 상위 컴포넌트에 선택 상태 알림 (토글)
+                          if (externalSelectedNodeId === undefined) {
+                            setInternalSelectedNodeId(isCurrentlyClicked ? null : targetNodeId);
+                          } else {
+                            // 외부 상태 사용 시 onNodeClick 호출하여 상위에 알림 (채팅창은 열지 않음)
+                            onNodeClick({
+                              id: isCurrentlyClicked ? null : targetNodeId,
+                              node: datum,
+                              suppressPanelOpen: true
+                            });
+                          }
                         }
                         clickTimerRef.current = null;
                       }, 250);

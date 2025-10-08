@@ -859,14 +859,13 @@ const HierarchicalForceTree = () => {
     ? tidyAssistantPanelWidth + TIDY_ASSISTANT_PANEL_GAP
     : 0;
 
-  // 패널이 열렸을 때 뷰포트 크기 조정
+  // 트리는 항상 전체 화면 사용 (채팅창은 오버레이로 표시)
   const dimensions = useMemo(() => {
     if (!baseDimensions) return baseDimensions;
     return {
       ...baseDimensions,
-      width: Math.max(320, (baseDimensions.width || 0) - tidyAssistantPanelOffset),
     };
-  }, [baseDimensions, tidyAssistantPanelOffset]);
+  }, [baseDimensions]);
   const tidyAssistantAttachments = useMemo(() => {
     if (!expandedNodeId) {
       return [];
@@ -1921,6 +1920,14 @@ const HierarchicalForceTree = () => {
     }
 
     const targetId = payload.id;
+
+    // 싱글 클릭인 경우 (suppressPanelOpen === true) 선택 상태만 업데이트하고 패널은 열지 않음
+    if (payload.suppressPanelOpen) {
+      // targetId가 null이면 선택 해제
+      setSelectedNodeId(targetId || null);
+      return;
+    }
+
     if (!targetId) {
       return;
     }
@@ -2634,10 +2641,6 @@ const HierarchicalForceTree = () => {
       {isForceView && (
         <div
           className="absolute inset-0"
-          style={{
-            right: tidyAssistantPanelOffset,
-            transition: 'right 200ms ease-in-out',
-          }}
         >
           <ForceDirectedTree
             data={data}
@@ -2674,10 +2677,6 @@ const HierarchicalForceTree = () => {
       {isTidyView && (
         <div
           className="absolute inset-0"
-          style={{
-            right: tidyAssistantPanelOffset,
-            transition: 'right 200ms ease-in-out',
-          }}
         >
           <TidyTreeView
             data={data}
