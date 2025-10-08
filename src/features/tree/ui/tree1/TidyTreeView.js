@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
 import DragStateManager from 'features/tree/services/drag/DragStateManager';
@@ -36,6 +36,9 @@ const TidyTreeView = ({
   const [viewTransform, setViewTransform] = useState(() => d3.zoomIdentity);
   const [isZooming, setIsZooming] = useState(false);
   const textMeasureCacheRef = useRef(new Map());
+  const nodesGroupRef = useRef(null);
+  const linksGroupRef = useRef(null);
+  const previousLayoutRef = useRef(null);
 
   // 드래그 관련 서비스 인스턴스
   const dragStateManager = useRef(new DragStateManager()).current;
@@ -102,6 +105,84 @@ const TidyTreeView = ({
       }
     };
   }, [dragStateManager]);
+
+  // D3 transition으로 노드와 링크 애니메이션
+  useLayoutEffect(() => {
+    if (!layout || !nodesGroupRef.current || !linksGroupRef.current) {
+      return;
+    }
+
+    // 드래그 중에는 CSS transition 사용, D3 transition 비활성화
+    if (dragPreview?.active) {
+      return;
+    }
+
+    const ANIMATION_DURATION = 300;
+    const previousLayout = previousLayoutRef.current;
+    const shouldAnimate = previousLayout !== null && !isInitialMountRef.current;
+
+    if (shouldAnimate) {
+      // 1단계: 이전 위치로 즉시 되돌림 (브라우저 paint 전)
+      d3.select(linksGroupRef.current)
+        .selectAll('path')
+        .each(function () {
+          const key = d3.select(this).attr('data-link-key');
+          if (!key) return;
+
+          const prevLink = previousLayout.links.find(l =>
+            `${l.source.data.id}->${l.target.data.id}` === key
+          );
+          if (prevLink) {
+            d3.select(this).attr('d', linkGenerator(prevLink));
+          }
+        });
+
+      d3.select(nodesGroupRef.current)
+        .selectAll('g[data-node-id]')
+        .each(function () {
+          const nodeId = d3.select(this).attr('data-node-id');
+          if (!nodeId) return;
+
+          const prevNode = previousLayout.nodes.find(n => n.data.id === nodeId);
+          if (prevNode) {
+            d3.select(this).attr('transform', `translate(${prevNode.y},${prevNode.x})`);
+          }
+        });
+
+      // 2단계: 새 위치로 transition
+      d3.select(linksGroupRef.current)
+        .selectAll('path')
+        .transition()
+        .duration(ANIMATION_DURATION)
+        .ease(d3.easeCubicInOut)
+        .attr('d', function () {
+          const key = d3.select(this).attr('data-link-key');
+          if (!key) return d3.select(this).attr('d');
+
+          const link = layout.links.find(l =>
+            `${l.source.data.id}->${l.target.data.id}` === key
+          );
+          return link ? linkGenerator(link) : d3.select(this).attr('d');
+        });
+
+      d3.select(nodesGroupRef.current)
+        .selectAll('g[data-node-id]')
+        .transition()
+        .duration(ANIMATION_DURATION)
+        .ease(d3.easeCubicInOut)
+        .attr('transform', function () {
+          const nodeId = d3.select(this).attr('data-node-id');
+          if (!nodeId) return d3.select(this).attr('transform');
+
+          const node = layout.nodes.find(n => n.data.id === nodeId);
+          if (!node) return d3.select(this).attr('transform');
+
+          return `translate(${node.y},${node.x})`;
+        });
+    }
+
+    previousLayoutRef.current = layout;
+  }, [layout, linkGenerator, dragPreview]);
 
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
@@ -328,25 +409,40 @@ const TidyTreeView = ({
         }}
       >
         <g transform={transformString}>
-          <g fill="none" stroke={linkStroke} strokeOpacity={0.6} strokeWidth={1.5}>
-            {layout.links.map((link) => (
-              <path
-                key={`${link.source.data.id}->${link.target.data.id}`}
-                d={linkGenerator(link)}
-                vectorEffect="non-scaling-stroke"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleNodeActivate(link.target);
-                }}
-                onDoubleClick={(event) => {
-                  event.stopPropagation();
-                  handleNodeActivate(link.target);
-                }}
-                style={{ cursor: "pointer" }}
-              />
-            ))}
+          <g
+            ref={linksGroupRef}
+            fill="none"
+            stroke={linkStroke}
+            strokeOpacity={0.6}
+            strokeWidth={1.5}
+          >
+            {layout.links.map((link) => {
+              const linkKey = `${link.source.data.id}->${link.target.data.id}`;
+              return (
+                <path
+                  key={linkKey}
+                  data-link-key={linkKey}
+                  d={linkGenerator(link)}
+                  vectorEffect="non-scaling-stroke"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleNodeActivate(link.target);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    handleNodeActivate(link.target);
+                  }}
+                  style={{ cursor: "pointer" }}
+                />
+              );
+            })}
           </g>
-          <g strokeLinecap="round" strokeLinejoin="round" strokeWidth={3}>
+          <g
+            ref={nodesGroupRef}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={3}
+          >
             {layout.nodes.map((node) => {
               // 미리보기 상태 확인
               const previewNode = dragPreview?.nodes?.find((p) => p.id === node.data.id);
@@ -357,7 +453,6 @@ const TidyTreeView = ({
               const displayX = previewNode ? previewNode.x : node.y; // SVG X (가로)
               const displayY = previewNode ? previewNode.y : node.x; // SVG Y (세로)
               const opacity = previewNode ? previewNode.opacity : 1.0;
-              const isDragged = previewNode?.isDragged || false;
 
               const hasChildren = Array.isArray(node.children) && node.children.length > 0;
               const isSelected = selectedNodeId && node.data.id === selectedNodeId;
@@ -383,6 +478,7 @@ const TidyTreeView = ({
               return (
                 <g
                   key={node.data.id}
+                  data-node-id={node.data.id}
                   transform={`translate(${displayX},${displayY})`}
                   opacity={opacity}
                   data-node-interactive="true"
