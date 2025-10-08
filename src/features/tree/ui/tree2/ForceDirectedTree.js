@@ -435,6 +435,8 @@ const ForceDirectedTree = ({
 
   const textFill = theme === 'dark' ? '#e2e8f0' : '#0f172a';
   const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
+  
+  // 클릭된 노드의 조상 체인 계산
   const clickedAncestorIds = useMemo(() => {
     if (!clickedNodeId) {
       return new Set();
@@ -447,7 +449,31 @@ const ForceDirectedTree = ({
     }
     return result;
   }, [clickedNodeId, parentById]);
-  const isHighlightMode = clickedAncestorIds.size > 0;
+  
+  // 호버된 노드의 조상 체인 계산
+  const hoveredAncestorIds = useMemo(() => {
+    if (!hoveredNodeId) {
+      return new Set();
+    }
+    const result = new Set();
+    let currentId = hoveredNodeId;
+    while (currentId) {
+      result.add(currentId);
+      currentId = parentById.get(currentId);
+    }
+    return result;
+  }, [hoveredNodeId, parentById]);
+  
+  // 클릭이나 호버가 있으면 하이라이트 모드
+  const isHighlightMode = clickedAncestorIds.size > 0 || hoveredAncestorIds.size > 0;
+  
+  // 통합된 조상 체인 (클릭 또는 호버)
+  const highlightedAncestorIds = useMemo(() => {
+    const combined = new Set();
+    clickedAncestorIds.forEach(id => combined.add(id));
+    hoveredAncestorIds.forEach(id => combined.add(id));
+    return combined;
+  }, [clickedAncestorIds, hoveredAncestorIds]);
 
   return (
     <div className="relative h-full w-full overflow-hidden" style={{ background }}>
@@ -537,7 +563,7 @@ const ForceDirectedTree = ({
               const linkSourceId = resolveNodeId(link.source);
               const linkTargetId = resolveNodeId(link.target);
               const isHighlightedLink = !isHighlightMode
-                || (clickedAncestorIds.has(linkTargetId)
+                || (highlightedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
               const strokeWidth = isHighlightedLink
                 ? Math.max(0.75, 1.9 - targetDepth * 0.2)
@@ -576,7 +602,7 @@ const ForceDirectedTree = ({
               const textAnchor = isRootNode ? 'middle' : (node.x < Math.PI === isLeaf ? 'start' : 'end');
               const textOffset = isRootNode ? 0 : (node.x < Math.PI === isLeaf ? 8 : -8);
               const isHovered = hoveredNodeId === nodeId;
-              const isNodeHighlighted = nodeId ? clickedAncestorIds.has(nodeId) : false;
+              const isNodeHighlighted = nodeId ? highlightedAncestorIds.has(nodeId) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
               const circleOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.28) : 1;

@@ -261,7 +261,30 @@ const TidyTreeView = ({
     return result;
   }, [clickedNodeId, parentById]);
 
-  const isHighlightMode = clickedAncestorIds.size > 0;
+  // 호버된 노드의 조상 체인 계산
+  const hoveredAncestorIds = useMemo(() => {
+    if (!hoveredNodeId) {
+      return new Set();
+    }
+    const result = new Set();
+    let currentId = hoveredNodeId;
+    while (currentId) {
+      result.add(currentId);
+      currentId = parentById.get(currentId);
+    }
+    return result;
+  }, [hoveredNodeId, parentById]);
+
+  // 클릭이나 호버가 있으면 하이라이트 모드
+  const isHighlightMode = clickedAncestorIds.size > 0 || hoveredAncestorIds.size > 0;
+  
+  // 통합된 조상 체인 (클릭 또는 호버)
+  const highlightedAncestorIds = useMemo(() => {
+    const combined = new Set();
+    clickedAncestorIds.forEach(id => combined.add(id));
+    hoveredAncestorIds.forEach(id => combined.add(id));
+    return combined;
+  }, [clickedAncestorIds, hoveredAncestorIds]);
 
   // 컴포넌트 언마운트 시 드래그 상태 정리
   useEffect(() => {
@@ -683,7 +706,7 @@ const TidyTreeView = ({
               const linkSourceId = link.source.data.id;
               const linkTargetId = link.target.data.id;
               const isHighlightedLink = !isHighlightMode
-                || (clickedAncestorIds.has(linkTargetId)
+                || (highlightedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
               const linkOpacity = isHighlightedLink ? 1 : 0.15;
 
@@ -733,7 +756,7 @@ const TidyTreeView = ({
               const isRootNode = node.depth === 0;
               const isSelected = effectiveSelectedNodeId && node.data.id === effectiveSelectedNodeId;
               const isHovered = hoveredNodeId === node.data.id;
-              const isNodeHighlighted = node.data.id ? clickedAncestorIds.has(node.data.id) : false;
+              const isNodeHighlighted = node.data.id ? highlightedAncestorIds.has(node.data.id) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
 
