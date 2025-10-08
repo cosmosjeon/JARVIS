@@ -107,6 +107,8 @@ const ForceDirectedTree = ({
   attachmentsByNode = {},
   onNodeAttachmentsChange = () => {},
   isForceSimulationEnabled, // kept for compatibility
+  selectedNodeId: externalSelectedNodeId,
+  onBackgroundClick,
 }) => {
   const baseWidth = Number.isFinite(dimensions?.width)
     ? dimensions.width
@@ -130,7 +132,7 @@ const ForceDirectedTree = ({
   const effectiveRadius = Math.max(baseRadius, layout.requiredRadius + levelSpacing);
   const width = Math.max(baseWidth, effectiveRadius * 2 + 160);
   const height = Math.max(baseHeight, effectiveRadius * 2 + 160);
-  const background = theme === 'dark' ? '#0f172a' : '#ffffff';
+  const background = theme === 'glass' ? 'transparent' : (theme === 'dark' ? '#0f172a' : '#ffffff');
 
   const nodeMap = useMemo(() => {
     if (!Array.isArray(data?.nodes)) {
@@ -162,7 +164,8 @@ const ForceDirectedTree = ({
   }, [layout.nodes]);
 
   const [viewTransform, setViewTransform] = useState(d3.zoomIdentity);
-  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [internalSelectedNodeId, setInternalSelectedNodeId] = useState(null);
+  const selectedNodeId = externalSelectedNodeId !== undefined ? externalSelectedNodeId : internalSelectedNodeId;
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   const svgRef = useRef(null);
   const questionServiceRef = useRef(questionService || new QuestionService());
@@ -234,13 +237,20 @@ const ForceDirectedTree = ({
     if (!nodeId) {
       return;
     }
-    setSelectedNodeId(nodeId);
+    if (externalSelectedNodeId === undefined) {
+      setInternalSelectedNodeId(nodeId);
+    }
     onNodeClick({ id: nodeId, node: datum });
-  }, [onNodeClick]);
+  }, [onNodeClick, externalSelectedNodeId]);
 
   const handleClosePanel = useCallback(() => {
-    setSelectedNodeId(null);
-  }, []);
+    if (externalSelectedNodeId === undefined) {
+      setInternalSelectedNodeId(null);
+    }
+    if (typeof onBackgroundClick === 'function') {
+      onBackgroundClick();
+    }
+  }, [externalSelectedNodeId, onBackgroundClick]);
 
   const handlePanelNodeSelect = useCallback((target) => {
     if (!target) {
@@ -251,9 +261,11 @@ const ForceDirectedTree = ({
       return;
     }
     const original = nodeMap.get(targetId) || target;
-    setSelectedNodeId(targetId);
+    if (externalSelectedNodeId === undefined) {
+      setInternalSelectedNodeId(targetId);
+    }
     onNodeClick({ id: targetId, node: original });
-  }, [nodeMap, onNodeClick]);
+  }, [nodeMap, onNodeClick, externalSelectedNodeId]);
 
   const handleAttachmentsChange = useCallback((nodeId, next) => {
     if (typeof onNodeAttachmentsChange === 'function') {

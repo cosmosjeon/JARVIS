@@ -18,7 +18,7 @@ const estimateLabelWidth = (label) => {
   if (length === 0) {
     return 48;
   }
-  return Math.min(240, Math.max(48, length * 6.2));
+  return Math.min(240, Math.max(48, length * 6.8));
 };
 
 const TidyTreeView = ({
@@ -51,6 +51,9 @@ const TidyTreeView = ({
 
   // 드래그 미리보기 상태
   const [dragPreview, setDragPreview] = useState(null);
+  
+  // 호버 상태
+  const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
   // Measure text width using canvas
   const getTextWidth = (text) => {
@@ -71,7 +74,7 @@ const TidyTreeView = ({
       cache.set(text, approx);
       return approx;
     }
-    ctx.font = "10px sans-serif";
+    ctx.font = "11px sans-serif";
     const measured = Math.ceil(ctx.measureText(text).width);
     cache.set(text, measured);
     return measured;
@@ -98,6 +101,34 @@ const TidyTreeView = ({
     () => d3.linkHorizontal().x((point) => point.y).y((point) => point.x),
     [],
   );
+
+  // 부모 관계 맵 생성
+  const parentById = useMemo(() => {
+    const map = new Map();
+    if (!layout?.nodes) return map;
+    layout.nodes.forEach((node) => {
+      if (node.parent) {
+        map.set(node.data.id, node.parent.data.id);
+      }
+    });
+    return map;
+  }, [layout?.nodes]);
+
+  // 호버된 노드의 조상 체인 계산
+  const hoveredAncestorIds = useMemo(() => {
+    if (!hoveredNodeId) {
+      return new Set();
+    }
+    const result = new Set();
+    let currentId = hoveredNodeId;
+    while (currentId) {
+      result.add(currentId);
+      currentId = parentById.get(currentId);
+    }
+    return result;
+  }, [hoveredNodeId, parentById]);
+  
+  const isHighlightMode = hoveredAncestorIds.size > 0;
 
   // 컴포넌트 언마운트 시 드래그 상태 정리
   useEffect(() => {
@@ -291,13 +322,13 @@ const TidyTreeView = ({
   }, [activeTreeId]);
 
   const isLightTheme = theme === "light";
-  const linkStroke = isLightTheme ? "rgba(71, 85, 105, 0.45)" : "rgba(148, 163, 184, 0.55)";
-  const labelColor = isLightTheme ? "#0f172a" : "rgba(248, 250, 252, 0.92)";
+  const linkStroke = isLightTheme ? "rgba(100, 116, 139, 0.95)" : "rgba(148, 163, 184, 0.95)";
+  const labelColor = isLightTheme ? "#0f172a" : "#e2e8f0";
   const labelStroke = isLightTheme ? "rgba(255, 255, 255, 0.9)" : "rgba(15, 23, 42, 0.7)";
-  const parentFill = isLightTheme ? "#1f2937" : "rgba(226, 232, 240, 0.85)";
-  const leafFill = isLightTheme ? "#64748b" : "rgba(148, 163, 184, 0.82)";
-  const baseStroke = isLightTheme ? "rgba(15, 23, 42, 0.3)" : "rgba(255, 255, 255, 0.25)";
-  const selectionStroke = isLightTheme ? "rgba(0, 0, 0, 0.8)" : "rgba(226, 232, 240, 0.75)";
+  const parentFill = isLightTheme ? "rgba(59, 130, 246, 0.88)" : "rgba(125, 211, 252, 0.95)";
+  const leafFill = isLightTheme ? "rgba(148, 163, 184, 0.88)" : "rgba(148, 163, 184, 0.92)";
+  const baseStroke = isLightTheme ? "rgba(59, 130, 246, 0.3)" : "rgba(125, 211, 252, 0.3)";
+  const selectionStroke = isLightTheme ? "rgba(37, 99, 235, 0.9)" : "rgba(125, 211, 252, 0.9)";
 
   const handleNodeActivate = (node) => {
     if (typeof onNodeClick === "function" && node?.data?.id) {
@@ -459,7 +490,7 @@ const TidyTreeView = ({
           width: "100%",
           height: "100%",
           maxWidth: "100%",
-          font: "10px sans-serif",
+          font: "11px sans-serif",
           cursor: isZooming ? "grabbing" : "grab",
           touchAction: "none",
         }}
@@ -473,21 +504,44 @@ const TidyTreeView = ({
           }
         }}
       >
+        <defs>
+          <style>
+            {`
+              @keyframes pulse {
+                0%, 100% {
+                  opacity: 0.6;
+                  transform: scale(1);
+                }
+                50% {
+                  opacity: 0.3;
+                  transform: scale(1.15);
+                }
+              }
+            `}
+          </style>
+        </defs>
         <g transform={transformString}>
           <g
             ref={linksGroupRef}
             fill="none"
-            stroke={linkStroke}
-            strokeOpacity={0.6}
-            strokeWidth={1.5}
           >
             {layout.links.map((link) => {
               const linkKey = `${link.source.data.id}->${link.target.data.id}`;
+              const linkSourceId = link.source.data.id;
+              const linkTargetId = link.target.data.id;
+              const isHighlightedLink = !isHighlightMode
+                || (hoveredAncestorIds.has(linkTargetId)
+                  && parentById.get(linkTargetId) === linkSourceId);
+              const linkOpacity = isHighlightedLink ? 1 : 0.15;
+              
               return (
                 <path
                   key={linkKey}
                   data-link-key={linkKey}
                   d={linkGenerator(link)}
+                  stroke={linkStroke}
+                  strokeOpacity={linkOpacity}
+                  strokeWidth={1.8}
                   vectorEffect="non-scaling-stroke"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -497,7 +551,10 @@ const TidyTreeView = ({
                     event.stopPropagation();
                     handleNodeActivate(link.target);
                   }}
-                  style={{ cursor: "pointer" }}
+                  style={{ 
+                    cursor: "pointer",
+                    transition: "stroke-opacity 120ms ease",
+                  }}
                 />
               );
             })}
@@ -520,11 +577,17 @@ const TidyTreeView = ({
               const opacity = previewNode ? previewNode.opacity : 1.0;
 
               const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+              const isRootNode = node.depth === 0;
               const isSelected = selectedNodeId && node.data.id === selectedNodeId;
+              const isHovered = hoveredNodeId === node.data.id;
+              const isNodeHighlighted = node.data.id ? hoveredAncestorIds.has(node.data.id) : false;
+              const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
+              const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
+              
               const labelText = typeof node.data?.name === "string" ? node.data.name : "";
               const measuredWidth = getTextWidth(labelText);
               const hitboxPaddingY = 6;
-              const baseRadius = isSelected ? 4 : 3;
+              const baseRadius = isSelected ? 4 : (isHovered ? 4.2 : 3);
               const interactiveRadius = baseRadius + 3;
               const labelSpacing = 8;
               const textWidth = Math.max(0, measuredWidth);
@@ -545,7 +608,7 @@ const TidyTreeView = ({
                   key={node.data.id}
                   data-node-id={node.data.id}
                   transform={`translate(${displayX},${displayY})`}
-                  opacity={opacity}
+                  opacity={opacity * nodeOpacity}
                   data-node-interactive="true"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -556,11 +619,13 @@ const TidyTreeView = ({
                     handleNodeActivate(node);
                   }}
                   onMouseDown={(event) => beginDrag(event, node)}
+                  onMouseEnter={() => setHoveredNodeId(node.data.id)}
+                  onMouseLeave={() => setHoveredNodeId((current) => (current === node.data.id ? null : current))}
                   style={{
                     cursor: onNodeClick ? "pointer" : "default",
                     transition: previewNode
                       ? "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease-out"
-                      : "none",
+                      : "opacity 120ms ease",
                   }}
                 >
                   <rect
@@ -582,21 +647,52 @@ const TidyTreeView = ({
                     vectorEffect="non-scaling-stroke"
                     style={{ pointerEvents: "all" }}
                   />
+                  {isHovered && (
+                    <circle
+                      fill="none"
+                      stroke={hasChildren ? parentFill : leafFill}
+                      strokeWidth={1.2}
+                      r={baseRadius + 3.5}
+                      strokeOpacity={0.6}
+                      vectorEffect="non-scaling-stroke"
+                      style={{
+                        animation: 'pulse 1.5s ease-in-out infinite',
+                      }}
+                    />
+                  )}
+                  {isHovered && (
+                    <circle
+                      fill={hasChildren ? parentFill : leafFill}
+                      r={baseRadius + 1.5}
+                      fillOpacity={0.3}
+                      vectorEffect="non-scaling-stroke"
+                      style={{
+                        transition: 'all 200ms ease',
+                      }}
+                    />
+                  )}
                   <circle
                     fill={hasChildren ? parentFill : leafFill}
                     r={baseRadius}
                     stroke={isSelected ? selectionStroke : baseStroke}
                     strokeWidth={isSelected ? 2 : 1}
                     vectorEffect="non-scaling-stroke"
+                    style={{
+                      transition: 'all 200ms ease',
+                    }}
                   />
                   <text
                     dy="0.31em"
                     x={hasChildren ? -8 : 8}
                     textAnchor={hasChildren ? "end" : "start"}
                     fill={labelColor}
-                    stroke={labelStroke}
-                    strokeWidth={2}
-                    paintOrder="stroke"
+                    fillOpacity={isHovered ? 1 : textOpacity}
+                    style={{
+                      fontFamily: 'sans-serif',
+                      fontSize: isRootNode ? 13 : (isHovered ? 12 : 11),
+                      fontWeight: isRootNode ? 700 : (isHovered ? 600 : 400),
+                      transition: 'all 200ms ease',
+                    }}
                   >
                     {labelText}
                   </text>

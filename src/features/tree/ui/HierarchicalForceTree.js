@@ -54,7 +54,7 @@ import {
 const TIDY_ASSISTANT_PANEL_RATIO = 0.38;
 const TIDY_ASSISTANT_PANEL_MIN_WIDTH = 360;
 const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
-const TIDY_ASSISTANT_PANEL_GAP = 24;
+const TIDY_ASSISTANT_PANEL_GAP = 0;
 
 const HierarchicalForceTree = () => {
   const { user } = useSupabaseAuth();
@@ -109,7 +109,7 @@ const HierarchicalForceTree = () => {
   const currentTheme = themeColors[theme] || themeColors.glass;
 
   const svgRef = useRef(null);
-  const { dimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
+  const { dimensions: baseDimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
   const [isHandleMenuOpen, setIsHandleMenuOpen] = useState(false);
   const handleMenuRef = useRef(null);
   const handleMenuButtonRef = useRef(null);
@@ -826,7 +826,7 @@ const HierarchicalForceTree = () => {
     return safeAllNodes.find((node) => node.id === expandedNodeId) || null;
   }, [expandedNodeId, visibleGraph.nodes, data.nodes]);
 
-  const viewportWidth = Number.isFinite(dimensions?.width) ? dimensions.width : null;
+  const viewportWidth = Number.isFinite(baseDimensions?.width) ? baseDimensions.width : null;
   const clampTidyPanelWidth = useCallback((rawWidth) => {
     const safeRaw = Number.isFinite(rawWidth) ? rawWidth : TIDY_ASSISTANT_PANEL_MIN_WIDTH;
     const minWidth = TIDY_ASSISTANT_PANEL_MIN_WIDTH;
@@ -836,7 +836,7 @@ const HierarchicalForceTree = () => {
     const maxWidth = Math.max(minWidth, Math.min(TIDY_ASSISTANT_PANEL_MAX_WIDTH, viewportAllowance));
     return Math.max(minWidth, Math.min(safeRaw, maxWidth));
   }, [viewportWidth]);
-  const tidyAssistantPanelVisible = isTidyView && Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
+  const tidyAssistantPanelVisible = Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
   const tidyAssistantDefaultWidth = useMemo(() => {
     const referenceWidth = viewportWidth && viewportWidth > 0
       ? viewportWidth * TIDY_ASSISTANT_PANEL_RATIO
@@ -849,6 +849,15 @@ const HierarchicalForceTree = () => {
   const tidyAssistantPanelOffset = tidyAssistantPanelVisible
     ? tidyAssistantPanelWidth + TIDY_ASSISTANT_PANEL_GAP
     : 0;
+  
+  // 패널이 열렸을 때 뷰포트 크기 조정
+  const dimensions = useMemo(() => {
+    if (!baseDimensions) return baseDimensions;
+    return {
+      ...baseDimensions,
+      width: Math.max(320, (baseDimensions.width || 0) - tidyAssistantPanelOffset),
+    };
+  }, [baseDimensions, tidyAssistantPanelOffset]);
   const tidyAssistantAttachments = useMemo(() => {
     if (!expandedNodeId) {
       return [];
@@ -2589,32 +2598,43 @@ const HierarchicalForceTree = () => {
       )}
 
       {isForceView && (
-        <ForceDirectedTree
-          data={data}
-          dimensions={dimensions}
-          onNodeClick={handleNodeClickForAssistant}
-          onNodeRemove={removeNodeAndDescendants}
-          onNodeUpdate={handleNodeUpdate}
-          onMemoCreate={handleMemoCreate}
-          onMemoUpdate={handleMemoUpdate}
-          onNodeCreate={handleManualNodeCreate}
-          onLinkCreate={handleManualLinkCreate}
-          onRootCreate={handleManualRootCreate}
-          treeId={activeTreeId}
-          userId={user?.id}
-          questionService={questionService.current}
-          getInitialConversation={getInitialConversationForNode}
-          onConversationChange={handleConversationChange}
-          onRequestAnswer={handleRequestAnswer}
-          onAnswerComplete={handleAnswerComplete}
-          onAnswerError={handleAnswerError}
-          onSecondQuestion={handleSecondQuestion}
-          onPlaceholderCreate={handlePlaceholderCreate}
-          theme={theme}
-          isForceSimulationEnabled={isForceSimulationEnabled}
-          attachmentsByNode={pendingAttachmentsByNode}
-          onNodeAttachmentsChange={setAttachmentsForNode}
-        />
+        <div
+          className="absolute inset-0"
+          style={{
+            right: tidyAssistantPanelOffset,
+            transition: 'right 200ms ease-in-out',
+          }}
+        >
+          <ForceDirectedTree
+            data={data}
+            dimensions={dimensions}
+            onNodeClick={handleNodeClickForAssistant}
+            onNodeRemove={removeNodeAndDescendants}
+            onNodeUpdate={handleNodeUpdate}
+            onMemoCreate={handleMemoCreate}
+            onMemoUpdate={handleMemoUpdate}
+            onNodeCreate={handleManualNodeCreate}
+            onLinkCreate={handleManualLinkCreate}
+            onRootCreate={handleManualRootCreate}
+            treeId={activeTreeId}
+            userId={user?.id}
+            questionService={questionService.current}
+            getInitialConversation={getInitialConversationForNode}
+            onConversationChange={handleConversationChange}
+            onRequestAnswer={handleRequestAnswer}
+            onAnswerComplete={handleAnswerComplete}
+            onAnswerError={handleAnswerError}
+            onSecondQuestion={handleSecondQuestion}
+            onPlaceholderCreate={handlePlaceholderCreate}
+            theme={theme}
+            isForceSimulationEnabled={isForceSimulationEnabled}
+            attachmentsByNode={pendingAttachmentsByNode}
+            onNodeAttachmentsChange={setAttachmentsForNode}
+            hideAssistantPanel={true}
+            selectedNodeId={selectedNodeId}
+            onBackgroundClick={collapseAssistantPanel}
+          />
+        </div>
       )}
 
       {isTidyView && (
