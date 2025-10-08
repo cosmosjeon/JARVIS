@@ -206,9 +206,7 @@ export default function ChatMessageList({
                     ? 'rgba(0, 0, 0, 0.05)'
                     : 'rgba(255, 255, 255, 0.08)',
                   borderColor: resolvedPanelStyles.borderColor,
-                  color: isLightTheme
-                    ? 'rgba(0, 0, 0, 0.9)'
-                    : 'rgba(255, 255, 255, 0.92)',
+                  color: resolvedPanelStyles.textColor,
                 }}
               >
                 {hasText ? (

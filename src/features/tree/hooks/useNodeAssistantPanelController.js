@@ -50,6 +50,7 @@ const buildPanelStyles = (theme) => {
 export const useNodeAssistantPanelController = ({
   node,
   summary,
+  theme = 'glass',
   onSizeChange,
   onSecondQuestion,
   onPlaceholderCreate,
@@ -75,7 +76,6 @@ export const useNodeAssistantPanelController = ({
   onAttachmentsChange = () => {},
 }) => {
   const { autoPasteEnabled } = useSettings();
-  const { theme } = useTheme();
 
   const navigationServiceRef = useRef(injectedNavigationService ?? new NodeNavigationService());
   const highlightStoreRef = useRef(injectedHighlightStore ?? new HighlightSelectionStore());

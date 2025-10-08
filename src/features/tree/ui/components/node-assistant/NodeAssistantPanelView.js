@@ -138,7 +138,7 @@ const NodeAssistantPanelView = ({
           <button
             type="button"
             onClick={onClearAttachments}
-            className="flex h-10 items-center justify-center rounded-lg border border-dashed px-3 text-[11px] font-medium text-slate-100/80 transition hover:bg-white/10"
+            className="flex h-10 items-center justify-center rounded-lg border border-dashed px-3 text-[11px] font-medium transition hover:bg-white/10"
             style={{
               borderColor: panelStyles.borderColor,
               color: panelStyles.textColor,
@@ -232,15 +232,13 @@ const NodeAssistantPanelView = ({
           placeholder="Ask anything..."
           data-node-assistant-composer="true"
           className={`max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm focus:outline-none ${
-            theme === 'light' || theme === 'glass'
-              ? 'placeholder:text-gray-500'
-              : 'placeholder:text-gray-400'
+            theme === 'dark'
+              ? 'placeholder:text-gray-400'
+              : 'placeholder:text-gray-500'
           }`}
           style={{
             pointerEvents: 'auto',
-            color: theme === 'light' || theme === 'glass'
-              ? 'rgba(0, 0, 0, 0.9)'
-              : 'rgba(255, 255, 255, 0.9)',
+            color: panelStyles.textColor,
             fontFamily: 'inherit',
             outline: 'none',
             border: 'none',
@@ -253,7 +251,11 @@ const NodeAssistantPanelView = ({
       </div>
       {placeholderNotice && (
         <span
-          className={`text-xs ${placeholderNotice.type === 'success' ? 'text-emerald-200' : 'text-amber-200'} whitespace-nowrap`}
+          className={`text-xs whitespace-nowrap ${
+            placeholderNotice.type === 'success' 
+              ? (theme === 'dark' ? 'text-emerald-200' : 'text-emerald-600')
+              : (theme === 'dark' ? 'text-amber-200' : 'text-amber-600')
+          }`}
         >
           {placeholderNotice.message}
         </span>

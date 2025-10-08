@@ -2339,6 +2339,7 @@ const HierarchicalForceTree = () => {
               <NodeAssistantPanel
                 node={tidyAssistantNode}
                 color={d3.schemeCategory10[0]}
+                theme={theme}
                 onSizeChange={() => { }}
                 onSecondQuestion={handleSecondQuestion}
                 onPlaceholderCreate={handlePlaceholderCreate}
@@ -2676,6 +2677,7 @@ const HierarchicalForceTree = () => {
             <NodeAssistantPanel
               node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
               color={d3.schemeCategory10[0]}
+              theme={theme}
               onSizeChange={() => { }}
               onSecondQuestion={() => { }}
               onPlaceholderCreate={() => { }}

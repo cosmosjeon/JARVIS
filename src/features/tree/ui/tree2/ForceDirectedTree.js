@@ -673,6 +673,7 @@ const ForceDirectedTree = ({
           <NodeAssistantPanel
             node={selectedNodeDatum}
             color={selectedColor}
+            theme={theme}
             onSizeChange={() => { }}
             onSecondQuestion={onSecondQuestion}
             onPlaceholderCreate={onPlaceholderCreate}
