@@ -448,14 +448,14 @@ const TidyTreeView = ({
     };
   }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height]);
 
-  const isLightTheme = theme === "light";
-  const linkStroke = isLightTheme ? "rgba(100, 116, 139, 0.95)" : "rgba(148, 163, 184, 0.95)";
+  const isDarkTheme = theme === "dark";
+  const linkStroke = isDarkTheme ? "rgba(148, 163, 184, 0.95)" : "rgba(100, 116, 139, 0.95)";
   const labelColor = "#000000";
-  const labelStroke = isLightTheme ? "rgba(255, 255, 255, 0.9)" : "rgba(15, 23, 42, 0.7)";
-  const parentFill = isLightTheme ? "rgba(59, 130, 246, 0.88)" : "rgba(125, 211, 252, 0.95)";
-  const leafFill = isLightTheme ? "rgba(148, 163, 184, 0.88)" : "rgba(148, 163, 184, 0.92)";
-  const baseStroke = isLightTheme ? "rgba(59, 130, 246, 0.3)" : "rgba(125, 211, 252, 0.3)";
-  const selectionStroke = isLightTheme ? "rgba(37, 99, 235, 0.9)" : "rgba(125, 211, 252, 0.9)";
+  const labelStroke = isDarkTheme ? "rgba(15, 23, 42, 0.7)" : "rgba(255, 255, 255, 0.9)";
+  const parentFill = isDarkTheme ? "rgba(125, 211, 252, 0.95)" : "rgba(59, 130, 246, 0.88)";
+  const leafFill = isDarkTheme ? "rgba(148, 163, 184, 0.92)" : "rgba(148, 163, 184, 0.88)";
+  const baseStroke = isDarkTheme ? "rgba(125, 211, 252, 0.3)" : "rgba(59, 130, 246, 0.3)";
+  const selectionStroke = isDarkTheme ? "rgba(125, 211, 252, 0.9)" : "rgba(37, 99, 235, 0.9)";
 
   const handleNodeActivate = (node) => {
     if (typeof onNodeClick === "function" && node?.data?.id) {
