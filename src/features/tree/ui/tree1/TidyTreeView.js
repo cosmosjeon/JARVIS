@@ -60,6 +60,7 @@ const TidyTreeView = ({
   const clickTimerRef = useRef(null);
   const backgroundClickTimerRef = useRef(null);
   const recentDragEndRef = useRef(false);
+  const hasDragMovedRef = useRef(false);
 
   // 외부에서 selectedNodeId가 제공되면 사용, 아니면 내부 상태 사용
   // null이 아닌 값이 제공되거나, undefined가 아니고 null인 경우에는 외부 값 사용
@@ -354,6 +355,9 @@ const TidyTreeView = ({
 
     // 부모가 가상 루트이거나 일반 노드인 경우 모두 드래그 가능
     dragStateManager.startDrag(node, event.clientX, event.clientY, parent);
+    
+    // 드래그 이동 플래그 초기화
+    hasDragMovedRef.current = false;
 
     // 전역 마우스 이벤트 리스너 추가
     const handleGlobalMouseMove = (e) => handleDragMove(e);
@@ -391,6 +395,9 @@ const TidyTreeView = ({
 
     event.preventDefault();
     event.stopPropagation();
+
+    // 실제로 드래그 이동이 발생했음을 표시
+    hasDragMovedRef.current = true;
 
     const { node, parentNode } = dragState;
     const siblings = parentNode.children || [];
@@ -456,11 +463,15 @@ const TidyTreeView = ({
     dragStateManager.endDrag();
     setDragPreview(null);
 
-    // 드래그 직후 클릭 이벤트 방지
-    recentDragEndRef.current = true;
-    setTimeout(() => {
-      recentDragEndRef.current = false;
-    }, 100);
+    // 실제로 드래그 이동이 발생했을 때만 클릭 이벤트 방지
+    if (hasDragMovedRef.current) {
+      recentDragEndRef.current = true;
+      setTimeout(() => {
+        recentDragEndRef.current = false;
+      }, 100);
+    }
+    
+    hasDragMovedRef.current = false;
   };
 
   if (!layout) {
