@@ -133,6 +133,28 @@ const ForceDirectedTree = ({
     return new Map(data.nodes.map((node) => [node.id, node]));
   }, [data?.nodes]);
 
+  const layoutNodeById = useMemo(() => {
+    const map = new Map();
+    layout.nodes.forEach((node) => {
+      const id = resolveNodeId(node);
+      if (id) {
+        map.set(id, node);
+      }
+    });
+    return map;
+  }, [layout.nodes]);
+
+  const parentById = useMemo(() => {
+    const map = new Map();
+    layout.nodes.forEach((node) => {
+      const id = resolveNodeId(node);
+      if (!id) return;
+      const parentId = node.parent ? resolveNodeId(node.parent) : null;
+      map.set(id, parentId);
+    });
+    return map;
+  }, [layout.nodes]);
+
   const [viewTransform, setViewTransform] = useState(d3.zoomIdentity);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
@@ -236,7 +258,20 @@ const ForceDirectedTree = ({
   const nodeFill = useCallback((node) => resolveNodeColor(node), [resolveNodeColor]);
 
   const textFill = theme === 'dark' ? '#e2e8f0' : '#0f172a';
-  const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.7)' : 'rgba(148, 163, 184, 0.8)';
+  const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
+  const hoveredAncestorIds = useMemo(() => {
+    if (!hoveredNodeId) {
+      return new Set();
+    }
+    const result = new Set();
+    let currentId = hoveredNodeId;
+    while (currentId) {
+      result.add(currentId);
+      currentId = parentById.get(currentId);
+    }
+    return result;
+  }, [hoveredNodeId, parentById]);
+  const isHighlightMode = hoveredAncestorIds.size > 0;
 
   return (
     <div className="relative h-full w-full overflow-hidden" style={{ background }}>
@@ -247,12 +282,37 @@ const ForceDirectedTree = ({
         viewBox={[-width / 2, -height / 2, width, height].join(' ')}
         style={{ touchAction: 'pan-x pan-y pinch-zoom', cursor: 'grab' }}
       >
+        <defs>
+          <style>
+            {`
+              @keyframes pulse {
+                0%, 100% {
+                  opacity: 0.6;
+                  transform: scale(1);
+                }
+                50% {
+                  opacity: 0.3;
+                  transform: scale(1.15);
+                }
+              }
+            `}
+          </style>
+        </defs>
         <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
           <g fill="none">
             {layout.links.map((link, index) => {
               const targetDepth = link.target.depth || 0;
-              const strokeWidth = Math.max(0.55, 1.6 - targetDepth * 0.18);
-              const strokeOpacity = Math.max(0.18, 0.58 - targetDepth * 0.06);
+              const linkSourceId = resolveNodeId(link.source);
+              const linkTargetId = resolveNodeId(link.target);
+              const isHighlightedLink = !isHighlightMode
+                || (hoveredAncestorIds.has(linkTargetId)
+                  && parentById.get(linkTargetId) === linkSourceId);
+              const strokeWidth = isHighlightedLink
+                ? Math.max(0.75, 1.9 - targetDepth * 0.2)
+                : 0.6;
+              const strokeOpacity = isHighlightedLink
+                ? Math.max(0.35, 0.75 - targetDepth * 0.07)
+                : 0.18;
               return (
                 <path
                   key={`link-${index}`}
@@ -282,14 +342,11 @@ const ForceDirectedTree = ({
               const orientationFlip = node.x >= Math.PI;
               const textAnchor = node.x < Math.PI === isLeaf ? 'start' : 'end';
               const textOffset = node.x < Math.PI === isLeaf ? 8 : -8;
-              const labelWidth = estimateLabelWidth(label);
               const isHovered = hoveredNodeId === nodeId;
-              const underlineStart = textAnchor === 'start'
-                ? textOffset
-                : textOffset - labelWidth;
-              const underlineEnd = textAnchor === 'start'
-                ? textOffset + labelWidth
-                : textOffset;
+              const isNodeHighlighted = nodeId ? hoveredAncestorIds.has(nodeId) : false;
+              const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
+              const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
+              const circleOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.28) : 1;
 
               return (
                 <g
@@ -301,41 +358,59 @@ const ForceDirectedTree = ({
                     event.stopPropagation();
                     handleNodeClick(node);
                   }}
-                  style={{ cursor: 'pointer' }}
+                  style={{
+                    cursor: 'pointer',
+                    opacity: nodeOpacity,
+                    transition: 'opacity 120ms ease',
+                  }}
                 >
+                  {isHovered && (
+                    <circle
+                      fill="none"
+                      stroke={nodeFill(node)}
+                      strokeWidth={1.2}
+                      r={NODE_RADIUS + 3.5}
+                      strokeOpacity={0.6}
+                      style={{
+                        animation: 'pulse 1.5s ease-in-out infinite',
+                      }}
+                    />
+                  )}
+                  {isHovered && (
+                    <circle
+                      fill={nodeFill(node)}
+                      r={NODE_RADIUS + 1.5}
+                      fillOpacity={0.3}
+                      style={{
+                        transition: 'all 200ms ease',
+                      }}
+                    />
+                  )}
                   <circle
                     fill={nodeFill(node)}
-                    r={NODE_RADIUS}
+                    r={isHovered ? NODE_RADIUS * 1.4 : NODE_RADIUS}
+                    fillOpacity={circleOpacity}
+                    style={{
+                      transition: 'all 200ms ease',
+                    }}
                   />
                   {label ? (
-                    <>
-                      <text
-                        dy="0.31em"
-                        x={textOffset}
-                        textAnchor={textAnchor}
-                        transform={orientationFlip ? 'rotate(180)' : undefined}
-                        fill={textFill}
-                        style={{ fontFamily: 'sans-serif', fontSize: 11 }}
-                      >
-                        {label}
-                      </text>
-                      <line
-                        x1={underlineStart}
-                        x2={underlineEnd}
-                        y1={orientationFlip ? -6 : 6}
-                        y2={orientationFlip ? -6 : 6}
-                        stroke={textFill}
-                        strokeWidth={1}
-                        strokeOpacity={isHovered ? 0.9 : 0.6}
-                        strokeLinecap="round"
-                        strokeDasharray={labelWidth}
-                        strokeDashoffset={isHovered ? 0 : labelWidth}
-                        style={{
-                          transition: 'stroke-dashoffset 200ms ease',
-                          opacity: isHovered ? 1 : 0.85,
-                        }}
-                      />
-                    </>
+                    <text
+                      dy="0.31em"
+                      x={textOffset}
+                      textAnchor={textAnchor}
+                      transform={orientationFlip ? 'rotate(180)' : undefined}
+                      fill={textFill}
+                      fillOpacity={isHovered ? 1 : textOpacity}
+                      style={{
+                        fontFamily: 'sans-serif',
+                        fontSize: isHovered ? 12 : 11,
+                        fontWeight: isHovered ? 600 : 400,
+                        transition: 'all 200ms ease',
+                      }}
+                    >
+                      {label}
+                    </text>
                   ) : null}
                 </g>
               );
