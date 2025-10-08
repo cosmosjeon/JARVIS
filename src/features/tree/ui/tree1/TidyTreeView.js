@@ -355,7 +355,7 @@ const TidyTreeView = ({
 
     // 부모가 가상 루트이거나 일반 노드인 경우 모두 드래그 가능
     dragStateManager.startDrag(node, event.clientX, event.clientY, parent);
-    
+
     // 드래그 이동 플래그 초기화
     hasDragMovedRef.current = false;
 
@@ -470,7 +470,7 @@ const TidyTreeView = ({
         recentDragEndRef.current = false;
       }, 100);
     }
-    
+
     hasDragMovedRef.current = false;
   };
 

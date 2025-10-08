@@ -123,11 +123,21 @@ const ForceDirectedTree = ({
   const layout = useMemo(() => {
     const nodesArray = Array.isArray(data?.nodes) ? data.nodes : [];
     const linksArray = Array.isArray(data?.links) ? data.links : [];
+    console.log('[ForceDirectedTree] Layout calculation:', {
+      nodesCount: nodesArray.length,
+      linksCount: linksArray.length,
+      firstNode: nodesArray[0]
+    });
     const mappedHierarchy = DataTransformService.transformToHierarchy(
       nodesArray,
       linksArray,
     );
-    return buildRadialLayout(mappedHierarchy, baseRadius, levelSpacing);
+    const result = buildRadialLayout(mappedHierarchy, baseRadius, levelSpacing);
+    console.log('[ForceDirectedTree] Layout result:', {
+      layoutNodesCount: result.nodes.length,
+      hasRoot: !!result.root
+    });
+    return result;
   }, [data, baseRadius, levelSpacing]);
 
   const effectiveRadius = Math.max(baseRadius, layout.requiredRadius + levelSpacing);
@@ -444,6 +454,11 @@ const ForceDirectedTree = ({
                   }}
                   onClick={(event) => {
                     event.stopPropagation();
+                    console.log('[ForceDirectedTree] Node clicked:', {
+                      nodeId,
+                      isChatPanelOpen,
+                      datum: resolveNodeDatum(node)
+                    });
 
                     // 채팅창이 열려있으면 싱글 클릭만으로도 전환
                     if (isChatPanelOpen) {
