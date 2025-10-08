@@ -3,7 +3,7 @@ import { Plus, X } from 'lucide-react';
 import TreeSelectModal from './TreeSelectModal';
 import { useTreeSelection } from 'features/tree/hooks/useTreeSelection';
 
-const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => {
+const TreeTabBar = ({ theme, activeTreeId, activeTabId, tabs, onTabChange, onTabDelete }) => {
     const [contextMenu, setContextMenu] = useState({ open: false, tabId: null, x: 0, y: 0 });
     const [isSelectModalOpen, setIsSelectModalOpen] = useState(false);
 
@@ -27,11 +27,11 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
 
     const handleTabClick = (tab) => {
         if (onTabChange && tab?.id) {
-            onTabChange({ 
-                treeId: tab.treeId || tab.id, 
+            onTabChange({
+                treeId: tab.treeId || tab.id,
                 tabId: tab.id,
-                title: tab.title, 
-                isExistingTab: true 
+                title: tab.title,
+                isExistingTab: true
             });
         }
     };
@@ -80,7 +80,7 @@ const TreeTabBar = ({ theme, activeTreeId, tabs, onTabChange, onTabDelete }) => 
             {/* 트리 탭들 - 작은 원 형태 (숫자 없음) */}
             <div className="flex items-center gap-1">
                 {tabs.map((tab, index) => {
-                    const isActive = tab.id === activeTreeId;
+                    const isActive = tab.id === activeTabId;
                     return (
                         <button
                             key={tab.id}
