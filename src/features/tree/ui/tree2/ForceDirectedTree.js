@@ -60,7 +60,13 @@ const buildRadialLayout = (data, baseRadius, levelSpacing = 96) => {
     .size([2 * Math.PI, clusterRadius])(root);
 
   root.each((node) => {
-    node.y = node.depth * levelSpacing;
+    if (node.depth === 0) {
+      node.y = 0;
+    } else if (node.depth === 1) {
+      node.y = levelSpacing * 1.8;
+    } else {
+      node.y = levelSpacing * 1.8 + (node.depth - 1) * levelSpacing;
+    }
   });
 
   return {
@@ -337,11 +343,12 @@ const ForceDirectedTree = ({
                 || datum?.id,
               );
               const isLeaf = !node.children;
-              const rotation = (node.x * 180) / Math.PI - 90;
-              const translation = `translate(${node.y},0)`;
-              const orientationFlip = node.x >= Math.PI;
-              const textAnchor = node.x < Math.PI === isLeaf ? 'start' : 'end';
-              const textOffset = node.x < Math.PI === isLeaf ? 8 : -8;
+              const isRootNode = node.depth === 0;
+              const rotation = isRootNode ? 0 : (node.x * 180) / Math.PI - 90;
+              const translation = isRootNode ? 'translate(0,0)' : `translate(${node.y},0)`;
+              const orientationFlip = !isRootNode && node.x >= Math.PI;
+              const textAnchor = isRootNode ? 'middle' : (node.x < Math.PI === isLeaf ? 'start' : 'end');
+              const textOffset = isRootNode ? 0 : (node.x < Math.PI === isLeaf ? 8 : -8);
               const isHovered = hoveredNodeId === nodeId;
               const isNodeHighlighted = nodeId ? hoveredAncestorIds.has(nodeId) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
@@ -396,7 +403,7 @@ const ForceDirectedTree = ({
                   />
                   {label ? (
                     <text
-                      dy="0.31em"
+                      dy={isRootNode ? '1.5em' : '0.31em'}
                       x={textOffset}
                       textAnchor={textAnchor}
                       transform={orientationFlip ? 'rotate(180)' : undefined}
@@ -404,8 +411,8 @@ const ForceDirectedTree = ({
                       fillOpacity={isHovered ? 1 : textOpacity}
                       style={{
                         fontFamily: 'sans-serif',
-                        fontSize: isHovered ? 12 : 11,
-                        fontWeight: isHovered ? 600 : 400,
+                        fontSize: isRootNode ? 13 : (isHovered ? 12 : 11),
+                        fontWeight: isRootNode ? 700 : (isHovered ? 600 : 400),
                         transition: 'all 200ms ease',
                       }}
                     >
