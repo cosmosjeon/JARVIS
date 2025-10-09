@@ -9,14 +9,82 @@ import * as d3 from 'd3';
 import DataTransformService from 'features/tree/services/DataTransformService';
 import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
+import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
+import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
+import { motion } from 'framer-motion';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
-const MIN_ZOOM = 0.4;
+const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 4;
 const NODE_RADIUS = 2.6;
+const FOCUS_ANIMATION_DURATION = 620;
+const DEFAULT_FORCE_SCALE = 2.6;
+const FORCE_TARGET_X_RATIO = 0.5;
+const FORCE_TARGET_Y_RATIO = 0.5;
+const FULL_ROTATION = Math.PI * 2;
+const FORCE_ROTATION_DURATION = 360;
+
+const normalizeAngle = (angle) => {
+  if (!Number.isFinite(angle)) {
+    return 0;
+  }
+  const normalized = angle % FULL_ROTATION;
+  return normalized < 0 ? normalized + FULL_ROTATION : normalized;
+};
+
+const toCartesianFromRadial = (node) => {
+  const angle = (Number.isFinite(node?.x) ? node.x : 0) - Math.PI / 2;
+  const radius = Number.isFinite(node?.y) ? node.y : 0;
+  return [
+    Math.cos(angle) * radius,
+    Math.sin(angle) * radius,
+  ];
+};
 const sanitizeLabel = (value) => {
   if (typeof value !== 'string') return '';
   return value.trim();
+};
+
+const VIEWPORT_STORAGE_PREFIX = 'forceTreeView.viewTransform';
+
+const buildViewStorageKey = (treeKey) => `${VIEWPORT_STORAGE_PREFIX}.${treeKey}`;
+
+const readStoredViewTransform = (storageKey) => {
+  if (typeof window === 'undefined' || !storageKey) {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y) || !Number.isFinite(parsed?.k)) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+};
+
+const persistViewTransform = (storageKey, transform) => {
+  if (typeof window === 'undefined' || !storageKey || !transform) {
+    return;
+  }
+  try {
+    const payload = JSON.stringify({ x: transform.x, y: transform.y, k: transform.k });
+    window.localStorage.setItem(storageKey, payload);
+  } catch (error) {
+    // ignore persistence failures
+  }
+};
+
+const toZoomTransform = (rawTransform) => {
+  if (!rawTransform || !Number.isFinite(rawTransform.x) || !Number.isFinite(rawTransform.y) || !Number.isFinite(rawTransform.k)) {
+    return null;
+  }
+  return d3.zoomIdentity.translate(rawTransform.x, rawTransform.y).scale(rawTransform.k);
 };
 
 const resolveNodeDatum = (node) => {
@@ -103,6 +171,7 @@ const ForceDirectedTree = ({
   onPlaceholderCreate,
   onPanZoomGesture,
   theme = 'light',
+  background,
   hideAssistantPanel = false,
   attachmentsByNode = {},
   onNodeAttachmentsChange = () => { },
@@ -143,7 +212,7 @@ const ForceDirectedTree = ({
   const effectiveRadius = Math.max(baseRadius, layout.requiredRadius + levelSpacing);
   const width = Math.max(baseWidth, effectiveRadius * 2 + 160);
   const height = Math.max(baseHeight, effectiveRadius * 2 + 160);
-  const background = theme === 'glass' ? 'transparent' : (theme === 'dark' ? '#0f172a' : '#ffffff');
+  const resolvedBackground = background || resolveTreeBackground(theme);
 
   const nodeMap = useMemo(() => {
     if (!Array.isArray(data?.nodes)) {
@@ -184,6 +253,24 @@ const ForceDirectedTree = ({
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
   const questionServiceRef = useRef(questionService || new QuestionService());
+  const hasInitializedViewRef = useRef(false);
+  const lastViewTransformRef = useRef(d3.zoomIdentity);
+  const lastFitSignatureRef = useRef(null);
+  const viewStorageKeyRef = useRef(null);
+  const [globalRotationDeg, setGlobalRotationDeg] = useState(0);
+  const globalRotationRad = useMemo(() => (globalRotationDeg * Math.PI) / 180, [globalRotationDeg]);
+  const rotationTimeoutRef = useRef(null);
+
+  useEffect(() => () => {
+    if (rotationTimeoutRef.current !== null) {
+      clearTimeout(rotationTimeoutRef.current);
+      rotationTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    setGlobalRotationDeg(0);
+  }, [treeId]);
 
   useEffect(() => {
     if (questionService) {
@@ -191,6 +278,9 @@ const ForceDirectedTree = ({
     }
   }, [questionService]);
 
+  const resetToDefaultView = useCallback(() => {}, []);
+
+  // Zoom behavior 설정
   useEffect(() => {
     const svgElement = svgRef.current;
     if (!svgElement) {
@@ -201,14 +291,20 @@ const ForceDirectedTree = ({
       .scaleExtent([MIN_ZOOM, MAX_ZOOM])
       .on('zoom', (event) => {
         setViewTransform(event.transform);
+        lastViewTransformRef.current = event.transform;
         if (typeof onPanZoomGesture === 'function') {
           onPanZoomGesture(event.transform);
+        }
+        const storageKey = viewStorageKeyRef.current;
+        if (storageKey) {
+          persistViewTransform(storageKey, event.transform);
         }
       });
 
     const selection = d3.select(svgElement);
     selection.call(zoom);
-    selection.on('dblclick.zoom', null);
+
+    zoomBehaviorRef.current = zoom;
 
     zoomBehaviorRef.current = zoom;
 
@@ -216,7 +312,92 @@ const ForceDirectedTree = ({
       selection.on('.zoom', null);
       zoomBehaviorRef.current = null;
     };
-  }, [onPanZoomGesture]);
+  }, [onPanZoomGesture, resetToDefaultView]);
+
+  // 초기 로딩 시 전체 트리가 화면에 보이도록 설정
+  useEffect(() => {
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+
+    if (!svgElement || !zoom || !layout || layout.nodes.length === 0) {
+      return;
+    }
+
+    const rect = svgElement.getBoundingClientRect();
+    const viewportWidth = Number.isFinite(dimensions?.width) && dimensions.width > 0
+      ? dimensions.width
+      : (rect.width || baseWidth);
+    const viewportHeight = Number.isFinite(dimensions?.height) && dimensions.height > 0
+      ? dimensions.height
+      : (rect.height || baseHeight);
+
+    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0 || !Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+      return;
+    }
+
+    const treeKey = typeof treeId === 'string' && treeId.trim().length > 0 ? treeId : 'default';
+    const signature = [
+      treeKey,
+      viewportWidth.toFixed(2),
+      viewportHeight.toFixed(2),
+      layout.nodes.length,
+      layout.links.length,
+    ].join('|');
+
+    const storageKey = buildViewStorageKey(treeKey);
+    viewStorageKeyRef.current = storageKey;
+
+    const storedTransform = readStoredViewTransform(storageKey);
+    const storedZoom = toZoomTransform(storedTransform);
+
+    if (!hasInitializedViewRef.current || lastFitSignatureRef.current !== signature) {
+      let initialTransform = storedZoom;
+
+      if (!initialTransform) {
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        layout.nodes.forEach(node => {
+          const x = node.y * Math.cos(node.x - Math.PI / 2);
+          const y = node.y * Math.sin(node.x - Math.PI / 2);
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        });
+
+        const padding = 60;
+        const contentWidth = maxX - minX + padding * 2;
+        const contentHeight = maxY - minY + padding * 2;
+
+        const scale = Math.min(viewportWidth / contentWidth, viewportHeight / contentHeight, MAX_ZOOM);
+        const finalScale = Math.max(scale, MIN_ZOOM);
+
+        const contentCenterX = (minX + maxX) / 2;
+        const contentCenterY = (minY + maxY) / 2;
+
+        initialTransform = d3.zoomIdentity
+          .translate(viewportWidth / 2 - contentCenterX * finalScale, viewportHeight / 2 - contentCenterY * finalScale)
+          .scale(finalScale);
+      }
+
+      const selection = d3.select(svgElement);
+      selection
+        .transition()
+        .duration(0)
+        .call(zoom.transform, initialTransform);
+
+      setViewTransform(initialTransform);
+      lastViewTransformRef.current = initialTransform;
+      hasInitializedViewRef.current = true;
+      lastFitSignatureRef.current = signature;
+      if (!storedZoom && storageKey) {
+        persistViewTransform(storageKey, initialTransform);
+      }
+    }
+  }, [layout, baseWidth, baseHeight, dimensions?.width, dimensions?.height, treeId, onPanZoomGesture]);
 
   const radialLink = useMemo(
     () => d3.linkRadial()
@@ -249,17 +430,211 @@ const ForceDirectedTree = ({
     ? resolveNodeColor(selectedHierarchyNode)
     : (theme === 'dark' ? '#38bdf8' : '#2563eb');
 
+  const viewportDimensions = useMemo(() => ({
+    width: Number.isFinite(dimensions?.width) ? dimensions.width : width,
+    height: Number.isFinite(dimensions?.height) ? dimensions.height : height,
+  }), [dimensions?.width, dimensions?.height, width, height]);
+
+  const focusNodeById = useCallback((nodeId, options = {}) => {
+    if (!nodeId) {
+      return;
+    }
+    const layoutNode = layoutNodeById.get(nodeId);
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+    if (!layoutNode || !svgElement || !zoom) {
+      return;
+    }
+
+    const [x, y] = toCartesianFromRadial(layoutNode);
+    const nodeAngleDeg = Number.isFinite(layoutNode?.x)
+      ? (layoutNode.x * 180) / Math.PI
+      : 90;
+    const targetRotationDeg = 90 - nodeAngleDeg;
+    setGlobalRotationDeg(targetRotationDeg);
+    const baseTransform = lastViewTransformRef.current || viewTransform;
+    const currentTransform = {
+      x: Number.isFinite(baseTransform?.x) ? baseTransform.x : viewTransform.x,
+      y: Number.isFinite(baseTransform?.y) ? baseTransform.y : viewTransform.y,
+      k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
+    };
+
+    const requestedScale = Number.isFinite(options.scale) ? options.scale : DEFAULT_FORCE_SCALE;
+    const targetScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, requestedScale));
+
+    const initialSvgRect = typeof svgElement.getBoundingClientRect === 'function'
+      ? svgElement.getBoundingClientRect()
+      : null;
+
+    const targetViewportWidth = Number.isFinite(initialSvgRect?.width)
+      ? initialSvgRect.width
+      : viewportDimensions.width;
+    const targetViewportHeight = Number.isFinite(initialSvgRect?.height)
+      ? initialSvgRect.height
+      : viewportDimensions.height;
+
+    const offsetX = Number.isFinite(targetViewportWidth)
+      ? targetViewportWidth * (FORCE_TARGET_X_RATIO - 0.5)
+      : 0;
+    const offsetY = Number.isFinite(targetViewportHeight)
+      ? targetViewportHeight * (FORCE_TARGET_Y_RATIO - 0.5)
+      : 0;
+
+    if (process.env.NODE_ENV !== 'production') {
+      const debugNode = layoutNode?.data ?? resolveNodeDatum(layoutNode);
+      const logPayload = {
+        phase: 'force-focus',
+        nodeId,
+        cartesian: { x, y },
+        polar: { angle: layoutNode?.x, radius: layoutNode?.y },
+        transformBefore: currentTransform,
+        requestedScale: options.scale,
+        appliedScale: targetScale,
+        nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
+        offset: { x: offsetX, y: offsetY },
+        viewport: {
+          width: targetViewportWidth,
+          height: targetViewportHeight,
+        },
+        targetRatio: { x: FORCE_TARGET_X_RATIO, y: FORCE_TARGET_Y_RATIO },
+      };
+
+      try {
+        const element = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          logPayload.boundingRect = {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+          };
+          const domMatrix = element.getCTM();
+          if (domMatrix) {
+            logPayload.ctm = {
+              e: domMatrix.e,
+              f: domMatrix.f,
+              a: domMatrix.a,
+              d: domMatrix.d,
+            };
+          }
+        }
+        const latestSvgRect = svgElement.getBoundingClientRect?.();
+        if (latestSvgRect) {
+          logPayload.svgRect = {
+            x: latestSvgRect.x,
+            y: latestSvgRect.y,
+            width: latestSvgRect.width,
+            height: latestSvgRect.height,
+          };
+          logPayload.targetCenter = {
+            x: latestSvgRect.x + latestSvgRect.width * FORCE_TARGET_X_RATIO,
+            y: latestSvgRect.y + latestSvgRect.height * FORCE_TARGET_Y_RATIO,
+          };
+        }
+      } catch (error) {
+        logPayload.error = error?.message;
+      }
+
+      // eslint-disable-next-line no-console
+      console.debug('[FocusDebug] force', logPayload);
+    }
+
+    const rotationRad = (targetRotationDeg * Math.PI) / 180;
+    const rotatedX = x * Math.cos(rotationRad) - y * Math.sin(rotationRad);
+    const rotatedY = x * Math.sin(rotationRad) + y * Math.cos(rotationRad);
+
+    const executeFocus = () => {
+      const selection = d3.select(svgElement);
+      focusNodeToCenterUtil({
+        node: { x: rotatedX, y: rotatedY },
+        svgElement,
+        zoomBehaviour: zoom,
+        dimensions: viewportDimensions,
+        viewTransform: currentTransform,
+        setViewTransform,
+        duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
+        scale: Number.isFinite(options.scale) ? options.scale : targetScale,
+        origin: 'center',
+        offset: { x: offsetX, y: offsetY },
+        allowScaleOverride: false,
+      })
+        .then(() => {
+          const targetElement = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
+          const latestSvgRect = svgElement.getBoundingClientRect?.();
+          if (!targetElement || !latestSvgRect) {
+            return;
+          }
+          const nodeRect = targetElement.getBoundingClientRect();
+          const transform = d3.zoomTransform(svgElement);
+          const centerX = nodeRect.x + nodeRect.width / 2;
+          const centerY = nodeRect.y + nodeRect.height / 2;
+          const targetX = latestSvgRect.x + latestSvgRect.width * FORCE_TARGET_X_RATIO;
+          const targetY = latestSvgRect.y + latestSvgRect.height * FORCE_TARGET_Y_RATIO;
+          const deltaX = centerX - targetX;
+          const deltaY = centerY - targetY;
+          if (!Number.isFinite(transform.k) || transform.k === 0) {
+            return;
+          }
+          if (Math.abs(deltaX) < 0.6 && Math.abs(deltaY) < 0.6) {
+            return;
+          }
+          const adjusted = transform.translate(-deltaX / transform.k, -deltaY / transform.k);
+          selection
+            .transition('force-focus-adjust')
+            .duration(240)
+            .ease(d3.easeCubicOut)
+            .call(zoom.transform, adjusted);
+        })
+        .catch(() => undefined);
+    };
+
+    if (rotationTimeoutRef.current !== null) {
+      clearTimeout(rotationTimeoutRef.current);
+      rotationTimeoutRef.current = null;
+    }
+
+    const rotationDelay = Number.isFinite(options.rotationDelay)
+      ? options.rotationDelay
+      : FORCE_ROTATION_DURATION;
+
+    setGlobalRotationDeg(targetRotationDeg);
+
+    if (rotationDelay <= 0 || typeof window === 'undefined') {
+      executeFocus();
+    } else {
+      rotationTimeoutRef.current = window.setTimeout(() => {
+        rotationTimeoutRef.current = null;
+        executeFocus();
+      }, rotationDelay);
+    }
+  }, [
+    layoutNodeById,
+    viewportDimensions,
+    viewTransform.x,
+    viewTransform.y,
+    viewTransform.k,
+    setViewTransform,
+    setGlobalRotationDeg,
+  ]);
+
   const handleNodeClick = useCallback((node) => {
     const datum = resolveNodeDatum(node);
     const nodeId = datum?.id;
     if (!nodeId) {
       return;
     }
+    const [cartesianX, cartesianY] = toCartesianFromRadial(layoutNodeById.get(nodeId) || node);
+    focusNodeById(nodeId);
     if (externalSelectedNodeId === undefined) {
       setInternalSelectedNodeId(nodeId);
     }
-    onNodeClick({ id: nodeId, node: datum });
-  }, [onNodeClick, externalSelectedNodeId]);
+    onNodeClick({
+      id: nodeId,
+      node: datum,
+      position: { x: cartesianX, y: cartesianY },
+    });
+  }, [focusNodeById, onNodeClick, externalSelectedNodeId, layoutNodeById]);
 
   const handleClosePanel = useCallback(() => {
     if (externalSelectedNodeId === undefined) {
@@ -278,12 +653,19 @@ const ForceDirectedTree = ({
     if (!targetId) {
       return;
     }
+    const layoutNode = layoutNodeById.get(targetId);
     const original = nodeMap.get(targetId) || target;
+    const [cartesianX, cartesianY] = toCartesianFromRadial(layoutNode);
+    focusNodeById(targetId);
     if (externalSelectedNodeId === undefined) {
       setInternalSelectedNodeId(targetId);
     }
-    onNodeClick({ id: targetId, node: original });
-  }, [nodeMap, onNodeClick, externalSelectedNodeId]);
+    onNodeClick({
+      id: targetId,
+      node: original,
+      position: { x: cartesianX, y: cartesianY },
+    });
+  }, [nodeMap, layoutNodeById, focusNodeById, onNodeClick, externalSelectedNodeId]);
 
   const handleAttachmentsChange = useCallback((nodeId, next) => {
     if (typeof onNodeAttachmentsChange === 'function') {
@@ -295,6 +677,8 @@ const ForceDirectedTree = ({
 
   const textFill = theme === 'dark' ? '#e2e8f0' : '#0f172a';
   const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
+  
+  // 클릭된 노드의 조상 체인 계산
   const clickedAncestorIds = useMemo(() => {
     if (!clickedNodeId) {
       return new Set();
@@ -307,10 +691,34 @@ const ForceDirectedTree = ({
     }
     return result;
   }, [clickedNodeId, parentById]);
-  const isHighlightMode = clickedAncestorIds.size > 0;
+  
+  // 호버된 노드의 조상 체인 계산
+  const hoveredAncestorIds = useMemo(() => {
+    if (!hoveredNodeId) {
+      return new Set();
+    }
+    const result = new Set();
+    let currentId = hoveredNodeId;
+    while (currentId) {
+      result.add(currentId);
+      currentId = parentById.get(currentId);
+    }
+    return result;
+  }, [hoveredNodeId, parentById]);
+  
+  // 클릭이나 호버가 있으면 하이라이트 모드
+  const isHighlightMode = clickedAncestorIds.size > 0 || hoveredAncestorIds.size > 0;
+  
+  // 통합된 조상 체인 (클릭 또는 호버)
+  const highlightedAncestorIds = useMemo(() => {
+    const combined = new Set();
+    clickedAncestorIds.forEach(id => combined.add(id));
+    hoveredAncestorIds.forEach(id => combined.add(id));
+    return combined;
+  }, [clickedAncestorIds, hoveredAncestorIds]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden" style={{ background }}>
+    <div className="relative h-full w-full overflow-hidden" style={{ background: resolvedBackground }}>
       <svg
         ref={svgRef}
         width={width}
@@ -346,6 +754,11 @@ const ForceDirectedTree = ({
                     .ease(d3.easeCubicInOut)
                     .call(zoom.transform, d3.zoomIdentity);
                 }
+                if (rotationTimeoutRef.current !== null) {
+                  clearTimeout(rotationTimeoutRef.current);
+                  rotationTimeoutRef.current = null;
+                }
+                setGlobalRotationDeg(0);
               }
             } else {
               // 싱글 클릭: 타이머 시작
@@ -391,34 +804,34 @@ const ForceDirectedTree = ({
           </style>
         </defs>
         <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
-          <g fill="none">
+          <motion.g
+            initial={false}
+            animate={{ rotate: globalRotationDeg }}
+            transition={{ duration: FORCE_ROTATION_DURATION / 1000, ease: [0.4, 0, 0.2, 1] }}
+            style={{ transformOrigin: '0px 0px' }}
+          >
+            <g fill="none">
             {layout.links.map((link, index) => {
-              const targetDepth = link.target.depth || 0;
               const linkSourceId = resolveNodeId(link.source);
               const linkTargetId = resolveNodeId(link.target);
               const isHighlightedLink = !isHighlightMode
-                || (clickedAncestorIds.has(linkTargetId)
+                || (highlightedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
-              const strokeWidth = isHighlightedLink
-                ? Math.max(0.75, 1.9 - targetDepth * 0.2)
-                : 0.6;
-              const strokeOpacity = isHighlightedLink
-                ? Math.max(0.35, 0.75 - targetDepth * 0.07)
-                : 0.18;
+              const strokeOpacity = isHighlightedLink ? 0.7 : 0.18;
               return (
                 <path
                   key={`link-${index}`}
                   d={radialLink(link)}
                   stroke={baseLinkColor}
-                  strokeWidth={strokeWidth}
+                  strokeWidth={1.2}
                   strokeOpacity={strokeOpacity}
                   strokeLinecap="round"
                 />
               );
             })}
-          </g>
+            </g>
 
-          <g strokeLinejoin="round" strokeWidth={3}>
+            <g strokeLinejoin="round" strokeWidth={3}>
             {layout.nodes.map((node) => {
               const datum = resolveNodeDatum(node);
               const nodeId = datum?.id;
@@ -432,11 +845,13 @@ const ForceDirectedTree = ({
               const isRootNode = node.depth === 0;
               const rotation = isRootNode ? 0 : (node.x * 180) / Math.PI - 90;
               const translation = isRootNode ? 'translate(0,0)' : `translate(${node.y},0)`;
-              const orientationFlip = !isRootNode && node.x >= Math.PI;
-              const textAnchor = isRootNode ? 'middle' : (node.x < Math.PI === isLeaf ? 'start' : 'end');
-              const textOffset = isRootNode ? 0 : (node.x < Math.PI === isLeaf ? 8 : -8);
+              const adjustedAngle = normalizeAngle(node.x + globalRotationRad);
+              const orientationFlip = !isRootNode && adjustedAngle >= Math.PI;
+              const isFrontSide = adjustedAngle < Math.PI;
+              const textAnchor = isRootNode ? 'middle' : (isFrontSide === isLeaf ? 'start' : 'end');
+              const textOffset = isRootNode ? 0 : (isFrontSide === isLeaf ? 8 : -8);
               const isHovered = hoveredNodeId === nodeId;
-              const isNodeHighlighted = nodeId ? clickedAncestorIds.has(nodeId) : false;
+              const isNodeHighlighted = nodeId ? highlightedAncestorIds.has(nodeId) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
               const circleOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.28) : 1;
@@ -444,6 +859,7 @@ const ForceDirectedTree = ({
               return (
                 <g
                   key={nodeId || `node-${node.x}-${node.y}`}
+                  data-node-id={nodeId || undefined}
                   transform={`rotate(${rotation}) ${translation}`}
                   onMouseEnter={() => setHoveredNodeId(nodeId)}
                   onMouseLeave={() => {
@@ -454,55 +870,11 @@ const ForceDirectedTree = ({
                   }}
                   onClick={(event) => {
                     event.stopPropagation();
-                    console.log('[ForceDirectedTree] Node clicked:', {
-                      nodeId,
-                      isChatPanelOpen,
-                      datum: resolveNodeDatum(node)
-                    });
 
-                    // 채팅창이 열려있으면 싱글 클릭만으로도 전환
-                    if (isChatPanelOpen) {
-                      setClickedNodeId(nodeId);
-                      setHoveredNodeId(nodeId);
-                      handleNodeClick(node);
-                      return;
-                    }
-
-                    // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
-                    if (clickTimerRef.current) {
-                      clearTimeout(clickTimerRef.current);
-                      clickTimerRef.current = null;
-                      // 더블 클릭: 하이라이트 효과 + 채팅창 열기
-                      setClickedNodeId(nodeId);
-                      setHoveredNodeId(nodeId);
-                      handleNodeClick(node);
-                    } else {
-                      // 싱글 클릭: 타이머 시작
-                      clickTimerRef.current = setTimeout(() => {
-                        const isCurrentlyClicked = clickedNodeId === nodeId;
-
-                        // 싱글 클릭: 부모 체인 하이라이트 + 호버 효과 + 테두리 표시 (채팅창은 열지 않음)
-                        setClickedNodeId(isCurrentlyClicked ? null : nodeId);
-                        setHoveredNodeId(isCurrentlyClicked ? null : nodeId);
-                        // 선택 상태 업데이트 (테두리 표시용, 채팅창은 열지 않음)
-                        const datum = resolveNodeDatum(node);
-                        const targetNodeId = datum?.id;
-                        if (targetNodeId) {
-                          // 상위 컴포넌트에 선택 상태 알림 (토글)
-                          if (externalSelectedNodeId === undefined) {
-                            setInternalSelectedNodeId(isCurrentlyClicked ? null : targetNodeId);
-                          } else {
-                            // 외부 상태 사용 시 onNodeClick 호출하여 상위에 알림 (채팅창은 열지 않음)
-                            onNodeClick({
-                              id: isCurrentlyClicked ? null : targetNodeId,
-                              node: datum,
-                              suppressPanelOpen: true
-                            });
-                          }
-                        }
-                        clickTimerRef.current = null;
-                      }, 250);
-                    }
+                    // 싱글 클릭으로 채팅창 열기/전환
+                    setClickedNodeId(nodeId);
+                    setHoveredNodeId(nodeId);
+                    handleNodeClick(node);
                   }}
                   style={{
                     cursor: 'pointer',
@@ -512,10 +884,13 @@ const ForceDirectedTree = ({
                 >
                   <circle
                     fill={nodeFill(node)}
-                    r={NODE_RADIUS}
+                    r={isHovered ? NODE_RADIUS * 1.6 : NODE_RADIUS}
                     fillOpacity={isHovered ? 1 : circleOpacity}
+                    stroke={isHovered ? 'rgba(59, 130, 246, 0.6)' : 'transparent'}
+                    strokeWidth={isHovered ? 1.2 : 0}
                     style={{
                       transition: 'all 200ms ease',
+                      filter: isHovered ? 'drop-shadow(0 0 3px rgba(59, 130, 246, 0.5))' : 'none',
                     }}
                   />
                   {label ? (
@@ -528,8 +903,8 @@ const ForceDirectedTree = ({
                       fillOpacity={isHovered ? 1 : textOpacity}
                       style={{
                         fontFamily: 'sans-serif',
-                        fontSize: isRootNode ? 13 : (isHovered ? 12 : 11),
-                        fontWeight: isRootNode ? 700 : (isHovered ? 600 : 400),
+                        fontSize: isHovered ? 13 : 11,
+                        fontWeight: isHovered ? 700 : 400,
                         transition: 'all 200ms ease',
                       }}
                     >
@@ -539,7 +914,8 @@ const ForceDirectedTree = ({
                 </g>
               );
             })}
-          </g>
+            </g>
+          </motion.g>
         </g>
       </svg>
 
@@ -548,6 +924,7 @@ const ForceDirectedTree = ({
           <NodeAssistantPanel
             node={selectedNodeDatum}
             color={selectedColor}
+            theme={theme}
             onSizeChange={() => { }}
             onSecondQuestion={onSecondQuestion}
             onPlaceholderCreate={onPlaceholderCreate}

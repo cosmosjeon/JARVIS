@@ -12,11 +12,18 @@ import {
   ChevronRight,
   Folder as FolderIcon,
   GitBranch,
+  MessageSquare,
   Monitor,
   Move,
-  Plus,
+  Network,
   Trash2,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from 'shared/ui/dropdown-menu';
 
 const FALLBACK_THEME_LABEL = '테마';
 
@@ -33,7 +40,8 @@ const LibrarySidebar = ({
   dragOverVoranBox,
   onManageVoranBox,
   onCreateFolder,
-  onCreateTree,
+  onCreateTreeWidget,
+  onCreateTreeInApp,
   onCycleTheme = () => {},
   onRefresh = () => {},
   onSignOut = () => {},
@@ -142,9 +150,10 @@ const LibrarySidebar = ({
   return (
     <aside
       className={cn(
-        'relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
+        'library-sidebar relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
         collapsed ? 'w-[60px]' : 'w-[240px]',
       )}
+      style={{ WebkitAppRegion: 'drag' }}
       aria-expanded={!collapsed}
     >
       {collapsed ? (
@@ -184,19 +193,52 @@ const LibrarySidebar = ({
                   </span>
                   <span className="text-xs text-muted-foreground">+</span>
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-xs font-medium shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
-                  onClick={onCreateTree}
-                  disabled={!canCreateTree || isLoading}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <GitBranch className="h-3.5 w-3.5" />
-                    <span className="truncate">새 트리</span>
-                  </span>
-                  <span className="text-xs text-muted-foreground">+</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-xs font-medium shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
+                      disabled={!canCreateTree || isLoading}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <GitBranch className="h-3.5 w-3.5" />
+                        <span className="truncate">새 트리</span>
+                      </span>
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-48">
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onCreateTreeWidget?.();
+                      }}
+                      disabled={!canCreateTree || isLoading}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <Monitor className="h-3.5 w-3.5" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">위젯으로 생성</span>
+                        <span className="text-[11px] text-muted-foreground">현재처럼 독립 위젯에서 시작</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onCreateTreeInApp?.();
+                      }}
+                      disabled={!canCreateTree || isLoading}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">라이브러리에서 생성</span>
+                        <span className="text-[11px] text-muted-foreground">앱 중앙에서 바로 질문 시작</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               {folders.map((folder) => {
@@ -365,7 +407,7 @@ const LibrarySidebar = ({
                             isDragging && 'opacity-60',
                           )}
                         >
-                          <Monitor
+                          <Network
                             className={cn(
                               'h-3.5 w-3.5 text-muted-foreground transition-colors',
                               (isActiveTree || isSelectedInNav) && 'text-primary',

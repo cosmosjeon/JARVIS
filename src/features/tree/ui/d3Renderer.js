@@ -99,6 +99,9 @@ export const focusNodeToCenter = ({
   setViewTransform,
   duration = 620,
   scale: requestedScale,
+  allowScaleOverride = true,
+  origin = 'top-left',
+  offset,
 }) => {
   if (!node || !svgElement) {
     return Promise.resolve();
@@ -121,15 +124,28 @@ export const focusNodeToCenter = ({
   const nodeX = Number.isFinite(node.x) ? node.x : 0;
   const nodeY = Number.isFinite(node.y) ? node.y : 0;
   const currentScale = Number.isFinite(viewTransform?.k) ? viewTransform.k : 1;
-  const preferredScale = typeof requestedScale === 'number' ? requestedScale : Math.max(currentScale, 1);
+  const preferredScale = typeof requestedScale === 'number' ? requestedScale : (
+    allowScaleOverride ? Math.max(currentScale, 1) : currentScale
+  );
   const targetScale = Math.min(Math.max(preferredScale, 0.3), 4);
 
-  const translateX = (width / 2) - (nodeX * targetScale);
-  const translateY = (height / 2) - (nodeY * targetScale);
-  const nextTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+  const offsetX = Number.isFinite(offset?.x) ? offset.x : 0;
+  const offsetY = Number.isFinite(offset?.y) ? offset.y : 0;
+
+  let nextTransform;
+  if (origin === 'center') {
+    nextTransform = d3.zoomIdentity
+      .translate(offsetX, offsetY)
+      .scale(targetScale)
+      .translate(-nodeX, -nodeY);
+  } else {
+    const translateX = (width / 2) - (nodeX * targetScale) + offsetX;
+    const translateY = (height / 2) - (nodeY * targetScale) + offsetY;
+    nextTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+  }
 
   if (!zoomBehaviour) {
-    setViewTransform({ x: translateX, y: translateY, k: targetScale });
+    setViewTransform({ x: nextTransform.x, y: nextTransform.y, k: targetScale });
     return Promise.resolve();
   }
 

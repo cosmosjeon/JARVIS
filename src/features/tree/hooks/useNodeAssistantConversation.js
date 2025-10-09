@@ -122,11 +122,27 @@ export const useNodeAssistantConversation = ({
       ? attachments.filter((item) => item && typeof item === 'object' && item.id)
       : [];
 
+    const isPlaceholderNode = node?.status === 'placeholder' || Boolean(node?.placeholder);
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.debug('[useNodeAssistantConversation] sendResponse', {
+        nodeId: node?.id,
+        nodeStatus: node?.status,
+        hasPlaceholderMeta: Boolean(node?.placeholder),
+        isPlaceholderNode,
+        messageCount: messages.length,
+      });
+    }
+
     let shouldCreateChild = false;
     if (!skipSecondQuestionCheck) {
-      shouldCreateChild = resolvedIsRootNode
-        ? questionServiceRef.current.incrementQuestionCount(node.id)
-        : true;
+      if (isPlaceholderNode) {
+        shouldCreateChild = false;
+      } else if (resolvedIsRootNode) {
+        shouldCreateChild = questionServiceRef.current.incrementQuestionCount(node.id);
+      } else {
+        shouldCreateChild = true;
+      }
     }
 
     const timestamp = Date.now();
@@ -135,11 +151,13 @@ export const useNodeAssistantConversation = ({
 
     const isFirstQuestion = !messages.some((m) => m.role === 'user');
 
-  if (isFirstQuestion) {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: userId,
+    if (isFirstQuestion || isPlaceholderNode) {
+      // 첫 질문이거나 플레이스홀더 상태에서는 현재 노드에서 답변을 받는다.
+      // (플레이스홀더 노드는 첫 답변 완료 후 상태가 갱신되며 이후 질문부터 자식 노드를 생성한다)
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: userId,
           role: 'user',
           text: questionText,
           attachments: sanitizedAttachments.length ? sanitizedAttachments : undefined,

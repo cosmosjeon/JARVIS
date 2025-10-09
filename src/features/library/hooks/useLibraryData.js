@@ -13,7 +13,9 @@ import {
   openWidgetForTree,
   cleanupEmptyTrees,
   isTrackingEmptyTree,
+  stopTrackingEmptyTree,
 } from 'features/tree/services/treeCreation';
+import { DEFAULT_TREE_CREATION_MODE, TREE_CREATION_MODES } from 'features/library/constants/creationModes';
 import { createLibraryBridge, createLoggerBridge } from 'infrastructure/electron/bridges';
 import {
   planTreeMoves,
@@ -144,7 +146,7 @@ export const useLibraryData = ({
     }
   }, [loggerBridge, refreshLibrary, user]);
 
-  const handleCreateTree = useCallback(async () => {
+  const handleCreateTree = useCallback(async ({ mode = DEFAULT_TREE_CREATION_MODE } = {}) => {
     if (!user) {
       return null;
     }
@@ -153,7 +155,11 @@ export const useLibraryData = ({
       const newTree = await createTreeForUser({ userId: user.id });
       setTrees((prev) => mergeTreeList(prev, newTree));
       selectTree?.(newTree.id);
-      await openWidgetForTree({ treeId: newTree.id, fresh: true });
+      if (mode === TREE_CREATION_MODES.WIDGET) {
+        await openWidgetForTree({ treeId: newTree.id, fresh: true });
+      } else if (mode === TREE_CREATION_MODES.LIBRARY_APP) {
+        stopTrackingEmptyTree(newTree.id);
+      }
       libraryBridge.requestLibraryRefresh?.();
       return newTree;
     } catch (err) {

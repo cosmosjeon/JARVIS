@@ -37,13 +37,24 @@ const AssistantPanelHeader = ({
         <div className="group relative">
           <button
             type="button"
-            className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300/20 bg-slate-100/10 text-xs font-medium text-slate-300 hover:bg-slate-100/20 transition-colors"
+            className="flex h-5 w-5 items-center justify-center rounded-full border bg-slate-100/10 text-xs font-medium hover:bg-slate-100/20 transition-colors"
+            style={{
+              borderColor: panelStyles.borderColor,
+              color: panelStyles.textColor,
+            }}
             data-block-pan="true"
           >
             ?
           </button>
           <div className="absolute left-full top-full ml-2 mt-1 hidden w-64 transform group-hover:block z-50">
-            <div className="rounded-lg bg-slate-800/95 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur-sm border border-slate-600/30">
+            <div
+              className="rounded-lg px-3 py-2 text-xs shadow-lg backdrop-blur-sm border"
+              style={{
+                backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 0.95)' : 'rgba(51, 65, 85, 0.95)',
+                color: theme === 'dark' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(241, 245, 249, 0.95)',
+                borderColor: theme === 'dark' ? 'rgba(71, 85, 105, 0.3)' : 'rgba(148, 163, 184, 0.3)',
+              }}
+            >
               <p className="mb-1">이 영역을 드래그해서 트리 화면을 이동할 수 있습니다.</p>
               {!disableNavigation && (
                 <p>↑↓ 부모/자식 노드 이동 | ←→ 형제 노드 이동</p>

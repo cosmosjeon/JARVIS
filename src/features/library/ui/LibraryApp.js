@@ -1,10 +1,18 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import LibrarySidebar from './LibrarySidebar';
 import LibraryContent from './LibraryContent';
 import VoranBoxManager from './components/VoranBoxManager';
 import CreateDialog from './components/CreateDialog';
 import LibraryWindowTitleBar from './components/LibraryWindowTitleBar';
 import useLibraryAppViewModel from 'features/library/hooks/useLibraryAppViewModel';
+
+const TOP_DRAG_ZONE_HEIGHT = 16;
+const getPlatform = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return window.jarvisAPI?.process?.platform || null;
+};
 
 const LibraryApp = () => {
   const {
@@ -16,9 +24,21 @@ const LibraryApp = () => {
     handlers,
     dialog,
   } = useLibraryAppViewModel();
+  const platform = useMemo(() => getPlatform(), []);
+  const topDragOffset = platform === 'win32' ? 32 : 0;
 
   return (
     <div className="relative flex flex-col h-screen bg-background text-foreground overflow-hidden">
+      <div
+        className="absolute left-0 right-0"
+        style={{
+          top: topDragOffset,
+          height: TOP_DRAG_ZONE_HEIGHT,
+          WebkitAppRegion: 'drag',
+          zIndex: 15,
+          pointerEvents: 'none',
+        }}
+      />
       <LibraryWindowTitleBar />
       <div className="flex flex-1 overflow-hidden">
         <LibrarySidebar
@@ -35,7 +55,8 @@ const LibraryApp = () => {
           dragOverVoranBox={state.dragOverVoranBox}
           onManageVoranBox={handlers.showVoranBox}
           onCreateFolder={() => handlers.openCreateDialog('folder')}
-          onCreateTree={handlers.createTree}
+          onCreateTreeWidget={handlers.createTreeWidget}
+          onCreateTreeInApp={handlers.createTreeInApp}
           onCycleTheme={theme.cycle}
           onRefresh={handlers.refreshLibrary}
           onSignOut={signOut}
@@ -70,6 +91,10 @@ const LibraryApp = () => {
               selectedFolderId={state.selectedFolderId}
               folders={state.folders}
               selectedNode={state.selectedNode}
+              isQAPanelVisible={state.isQAPanelVisible}
+              libraryIntroTreeId={state.libraryIntroTreeId}
+              isLibraryIntroActive={state.isLibraryIntroActive}
+              onLibraryIntroComplete={handlers.completeLibraryIntro}
               onNodeSelect={handlers.nodeSelect}
               onNodeRemove={handlers.nodeRemove}
               onNodeUpdate={handlers.nodeUpdate}
@@ -78,6 +103,7 @@ const LibraryApp = () => {
               onMemoUpdate={handlers.memoUpdate}
               onMemoRemove={handlers.memoRemove}
               onTreeRename={handlers.renameTree}
+              onQAPanelClose={handlers.hideQAPanel}
             />
           </div>
         </main>

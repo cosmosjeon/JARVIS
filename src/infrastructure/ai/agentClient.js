@@ -17,29 +17,94 @@ const canUseFallback = () => {
   return Boolean(getFallbackApiKey());
 };
 
-const normalizeMessages = (messages) => {
-  if (!Array.isArray(messages)) {
+const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const normalizeContentPart = (part) => {
+  if (!part || typeof part !== 'object') {
+    return null;
+  }
+
+  const type = part.type;
+  if (type === 'input_text' || type === 'text') {
+    const text = toTrimmedString(part.text);
+    return text ? { type: 'input_text', text } : null;
+  }
+
+  if (type === 'input_image' || type === 'image_url' || type === 'image') {
+    const urlCandidate = typeof part.image_url?.url === 'string'
+      ? part.image_url.url
+      : typeof part.url === 'string'
+        ? part.url
+        : typeof part.dataUrl === 'string'
+          ? part.dataUrl
+          : '';
+    const url = toTrimmedString(urlCandidate);
+    return url ? { type: 'input_image', image_url: { url } } : null;
+  }
+
+  return null;
+};
+
+const extractTextFromMessage = (message) => {
+  const candidate = typeof message.content === 'string'
+    ? message.content
+    : typeof message.text === 'string'
+      ? message.text
+      : '';
+  return toTrimmedString(candidate);
+};
+
+const sanitizeAttachmentList = (attachments) => {
+  if (!Array.isArray(attachments)) {
     return [];
   }
-  return messages
-    .map((message) => {
-      if (!message || typeof message !== 'object') {
-        return null;
-      }
-      const role = message.role === 'assistant' ? 'assistant' : 'user';
-      const content = typeof message.content === 'string'
-        ? message.content
-        : typeof message.text === 'string'
-          ? message.text
-          : '';
-      const trimmed = content.trim();
-      if (!trimmed) {
-        return null;
-      }
-      return { role, content: trimmed };
+  return attachments
+    .filter((item) => item && typeof item === 'object' && typeof item.dataUrl === 'string')
+    .map((item) => {
+      const dataUrl = toTrimmedString(item.dataUrl);
+      return dataUrl ? { dataUrl } : null;
     })
     .filter(Boolean);
 };
+
+const normalizeMessage = (message) => {
+  if (!message || typeof message !== 'object') {
+    return null;
+  }
+
+  const role = message.role === 'assistant' ? 'assistant' : 'user';
+
+  if (Array.isArray(message.content)) {
+    const content = message.content.map(normalizeContentPart).filter(Boolean);
+    if (content.length) {
+      return { role, content };
+    }
+  }
+
+  const text = extractTextFromMessage(message);
+  const attachments = sanitizeAttachmentList(message.attachments);
+
+  if (!text && attachments.length === 0) {
+    return null;
+  }
+
+  if (attachments.length === 0) {
+    return { role, content: text };
+  }
+
+  const combined = text ? [{ type: 'input_text', text }] : [];
+  attachments.forEach((attachment) => {
+    combined.push({ type: 'input_image', image_url: { url: attachment.dataUrl } });
+  });
+
+  return { role, content: combined };
+};
+
+const normalizeMessages = (messages) => (
+  Array.isArray(messages)
+    ? messages.map(normalizeMessage).filter(Boolean)
+    : []
+);
 
 const callOpenAI = async ({ messages, model, temperature, maxTokens }) => {
   const apiKey = getFallbackApiKey();
@@ -86,9 +151,28 @@ const callOpenAI = async ({ messages, model, temperature, maxTokens }) => {
 
   const data = await response.json();
   const choice = data.choices?.[0] || {};
-  const extracted = typeof choice.message?.content === 'string'
-    ? choice.message.content.trim()
-    : '';
+  const rawContent = choice.message?.content;
+  let extracted = '';
+  if (typeof rawContent === 'string') {
+    extracted = rawContent.trim();
+  } else if (Array.isArray(rawContent)) {
+    extracted = rawContent
+      .map((item) => {
+        if (!item || typeof item !== 'object') {
+          return '';
+        }
+        if (typeof item.text === 'string') {
+          return item.text;
+        }
+        if (typeof item.value === 'string') {
+          return item.value;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  }
 
   if (!extracted) {
     throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });

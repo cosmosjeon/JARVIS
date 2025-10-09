@@ -40,6 +40,7 @@ import {
   applyNodeDragHandlers,
   raiseNodeLayer,
 } from 'features/tree/ui/d3Renderer';
+import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 
 const ORTHO_PATH_DEFAULTS = {
   cornerRadius: 20,
@@ -87,33 +88,13 @@ const HierarchicalForceTree = () => {
     setTheme(themeOptions[nextIndex].value);
   }, [theme, themeOptions, setTheme]);
 
-  // 테마 색상 (새로운 CSS 변수 시스템 사용)
-  const themeColors = useMemo(() => ({
-    glass: {
-      background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.12), rgba(30, 41, 59, 0.18))',
-      text: 'rgba(226, 232, 240, 0.9)',
-      border: 'rgba(51, 65, 85, 0.1)',
-    },
-    light: {
-      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(240, 240, 240, 0.95))',
-      text: '#000000',
-      border: 'rgba(0, 0, 0, 0.1)',
-    },
-    dark: {
-      background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(20, 20, 20, 0.95))',
-      text: '#FFFFFF',
-      border: 'rgba(255, 255, 255, 0.1)',
-    },
-  }), []);
-
-  const currentTheme = themeColors[theme] || themeColors.glass;
+  const treeBackground = useMemo(() => resolveTreeBackground(theme), [theme]);
 
   const svgRef = useRef(null);
   const { dimensions: baseDimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();
   const [isHandleMenuOpen, setIsHandleMenuOpen] = useState(false);
   const handleMenuRef = useRef(null);
   const handleMenuButtonRef = useRef(null);
-  const [isForceSimulationEnabled, setIsForceSimulationEnabled] = useState(true);
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
   const [sessionTabs, setSessionTabs] = useState([]);
@@ -130,10 +111,6 @@ const HierarchicalForceTree = () => {
   }, []);
   const toggleHandleMenu = useCallback(() => {
     setIsHandleMenuOpen((previous) => !previous);
-  }, []);
-  const handleForceSimulationToggle = useCallback(() => {
-    setIsForceSimulationEnabled((previous) => !previous);
-    setIsHandleMenuOpen(false);
   }, []);
   const handleViewSwitch = useCallback((nextMode) => {
     if (!nextMode || nextMode === viewMode) {
@@ -196,6 +173,11 @@ const HierarchicalForceTree = () => {
   } = treeState;
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(data);
+  const simulationRef = useRef(null);
+  const treeAnimationService = useRef(new TreeAnimationService());
+  const animationRef = useRef(null);
+  const questionService = useRef(new QuestionService());
+  const hasInitializedViewRef = useRef(false);
 
   // activeTreeId 변경 시 탭 목록에 추가 (초기 로드 시에만)
   const isInitialLoadRef = useRef(true);
@@ -219,10 +201,6 @@ const HierarchicalForceTree = () => {
       isInitialLoadRef.current = false;
     }
   }, [activeTreeId]);
-  const simulationRef = useRef(null);
-  const treeAnimationService = useRef(new TreeAnimationService());
-  const animationRef = useRef(null);
-  const questionService = useRef(new QuestionService());
 
   // 키보드 탭(→ 다음 탭), Shift+Tab(← 이전 탭)으로 탭 전환 (Ref를 통해 안전 호출)
   useEffect(() => {
@@ -1886,6 +1864,67 @@ const HierarchicalForceTree = () => {
         const { annotatedLinks, nextKeys } = markNewLinks(linkKeysRef.current, animatedLinks);
         linkKeysRef.current = nextKeys;
         setLinks(annotatedLinks);
+
+        // 초기 로딩 시 전체 트리가 화면에 보이도록 설정 (TidyTreeView는 자체 computeDefaultTransform 사용)
+        if (!isTidyView && !hasInitializedViewRef.current && animatedNodes.length > 0) {
+          hasInitializedViewRef.current = true;
+          
+          // 약간의 지연을 두어 레이아웃 계산이 완료된 후 전체 트리 fit
+          setTimeout(() => {
+            const svgElement = svgRef.current;
+            const zoom = zoomBehaviourRef.current;
+            
+            if (!svgElement || !zoom) return;
+            
+            // 전체 노드의 경계 계산
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+            
+            animatedNodes.forEach(node => {
+              if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                minX = Math.min(minX, node.x);
+                maxX = Math.max(maxX, node.x);
+                minY = Math.min(minY, node.y);
+                maxY = Math.max(maxY, node.y);
+              }
+            });
+            
+            if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return;
+            
+            // 여백 추가
+            const padding = 80;
+            const contentWidth = maxX - minX + padding * 2;
+            const contentHeight = maxY - minY + padding * 2;
+            const contentCenterX = (minX + maxX) / 2;
+            const contentCenterY = (minY + maxY) / 2;
+            
+            // 화면에 맞는 scale 계산
+            const viewportWidth = dimensions?.width || 800;
+            const viewportHeight = dimensions?.height || 600;
+            const scaleX = viewportWidth / contentWidth;
+            const scaleY = viewportHeight / contentHeight;
+            const scale = Math.min(scaleX, scaleY, 4); // max zoom
+            const finalScale = Math.max(scale, 0.3); // min zoom
+            
+            // 중앙 정렬을 위한 translate 계산
+            const translateX = viewportWidth / 2 - contentCenterX * finalScale;
+            const translateY = viewportHeight / 2 - contentCenterY * finalScale;
+            
+            const initialTransform = d3.zoomIdentity
+              .translate(translateX, translateY)
+              .scale(finalScale);
+            
+            const selection = d3.select(svgElement);
+            selection
+              .transition()
+              .duration(0)
+              .call(zoom.transform, initialTransform);
+            
+            setViewTransform(initialTransform);
+          }, 100);
+        }
       },
       { orientation: 'vertical' }
     );
@@ -1902,18 +1941,22 @@ const HierarchicalForceTree = () => {
         animationRef.current.stop();
       }
     };
-  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links]);
+  }, [dimensions, data, visibleGraph.nodes, visibleGraph.links, isTidyView, hierarchicalLinks, viewTransform, setViewTransform]);
 
-  const focusNodeToCenter = useCallback((node, options = {}) => focusNodeToCenterUtil({
-    node,
-    svgElement: svgRef.current,
-    zoomBehaviour: zoomBehaviourRef.current,
-    dimensions,
-    viewTransform,
-    setViewTransform,
-    duration: options.duration,
-    scale: options.scale,
-  }), [dimensions, viewTransform, setViewTransform]);
+  const focusNodeToCenter = useCallback((node, options = {}) => {
+    // 기본 duration을 600ms로 설정 (부드러운 애니메이션)
+    const defaultDuration = 600;
+    return focusNodeToCenterUtil({
+      node,
+      svgElement: svgRef.current,
+      zoomBehaviour: zoomBehaviourRef.current,
+      dimensions,
+      viewTransform,
+      setViewTransform,
+      duration: options.duration !== undefined ? options.duration : defaultDuration,
+      scale: options.scale,
+    });
+  }, [dimensions, viewTransform, setViewTransform]);
 
   // Handle node click for assistant focus
   const handleNodeClickForAssistant = useCallback((payload) => {
@@ -1940,6 +1983,11 @@ const HierarchicalForceTree = () => {
     }
 
     const layoutNode = nodes.find((candidate) => candidate.id === targetId) || payload;
+    const hasLayoutCoordinates = Number.isFinite(layoutNode?.x) && Number.isFinite(layoutNode?.y);
+    const hasPayloadPosition = Number.isFinite(payload?.position?.x) && Number.isFinite(payload?.position?.y);
+    const focusTarget = hasLayoutCoordinates
+      ? layoutNode
+      : (hasPayloadPosition ? { ...payload, x: payload.position.x, y: payload.position.y } : null);
 
     pendingFocusNodeIdRef.current = targetId;
     setSelectedNodeId(targetId);
@@ -1952,7 +2000,11 @@ const HierarchicalForceTree = () => {
       return current;
     });
 
-    Promise.resolve(focusNodeToCenter(layoutNode, { duration: 620 }))
+    const focusPromise = focusTarget
+      ? Promise.resolve(focusNodeToCenter(focusTarget, { duration: 600 }))
+      : Promise.resolve();
+
+    focusPromise
       .catch(() => undefined)
       .then(() => {
         if (pendingFocusNodeIdRef.current !== targetId) {
@@ -2222,7 +2274,7 @@ const HierarchicalForceTree = () => {
         backfaceVisibility: 'hidden',
         WebkitBackfaceVisibility: 'hidden',
         pointerEvents: 'auto',
-        background: currentTheme.background,
+        background: treeBackground,
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         // 창틀 여유 공간까지 완전히 채우기
@@ -2278,6 +2330,7 @@ const HierarchicalForceTree = () => {
               <NodeAssistantPanel
                 node={tidyAssistantNode}
                 color={d3.schemeCategory10[0]}
+                theme={theme}
                 onSizeChange={() => { }}
                 onSecondQuestion={handleSecondQuestion}
                 onPlaceholderCreate={handlePlaceholderCreate}
@@ -2505,18 +2558,7 @@ const HierarchicalForceTree = () => {
               onMouseDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
-              <button
-                type="button"
-                onClick={handleForceSimulationToggle}
-                className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition hover:bg-white/10"
-                tabIndex={-1}
-              >
-                <span className="font-medium text-white/85">유기적 상호작용</span>
-                <span className={isForceSimulationEnabled ? 'text-emerald-300 font-semibold' : 'text-slate-300'}>
-                  {isForceSimulationEnabled ? 'ON' : 'OFF'}
-                </span>
-              </button>
-              <div className="mt-2 border-t border-white/10 pt-2">
+              <div>
                 <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">뷰 모드</p>
                 <button
                   type="button"
@@ -2626,6 +2668,7 @@ const HierarchicalForceTree = () => {
             <NodeAssistantPanel
               node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
               color={d3.schemeCategory10[0]}
+              theme={theme}
               onSizeChange={() => { }}
               onSecondQuestion={() => { }}
               onPlaceholderCreate={() => { }}
@@ -2671,7 +2714,7 @@ const HierarchicalForceTree = () => {
             onSecondQuestion={handleSecondQuestion}
             onPlaceholderCreate={handlePlaceholderCreate}
             theme={theme}
-            isForceSimulationEnabled={isForceSimulationEnabled}
+            background={treeBackground}
             attachmentsByNode={pendingAttachmentsByNode}
             onNodeAttachmentsChange={setAttachmentsForNode}
             hideAssistantPanel={true}
@@ -2691,7 +2734,7 @@ const HierarchicalForceTree = () => {
             dimensions={dimensions}
             fitRequestVersion={data?.nodes?.length || 0}
             theme={theme}
-            background={currentTheme.background}
+            background={treeBackground}
             onNodeClick={handleNodeClickForAssistant}
             selectedNodeId={selectedNodeId}
             activeTreeId={activeTreeId}

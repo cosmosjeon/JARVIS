@@ -1,14 +1,139 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
 import DragStateManager from 'features/tree/services/drag/DragStateManager';
 import InsertionCalculator from 'features/tree/services/drag/InsertionCalculator';
 import PreviewLayoutCalculator from 'features/tree/services/drag/PreviewLayoutCalculator';
 import SiblingReorderService from 'features/tree/services/drag/SiblingReorderService';
+import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 
-const MIN_SCALE = 0.4;
-const MAX_SCALE = 2.6;
+const MIN_SCALE = 0.18;
+const MAX_SCALE = 4;
+const FOCUS_ANIMATION_DURATION = 620;
 const VIRTUAL_ROOT_ID = '__virtual_root__';
+const DEFAULT_TREE_KEY = '__default_tree__';
+const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
+
+const getCartesianFromTidyNode = (node) => ({
+  x: Number.isFinite(node?.y) ? node.y : 0,
+  y: Number.isFinite(node?.x) ? node.x : 0,
+});
+
+const buildTransformStorageKey = (treeKey) => `${VIEWPORT_STORAGE_PREFIX}.${treeKey}`;
+
+const readStoredTransform = (storageKey) => {
+  if (typeof window === 'undefined' || !storageKey) {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y) || !Number.isFinite(parsed?.k)) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+};
+
+const persistTransform = (storageKey, transform) => {
+  if (typeof window === 'undefined' || !storageKey || !transform) {
+    return;
+  }
+  try {
+    const payload = JSON.stringify({ x: transform.x, y: transform.y, k: transform.k });
+    window.localStorage.setItem(storageKey, payload);
+  } catch (error) {
+    // ignore persistence failures
+  }
+};
+
+const toZoomTransform = (rawTransform) => {
+  if (!rawTransform || !Number.isFinite(rawTransform.x) || !Number.isFinite(rawTransform.y) || !Number.isFinite(rawTransform.k)) {
+    return null;
+  }
+  return d3.zoomIdentity.translate(rawTransform.x, rawTransform.y).scale(rawTransform.k);
+};
+
+// Calculate a zoom transform that fits the entire hierarchy snugly inside the viewport
+// while keeping the tree centered.
+const computeDefaultTransform = (layout, viewportDimensions) => {
+  if (!layout || !Array.isArray(layout.nodes) || layout.nodes.length === 0) {
+    return null;
+  }
+
+  const nodes = layout.nodes.filter((node) => {
+    if (!node) return false;
+    const nodeId = node.data?.id;
+    if (nodeId === VIRTUAL_ROOT_ID) {
+      return false;
+    }
+    return true;
+  });
+  if (nodes.length === 0) {
+    return null;
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  nodes.forEach((node) => {
+    const { x, y } = node;
+    if (Number.isFinite(x)) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+    }
+    if (Number.isFinite(y)) {
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+  });
+
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    return null;
+  }
+
+  const viewportWidth = Number.isFinite(viewportDimensions?.width)
+    ? Math.max(1, viewportDimensions.width)
+    : Math.max(1, layout?.width || 0);
+  const viewportHeight = Number.isFinite(viewportDimensions?.height)
+    ? Math.max(1, viewportDimensions.height)
+    : Math.max(1, layout?.height || 0);
+
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return null;
+  }
+
+  const horizontalPadding = Number.isFinite(layout?.dy) ? layout.dy * 1.2 : 80;
+  const verticalPadding = Number.isFinite(layout?.dx) ? layout.dx * 1.2 : 80;
+
+  const contentWidth = Math.max(1, (maxY - minY) + horizontalPadding * 2);
+  const contentHeight = Math.max(1, (maxX - minX) + verticalPadding * 2);
+
+  const scaleX = viewportWidth / contentWidth;
+  const scaleY = viewportHeight / contentHeight;
+  const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleX, scaleY)));
+
+  // 바운딩 박스 중심 기준 기본 이동값 계산
+  const rootNode = nodes.find((node) => node.depth === 0) || null;
+  const rootX = Number.isFinite(rootNode?.y) ? rootNode.y : (minY + maxY) / 2;
+  const rootY = Number.isFinite(rootNode?.x) ? rootNode.x : (minX + maxX) / 2;
+
+  const translateX = viewportWidth / 2 - rootX * targetScale;
+  const translateY = viewportHeight / 2 - rootY * targetScale;
+
+  if (!Number.isFinite(translateX) || !Number.isFinite(translateY) || !Number.isFinite(targetScale)) {
+    return null;
+  }
+
+  return d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+};
 
 const estimateLabelWidth = (label) => {
   if (typeof label !== "string") {
@@ -42,7 +167,9 @@ const TidyTreeView = ({
   const nodesGroupRef = useRef(null);
   const linksGroupRef = useRef(null);
   const previousLayoutRef = useRef(null);
-  const defaultViewTransformRef = useRef(null);
+  const lastViewTransformRef = useRef(null);
+  const lastAppliedTreeIdRef = useRef(null);
+  const storageKeyRef = useRef(null);
 
   // 드래그 관련 서비스 인스턴스
   const dragStateManager = useRef(new DragStateManager()).current;
@@ -127,6 +254,19 @@ const TidyTreeView = ({
     return map;
   }, [layout?.nodes]);
 
+  const layoutNodeById = useMemo(() => {
+    const map = new Map();
+    if (!layout?.nodes) {
+      return map;
+    }
+    layout.nodes.forEach((node) => {
+      if (node?.data?.id) {
+        map.set(node.data.id, node);
+      }
+    });
+    return map;
+  }, [layout?.nodes]);
+
   // 클릭된 노드의 조상 체인 계산 (부모 노드들 연결 하이라이트용)
   const clickedAncestorIds = useMemo(() => {
     if (!clickedNodeId) {
@@ -141,7 +281,142 @@ const TidyTreeView = ({
     return result;
   }, [clickedNodeId, parentById]);
 
-  const isHighlightMode = clickedAncestorIds.size > 0;
+  // 호버된 노드의 조상 체인 계산
+  const hoveredAncestorIds = useMemo(() => {
+    if (!hoveredNodeId) {
+      return new Set();
+    }
+    const result = new Set();
+    let currentId = hoveredNodeId;
+    while (currentId) {
+      result.add(currentId);
+      currentId = parentById.get(currentId);
+    }
+    return result;
+  }, [hoveredNodeId, parentById]);
+
+  // 클릭이나 호버가 있으면 하이라이트 모드
+  const isHighlightMode = clickedAncestorIds.size > 0 || hoveredAncestorIds.size > 0;
+  
+  // 통합된 조상 체인 (클릭 또는 호버)
+  const highlightedAncestorIds = useMemo(() => {
+    const combined = new Set();
+    clickedAncestorIds.forEach(id => combined.add(id));
+    hoveredAncestorIds.forEach(id => combined.add(id));
+    return combined;
+  }, [clickedAncestorIds, hoveredAncestorIds]);
+
+  const viewportDimensions = useMemo(() => ({
+    width: Number.isFinite(dimensions?.width)
+      ? dimensions.width
+      : (Number.isFinite(layout?.width) ? layout.width : 0),
+    height: Number.isFinite(dimensions?.height)
+      ? dimensions.height
+      : (Number.isFinite(layout?.height) ? layout.height : 0),
+  }), [dimensions?.width, dimensions?.height, layout?.width, layout?.height]);
+
+  const focusNodeById = useCallback((nodeId, options = {}) => {
+    if (!nodeId) {
+      return;
+    }
+    const layoutNode = layoutNodeById.get(nodeId);
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+
+    if (!layoutNode || !svgElement || !zoom) {
+      return;
+    }
+
+    const { x, y } = getCartesianFromTidyNode(layoutNode);
+    const baseTransform = lastViewTransformRef.current || viewTransform;
+    const currentTransform = {
+      x: Number.isFinite(baseTransform?.x) ? baseTransform.x : viewTransform.x,
+      y: Number.isFinite(baseTransform?.y) ? baseTransform.y : viewTransform.y,
+      k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
+    };
+
+    const DEFAULT_TIDY_SCALE = 2.6;
+    const requestedScale = Number.isFinite(options.scale) ? options.scale : DEFAULT_TIDY_SCALE;
+    const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, requestedScale));
+
+    const baseOffset = viewportDimensions.height
+      ? viewportDimensions.height * 0.52
+      : 300;
+    const clampedOffset = Math.min(Math.max(baseOffset, 260), 620);
+    const verticalOffset = -clampedOffset;
+
+    if (process.env.NODE_ENV !== "production") {
+      const debugNode = layoutNode?.data ?? null;
+      const logPayload = {
+        phase: "tidy-focus",
+        nodeId,
+        cartesian: { x, y },
+        layout: { x: layoutNode?.x, y: layoutNode?.y },
+        transformBefore: currentTransform,
+        requestedScale: options.scale,
+        appliedScale: targetScale,
+        nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
+        offset: { x: 0, y: verticalOffset },
+        viewport: viewportDimensions,
+      };
+
+      try {
+        const element = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          logPayload.boundingRect = {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+          };
+          const domMatrix = element.getCTM();
+          if (domMatrix) {
+            logPayload.ctm = {
+              e: domMatrix.e,
+              f: domMatrix.f,
+              a: domMatrix.a,
+              d: domMatrix.d,
+            };
+          }
+        }
+        const svgRect = svgElement.getBoundingClientRect?.();
+        if (svgRect) {
+          logPayload.svgRect = {
+            x: svgRect.x,
+            y: svgRect.y,
+            width: svgRect.width,
+            height: svgRect.height,
+          };
+        }
+      } catch (error) {
+        logPayload.error = error?.message;
+      }
+
+      // eslint-disable-next-line no-console
+      console.debug("[FocusDebug] tidy", logPayload);
+    }
+
+    focusNodeToCenterUtil({
+      node: { x, y },
+      svgElement,
+      zoomBehaviour: zoom,
+      dimensions: viewportDimensions,
+      viewTransform: currentTransform,
+      setViewTransform,
+      duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
+      scale: Number.isFinite(options.scale) ? options.scale : targetScale,
+      offset: { x: 0, y: verticalOffset },
+      allowScaleOverride: false,
+    }).catch(() => undefined);
+  }, [
+    layoutNodeById,
+    viewportDimensions,
+    viewTransform.x,
+    viewTransform.y,
+    viewTransform.k,
+    setViewTransform,
+  ]);
 
   // 컴포넌트 언마운트 시 드래그 상태 정리
   useEffect(() => {
@@ -232,23 +507,7 @@ const TidyTreeView = ({
   }, [layout, linkGenerator, dragPreview]);
 
   // 기본 뷰포트로 복원하는 함수
-  const resetToDefaultView = () => {
-    const svgElement = svgRef.current;
-    const zoom = zoomBehaviorRef.current;
-
-    if (!svgElement || !zoom || !defaultViewTransformRef.current) {
-      return;
-    }
-
-    const selection = d3.select(svgElement);
-
-    // 부드러운 transition으로 기본 뷰포트로 복귀
-    selection
-      .transition()
-      .duration(600)
-      .ease(d3.easeCubicInOut)
-      .call(zoom.transform, defaultViewTransformRef.current);
-  };
+  const resetToDefaultView = () => {};
 
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
@@ -262,9 +521,7 @@ const TidyTreeView = ({
     const zoom = d3
       .zoom()
       .filter((event) => {
-        // 노드 드래그 중에는 줌/팬 비활성화
         if (dragStateManager.isDragging()) return false;
-        // 노드 영역에서 시작된 이벤트면 줌/팬 비활성화
         const t = event?.target;
         if (t && typeof t.closest === "function") {
           if (t.closest('g[data-node-interactive="true"]')) return false;
@@ -279,6 +536,11 @@ const TidyTreeView = ({
       .on("start", () => setIsZooming(true))
       .on("zoom", (event) => {
         setViewTransform(event.transform);
+        lastViewTransformRef.current = event.transform;
+        const storageKey = storageKeyRef.current;
+        if (storageKey) {
+          persistTransform(storageKey, event.transform);
+        }
       })
       .on("end", () => setIsZooming(false));
 
@@ -287,54 +549,61 @@ const TidyTreeView = ({
     // d3의 기본 더블클릭 줌 동작 비활성화 (배경 더블클릭은 onClick에서 처리)
     selection.on("dblclick.zoom", null);
 
+    const treeKey = typeof activeTreeId === "string" && activeTreeId.trim().length > 0
+      ? activeTreeId
+      : DEFAULT_TREE_KEY;
+    const storageKey = buildTransformStorageKey(treeKey);
+    storageKeyRef.current = storageKey;
+
+    const defaultTransform = computeDefaultTransform(layout, dimensions) || d3.zoomIdentity;
+    const storedTransform = readStoredTransform(storageKey);
+    const storedZoom = toZoomTransform(storedTransform);
+    const initialTransform = storedZoom || lastViewTransformRef.current || defaultTransform;
+    lastViewTransformRef.current = initialTransform;
+
     zoomBehaviorRef.current = zoom;
 
-    // 초기 마운트 시에만 identity로 리셋 (이후 layout 변경 시에는 현재 transform 유지)
-    if (isInitialMountRef.current) {
-      const identity = d3.zoomIdentity;
-      selection.call(zoom.transform, identity);
-      setViewTransform(identity);
+    const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
 
-      // 기본 뷰포트 저장
-      defaultViewTransformRef.current = identity;
-
+    if (shouldApplyInitial) {
+      selection.call(zoom.transform, initialTransform);
+      lastAppliedTreeIdRef.current = treeKey;
       isInitialMountRef.current = false;
+      if (!storedZoom && storageKey) {
+        persistTransform(storageKey, initialTransform);
+      }
     }
 
     return () => {
       selection.on(".zoom", null);
-      selection.on("dblclick.zoom", null);
       zoomBehaviorRef.current = null;
     };
-  }, [layout, dragStateManager]);
+  }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height]);
 
-  // 탭 전환 시 기본 화면으로 복귀
-  useEffect(() => {
-    // 초기 마운트는 제외 (위의 zoom behavior useEffect에서 이미 처리함)
-    if (isInitialMountRef.current) {
+  const isDarkTheme = theme === "dark";
+  const linkStroke = isDarkTheme ? "rgba(148, 163, 184, 0.95)" : "rgba(100, 116, 139, 0.95)";
+  const labelColor = isDarkTheme ? "#f8fafc" : "#000000";
+  const labelStroke = isDarkTheme ? "rgba(15, 23, 42, 0.7)" : "rgba(255, 255, 255, 0.9)";
+  const parentFill = isDarkTheme ? "rgba(125, 211, 252, 0.95)" : "rgba(59, 130, 246, 0.88)";
+  const leafFill = isDarkTheme ? "rgba(148, 163, 184, 0.92)" : "rgba(148, 163, 184, 0.88)";
+  const baseStroke = isDarkTheme ? "rgba(125, 211, 252, 0.3)" : "rgba(59, 130, 246, 0.3)";
+  const selectionStroke = isDarkTheme ? "rgba(125, 211, 252, 0.9)" : "rgba(37, 99, 235, 0.9)";
+
+  const handleNodeActivate = useCallback((node) => {
+    const nodeId = node?.data?.id;
+    if (!nodeId) {
       return;
     }
-
-    // activeTreeId가 변경되면 기본 뷰포트로 복귀
-    if (activeTreeId && defaultViewTransformRef.current) {
-      resetToDefaultView();
+    const coordinates = getCartesianFromTidyNode(node);
+    focusNodeById(nodeId);
+    if (typeof onNodeClick === "function") {
+      onNodeClick({
+        id: nodeId,
+        source: "tidy-tree",
+        position: coordinates,
+      });
     }
-  }, [activeTreeId]);
-
-  const isLightTheme = theme === "light";
-  const linkStroke = isLightTheme ? "rgba(100, 116, 139, 0.95)" : "rgba(148, 163, 184, 0.95)";
-  const labelColor = isLightTheme ? "#0f172a" : "#e2e8f0";
-  const labelStroke = isLightTheme ? "rgba(255, 255, 255, 0.9)" : "rgba(15, 23, 42, 0.7)";
-  const parentFill = isLightTheme ? "rgba(59, 130, 246, 0.88)" : "rgba(125, 211, 252, 0.95)";
-  const leafFill = isLightTheme ? "rgba(148, 163, 184, 0.88)" : "rgba(148, 163, 184, 0.92)";
-  const baseStroke = isLightTheme ? "rgba(59, 130, 246, 0.3)" : "rgba(125, 211, 252, 0.3)";
-  const selectionStroke = isLightTheme ? "rgba(37, 99, 235, 0.9)" : "rgba(125, 211, 252, 0.9)";
-
-  const handleNodeActivate = (node) => {
-    if (typeof onNodeClick === "function" && node?.data?.id) {
-      onNodeClick({ id: node.data.id, source: "tidy-tree" });
-    }
-  };
+  }, [focusNodeById, onNodeClick]);
 
   // 드래그 시작
   const beginDrag = (event, node) => {
@@ -579,9 +848,9 @@ const TidyTreeView = ({
               const linkSourceId = link.source.data.id;
               const linkTargetId = link.target.data.id;
               const isHighlightedLink = !isHighlightMode
-                || (clickedAncestorIds.has(linkTargetId)
+                || (highlightedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
-              const linkOpacity = isHighlightedLink ? 1 : 0.15;
+              const linkOpacity = isHighlightedLink ? 0.7 : 0.18;
 
               return (
                 <path
@@ -590,7 +859,8 @@ const TidyTreeView = ({
                   d={linkGenerator(link)}
                   stroke={linkStroke}
                   strokeOpacity={linkOpacity}
-                  strokeWidth={1.8}
+                  strokeWidth={1.2}
+                  strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -629,7 +899,7 @@ const TidyTreeView = ({
               const isRootNode = node.depth === 0;
               const isSelected = effectiveSelectedNodeId && node.data.id === effectiveSelectedNodeId;
               const isHovered = hoveredNodeId === node.data.id;
-              const isNodeHighlighted = node.data.id ? clickedAncestorIds.has(node.data.id) : false;
+              const isNodeHighlighted = node.data.id ? highlightedAncestorIds.has(node.data.id) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
 
@@ -667,43 +937,10 @@ const TidyTreeView = ({
                       return;
                     }
 
-                    // 채팅창이 열려있으면 싱글 클릭만으로도 전환
-                    if (isChatPanelOpen) {
-                      setClickedNodeId(node.data.id);
-                      setHoveredNodeId(node.data.id);
-                      handleNodeActivate(node);
-                      return;
-                    }
-
-                    // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
-                    if (clickTimerRef.current) {
-                      clearTimeout(clickTimerRef.current);
-                      clickTimerRef.current = null;
-                      // 더블 클릭: 하이라이트 효과 + 채팅창 열기
-                      setClickedNodeId(node.data.id);
-                      setHoveredNodeId(node.data.id);
-                      handleNodeActivate(node);
-                    } else {
-                      // 싱글 클릭: 타이머 시작
-                      clickTimerRef.current = setTimeout(() => {
-                        const isCurrentlyClicked = clickedNodeId === node.data.id;
-
-                        // 싱글 클릭: 부모 체인 하이라이트 + 호버 효과 + 테두리 표시 (채팅창은 열지 않음)
-                        setClickedNodeId(isCurrentlyClicked ? null : node.data.id);
-                        setHoveredNodeId(isCurrentlyClicked ? null : node.data.id);
-                        // 선택 상태 업데이트 (테두리 표시용)
-                        if (typeof onNodeClick === "function") {
-                          // 상위 컴포넌트에 선택 상태 알림 (suppressPanelOpen으로 채팅창 열지 않음, 토글 지원)
-                          onNodeClick({
-                            id: isCurrentlyClicked ? null : node.data.id,
-                            source: "tidy-tree",
-                            suppressPanelOpen: true
-                          });
-                        }
-                        setInternalSelectedNodeId(isCurrentlyClicked ? null : node.data.id);
-                        clickTimerRef.current = null;
-                      }, 250);
-                    }
+                    // 싱글 클릭으로 채팅창 열기/전환
+                    setClickedNodeId(node.data.id);
+                    setHoveredNodeId(node.data.id);
+                    handleNodeActivate(node);
                   }}
                   onMouseDown={(event) => beginDrag(event, node)}
                   onMouseEnter={() => setHoveredNodeId(node.data.id)}
@@ -742,12 +979,13 @@ const TidyTreeView = ({
                   <circle
                     fill={hasChildren ? parentFill : leafFill}
                     fillOpacity={isHovered ? 1 : 0.9}
-                    r={baseRadius}
-                    stroke={isSelected ? selectionStroke : baseStroke}
-                    strokeWidth={isSelected ? 2 : 1}
+                    r={isHovered ? baseRadius * 1.4 : baseRadius}
+                    stroke={isSelected ? selectionStroke : (isHovered ? 'rgba(59, 130, 246, 0.6)' : baseStroke)}
+                    strokeWidth={isSelected ? 2 : (isHovered ? 1.5 : 1)}
                     vectorEffect="non-scaling-stroke"
                     style={{
                       transition: 'all 200ms ease',
+                      filter: isHovered ? 'drop-shadow(0 0 4px rgba(59, 130, 246, 0.4))' : 'none',
                     }}
                   />
                   <text
@@ -758,8 +996,8 @@ const TidyTreeView = ({
                     fillOpacity={isHovered ? 1 : textOpacity}
                     style={{
                       fontFamily: 'sans-serif',
-                      fontSize: isRootNode ? 13 : (isHovered ? 12 : 11),
-                      fontWeight: isRootNode ? 700 : (isHovered ? 600 : 400),
+                      fontSize: isHovered ? 13 : 11,
+                      fontWeight: isHovered ? 700 : 400,
                       transition: 'all 200ms ease',
                     }}
                   >
