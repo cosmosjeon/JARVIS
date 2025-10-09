@@ -11,7 +11,7 @@ import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
-import { motion } from 'framer-motion';
+import { motion, useAnimationControls } from 'framer-motion';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
@@ -259,14 +259,7 @@ const ForceDirectedTree = ({
   const viewStorageKeyRef = useRef(null);
   const [globalRotationDeg, setGlobalRotationDeg] = useState(0);
   const globalRotationRad = useMemo(() => (globalRotationDeg * Math.PI) / 180, [globalRotationDeg]);
-  const rotationTimeoutRef = useRef(null);
-
-  useEffect(() => () => {
-    if (rotationTimeoutRef.current !== null) {
-      clearTimeout(rotationTimeoutRef.current);
-      rotationTimeoutRef.current = null;
-    }
-  }, []);
+  const rotationControls = useAnimationControls();
 
   useEffect(() => {
     setGlobalRotationDeg(0);
@@ -545,7 +538,6 @@ const ForceDirectedTree = ({
     const rotatedY = x * Math.sin(rotationRad) + y * Math.cos(rotationRad);
 
     const executeFocus = () => {
-      const selection = d3.select(svgElement);
       focusNodeToCenterUtil({
         node: { x: rotatedX, y: rotatedY },
         svgElement,
@@ -558,56 +550,20 @@ const ForceDirectedTree = ({
         origin: 'center',
         offset: { x: offsetX, y: offsetY },
         allowScaleOverride: false,
-      })
-        .then(() => {
-          const targetElement = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
-          const latestSvgRect = svgElement.getBoundingClientRect?.();
-          if (!targetElement || !latestSvgRect) {
-            return;
-          }
-          const nodeRect = targetElement.getBoundingClientRect();
-          const transform = d3.zoomTransform(svgElement);
-          const centerX = nodeRect.x + nodeRect.width / 2;
-          const centerY = nodeRect.y + nodeRect.height / 2;
-          const targetX = latestSvgRect.x + latestSvgRect.width * FORCE_TARGET_X_RATIO;
-          const targetY = latestSvgRect.y + latestSvgRect.height * FORCE_TARGET_Y_RATIO;
-          const deltaX = centerX - targetX;
-          const deltaY = centerY - targetY;
-          if (!Number.isFinite(transform.k) || transform.k === 0) {
-            return;
-          }
-          if (Math.abs(deltaX) < 0.6 && Math.abs(deltaY) < 0.6) {
-            return;
-          }
-          const adjusted = transform.translate(-deltaX / transform.k, -deltaY / transform.k);
-          selection
-            .transition('force-focus-adjust')
-            .duration(240)
-            .ease(d3.easeCubicOut)
-            .call(zoom.transform, adjusted);
-        })
-        .catch(() => undefined);
+      }).catch(() => undefined);
     };
 
-    if (rotationTimeoutRef.current !== null) {
-      clearTimeout(rotationTimeoutRef.current);
-      rotationTimeoutRef.current = null;
-    }
-
-    const rotationDelay = Number.isFinite(options.rotationDelay)
-      ? options.rotationDelay
-      : FORCE_ROTATION_DURATION;
-
     setGlobalRotationDeg(targetRotationDeg);
-
-    if (rotationDelay <= 0 || typeof window === 'undefined') {
+    rotationControls.stop();
+    rotationControls.start({
+      rotate: targetRotationDeg,
+      transition: {
+        duration: FORCE_ROTATION_DURATION / 1000,
+        ease: [0.4, 0, 0.2, 1],
+      },
+    }).then(() => {
       executeFocus();
-    } else {
-      rotationTimeoutRef.current = window.setTimeout(() => {
-        rotationTimeoutRef.current = null;
-        executeFocus();
-      }, rotationDelay);
-    }
+    });
   }, [
     layoutNodeById,
     viewportDimensions,
@@ -754,11 +710,9 @@ const ForceDirectedTree = ({
                     .ease(d3.easeCubicInOut)
                     .call(zoom.transform, d3.zoomIdentity);
                 }
-                if (rotationTimeoutRef.current !== null) {
-                  clearTimeout(rotationTimeoutRef.current);
-                  rotationTimeoutRef.current = null;
-                }
                 setGlobalRotationDeg(0);
+                rotationControls.stop();
+                rotationControls.start({ rotate: 0, transition: { duration: 0 } });
               }
             } else {
               // 싱글 클릭: 타이머 시작
@@ -806,8 +760,7 @@ const ForceDirectedTree = ({
         <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
           <motion.g
             initial={false}
-            animate={{ rotate: globalRotationDeg }}
-            transition={{ duration: FORCE_ROTATION_DURATION / 1000, ease: [0.4, 0, 0.2, 1] }}
+            animate={rotationControls}
             style={{ transformOrigin: '0px 0px' }}
           >
             <g fill="none">
