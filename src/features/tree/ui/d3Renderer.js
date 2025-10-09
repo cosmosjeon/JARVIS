@@ -99,6 +99,7 @@ export const focusNodeToCenter = ({
   setViewTransform,
   duration = 620,
   scale: requestedScale,
+  origin = 'top-left',
 }) => {
   if (!node || !svgElement) {
     return Promise.resolve();
@@ -124,12 +125,20 @@ export const focusNodeToCenter = ({
   const preferredScale = typeof requestedScale === 'number' ? requestedScale : Math.max(currentScale, 1);
   const targetScale = Math.min(Math.max(preferredScale, 0.3), 4);
 
-  const translateX = (width / 2) - (nodeX * targetScale);
-  const translateY = (height / 2) - (nodeY * targetScale);
-  const nextTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+  let nextTransform;
+  if (origin === 'center') {
+    nextTransform = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(targetScale)
+      .translate(-nodeX, -nodeY);
+  } else {
+    const translateX = (width / 2) - (nodeX * targetScale);
+    const translateY = (height / 2) - (nodeY * targetScale);
+    nextTransform = d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
+  }
 
   if (!zoomBehaviour) {
-    setViewTransform({ x: translateX, y: translateY, k: targetScale });
+    setViewTransform({ x: nextTransform.x, y: nextTransform.y, k: targetScale });
     return Promise.resolve();
   }
 

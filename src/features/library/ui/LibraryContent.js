@@ -11,6 +11,32 @@ const EmptyState = ({ message }) => (
   </div>
 );
 
+const DRAG_ZONE_HEIGHT = 56;
+
+const renderWithDragHandle = (content) => (
+  <div className="relative h-full w-full">
+    <div
+      className="absolute left-0 right-0 top-0"
+      style={{
+        height: DRAG_ZONE_HEIGHT,
+        WebkitAppRegion: 'drag',
+        zIndex: 10,
+      }}
+    />
+    <div
+      className="h-full w-full"
+      style={{
+        WebkitAppRegion: 'no-drag',
+        paddingTop: `${DRAG_ZONE_HEIGHT}px`,
+        position: 'relative',
+        zIndex: 0,
+      }}
+    >
+      {content}
+    </div>
+  </div>
+);
+
 const LibraryContent = ({
   loading,
   user,
@@ -34,20 +60,24 @@ const LibraryContent = ({
   onQAPanelClose,
 }) => {
   if (loading) {
-    return (
+    return renderWithDragHandle(
       <div className="flex h-full items-center justify-center gap-3 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
         불러오는 중입니다...
-      </div>
+      </div>,
     );
   }
 
   if (!user) {
-    return <EmptyState message="로그인 후 트리를 확인할 수 있습니다." />;
+    return renderWithDragHandle(
+      <EmptyState message="로그인 후 트리를 확인할 수 있습니다." />,
+    );
   }
 
   if (error) {
-    return <EmptyState message={error?.message || '트리를 불러오지 못했습니다.'} />;
+    return renderWithDragHandle(
+      <EmptyState message={error?.message || '트리를 불러오지 못했습니다.'} />,
+    );
   }
 
   const treeNodeCount = selectedTree?.treeData?.nodes?.length ?? 0;
@@ -64,7 +94,7 @@ const LibraryContent = ({
       question: '',
       level: 0,
     };
-    return (
+    return renderWithDragHandle(
       <div className="flex h-full flex-col bg-gradient-to-b from-background via-background to-muted/30">
         <LibraryQAPanel
           selectedNode={introSelectedNode}
@@ -76,7 +106,7 @@ const LibraryContent = ({
           isLibraryIntroActive={isIntroMode || isTreeEmpty}
           onLibraryIntroComplete={onLibraryIntroComplete}
         />
-      </div>
+      </div>,
     );
   }
 
@@ -133,7 +163,7 @@ const LibraryContent = ({
   if (selectedFolderId) {
     const folderName = folders.find((folder) => folder.id === selectedFolderId)?.name || '폴더';
 
-    return (
+    return renderWithDragHandle(
       <div className="flex h-full items-center justify-center">
         <Card className="w-full max-w-sm bg-card text-card-foreground">
           <CardHeader className="space-y-2">
@@ -146,11 +176,13 @@ const LibraryContent = ({
             </p>
           </CardContent>
         </Card>
-      </div>
+      </div>,
     );
   }
 
-  return <EmptyState message="트리나 폴더를 선택해주세요." />;
+  return renderWithDragHandle(
+    <EmptyState message="트리나 폴더를 선택해주세요." />,
+  );
 };
 
 export default LibraryContent;

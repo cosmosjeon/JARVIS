@@ -39,6 +39,27 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+.library-sidebar button,
+.library-sidebar [role="button"],
+.library-sidebar a,
+.library-sidebar input,
+.library-sidebar textarea,
+.library-sidebar select,
+.library-sidebar [contenteditable="true"],
+.library-sidebar [data-no-drag="true"],
+.library-sidebar .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.library-sidebar [data-radix-scroll-area-viewport],
+.library-sidebar [data-radix-scroll-area-scrollbar],
+.library-sidebar [data-radix-scroll-area-corner],
+.library-sidebar [data-radix-scroll-area-thumb],
+.library-sidebar .scrollarea-thumb,
+.library-sidebar .scrollarea-track {
+  -webkit-app-region: no-drag;
+}
+
 body.widget-mode {
   background-color: transparent;
   color: #0f172a;

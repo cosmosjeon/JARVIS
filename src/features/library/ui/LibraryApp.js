@@ -1,10 +1,18 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import LibrarySidebar from './LibrarySidebar';
 import LibraryContent from './LibraryContent';
 import VoranBoxManager from './components/VoranBoxManager';
 import CreateDialog from './components/CreateDialog';
 import LibraryWindowTitleBar from './components/LibraryWindowTitleBar';
 import useLibraryAppViewModel from 'features/library/hooks/useLibraryAppViewModel';
+
+const TOP_DRAG_ZONE_HEIGHT = 16;
+const getPlatform = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return window.jarvisAPI?.process?.platform || null;
+};
 
 const LibraryApp = () => {
   const {
@@ -16,9 +24,20 @@ const LibraryApp = () => {
     handlers,
     dialog,
   } = useLibraryAppViewModel();
+  const platform = useMemo(() => getPlatform(), []);
+  const topDragOffset = platform === 'win32' ? 32 : 0;
 
   return (
     <div className="relative flex flex-col h-screen bg-background text-foreground overflow-hidden">
+      <div
+        className="absolute left-0 right-0"
+        style={{
+          top: topDragOffset,
+          height: TOP_DRAG_ZONE_HEIGHT,
+          WebkitAppRegion: 'drag',
+          zIndex: 15,
+        }}
+      />
       <LibraryWindowTitleBar />
       <div className="flex flex-1 overflow-hidden">
         <LibrarySidebar

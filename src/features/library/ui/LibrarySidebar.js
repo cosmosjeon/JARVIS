@@ -150,9 +150,10 @@ const LibrarySidebar = ({
   return (
     <aside
       className={cn(
-        'relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
+        'library-sidebar relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
         collapsed ? 'w-[60px]' : 'w-[240px]',
       )}
+      style={{ WebkitAppRegion: 'drag' }}
       aria-expanded={!collapsed}
     >
       {collapsed ? (

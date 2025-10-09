@@ -9,12 +9,23 @@ import * as d3 from 'd3';
 import DataTransformService from 'features/tree/services/DataTransformService';
 import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
+import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 4;
 const NODE_RADIUS = 2.6;
+const FOCUS_ANIMATION_DURATION = 620;
+
+const toCartesianFromRadial = (node) => {
+  const angle = (Number.isFinite(node?.x) ? node.x : 0) - Math.PI / 2;
+  const radius = Number.isFinite(node?.y) ? node.y : 0;
+  return [
+    Math.cos(angle) * radius,
+    Math.sin(angle) * radius,
+  ];
+};
 const sanitizeLabel = (value) => {
   if (typeof value !== 'string') return '';
   return value.trim();
@@ -391,17 +402,110 @@ const ForceDirectedTree = ({
     ? resolveNodeColor(selectedHierarchyNode)
     : (theme === 'dark' ? '#38bdf8' : '#2563eb');
 
+  const viewportDimensions = useMemo(() => ({
+    width: Number.isFinite(dimensions?.width) ? dimensions.width : width,
+    height: Number.isFinite(dimensions?.height) ? dimensions.height : height,
+  }), [dimensions?.width, dimensions?.height, width, height]);
+
+  const focusNodeById = useCallback((nodeId, options = {}) => {
+    if (!nodeId) {
+      return;
+    }
+    const layoutNode = layoutNodeById.get(nodeId);
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+    if (!layoutNode || !svgElement || !zoom) {
+      return;
+    }
+
+    const [x, y] = toCartesianFromRadial(layoutNode);
+    const baseTransform = lastViewTransformRef.current || viewTransform;
+    const currentTransform = {
+      x: Number.isFinite(baseTransform?.x) ? baseTransform.x : viewTransform.x,
+      y: Number.isFinite(baseTransform?.y) ? baseTransform.y : viewTransform.y,
+      k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
+    };
+
+    const targetScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentTransform.k));
+
+    if (process.env.NODE_ENV !== 'production') {
+      const debugNode = layoutNode?.data ?? resolveNodeDatum(layoutNode);
+      const logPayload = {
+        phase: 'force-focus',
+        nodeId,
+        cartesian: { x, y },
+        polar: { angle: layoutNode?.x, radius: layoutNode?.y },
+        transformBefore: currentTransform,
+        requestedScale: options.scale,
+        appliedScale: targetScale,
+        nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
+      };
+
+      try {
+        const element = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          logPayload.boundingRect = {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+          };
+          const domMatrix = element.getCTM();
+          if (domMatrix) {
+            logPayload.ctm = {
+              e: domMatrix.e,
+              f: domMatrix.f,
+              a: domMatrix.a,
+              d: domMatrix.d,
+            };
+          }
+        }
+      } catch (error) {
+        logPayload.error = error?.message;
+      }
+
+      // eslint-disable-next-line no-console
+      console.debug('[FocusDebug] force', logPayload);
+    }
+
+    focusNodeToCenterUtil({
+      node: { x, y },
+      svgElement,
+      zoomBehaviour: zoom,
+      dimensions: viewportDimensions,
+      viewTransform: currentTransform,
+      setViewTransform,
+      duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
+      scale: Number.isFinite(options.scale) ? options.scale : targetScale,
+      origin: 'center',
+    }).catch(() => undefined);
+  }, [
+    layoutNodeById,
+    viewportDimensions,
+    viewTransform.x,
+    viewTransform.y,
+    viewTransform.k,
+    setViewTransform,
+  ]);
+
   const handleNodeClick = useCallback((node) => {
     const datum = resolveNodeDatum(node);
     const nodeId = datum?.id;
     if (!nodeId) {
       return;
     }
+    const [cartesianX, cartesianY] = toCartesianFromRadial(layoutNodeById.get(nodeId) || node);
+    focusNodeById(nodeId);
     if (externalSelectedNodeId === undefined) {
       setInternalSelectedNodeId(nodeId);
     }
-    onNodeClick({ id: nodeId, node: datum });
-  }, [onNodeClick, externalSelectedNodeId]);
+    onNodeClick({
+      id: nodeId,
+      node: datum,
+      position: { x: cartesianX, y: cartesianY },
+    });
+  }, [focusNodeById, onNodeClick, externalSelectedNodeId, layoutNodeById]);
 
   const handleClosePanel = useCallback(() => {
     if (externalSelectedNodeId === undefined) {
@@ -420,12 +524,19 @@ const ForceDirectedTree = ({
     if (!targetId) {
       return;
     }
+    const layoutNode = layoutNodeById.get(targetId);
     const original = nodeMap.get(targetId) || target;
+    const [cartesianX, cartesianY] = toCartesianFromRadial(layoutNode);
+    focusNodeById(targetId);
     if (externalSelectedNodeId === undefined) {
       setInternalSelectedNodeId(targetId);
     }
-    onNodeClick({ id: targetId, node: original });
-  }, [nodeMap, onNodeClick, externalSelectedNodeId]);
+    onNodeClick({
+      id: targetId,
+      node: original,
+      position: { x: cartesianX, y: cartesianY },
+    });
+  }, [nodeMap, layoutNodeById, focusNodeById, onNodeClick, externalSelectedNodeId]);
 
   const handleAttachmentsChange = useCallback((nodeId, next) => {
     if (typeof onNodeAttachmentsChange === 'function') {
@@ -606,6 +717,7 @@ const ForceDirectedTree = ({
               return (
                 <g
                   key={nodeId || `node-${node.x}-${node.y}`}
+                  data-node-id={nodeId || undefined}
                   transform={`rotate(${rotation}) ${translation}`}
                   onMouseEnter={() => setHoveredNodeId(nodeId)}
                   onMouseLeave={() => {

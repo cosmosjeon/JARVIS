@@ -1,16 +1,23 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
 import DragStateManager from 'features/tree/services/drag/DragStateManager';
 import InsertionCalculator from 'features/tree/services/drag/InsertionCalculator';
 import PreviewLayoutCalculator from 'features/tree/services/drag/PreviewLayoutCalculator';
 import SiblingReorderService from 'features/tree/services/drag/SiblingReorderService';
+import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 
 const MIN_SCALE = 0.18;
 const MAX_SCALE = 4;
+const FOCUS_ANIMATION_DURATION = 620;
 const VIRTUAL_ROOT_ID = '__virtual_root__';
 const DEFAULT_TREE_KEY = '__default_tree__';
 const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
+
+const getCartesianFromTidyNode = (node) => ({
+  x: Number.isFinite(node?.y) ? node.y : 0,
+  y: Number.isFinite(node?.x) ? node.x : 0,
+});
 
 const buildTransformStorageKey = (treeKey) => `${VIEWPORT_STORAGE_PREFIX}.${treeKey}`;
 
@@ -247,6 +254,19 @@ const TidyTreeView = ({
     return map;
   }, [layout?.nodes]);
 
+  const layoutNodeById = useMemo(() => {
+    const map = new Map();
+    if (!layout?.nodes) {
+      return map;
+    }
+    layout.nodes.forEach((node) => {
+      if (node?.data?.id) {
+        map.set(node.data.id, node);
+      }
+    });
+    return map;
+  }, [layout?.nodes]);
+
   // 클릭된 노드의 조상 체인 계산 (부모 노드들 연결 하이라이트용)
   const clickedAncestorIds = useMemo(() => {
     if (!clickedNodeId) {
@@ -285,6 +305,97 @@ const TidyTreeView = ({
     hoveredAncestorIds.forEach(id => combined.add(id));
     return combined;
   }, [clickedAncestorIds, hoveredAncestorIds]);
+
+  const viewportDimensions = useMemo(() => ({
+    width: Number.isFinite(dimensions?.width)
+      ? dimensions.width
+      : (Number.isFinite(layout?.width) ? layout.width : 0),
+    height: Number.isFinite(dimensions?.height)
+      ? dimensions.height
+      : (Number.isFinite(layout?.height) ? layout.height : 0),
+  }), [dimensions?.width, dimensions?.height, layout?.width, layout?.height]);
+
+  const focusNodeById = useCallback((nodeId, options = {}) => {
+    if (!nodeId) {
+      return;
+    }
+    const layoutNode = layoutNodeById.get(nodeId);
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+
+    if (!layoutNode || !svgElement || !zoom) {
+      return;
+    }
+
+    const { x, y } = getCartesianFromTidyNode(layoutNode);
+    const baseTransform = lastViewTransformRef.current || viewTransform;
+    const currentTransform = {
+      x: Number.isFinite(baseTransform?.x) ? baseTransform.x : viewTransform.x,
+      y: Number.isFinite(baseTransform?.y) ? baseTransform.y : viewTransform.y,
+      k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
+    };
+
+    const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, currentTransform.k));
+
+    if (process.env.NODE_ENV !== "production") {
+      const debugNode = layoutNode?.data ?? null;
+      const logPayload = {
+        phase: "tidy-focus",
+        nodeId,
+        cartesian: { x, y },
+        layout: { x: layoutNode?.x, y: layoutNode?.y },
+        transformBefore: currentTransform,
+        requestedScale: options.scale,
+        appliedScale: targetScale,
+        nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
+      };
+
+      try {
+        const element = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          logPayload.boundingRect = {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+          };
+          const domMatrix = element.getCTM();
+          if (domMatrix) {
+            logPayload.ctm = {
+              e: domMatrix.e,
+              f: domMatrix.f,
+              a: domMatrix.a,
+              d: domMatrix.d,
+            };
+          }
+        }
+      } catch (error) {
+        logPayload.error = error?.message;
+      }
+
+      // eslint-disable-next-line no-console
+      console.debug("[FocusDebug] tidy", logPayload);
+    }
+
+    focusNodeToCenterUtil({
+      node: { x, y },
+      svgElement,
+      zoomBehaviour: zoom,
+      dimensions: viewportDimensions,
+      viewTransform: currentTransform,
+      setViewTransform,
+      duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
+      scale: Number.isFinite(options.scale) ? options.scale : targetScale,
+    }).catch(() => undefined);
+  }, [
+    layoutNodeById,
+    viewportDimensions,
+    viewTransform.x,
+    viewTransform.y,
+    viewTransform.k,
+    setViewTransform,
+  ]);
 
   // 컴포넌트 언마운트 시 드래그 상태 정리
   useEffect(() => {
@@ -457,11 +568,21 @@ const TidyTreeView = ({
   const baseStroke = isDarkTheme ? "rgba(125, 211, 252, 0.3)" : "rgba(59, 130, 246, 0.3)";
   const selectionStroke = isDarkTheme ? "rgba(125, 211, 252, 0.9)" : "rgba(37, 99, 235, 0.9)";
 
-  const handleNodeActivate = (node) => {
-    if (typeof onNodeClick === "function" && node?.data?.id) {
-      onNodeClick({ id: node.data.id, source: "tidy-tree" });
+  const handleNodeActivate = useCallback((node) => {
+    const nodeId = node?.data?.id;
+    if (!nodeId) {
+      return;
     }
-  };
+    const coordinates = getCartesianFromTidyNode(node);
+    focusNodeById(nodeId);
+    if (typeof onNodeClick === "function") {
+      onNodeClick({
+        id: nodeId,
+        source: "tidy-tree",
+        position: coordinates,
+      });
+    }
+  }, [focusNodeById, onNodeClick]);
 
   // 드래그 시작
   const beginDrag = (event, node) => {

@@ -1983,6 +1983,11 @@ const HierarchicalForceTree = () => {
     }
 
     const layoutNode = nodes.find((candidate) => candidate.id === targetId) || payload;
+    const hasLayoutCoordinates = Number.isFinite(layoutNode?.x) && Number.isFinite(layoutNode?.y);
+    const hasPayloadPosition = Number.isFinite(payload?.position?.x) && Number.isFinite(payload?.position?.y);
+    const focusTarget = hasLayoutCoordinates
+      ? layoutNode
+      : (hasPayloadPosition ? { ...payload, x: payload.position.x, y: payload.position.y } : null);
 
     pendingFocusNodeIdRef.current = targetId;
     setSelectedNodeId(targetId);
@@ -1995,7 +2000,11 @@ const HierarchicalForceTree = () => {
       return current;
     });
 
-    Promise.resolve(focusNodeToCenter(layoutNode, { duration: 600 }))
+    const focusPromise = focusTarget
+      ? Promise.resolve(focusNodeToCenter(focusTarget, { duration: 600 }))
+      : Promise.resolve();
+
+    focusPromise
       .catch(() => undefined)
       .then(() => {
         if (pendingFocusNodeIdRef.current !== targetId) {
