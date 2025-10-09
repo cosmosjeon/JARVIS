@@ -631,7 +631,16 @@ const ForceDirectedTree = ({
 
   const nodeFill = useCallback((node) => resolveNodeColor(node), [resolveNodeColor]);
 
-  const textFill = theme === 'dark' ? '#e2e8f0' : '#0f172a';
+  const isGlassTheme = theme === 'glass';
+  const textFill = (() => {
+    if (theme === 'dark') {
+      return '#e2e8f0';
+    }
+    if (isGlassTheme) {
+      return 'rgba(96, 165, 250, 0.95)';
+    }
+    return '#0f172a';
+  })();
   const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
   
   // 클릭된 노드의 조상 체인 계산
