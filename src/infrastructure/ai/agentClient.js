@@ -70,7 +70,7 @@ const normalizeContentPart = (part) => {
   const type = part.type;
   if (type === 'input_text' || type === 'text') {
     const text = toTrimmedString(part.text);
-    return text ? { type: 'input_text', text } : null;
+    return text ? { type: 'text', text } : null;
   }
 
   if (type === 'input_image' || type === 'image_url' || type === 'image') {
@@ -82,7 +82,7 @@ const normalizeContentPart = (part) => {
           ? part.dataUrl
           : '';
     const url = toTrimmedString(urlCandidate);
-    return url ? { type: 'input_image', image_url: { url } } : null;
+    return url ? { type: 'image_url', image_url: { url } } : null;
   }
 
   return null;
@@ -135,6 +135,69 @@ const splitSystemAndConversation = (messages = []) => {
   };
 };
 
+const mapToOpenAIContentParts = (message) => {
+  const role = message.role === 'assistant' ? 'assistant' : 'user';
+  const textType = role === 'assistant' ? 'output_text' : 'input_text';
+  const imageType = role === 'assistant' ? 'output_image' : 'input_image';
+
+  const parts = [];
+
+  const appendText = (value) => {
+    const text = toTrimmedString(value);
+    if (text) {
+      parts.push({ type: textType, text });
+    }
+  };
+
+  const appendImage = (value) => {
+    const url = toTrimmedString(value);
+    if (url) {
+      parts.push({ type: imageType, image_url: { url } });
+    }
+  };
+
+  if (Array.isArray(message.content)) {
+    message.content.forEach((part) => {
+      if (!part) {
+        return;
+      }
+      if (typeof part === 'string') {
+        appendText(part);
+        return;
+      }
+
+      const type = part.type;
+      if (type === 'text' || type === 'input_text' || type === 'output_text') {
+        appendText(part.text || part.value || '');
+        return;
+      }
+      if (type === 'image_url' || type === 'input_image' || type === 'image') {
+        appendImage(
+          (part.image_url && part.image_url.url)
+          || part.url
+          || part.dataUrl
+          || ''
+        );
+      }
+    });
+  } else {
+    appendText(
+      typeof message.content === 'string'
+        ? message.content
+        : message.text,
+    );
+  }
+
+  const attachments = sanitizeAttachmentList(message.attachments);
+  attachments.forEach((attachment) => appendImage(attachment.dataUrl));
+
+  if (!parts.length) {
+    parts.push({ type: textType, text: '' });
+  }
+
+  return parts;
+};
+
 const normalizeMessage = (message) => {
   if (!message || typeof message !== 'object') {
     return null;
@@ -160,9 +223,9 @@ const normalizeMessage = (message) => {
     return { role, content: text };
   }
 
-  const combined = text ? [{ type: 'input_text', text }] : [];
+  const combined = text ? [{ type: 'text', text }] : [];
   attachments.forEach((attachment) => {
-    combined.push({ type: 'input_image', image_url: { url: attachment.dataUrl } });
+    combined.push({ type: 'image_url', image_url: { url: attachment.dataUrl } });
   });
 
   return { role, content: combined };
@@ -216,7 +279,18 @@ const mapToClaudeMessages = (messages = []) => {
   };
 };
 
-const callOpenAIChat = async ({ messages, model, temperature, maxTokens }) => {
+const isTemperatureSupportedByOpenAI = (modelId) => {
+  if (!modelId) {
+    return true;
+  }
+  const normalized = String(modelId).toLowerCase();
+  if (normalized.startsWith('gpt-5')) {
+    return false;
+  }
+  return true;
+};
+
+const callOpenAIChat = async ({ messages, model, temperature, maxTokens, webSearchEnabled }) => {
   const config = getFallbackConfig(PROVIDERS.OPENAI);
   const apiKey = getFallbackApiKey(PROVIDERS.OPENAI);
   if (!apiKey) {
@@ -228,20 +302,37 @@ const callOpenAIChat = async ({ messages, model, temperature, maxTokens }) => {
     throw buildRequestFailedError({ error: { message: '메시지가 비어 있습니다.' } });
   }
 
+  const input = normalizedMessages.map((message) => ({
+    role: message.role,
+    content: mapToOpenAIContentParts(message),
+  }));
+
+  const resolvedModel = model || config.defaultModel;
+
   const body = {
     model: model || config.defaultModel,
-    messages: normalizedMessages,
+    input,
   };
 
-  if (typeof temperature === 'number' && Number.isFinite(temperature)) {
+  if (typeof temperature === 'number'
+    && Number.isFinite(temperature)
+    && isTemperatureSupportedByOpenAI(resolvedModel)) {
     body.temperature = temperature;
   }
 
   if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
-    body.max_tokens = maxTokens;
+    body.max_output_tokens = maxTokens;
   }
 
-  const response = await fetch(config.baseUrl, {
+  if (webSearchEnabled) {
+    body.tools = [
+      {
+        type: 'web_search',
+      },
+    ];
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -261,29 +352,9 @@ const callOpenAIChat = async ({ messages, model, temperature, maxTokens }) => {
   }
 
   const data = await response.json();
-  const choice = data.choices?.[0] || {};
-  const rawContent = choice.message?.content;
-  let extracted = '';
-  if (typeof rawContent === 'string') {
-    extracted = rawContent.trim();
-  } else if (Array.isArray(rawContent)) {
-    extracted = rawContent
-      .map((item) => {
-        if (!item || typeof item !== 'object') {
-          return '';
-        }
-        if (typeof item.text === 'string') {
-          return item.text;
-        }
-        if (typeof item.value === 'string') {
-          return item.value;
-        }
-        return '';
-      })
-      .filter(Boolean)
-      .join(' ')
-      .trim();
-  }
+  const extracted = typeof data.output_text === 'string'
+    ? data.output_text.trim()
+    : '';
 
   if (!extracted) {
     throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });
@@ -293,12 +364,12 @@ const callOpenAIChat = async ({ messages, model, temperature, maxTokens }) => {
     success: true,
     answer: extracted,
     usage: data.usage || null,
-    finishReason: choice.finish_reason || null,
+    finishReason: data.output?.[0]?.stop_reason || null,
     model: data.model || body.model,
   };
 };
 
-const callGeminiChat = async ({ messages, model, temperature, maxTokens }) => {
+const callGeminiChat = async ({ messages, model, temperature, maxTokens, webSearchEnabled }) => {
   const config = getFallbackConfig(PROVIDERS.GEMINI);
   const apiKey = getFallbackApiKey(PROVIDERS.GEMINI);
   if (!apiKey) {
@@ -327,6 +398,19 @@ const callGeminiChat = async ({ messages, model, temperature, maxTokens }) => {
   }
   if (Object.keys(generationConfig).length > 0) {
     body.generationConfig = generationConfig;
+  }
+
+  if (webSearchEnabled) {
+    body.tools = [
+      {
+        google_search_retrieval: {
+          dynamic_retrieval_config: {
+            mode: 'MODE_DYNAMIC',
+            dynamic_threshold: 0.6,
+          },
+        },
+      },
+    ];
   }
 
   const endpoint = `${config.baseUrl}/models/${encodeURIComponent(model || config.defaultModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -368,7 +452,7 @@ const callGeminiChat = async ({ messages, model, temperature, maxTokens }) => {
   };
 };
 
-const callClaudeChat = async ({ messages, model, temperature, maxTokens }) => {
+const callClaudeChat = async ({ messages, model, temperature, maxTokens, webSearchEnabled }) => {
   const config = getFallbackConfig(PROVIDERS.CLAUDE);
   const apiKey = getFallbackApiKey(PROVIDERS.CLAUDE);
   if (!apiKey) {
@@ -392,6 +476,16 @@ const callClaudeChat = async ({ messages, model, temperature, maxTokens }) => {
 
   if (typeof temperature === 'number' && Number.isFinite(temperature)) {
     body.temperature = temperature;
+  }
+
+  if (webSearchEnabled) {
+    body.tools = [
+      {
+        type: 'web_search_20250305',
+        name: 'web_search',
+        max_uses: 5,
+      },
+    ];
   }
 
   const response = await fetch(config.baseUrl, {
@@ -480,6 +574,7 @@ const fallbackExtractKeyword = async (payload = {}) => {
     model: payload.model || FALLBACK_OPENAI_MODEL,
     temperature: typeof payload.temperature === 'number' ? payload.temperature : 0,
     maxTokens: payload.maxTokens ?? 8,
+    webSearchEnabled: false,
   });
 
   const keyword = response.answer.split(/\s+/).find(Boolean) || '';
@@ -551,7 +646,8 @@ const buildRequestFailedError = (result) => {
 export class AgentClient {
   static async request(channel, payload = {}, bridgeOverride) {
     const provider = normalizeProvider(payload?.provider);
-    const requestPayload = { ...payload, provider };
+    const webSearchEnabled = Boolean(payload?.webSearchEnabled);
+    const requestPayload = { ...payload, provider, webSearchEnabled };
 
     const bridge = resolveAgentBridge(bridgeOverride);
     const bridgeMethod = bridge ? bridge[channel] : null;
@@ -587,12 +683,12 @@ export class AgentClient {
     throw buildMissingBridgeError(provider);
   }
 
-  static async askRoot({ messages, model, temperature, maxTokens, provider } = {}) {
-    return AgentClient.request('askRoot', { messages, model, temperature, maxTokens, provider });
+  static async askRoot({ messages, model, temperature, maxTokens, provider, webSearchEnabled } = {}) {
+    return AgentClient.request('askRoot', { messages, model, temperature, maxTokens, provider, webSearchEnabled });
   }
 
-  static async askChild({ messages, model, temperature, maxTokens, provider } = {}) {
-    return AgentClient.request('askChild', { messages, model, temperature, maxTokens, provider });
+  static async askChild({ messages, model, temperature, maxTokens, provider, webSearchEnabled } = {}) {
+    return AgentClient.request('askChild', { messages, model, temperature, maxTokens, provider, webSearchEnabled });
   }
 }
 

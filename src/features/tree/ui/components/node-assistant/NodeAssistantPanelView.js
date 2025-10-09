@@ -1,8 +1,20 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import AssistantPanelHeader from 'features/tree/ui/components/node-assistant/AssistantPanelHeader';
+import ChatAttachmentPreviewList from 'features/chat/components/ChatAttachmentPreviewList';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import ProviderDropdown from 'features/chat/components/ProviderDropdown';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import { ChatStatus } from 'features/chat/models/message';
+import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
+import {
+  PromptInput,
+  PromptInputButton,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputToolbar,
+} from 'shared/ui/shadcn-io/ai/prompt-input';
+import { cn } from 'shared/utils';
+import { Globe, Paperclip } from 'lucide-react';
 
 const NodeAssistantPanelView = ({
   panelRef,
@@ -45,7 +57,27 @@ const NodeAssistantPanelView = ({
     provider: selectedProvider,
     providerOptions,
     setProvider: setSelectedProvider,
+    webSearchEnabled,
+    setWebSearchEnabled,
   } = useAIModelPreference();
+
+  const resolvedPanelStyles = useMemo(
+    () => ({
+      ...DEFAULT_CHAT_PANEL_STYLES,
+      ...(panelStyles || {}),
+    }),
+    [panelStyles],
+  );
+
+  const subtleTextColor = resolvedPanelStyles.subtleTextColor;
+  const isDarkTheme = theme === 'dark';
+  const isStreaming = useMemo(
+    () => messages.some((message) => {
+      const status = message?.status;
+      return status === ChatStatus.Pending || status === ChatStatus.Typing;
+    }),
+    [messages],
+  );
 
   const handleAttachmentButtonClick = () => {
     fileInputRef.current?.click();
@@ -69,11 +101,11 @@ const NodeAssistantPanelView = ({
       zIndex: 1001,
       pointerEvents: 'auto',
       WebkitAppRegion: 'no-drag',
-      background: panelStyles.background,
-      borderColor: panelStyles.borderColor,
+      background: resolvedPanelStyles.background,
+      borderColor: resolvedPanelStyles.borderColor,
       borderWidth: '1px',
       borderStyle: 'solid',
-      color: panelStyles.textColor,
+      color: resolvedPanelStyles.textColor,
     }}
     data-interactive-zone="true"
     onWheelCapture={panelWheelHandler}
@@ -83,7 +115,7 @@ const NodeAssistantPanelView = ({
       keyword={node.keyword}
       nodeId={node.id}
       disableNavigation={disableNavigation}
-      panelStyles={panelStyles}
+      panelStyles={resolvedPanelStyles}
       theme={theme}
       bootstrapMode={bootstrapMode}
       onClose={onCloseNode}
@@ -96,147 +128,127 @@ const NodeAssistantPanelView = ({
       messages={messages}
       onRetry={handleRetryMessage}
       onCopy={handleCopyMessage}
-      panelStyles={panelStyles}
+      panelStyles={resolvedPanelStyles}
       theme={theme}
-      className="flex-1 min-h-0 pr-1 h-full"
+      className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
       onContainerRef={registerMessageContainer}
       assistantMessageMaxWidth={560}
       userBubbleMaxWidth={280}
       retryingMessageMap={spinningMap}
+      isScrollable={false}
     />
 
-    {Array.isArray(attachments) && attachments.length > 0 ? (
-      <div
-        className="flex w-full flex-wrap gap-3 rounded-xl border px-3 py-3"
-        style={{
-          pointerEvents: 'auto',
-          borderColor: panelStyles.borderColor,
-          backgroundColor: theme === 'dark'
-            ? 'rgba(37, 38, 48, 0.75)'
-            : 'rgba(255, 255, 255, 0.85)',
-        }}
-        data-block-pan="true"
-      >
-        {attachments.map((attachment) => (
-          <div
-            key={attachment.id}
-            className="relative h-24 w-32 overflow-hidden rounded-lg border"
-            style={{
-              borderColor: panelStyles.borderColor,
-              backgroundColor: 'rgba(15, 23, 42, 0.35)'
-            }}
-          >
-            <img
-              src={attachment.dataUrl}
-              alt={attachment.label || attachment.name || '첨부 이미지'}
-              className="h-full w-full object-cover"
-            />
-            <button
-              type="button"
-              onClick={() => onAttachmentRemove(attachment.id)}
-              className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-xs font-bold text-white transition hover:bg-black/80"
-              aria-label="첨부 이미지 제거"
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        {attachments.length > 1 ? (
-          <button
-            type="button"
-            onClick={onClearAttachments}
-            className="flex h-10 items-center justify-center rounded-lg border border-dashed px-3 text-[11px] font-medium transition hover:bg-white/10"
-            style={{
-              borderColor: panelStyles.borderColor,
-              color: panelStyles.textColor,
-            }}
-          >
-            전체 제거
-          </button>
-        ) : null}
-      </div>
-    ) : null}
+    <ChatAttachmentPreviewList
+      attachments={attachments}
+      onRemove={onAttachmentRemove}
+      onClear={onClearAttachments}
+      panelStyles={resolvedPanelStyles}
+      isDarkTheme={isDarkTheme}
+    />
 
     <div
-      className="flex -mb-2 flex-shrink-0 flex-wrap items-center justify-between gap-3"
+      className="flex -mb-2 flex-shrink-0 flex-wrap items-center gap-2"
       data-block-pan="true"
-      style={{ position: 'relative', zIndex: 2, width: '100%' }}
+      style={{
+        position: 'relative',
+        zIndex: 1002,
+        pointerEvents: 'auto',
+        width: '100%',
+      }}
     >
       <button
         type="button"
         onClick={handleHighlightToggle}
         aria-pressed={isHighlightMode}
         aria-label="하이라이트 모드"
-        className={`px-3 py-1 rounded-xl border text-xs font-medium transition-all duration-200 ${isHighlightMode
-          ? 'bg-emerald-500/60 text-emerald-100 border-emerald-400/60'
-          : 'hover:bg-white/20'
-        }`}
+        className="rounded-xl border px-3 py-1 text-xs font-medium transition-all duration-200"
         style={{
+          cursor: 'pointer',
+          pointerEvents: 'auto',
           backgroundColor: isHighlightMode
             ? 'rgba(16, 185, 129, 0.6)'
-            : theme === 'dark'
-              ? 'rgba(64, 65, 79, 0.8)'
+            : isDarkTheme
+              ? 'rgba(65, 65, 65, 0.8)'
               : 'rgba(255, 255, 255, 0.8)',
           borderColor: isHighlightMode
             ? 'rgba(16, 185, 129, 0.6)'
-            : panelStyles.borderColor,
+            : resolvedPanelStyles.borderColor,
           borderWidth: '1px',
           borderStyle: 'solid',
-          color: panelStyles.textColor,
+          color: resolvedPanelStyles.textColor,
         }}
       >
         다중 질문
       </button>
-      <ProviderDropdown
-        options={providerOptions}
-        value={selectedProvider}
-        onChange={setSelectedProvider}
-        disabled={isAttachmentUploading}
-        className="ml-auto"
-        align="end"
-      />
-    </div>
-
-    <form
-      className="glass-surface flex flex-shrink-0 items-end gap-3 rounded-xl border px-3 py-2"
-      onSubmit={handleFormSubmit}
-      style={{
-        pointerEvents: 'auto',
-        zIndex: 1002,
-        backgroundColor: theme === 'dark'
-          ? 'rgba(64, 65, 79, 0.8)'
-          : 'rgba(255, 255, 255, 0.8)',
-        borderColor: panelStyles.borderColor,
-        borderWidth: '1px',
-        borderStyle: 'solid',
-      }}
-    >
-      <div className="flex w-full items-end gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={handleAttachmentInputChange}
-        />
-        <button
-          type="button"
-          onClick={handleAttachmentButtonClick}
-          disabled={isAttachmentUploading}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border text-sm shadow-sm transition disabled:opacity-50"
-          aria-label="이미지 첨부"
+      {placeholderNotice ? (
+        <div
+          className={cn(
+            'rounded px-2 py-1 text-xs transition-colors',
+            placeholderNotice.type === 'success' && 'bg-emerald-500/10',
+            placeholderNotice.type === 'warning' && 'bg-amber-500/10',
+            placeholderNotice.type === 'info' && 'bg-black/10',
+          )}
           style={{
-            borderColor: panelStyles.borderColor,
-            color: panelStyles.textColor,
-            backgroundColor: theme === 'dark'
-              ? 'rgba(30, 31, 45, 0.85)'
-              : 'rgba(255, 255, 255, 0.95)',
+            color: placeholderNotice.type === 'warning'
+              ? (isDarkTheme ? 'rgba(253, 230, 138, 0.95)' : 'rgba(217, 119, 6, 0.9)')
+              : placeholderNotice.type === 'success'
+                ? (isDarkTheme ? 'rgba(110, 231, 183, 0.9)' : 'rgba(5, 122, 85, 0.9)')
+                : subtleTextColor,
           }}
         >
-          {isAttachmentUploading ? '…' : '📎'}
-        </button>
-        <textarea
+          {placeholderNotice.message}
+        </div>
+      ) : null}
+    </div>
+
+    <PromptInput
+      onSubmit={handleFormSubmit}
+      className="flex-col items-stretch gap-2"
+      style={{ zIndex: 1003, pointerEvents: 'auto' }}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={handleAttachmentInputChange}
+      />
+
+      <PromptInputToolbar className="flex items-center justify-between px-1">
+        <ProviderDropdown
+          options={providerOptions}
+          value={selectedProvider}
+          onChange={setSelectedProvider}
+          disabled={isAttachmentUploading || isStreaming}
+          align="start"
+        />
+        <div className="flex items-center gap-1">
+          <PromptInputButton
+            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+            variant={webSearchEnabled ? 'secondary' : 'ghost'}
+            disabled={isAttachmentUploading || isStreaming}
+            className={cn(
+              'rounded-full px-2',
+              webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
+            )}
+            aria-label="웹 검색 토글"
+          >
+            <Globe className="h-4 w-4" />
+          </PromptInputButton>
+          <PromptInputButton
+            onClick={handleAttachmentButtonClick}
+            disabled={isAttachmentUploading || isStreaming}
+            variant="ghost"
+            aria-label="이미지 첨부"
+          >
+            <Paperclip className="h-4 w-4" />
+          </PromptInputButton>
+        </div>
+      </PromptInputToolbar>
+
+      <div className="flex w-full items-end gap-2">
+        <PromptInputTextarea
           ref={composerRef}
           value={composerValue}
           onChange={onComposerChange}
@@ -245,54 +257,19 @@ const NodeAssistantPanelView = ({
           onCompositionEnd={handleCompositionEnd}
           onPaste={onComposerPaste}
           placeholder="Ask anything..."
-          data-node-assistant-composer="true"
-          className={`max-h-24 min-h-[40px] flex-1 resize-none border-none bg-transparent text-sm focus:outline-none ${
-            theme === 'dark'
-              ? 'placeholder:text-gray-400'
-              : 'placeholder:text-gray-500'
-          }`}
-          style={{
-            pointerEvents: 'auto',
-            color: panelStyles.textColor,
-            fontFamily: 'inherit',
-            outline: 'none',
-            border: 'none',
-            resize: 'none',
-          }}
-          autoFocus={false}
           autoComplete="off"
-          spellCheck="false"
+          autoFocus={false}
+          spellCheck={false}
+          data-node-assistant-composer="true"
+        />
+        <PromptInputSubmit
+          disabled={isSendDisabled}
+          status={isStreaming ? 'streaming' : 'ready'}
+          onClick={handleSendClick}
+          aria-label="메시지 전송"
         />
       </div>
-      {placeholderNotice && (
-        <span
-          className={`text-xs whitespace-nowrap ${
-            placeholderNotice.type === 'success' 
-              ? (theme === 'dark' ? 'text-emerald-200' : 'text-emerald-600')
-              : (theme === 'dark' ? 'text-amber-200' : 'text-amber-600')
-          }`}
-        >
-          {placeholderNotice.message}
-        </span>
-      )}
-      <button
-        type="submit"
-        disabled={isSendDisabled}
-        className="flex h-9 w-9 items-center justify-center rounded-full shadow-lg transition-opacity disabled:opacity-40"
-        aria-label="메시지 전송"
-        style={{
-          pointerEvents: 'auto',
-          backgroundColor: theme === 'dark'
-            ? 'rgba(64, 65, 79, 0.9)'
-            : 'rgba(255, 255, 255, 0.8)',
-          color: panelStyles.textColor,
-          border: `1px solid ${panelStyles.borderColor}`,
-        }}
-        onClick={handleSendClick}
-      >
-        ↗
-      </button>
-    </form>
+    </PromptInput>
   </div>
   );
 };

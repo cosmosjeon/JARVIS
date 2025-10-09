@@ -278,27 +278,49 @@ class LLMService {
     });
   }
 
-  async askOpenAI({ messages, model, temperature, maxTokens }) {
+  static isOpenAITemperatureSupported(modelId) {
+    if (!modelId) {
+      return true;
+    }
+    const normalized = String(modelId).toLowerCase();
+    if (normalized.startsWith('gpt-5')) {
+      return false;
+    }
+    return true;
+  }
+
+  async askOpenAI({ messages, model, temperature, maxTokens, webSearchEnabled }) {
     const client = this.ensureOpenAIClient();
     const startedAt = Date.now();
 
     try {
+      const input = mapMessagesToOpenAIInput(messages);
+
       const requestPayload = {
         model,
-        messages,
+        input,
       };
 
-      if (typeof temperature === 'number' && Number.isFinite(temperature)) {
+      if (typeof temperature === 'number'
+        && Number.isFinite(temperature)
+        && LLMService.isOpenAITemperatureSupported(model)) {
         requestPayload.temperature = temperature;
       }
 
       if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
-        requestPayload.max_tokens = maxTokens;
+        requestPayload.max_output_tokens = maxTokens;
       }
 
-      const response = await client.chat.completions.create(requestPayload);
-      const choice = response.choices?.[0] || null;
-      const answer = extractMessageText(choice?.message);
+      if (webSearchEnabled) {
+        requestPayload.tools = [
+          {
+            type: 'web_search',
+          },
+        ];
+      }
+
+      const response = await client.responses.create(requestPayload);
+      const answer = typeof response.output_text === 'string' ? response.output_text.trim() : '';
 
       if (!answer) {
         const error = new Error('Empty response from OpenAI. Verify the model and request payload.');
@@ -309,7 +331,7 @@ class LLMService {
       return {
         answer,
         usage: response.usage || null,
-        finishReason: choice?.finish_reason || null,
+        finishReason: response.output?.[0]?.stop_reason || null,
         model: response.model,
         latencyMs: Date.now() - startedAt,
       };
@@ -319,7 +341,7 @@ class LLMService {
     }
   }
 
-  async askGemini({ messages, model, temperature, maxTokens }) {
+  async askGemini({ messages, model, temperature, maxTokens, webSearchEnabled }) {
     const client = this.ensureGeminiClient();
     const startedAt = Date.now();
 
@@ -334,6 +356,7 @@ class LLMService {
       const resolvedModel = model || PROVIDER_DEFAULTS[PROVIDERS.GEMINI].model;
       const generativeModel = client.getGenerativeModel({
         model: resolvedModel,
+        tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
       });
 
       const request = {
@@ -355,6 +378,10 @@ class LLMService {
       }
       if (Object.keys(generationConfig).length > 0) {
         request.generationConfig = generationConfig;
+      }
+
+      if (webSearchEnabled) {
+        request.tools = [{ googleSearch: {} }];
       }
 
       const rawResponse = await generativeModel.generateContent(request);
@@ -387,7 +414,7 @@ class LLMService {
     }
   }
 
-  async askClaude({ messages, model, temperature, maxTokens }) {
+  async askClaude({ messages, model, temperature, maxTokens, webSearchEnabled }) {
     const client = this.ensureClaudeClient();
     const startedAt = Date.now();
 
@@ -413,6 +440,16 @@ class LLMService {
         requestPayload.temperature = temperature;
       } else if (typeof PROVIDER_DEFAULTS[PROVIDERS.CLAUDE].temperature === 'number') {
         requestPayload.temperature = PROVIDER_DEFAULTS[PROVIDERS.CLAUDE].temperature;
+      }
+
+      if (webSearchEnabled) {
+        requestPayload.tools = [
+          {
+            type: 'web_search_20250305',
+            name: 'web_search',
+            max_uses: 5,
+          },
+        ];
       }
 
       const response = await client.messages.create(requestPayload);
@@ -447,6 +484,7 @@ class LLMService {
     model,
     temperature,
     maxTokens,
+    webSearchEnabled = false,
   } = {}) {
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new Error('messages array is required');
@@ -463,6 +501,7 @@ class LLMService {
           model: model || PROVIDER_DEFAULTS[PROVIDERS.OPENAI].model,
           temperature,
           maxTokens,
+          webSearchEnabled,
         });
       case PROVIDERS.GEMINI:
         return this.askGemini({
@@ -470,6 +509,7 @@ class LLMService {
           model,
           temperature,
           maxTokens,
+          webSearchEnabled,
         });
       case PROVIDERS.CLAUDE:
         return this.askClaude({
@@ -477,6 +517,7 @@ class LLMService {
           model,
           temperature,
           maxTokens,
+          webSearchEnabled,
         });
       default: {
         const error = new Error(`Unsupported provider: ${provider}`);
@@ -495,4 +536,78 @@ module.exports = {
   resolveClaudeApiKey,
   PROVIDERS,
   PROVIDER_LABELS,
+};
+const mapMessagesToOpenAIInput = (messages = []) => {
+  const partsFromMessage = (message) => {
+    const isAssistant = message.role === 'assistant';
+    const textType = isAssistant ? 'output_text' : 'input_text';
+    const imageType = isAssistant ? 'output_image' : 'input_image';
+
+    const parts = [];
+
+    const appendText = (value) => {
+      if (!value) {
+        return;
+      }
+      const text = typeof value === 'string' ? value.trim() : String(value || '').trim();
+      if (text) {
+        parts.push({ type: textType, text });
+      }
+    };
+
+    const appendImage = (value) => {
+      const url = typeof value === 'string' ? value.trim() : '';
+      if (url) {
+        parts.push({ type: imageType, image_url: { url } });
+      }
+    };
+
+    if (Array.isArray(message.content)) {
+      message.content.forEach((part) => {
+        if (!part) {
+          return;
+        }
+        if (typeof part === 'string') {
+          appendText(part);
+          return;
+        }
+        const type = part.type;
+        if (type === 'text' || type === 'input_text' || type === 'output_text') {
+          appendText(part.text || part.value || '');
+          return;
+        }
+        if (type === 'image_url' || type === 'input_image' || type === 'image') {
+          appendImage(
+            (part.image_url && part.image_url.url)
+            || part.url
+            || part.dataUrl
+            || ''
+          );
+        }
+      });
+    } else {
+      appendText(
+        typeof message.content === 'string'
+          ? message.content
+          : message.text,
+      );
+    }
+
+    const attachments = Array.isArray(message.attachments)
+      ? message.attachments.filter((item) => item && typeof item === 'object' && typeof item.dataUrl === 'string')
+      : [];
+
+    attachments.forEach((attachment) => appendImage(attachment.dataUrl));
+
+    if (!parts.length) {
+      parts.push({ type: textType, text: '' });
+    }
+
+    return parts;
+  };
+
+  return (messages || []).map((message) => ({
+    role: message.role || 'user',
+    content: partsFromMessage(message),
+  }));
 };
