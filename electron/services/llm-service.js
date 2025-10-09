@@ -1,39 +1,66 @@
 const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const DEFAULT_TEMPERATURE = process.env.OPENAI_TEMPERATURE !== undefined
-  ? Number(process.env.OPENAI_TEMPERATURE)
-  : undefined;
-const REQUEST_TIMEOUT_MS = process.env.OPENAI_TIMEOUT_MS ? Number(process.env.OPENAI_TIMEOUT_MS) : 30000;
+const PROVIDERS = {
+  OPENAI: 'openai',
+  GEMINI: 'gemini',
+  CLAUDE: 'claude',
+};
+
+const PROVIDER_LABELS = {
+  [PROVIDERS.OPENAI]: 'OpenAI',
+  [PROVIDERS.GEMINI]: 'Google Gemini',
+  [PROVIDERS.CLAUDE]: 'Anthropic Claude',
+};
+
+const PROVIDER_DEFAULTS = {
+  [PROVIDERS.OPENAI]: {
+    model: process.env.OPENAI_MODEL || 'gpt-5',
+    temperature: process.env.OPENAI_TEMPERATURE !== undefined
+      ? Number(process.env.OPENAI_TEMPERATURE)
+      : undefined,
+  },
+  [PROVIDERS.GEMINI]: {
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-pro',
+    temperature: process.env.GEMINI_TEMPERATURE !== undefined
+      ? Number(process.env.GEMINI_TEMPERATURE)
+      : undefined,
+  },
+  [PROVIDERS.CLAUDE]: {
+    model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
+    temperature: process.env.ANTHROPIC_TEMPERATURE !== undefined
+      ? Number(process.env.ANTHROPIC_TEMPERATURE)
+      : undefined,
+  },
+};
+
+const REQUEST_TIMEOUT_MS = process.env.OPENAI_TIMEOUT_MS
+  ? Number(process.env.OPENAI_TIMEOUT_MS)
+  : 30000;
 
 let cachedSettingsPath = null;
 
-const extractMessageContent = (message) => {
-  if (!message) {
+const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const extractMessageText = (message) => {
+  if (!message || typeof message !== 'object') {
     return '';
   }
 
-  const { content } = message;
-
-  if (typeof content === 'string') {
-    return content;
+  if (typeof message.content === 'string') {
+    return message.content.trim();
   }
 
-  if (Array.isArray(content)) {
-    return content
+  if (Array.isArray(message.content)) {
+    return message.content
       .map((entry) => {
-        if (!entry) {
-          return '';
-        }
-        if (typeof entry === 'string') {
-          return entry;
-        }
-        if (typeof entry.text === 'string') {
-          return entry.text;
-        }
+        if (!entry) return '';
+        if (typeof entry === 'string') return entry;
+        if (typeof entry.text === 'string') return entry.text;
         if (Array.isArray(entry.content)) {
           return entry.content
             .filter((child) => typeof child?.text === 'string')
@@ -43,14 +70,88 @@ const extractMessageContent = (message) => {
         return '';
       })
       .filter(Boolean)
-      .join('');
+      .join('')
+      .trim();
   }
 
-  if (content && typeof content === 'object' && typeof content.text === 'string') {
-    return content.text;
+  if (message.content && typeof message.content === 'object' && typeof message.content.text === 'string') {
+    return message.content.text.trim();
+  }
+
+  if (typeof message.text === 'string') {
+    return message.text.trim();
   }
 
   return '';
+};
+
+const splitSystemAndConversation = (messages = []) => {
+  const systemParts = [];
+  const conversation = [];
+
+  messages.forEach((message) => {
+    if (!message || typeof message !== 'object') {
+      return;
+    }
+    const role = message.role || message.author;
+    if (role === 'system') {
+      const text = extractMessageText(message);
+      if (text) {
+        systemParts.push(text);
+      }
+      return;
+    }
+    conversation.push(message);
+  });
+
+  return {
+    systemInstruction: systemParts.join('\n\n').trim(),
+    conversation,
+  };
+};
+
+const mapToGeminiPayload = (messages = []) => {
+  const { systemInstruction, conversation } = splitSystemAndConversation(messages);
+  const contents = conversation
+    .map((message) => {
+      const text = extractMessageText(message);
+      if (!text) {
+        return null;
+      }
+      return {
+        role: message.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text }],
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    contents,
+    systemInstruction: systemInstruction
+      ? { role: 'user', parts: [{ text: systemInstruction }] }
+      : null,
+  };
+};
+
+const mapToClaudePayload = (messages = []) => {
+  const { systemInstruction, conversation } = splitSystemAndConversation(messages);
+  const claudeMessages = conversation
+    .map((message) => {
+      const text = extractMessageText(message);
+      if (!text) {
+        return null;
+      }
+      return {
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: [{ type: 'text', text }],
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    systemInstruction,
+    claudeMessages,
+  };
 };
 
 const getSettingsFilePath = () => {
@@ -65,7 +166,7 @@ const getSettingsFilePath = () => {
   return cachedSettingsPath;
 };
 
-const resolveApiKey = () => {
+const resolveOpenAIApiKey = () => {
   if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim()) {
     return process.env.OPENAI_API_KEY.trim();
   }
@@ -86,39 +187,99 @@ const resolveApiKey = () => {
   return null;
 };
 
+const resolveGeminiApiKey = () => {
+  const candidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_GEMINI_API_KEY,
+  ];
+  return candidates
+    .map(toTrimmedString)
+    .find((value) => value) || null;
+};
+
+const resolveClaudeApiKey = () => {
+  const candidates = [
+    process.env.ANTHROPIC_API_KEY,
+    process.env.CLAUDE_API_KEY,
+  ];
+  return candidates
+    .map(toTrimmedString)
+    .find((value) => value) || null;
+};
+
 class LLMService {
   constructor({ logger } = {}) {
     this.logger = logger;
-    this.client = null;
-    this.cacheKey = null;
+    this.openAIClient = null;
+    this.openAICacheKey = null;
+    this.geminiClient = null;
+    this.claudeClient = null;
   }
 
-  ensureClient() {
-    const apiKey = resolveApiKey();
+  ensureOpenAIClient() {
+    const apiKey = resolveOpenAIApiKey();
     if (!apiKey) {
       const error = new Error('Missing OpenAI API key. Set OPENAI_API_KEY or create openai.json with apiKey');
       error.code = 'OPENAI_KEY_MISSING';
       throw error;
     }
 
-    if (this.client && this.cacheKey === apiKey) {
-      return this.client;
+    if (this.openAIClient && this.openAICacheKey === apiKey) {
+      return this.openAIClient;
     }
 
-    this.client = new OpenAI({
+    this.openAIClient = new OpenAI({
       apiKey,
       timeout: REQUEST_TIMEOUT_MS,
     });
-    this.cacheKey = apiKey;
-    return this.client;
+    this.openAICacheKey = apiKey;
+    return this.openAIClient;
   }
 
-  async ask({ messages, model = DEFAULT_MODEL, temperature = DEFAULT_TEMPERATURE, maxTokens }) {
-    if (!Array.isArray(messages) || messages.length === 0) {
-      throw new Error('messages array is required');
+  ensureGeminiClient() {
+    const apiKey = resolveGeminiApiKey();
+    if (!apiKey) {
+      const error = new Error('Missing Gemini API key. Set GEMINI_API_KEY in the environment.');
+      error.code = 'GEMINI_KEY_MISSING';
+      throw error;
     }
+    if (!this.geminiClient || this.geminiClient._apiKey !== apiKey) {
+      this.geminiClient = new GoogleGenerativeAI(apiKey);
+      this.geminiClient._apiKey = apiKey;
+    }
+    return this.geminiClient;
+  }
 
-    const client = this.ensureClient();
+  ensureClaudeClient() {
+    const apiKey = resolveClaudeApiKey();
+    if (!apiKey) {
+      const error = new Error('Missing Claude API key. Set ANTHROPIC_API_KEY in the environment.');
+      error.code = 'CLAUDE_KEY_MISSING';
+      throw error;
+    }
+    if (!this.claudeClient || this.claudeClient._apiKey !== apiKey) {
+      this.claudeClient = new Anthropic({
+        apiKey,
+        timeout: REQUEST_TIMEOUT_MS,
+      });
+      this.claudeClient._apiKey = apiKey;
+    }
+    return this.claudeClient;
+  }
+
+  logError(provider, error) {
+    if (!this.logger || typeof this.logger.error !== 'function') {
+      return;
+    }
+    this.logger.error(`${provider}_request_failed`, {
+      message: error.message,
+      code: error.code,
+      status: error.status,
+    });
+  }
+
+  async askOpenAI({ messages, model, temperature, maxTokens }) {
+    const client = this.ensureOpenAIClient();
     const startedAt = Date.now();
 
     try {
@@ -136,9 +297,8 @@ class LLMService {
       }
 
       const response = await client.chat.completions.create(requestPayload);
-
       const choice = response.choices?.[0] || null;
-      const answer = extractMessageContent(choice?.message).trim();
+      const answer = extractMessageText(choice?.message);
 
       if (!answer) {
         const error = new Error('Empty response from OpenAI. Verify the model and request payload.');
@@ -154,19 +314,185 @@ class LLMService {
         latencyMs: Date.now() - startedAt,
       };
     } catch (error) {
-      if (this.logger && typeof this.logger.error === 'function') {
-        this.logger.error('openai_request_failed', {
-          message: error.message,
-          code: error.code,
-          status: error.status,
-        });
-      }
+      this.logError('openai', error);
       throw error;
+    }
+  }
+
+  async askGemini({ messages, model, temperature, maxTokens }) {
+    const client = this.ensureGeminiClient();
+    const startedAt = Date.now();
+
+    try {
+      const { contents, systemInstruction } = mapToGeminiPayload(messages);
+      if (!contents.length) {
+        const error = new Error('Gemini conversation payload is empty.');
+        error.code = 'GEMINI_EMPTY_MESSAGES';
+        throw error;
+      }
+
+      const resolvedModel = model || PROVIDER_DEFAULTS[PROVIDERS.GEMINI].model;
+      const generativeModel = client.getGenerativeModel({
+        model: resolvedModel,
+      });
+
+      const request = {
+        contents,
+      };
+
+      if (systemInstruction) {
+        request.systemInstruction = systemInstruction;
+      }
+
+      const generationConfig = {};
+      if (typeof temperature === 'number' && Number.isFinite(temperature)) {
+        generationConfig.temperature = temperature;
+      } else if (typeof PROVIDER_DEFAULTS[PROVIDERS.GEMINI].temperature === 'number') {
+        generationConfig.temperature = PROVIDER_DEFAULTS[PROVIDERS.GEMINI].temperature;
+      }
+      if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
+        generationConfig.maxOutputTokens = maxTokens;
+      }
+      if (Object.keys(generationConfig).length > 0) {
+        request.generationConfig = generationConfig;
+      }
+
+      const rawResponse = await generativeModel.generateContent(request);
+      const response = rawResponse?.response || rawResponse;
+      const candidates = response?.candidates || [];
+      const candidate = candidates[0];
+      const parts = candidate?.content?.parts || [];
+      const answer = parts
+        .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+      if (!answer) {
+        const error = new Error('Empty response from Gemini. Verify the model and request payload.');
+        error.code = 'GEMINI_EMPTY_ANSWER';
+        throw error;
+      }
+
+      return {
+        answer,
+        usage: response?.usageMetadata || null,
+        finishReason: candidate?.finishReason || null,
+        model: response?.model || resolvedModel,
+        latencyMs: Date.now() - startedAt,
+      };
+    } catch (error) {
+      this.logError('gemini', error);
+      throw error;
+    }
+  }
+
+  async askClaude({ messages, model, temperature, maxTokens }) {
+    const client = this.ensureClaudeClient();
+    const startedAt = Date.now();
+
+    try {
+      const { claudeMessages, systemInstruction } = mapToClaudePayload(messages);
+      if (!claudeMessages.length) {
+        const error = new Error('Claude conversation payload is empty.');
+        error.code = 'CLAUDE_EMPTY_MESSAGES';
+        throw error;
+      }
+
+      const requestPayload = {
+        model: model || PROVIDER_DEFAULTS[PROVIDERS.CLAUDE].model,
+        messages: claudeMessages,
+        max_tokens: typeof maxTokens === 'number' && Number.isFinite(maxTokens) ? maxTokens : 1024,
+      };
+
+      if (systemInstruction) {
+        requestPayload.system = systemInstruction;
+      }
+
+      if (typeof temperature === 'number' && Number.isFinite(temperature)) {
+        requestPayload.temperature = temperature;
+      } else if (typeof PROVIDER_DEFAULTS[PROVIDERS.CLAUDE].temperature === 'number') {
+        requestPayload.temperature = PROVIDER_DEFAULTS[PROVIDERS.CLAUDE].temperature;
+      }
+
+      const response = await client.messages.create(requestPayload);
+      const answer = (response.content || [])
+        .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+      if (!answer) {
+        const error = new Error('Empty response from Claude. Verify the model and request payload.');
+        error.code = 'CLAUDE_EMPTY_ANSWER';
+        throw error;
+      }
+
+      return {
+        answer,
+        usage: response.usage || null,
+        finishReason: response.stop_reason || null,
+        model: response.model,
+        latencyMs: Date.now() - startedAt,
+      };
+    } catch (error) {
+      this.logError('claude', error);
+      throw error;
+    }
+  }
+
+  async ask({
+    provider = PROVIDERS.OPENAI,
+    messages,
+    model,
+    temperature,
+    maxTokens,
+  } = {}) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new Error('messages array is required');
+    }
+
+    const normalizedProvider = Object.values(PROVIDERS).includes(provider)
+      ? provider
+      : PROVIDERS.OPENAI;
+
+    switch (normalizedProvider) {
+      case PROVIDERS.OPENAI:
+        return this.askOpenAI({
+          messages,
+          model: model || PROVIDER_DEFAULTS[PROVIDERS.OPENAI].model,
+          temperature,
+          maxTokens,
+        });
+      case PROVIDERS.GEMINI:
+        return this.askGemini({
+          messages,
+          model,
+          temperature,
+          maxTokens,
+        });
+      case PROVIDERS.CLAUDE:
+        return this.askClaude({
+          messages,
+          model,
+          temperature,
+          maxTokens,
+        });
+      default: {
+        const error = new Error(`Unsupported provider: ${provider}`);
+        error.code = 'PROVIDER_UNSUPPORTED';
+        error.provider = provider;
+        throw error;
+      }
     }
   }
 }
 
 module.exports = {
   LLMService,
-  resolveApiKey,
+  resolveOpenAIApiKey,
+  resolveGeminiApiKey,
+  resolveClaudeApiKey,
+  PROVIDERS,
+  PROVIDER_LABELS,
 };
