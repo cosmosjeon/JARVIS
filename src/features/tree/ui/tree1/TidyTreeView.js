@@ -583,8 +583,26 @@ const TidyTreeView = ({
 
   const isDarkTheme = theme === "dark";
   const isGlassTheme = theme === "glass";
-  const linkStroke = isDarkTheme ? "rgba(148, 163, 184, 0.95)" : "rgba(100, 116, 139, 0.95)";
-  const labelColor = isDarkTheme ? "#f8fafc" : (isGlassTheme ? "rgba(96, 165, 250, 0.95)" : "#000000");
+  const linkStroke = (() => {
+    if (isDarkTheme) {
+      return "rgba(148, 197, 253, 0.95)";
+    }
+    if (isGlassTheme) {
+      return "rgba(147, 197, 253, 0.96)";
+    }
+    return "rgba(100, 116, 139, 0.95)";
+  })();
+  const linkGlowFilter = (() => {
+    if (isDarkTheme) {
+      return "drop-shadow(0 0 6px rgba(125, 211, 252, 0.45))";
+    }
+    if (isGlassTheme) {
+      return "drop-shadow(0 0 9px rgba(125, 211, 252, 0.65))";
+    }
+    return undefined;
+  })();
+  const linkStrokeWidth = isGlassTheme ? 1.6 : 1.2;
+  const labelColor = isDarkTheme ? "#f8fafc" : (isGlassTheme ? "rgba(248, 250, 252, 0.96)" : "#000000");
   const labelStroke = isDarkTheme ? "rgba(15, 23, 42, 0.7)" : "rgba(255, 255, 255, 0.9)";
   const parentFill = isDarkTheme ? "rgba(125, 211, 252, 0.95)" : "rgba(59, 130, 246, 0.88)";
   const leafFill = isDarkTheme ? "rgba(148, 163, 184, 0.92)" : "rgba(148, 163, 184, 0.88)";
@@ -861,7 +879,7 @@ const TidyTreeView = ({
                   d={linkGenerator(link)}
                   stroke={linkStroke}
                   strokeOpacity={linkOpacity}
-                  strokeWidth={1.2}
+                  strokeWidth={linkStrokeWidth}
                   strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                   onClick={(event) => {
@@ -875,6 +893,7 @@ const TidyTreeView = ({
                   style={{
                     cursor: "pointer",
                     transition: "stroke-opacity 120ms ease",
+                    filter: linkGlowFilter,
                   }}
                 />
               );
