@@ -253,20 +253,11 @@ const ForceDirectedTree = ({
   const layout = useMemo(() => {
     const nodesArray = Array.isArray(data?.nodes) ? data.nodes : [];
     const linksArray = Array.isArray(data?.links) ? data.links : [];
-    console.log('[ForceDirectedTree] Layout calculation:', {
-      nodesCount: nodesArray.length,
-      linksCount: linksArray.length,
-      firstNode: nodesArray[0]
-    });
     const mappedHierarchy = DataTransformService.transformToHierarchy(
       nodesArray,
       linksArray,
     );
     const result = buildRadialLayout(mappedHierarchy, baseRadius, levelSpacing);
-    console.log('[ForceDirectedTree] Layout result:', {
-      layoutNodesCount: result.nodes.length,
-      hasRoot: !!result.root
-    });
     return result;
   }, [data, baseRadius, levelSpacing]);
 

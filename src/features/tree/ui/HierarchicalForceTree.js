@@ -1286,9 +1286,6 @@ const HierarchicalForceTree = () => {
       ];
 
       setConversationForNode(newNodeData.id, updatedConversation);
-
-      // 강제로 컴포넌트 리렌더링을 위해 상태 업데이트
-      setData(prev => ({ ...prev }));
     } catch (error) {
       console.error('AI 답변 요청 실패:', error);
       // AI 답변 실패 시 fallback 답변 사용
@@ -1300,9 +1297,6 @@ const HierarchicalForceTree = () => {
       ];
 
       setConversationForNode(newNodeData.id, fallbackConversation);
-
-      // 강제로 컴포넌트 리렌더링을 위해 상태 업데이트
-      setData(prev => ({ ...prev }));
     }
 
     setTimeout(() => {
