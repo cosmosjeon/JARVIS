@@ -9,7 +9,6 @@ import * as d3 from 'd3';
 import DataTransformService from 'features/tree/services/DataTransformService';
 import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
-import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 import { motion, useAnimationControls } from 'framer-motion';
 
@@ -17,10 +16,6 @@ const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 4;
 const NODE_RADIUS = 2.6;
-const FOCUS_ANIMATION_DURATION = 620;
-const DEFAULT_FORCE_SCALE = 2.6;
-const FORCE_TARGET_X_RATIO = 0.5;
-const FORCE_TARGET_Y_RATIO = 0.5;
 const FULL_ROTATION = Math.PI * 2;
 const FORCE_ROTATION_DURATION = 360;
 
@@ -263,7 +258,8 @@ const ForceDirectedTree = ({
 
   useEffect(() => {
     setGlobalRotationDeg(0);
-  }, [treeId]);
+    rotationControls.set({ rotate: 0 });
+  }, [treeId, rotationControls]);
 
   useEffect(() => {
     if (questionService) {
@@ -423,156 +419,30 @@ const ForceDirectedTree = ({
     ? resolveNodeColor(selectedHierarchyNode)
     : (theme === 'dark' ? '#38bdf8' : '#2563eb');
 
-  const viewportDimensions = useMemo(() => ({
-    width: Number.isFinite(dimensions?.width) ? dimensions.width : width,
-    height: Number.isFinite(dimensions?.height) ? dimensions.height : height,
-  }), [dimensions?.width, dimensions?.height, width, height]);
-
-  const focusNodeById = useCallback((nodeId, options = {}) => {
+  const focusNodeById = useCallback((nodeId) => {
     if (!nodeId) {
       return;
     }
     const layoutNode = layoutNodeById.get(nodeId);
-    const svgElement = svgRef.current;
-    const zoom = zoomBehaviorRef.current;
-    if (!layoutNode || !svgElement || !zoom) {
+    if (!layoutNode) {
       return;
     }
-
-    const [x, y] = toCartesianFromRadial(layoutNode);
     const nodeAngleDeg = Number.isFinite(layoutNode?.x)
       ? (layoutNode.x * 180) / Math.PI
       : 90;
     const targetRotationDeg = 90 - nodeAngleDeg;
     setGlobalRotationDeg(targetRotationDeg);
-    const baseTransform = lastViewTransformRef.current || viewTransform;
-    const currentTransform = {
-      x: Number.isFinite(baseTransform?.x) ? baseTransform.x : viewTransform.x,
-      y: Number.isFinite(baseTransform?.y) ? baseTransform.y : viewTransform.y,
-      k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
-    };
-
-    const requestedScale = Number.isFinite(options.scale) ? options.scale : DEFAULT_FORCE_SCALE;
-    const targetScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, requestedScale));
-
-    const initialSvgRect = typeof svgElement.getBoundingClientRect === 'function'
-      ? svgElement.getBoundingClientRect()
-      : null;
-
-    const targetViewportWidth = Number.isFinite(initialSvgRect?.width)
-      ? initialSvgRect.width
-      : viewportDimensions.width;
-    const targetViewportHeight = Number.isFinite(initialSvgRect?.height)
-      ? initialSvgRect.height
-      : viewportDimensions.height;
-
-    const offsetX = Number.isFinite(targetViewportWidth)
-      ? targetViewportWidth * (FORCE_TARGET_X_RATIO - 0.5)
-      : 0;
-    const offsetY = Number.isFinite(targetViewportHeight)
-      ? targetViewportHeight * (FORCE_TARGET_Y_RATIO - 0.5)
-      : 0;
-
-    if (process.env.NODE_ENV !== 'production') {
-      const debugNode = layoutNode?.data ?? resolveNodeDatum(layoutNode);
-      const logPayload = {
-        phase: 'force-focus',
-        nodeId,
-        cartesian: { x, y },
-        polar: { angle: layoutNode?.x, radius: layoutNode?.y },
-        transformBefore: currentTransform,
-        requestedScale: options.scale,
-        appliedScale: targetScale,
-        nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
-        offset: { x: offsetX, y: offsetY },
-        viewport: {
-          width: targetViewportWidth,
-          height: targetViewportHeight,
-        },
-        targetRatio: { x: FORCE_TARGET_X_RATIO, y: FORCE_TARGET_Y_RATIO },
-      };
-
-      try {
-        const element = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
-        if (element) {
-          const rect = element.getBoundingClientRect();
-          logPayload.boundingRect = {
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
-          };
-          const domMatrix = element.getCTM();
-          if (domMatrix) {
-            logPayload.ctm = {
-              e: domMatrix.e,
-              f: domMatrix.f,
-              a: domMatrix.a,
-              d: domMatrix.d,
-            };
-          }
-        }
-        const latestSvgRect = svgElement.getBoundingClientRect?.();
-        if (latestSvgRect) {
-          logPayload.svgRect = {
-            x: latestSvgRect.x,
-            y: latestSvgRect.y,
-            width: latestSvgRect.width,
-            height: latestSvgRect.height,
-          };
-          logPayload.targetCenter = {
-            x: latestSvgRect.x + latestSvgRect.width * FORCE_TARGET_X_RATIO,
-            y: latestSvgRect.y + latestSvgRect.height * FORCE_TARGET_Y_RATIO,
-          };
-        }
-      } catch (error) {
-        logPayload.error = error?.message;
-      }
-
-      // eslint-disable-next-line no-console
-      console.debug('[FocusDebug] force', logPayload);
-    }
-
-    const rotationRad = (targetRotationDeg * Math.PI) / 180;
-    const rotatedX = x * Math.cos(rotationRad) - y * Math.sin(rotationRad);
-    const rotatedY = x * Math.sin(rotationRad) + y * Math.cos(rotationRad);
-
-    const executeFocus = () => {
-      focusNodeToCenterUtil({
-        node: { x: rotatedX, y: rotatedY },
-        svgElement,
-        zoomBehaviour: zoom,
-        dimensions: viewportDimensions,
-        viewTransform: currentTransform,
-        setViewTransform,
-        duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
-        scale: Number.isFinite(options.scale) ? options.scale : targetScale,
-        origin: 'center',
-        offset: { x: offsetX, y: offsetY },
-        allowScaleOverride: false,
-      }).catch(() => undefined);
-    };
-
-    setGlobalRotationDeg(targetRotationDeg);
     rotationControls.stop();
-    rotationControls.start({
-      rotate: targetRotationDeg,
-      transition: {
-        duration: FORCE_ROTATION_DURATION / 1000,
-        ease: [0.4, 0, 0.2, 1],
-      },
-    }).then(() => {
-      executeFocus();
-    });
-  }, [
-    layoutNodeById,
-    viewportDimensions,
-    viewTransform.x,
-    viewTransform.y,
-    viewTransform.k,
-    setViewTransform,
-    setGlobalRotationDeg,
-  ]);
+    rotationControls
+      .start({
+        rotate: targetRotationDeg,
+        transition: {
+          duration: FORCE_ROTATION_DURATION / 1000,
+          ease: [0.4, 0, 0.2, 1],
+        },
+      })
+      .catch(() => undefined);
+  }, [layoutNodeById, setGlobalRotationDeg, rotationControls]);
 
   const handleNodeClick = useCallback((node) => {
     const datum = resolveNodeDatum(node);
