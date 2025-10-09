@@ -281,6 +281,20 @@ const ForceDirectedTree = ({
     }
 
     const zoom = d3.zoom()
+      .filter((event) => {
+        if (!event) {
+          return false;
+        }
+
+        if (event.type === 'mousedown' || event.type === 'pointerdown') {
+          if (event.ctrlKey) {
+            return false;
+          }
+          return event.button !== 2;
+        }
+
+        return !event.ctrlKey;
+      })
       .scaleExtent([MIN_ZOOM, MAX_ZOOM])
       .on('zoom', (event) => {
         setViewTransform(event.transform);
