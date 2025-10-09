@@ -521,11 +521,29 @@ const ForceDirectedTree = ({
       return '#e2e8f0';
     }
     if (isGlassTheme) {
-      return 'rgba(96, 165, 250, 0.95)';
+      return 'rgba(248, 250, 252, 0.96)';
     }
     return '#0f172a';
   })();
-  const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
+  const baseLinkColor = (() => {
+    if (theme === 'dark') {
+      return 'rgba(148, 197, 253, 0.9)';
+    }
+    if (isGlassTheme) {
+      return 'rgba(147, 197, 253, 0.9)';
+    }
+    return 'rgba(100, 116, 139, 0.95)';
+  })();
+  const linkGlowFilter = (() => {
+    if (theme === 'dark') {
+      return 'drop-shadow(0 0 6px rgba(96, 165, 250, 0.45))';
+    }
+    if (isGlassTheme) {
+      return 'drop-shadow(0 0 9px rgba(125, 211, 252, 0.65))';
+    }
+    return undefined;
+  })();
+  const linkStrokeWidth = isGlassTheme ? 1.6 : 1.2;
   
   // 클릭된 노드의 조상 체인 계산
   const clickedAncestorIds = useMemo(() => {
@@ -669,9 +687,13 @@ const ForceDirectedTree = ({
                   key={`link-${index}`}
                   d={radialLink(link)}
                   stroke={baseLinkColor}
-                  strokeWidth={1.2}
+                  strokeWidth={linkStrokeWidth}
                   strokeOpacity={strokeOpacity}
                   strokeLinecap="round"
+                  style={{
+                    filter: linkGlowFilter,
+                    transition: 'stroke-opacity 160ms ease',
+                  }}
                 />
               );
             })}
