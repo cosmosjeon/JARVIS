@@ -8,6 +8,7 @@ const MemoPanel = ({ memo, onClose, onUpdate, showHeaderControls = true }) => {
     const [content, setContent] = useState('');
     const debounceRef = useRef(null);
     const isHydratingRef = useRef(false);
+    const panelRef = useRef(null);
     const { theme } = useTheme();
 
     useEffect(() => {
@@ -82,8 +83,42 @@ const MemoPanel = ({ memo, onClose, onUpdate, showHeaderControls = true }) => {
         }
     }, [theme]);
 
+    useEffect(() => {
+        if (!memo || typeof window === 'undefined') {
+            return () => undefined;
+        }
+
+        const handleEscape = (event) => {
+            if (event.key !== 'Escape' || event.defaultPrevented) {
+                return;
+            }
+
+            const doc = typeof document !== 'undefined' ? document : null;
+            const activeElement = doc?.activeElement ?? null;
+            const container = panelRef.current;
+            const isPanelFocused = !activeElement
+                || activeElement === doc?.body
+                || (container && container.contains(activeElement));
+
+            if (!isPanelFocused) {
+                return;
+            }
+
+            if (typeof onClose === 'function') {
+                onClose();
+            }
+        };
+
+        window.addEventListener('keydown', handleEscape, true);
+
+        return () => {
+            window.removeEventListener('keydown', handleEscape, true);
+        };
+    }, [memo, onClose]);
+
     return (
         <div
+            ref={panelRef}
             className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
             style={{
                 fontFamily: 'inherit',
