@@ -561,24 +561,18 @@ const ForceDirectedTree = ({
         <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
           <g fill="none">
             {layout.links.map((link, index) => {
-              const targetDepth = link.target.depth || 0;
               const linkSourceId = resolveNodeId(link.source);
               const linkTargetId = resolveNodeId(link.target);
               const isHighlightedLink = !isHighlightMode
                 || (highlightedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
-              const strokeWidth = isHighlightedLink
-                ? Math.max(0.75, 1.9 - targetDepth * 0.2)
-                : 0.6;
-              const strokeOpacity = isHighlightedLink
-                ? Math.max(0.35, 0.75 - targetDepth * 0.07)
-                : 0.18;
+              const strokeOpacity = isHighlightedLink ? 0.7 : 0.18;
               return (
                 <path
                   key={`link-${index}`}
                   d={radialLink(link)}
                   stroke={baseLinkColor}
-                  strokeWidth={strokeWidth}
+                  strokeWidth={1.2}
                   strokeOpacity={strokeOpacity}
                   strokeLinecap="round"
                 />

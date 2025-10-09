@@ -708,7 +708,7 @@ const TidyTreeView = ({
               const isHighlightedLink = !isHighlightMode
                 || (highlightedAncestorIds.has(linkTargetId)
                   && parentById.get(linkTargetId) === linkSourceId);
-              const linkOpacity = isHighlightedLink ? 1 : 0.15;
+              const linkOpacity = isHighlightedLink ? 0.7 : 0.18;
 
               return (
                 <path
@@ -717,7 +717,8 @@ const TidyTreeView = ({
                   d={linkGenerator(link)}
                   stroke={linkStroke}
                   strokeOpacity={linkOpacity}
-                  strokeWidth={1.8}
+                  strokeWidth={1.2}
+                  strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                   onClick={(event) => {
                     event.stopPropagation();
