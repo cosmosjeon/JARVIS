@@ -666,7 +666,7 @@ const ForceDirectedTree = ({
     return undefined;
   })();
   const linkStrokeWidth = isGlassTheme ? 1.6 : 1.2;
-  
+
   // 클릭된 노드의 조상 체인 계산
   const clickedAncestorIds = useMemo(() => {
     if (!clickedNodeId) {
@@ -781,28 +781,28 @@ const ForceDirectedTree = ({
             style={{ transformOrigin: '0px 0px' }}
           >
             <g fill="none">
-            {layout.links.map((link, index) => {
-              const linkSourceId = resolveNodeId(link.source);
-              const linkTargetId = resolveNodeId(link.target);
-              const isHighlightedLink = !isHighlightMode
-                || (highlightedAncestorIds.has(linkTargetId)
-                  && parentById.get(linkTargetId) === linkSourceId);
-              const strokeOpacity = isHighlightedLink ? 0.7 : 0.18;
-              return (
-                <path
-                  key={`link-${index}`}
-                  d={radialLink(link)}
-                  stroke={baseLinkColor}
-                  strokeWidth={linkStrokeWidth}
-                  strokeOpacity={strokeOpacity}
-                  strokeLinecap="round"
-                  style={{
-                    filter: linkGlowFilter,
-                    transition: 'stroke-opacity 160ms ease',
-                  }}
-                />
-              );
-            })}
+              {layout.links.map((link, index) => {
+                const linkSourceId = resolveNodeId(link.source);
+                const linkTargetId = resolveNodeId(link.target);
+                const isHighlightedLink = !isHighlightMode
+                  || (highlightedAncestorIds.has(linkTargetId)
+                    && parentById.get(linkTargetId) === linkSourceId);
+                const strokeOpacity = isHighlightedLink ? 0.7 : 0.18;
+                return (
+                  <path
+                    key={`link-${index}`}
+                    d={radialLink(link)}
+                    stroke={baseLinkColor}
+                    strokeWidth={linkStrokeWidth}
+                    strokeOpacity={strokeOpacity}
+                    strokeLinecap="round"
+                    style={{
+                      filter: linkGlowFilter,
+                      transition: 'stroke-opacity 160ms ease',
+                    }}
+                  />
+                );
+              })}
             </g>
 
             <g strokeLinejoin="round" strokeWidth={3}>
