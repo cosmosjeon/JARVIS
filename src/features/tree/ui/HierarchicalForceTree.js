@@ -2378,8 +2378,14 @@ const HierarchicalForceTree = () => {
 
       {/* 창 드래그 핸들 - 중앙 최상단 */}
       <div
-        className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 cursor-grab active:cursor-grabbing"
-        style={{ WebkitAppRegion: 'drag' }}
+        className="absolute top-2 z-[1300] cursor-grab active:cursor-grabbing transition-all duration-300"
+        style={{
+          WebkitAppRegion: 'drag',
+          left: tidyAssistantPanelVisible
+            ? `${Math.max(140, (viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 800)) / 2 - tidyAssistantPanelWidth / 2)}px`
+            : '50%',
+          transform: 'translateX(-50%)',
+        }}
       >
         <div
           className="relative flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3"
@@ -2605,10 +2611,12 @@ const HierarchicalForceTree = () => {
 
       {/* 트리 탭 바: 상단 핸들 왼쪽 끝과 정렬 */}
       <div
-        className="absolute z-[1250]"
+        className="absolute z-[1250] transition-all duration-300"
         style={{
           top: '2.75rem',
-          left: '50%',
+          left: tidyAssistantPanelVisible
+            ? `${Math.max(140, (viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 800)) / 2 - tidyAssistantPanelWidth / 2)}px`
+            : '50%',
           transform: 'translateX(-50%)',
         }}
       >
