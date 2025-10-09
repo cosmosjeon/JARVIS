@@ -13,6 +13,7 @@ import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3R
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 import { motion, useAnimationControls } from 'framer-motion';
 import { useSettings } from 'shared/hooks/SettingsContext';
+import NodeContextMenu from 'features/tree/ui/components/NodeContextMenu';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
@@ -315,6 +316,26 @@ const ForceDirectedTree = ({
   const [clickedNodeId, setClickedNodeId] = useState(null);
   const clickTimerRef = useRef(null);
   const backgroundClickTimerRef = useRef(null);
+  const [contextMenu, setContextMenu] = useState({ open: false, node: null, x: 0, y: 0 });
+
+  // 컨텍스트 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!contextMenu.open) return;
+
+    const handleClickOutside = (event) => {
+      setTimeout(() => {
+        setContextMenu({ open: false, node: null, x: 0, y: 0 });
+      }, 0);
+    };
+
+    setTimeout(() => {
+      document.addEventListener('click', handleClickOutside, { once: true });
+    }, 0);
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [contextMenu.open]);
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
   const questionServiceRef = useRef(questionService || new QuestionService());
@@ -395,6 +416,35 @@ const ForceDirectedTree = ({
 
     const zoom = d3.zoom()
       .scaleExtent([MIN_ZOOM, MAX_ZOOM])
+      .filter((event) => {
+        // 우클릭은 차단
+        if (event.button === 2) return false;
+
+        // 휠 이벤트: Ctrl 키를 누른 상태에서만 확대/축소 허용
+        if (event.type === 'wheel') {
+          return event.ctrlKey || event.metaKey;
+        }
+
+        // 마우스 드래그 이동: 휠 클릭(button 1) 또는 Ctrl + 좌클릭만 허용
+        if (event.type === 'mousedown' || event.type === 'mousemove') {
+          return event.button === 1 || (event.ctrlKey && event.button === 0);
+        }
+
+        // 터치/트랙패드 제스처는 기본 허용 (두 손가락 드래그, 핀치 줌)
+        if (event.type === 'touchstart' || event.type === 'touchmove' || event.type === 'touchend') {
+          return true;
+        }
+
+        return true;
+      })
+      .wheelDelta((event) => {
+        // Ctrl 키를 누른 상태에서만 확대/축소
+        if (!event.ctrlKey && !event.metaKey) {
+          return 0;
+        }
+        const modeFactor = event.deltaMode === 1 ? 0.33 : event.deltaMode ? 33 : 1;
+        return (-event.deltaY * modeFactor) / 600;
+      })
       .on('zoom', (event) => {
         setViewTransform(event.transform);
         lastViewTransformRef.current = event.transform;
@@ -880,6 +930,16 @@ const ForceDirectedTree = ({
                       setHoveredNodeId(nodeId);
                       handleNodeClick(node);
                     }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setContextMenu({
+                        open: true,
+                        node: datum,
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
+                    }}
                     style={{
                       cursor: 'pointer',
                       opacity: nodeOpacity,
@@ -961,6 +1021,25 @@ const ForceDirectedTree = ({
           />
         </div>
       ) : null}
+
+      {/* 노드 컨텍스트 메뉴 */}
+      <NodeContextMenu
+        isOpen={contextMenu.open}
+        position={{ x: contextMenu.x, y: contextMenu.y }}
+        node={contextMenu.node}
+        theme={theme}
+        onClose={() => setContextMenu({ open: false, node: null, x: 0, y: 0 })}
+        onDelete={(nodeId) => {
+          if (onNodeRemove) {
+            onNodeRemove(nodeId);
+          }
+        }}
+        onRename={(nodeId, newName) => {
+          if (onNodeUpdate) {
+            onNodeUpdate(nodeId, { name: newName });
+          }
+        }}
+      />
     </div>
   );
 };

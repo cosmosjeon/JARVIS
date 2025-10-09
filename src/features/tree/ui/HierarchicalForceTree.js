@@ -2759,6 +2759,8 @@ const HierarchicalForceTree = () => {
             activeTreeId={activeTreeId}
             onBackgroundClick={handleBackgroundClick}
             isChatPanelOpen={Boolean(expandedNodeId)}
+            onNodeDelete={removeNodeAndDescendants}
+            onNodeUpdate={handleNodeUpdate}
             onReorderSiblings={(parentId, orderedChildIds) => {
               if (!parentId || !Array.isArray(orderedChildIds)) return;
 
