@@ -357,6 +357,7 @@ const TidyTreeView = ({
         appliedScale: targetScale,
         nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
         offset: { x: 0, y: verticalOffset },
+        viewport: viewportDimensions,
       };
 
       try {
@@ -378,6 +379,15 @@ const TidyTreeView = ({
               d: domMatrix.d,
             };
           }
+        }
+        const svgRect = svgElement.getBoundingClientRect?.();
+        if (svgRect) {
+          logPayload.svgRect = {
+            x: svgRect.x,
+            y: svgRect.y,
+            width: svgRect.width,
+            height: svgRect.height,
+          };
         }
       } catch (error) {
         logPayload.error = error?.message;
