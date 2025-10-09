@@ -24,6 +24,17 @@ const FORCE_TARGET_X_RATIO = 0.5;
 const FORCE_TARGET_Y_RATIO = 0.5;
 const FULL_ROTATION = Math.PI * 2;
 const FORCE_ROTATION_DURATION = 360;
+const TEXT_COLOR_BY_THEME = Object.freeze({
+  dark: '#e2e8f0',
+  glass: '#f8fafc',
+});
+const DARK_LIKE_THEMES = new Set(['dark', 'glass']);
+const normalizeThemeKey = (value) => {
+  if (typeof value !== 'string') {
+    return 'light';
+  }
+  return value.trim().toLowerCase();
+};
 
 const normalizeAngle = (angle) => {
   if (!Number.isFinite(angle)) {
@@ -231,6 +242,8 @@ const ForceDirectedTree = ({
   isChatPanelOpen = false,
 }) => {
   const { zoomOnClickEnabled } = useSettings();
+  const normalizedTheme = normalizeThemeKey(theme);
+  const isDarkLikeTheme = DARK_LIKE_THEMES.has(normalizedTheme);
 
   const baseWidth = Number.isFinite(dimensions?.width)
     ? dimensions.width
@@ -685,7 +698,7 @@ const ForceDirectedTree = ({
 
   const nodeFill = useCallback((node) => resolveNodeColor(node), [resolveNodeColor]);
 
-  const textFill = theme === 'dark' ? '#e2e8f0' : '#0f172a';
+  const textFill = TEXT_COLOR_BY_THEME[theme] || '#0f172a';
   const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
 
   // 클릭된 노드의 조상 체인 계산
@@ -738,6 +751,11 @@ const ForceDirectedTree = ({
         onClick={(event) => {
           // 배경 클릭 처리
           if (event.target === event.currentTarget || event.target.tagName === 'svg') {
+            // 하이라이트 즉시 해제
+            const hasHighlight = clickedNodeId !== null;
+            setClickedNodeId(null);
+            setHoveredNodeId(null);
+
             // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
             if (backgroundClickTimerRef.current) {
               clearTimeout(backgroundClickTimerRef.current);
@@ -745,8 +763,6 @@ const ForceDirectedTree = ({
 
               if (isChatPanelOpen) {
                 // 채팅창이 열려있으면: 채팅창만 닫기 (줌 유지)
-                setClickedNodeId(null);
-                setHoveredNodeId(null);
                 if (externalSelectedNodeId === undefined) {
                   setInternalSelectedNodeId(null);
                 }
@@ -760,17 +776,8 @@ const ForceDirectedTree = ({
             } else {
               // 싱글 클릭: 타이머 시작
               backgroundClickTimerRef.current = setTimeout(() => {
-                const hasHighlight = clickedNodeId !== null;
-
-                if (hasHighlight) {
-                  // 하이라이트가 있으면 하이라이트만 해제 (채팅창과 테두리 유지)
-                  setClickedNodeId(null);
-                  setHoveredNodeId(null);
-                  // 선택(테두리)은 유지, 채팅창도 유지
-                } else {
-                  // 하이라이트가 없으면 채팅창 닫기
-                  setClickedNodeId(null);
-                  setHoveredNodeId(null);
+                if (!hasHighlight) {
+                  // 하이라이트가 없었으면 채팅창 닫기
                   if (externalSelectedNodeId === undefined) {
                     setInternalSelectedNodeId(null);
                   }
@@ -778,6 +785,7 @@ const ForceDirectedTree = ({
                     onBackgroundClick();
                   }
                 }
+                // 하이라이트가 있었으면 하이라이트만 해제 (이미 위에서 처리됨)
                 backgroundClickTimerRef.current = null;
               }, 250);
             }

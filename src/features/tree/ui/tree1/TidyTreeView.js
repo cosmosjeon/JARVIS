@@ -3,6 +3,7 @@ import * as d3 from "d3";
 import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
 import DragStateManager from 'features/tree/services/drag/DragStateManager';
 import InsertionCalculator from 'features/tree/services/drag/InsertionCalculator';
+
 import PreviewLayoutCalculator from 'features/tree/services/drag/PreviewLayoutCalculator';
 import SiblingReorderService from 'features/tree/services/drag/SiblingReorderService';
 import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
@@ -14,6 +15,13 @@ const FOCUS_ANIMATION_DURATION = 620;
 const VIRTUAL_ROOT_ID = '__virtual_root__';
 const DEFAULT_TREE_KEY = '__default_tree__';
 const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
+const DARK_LIKE_THEMES = new Set(["dark", "glass"]);
+const normalizeThemeKey = (value) => {
+  if (typeof value !== "string") {
+    return "light";
+  }
+  return value.trim().toLowerCase();
+};
 
 const getCartesianFromTidyNode = (node) => ({
   x: Number.isFinite(node?.y) ? node.y : 0,
@@ -598,7 +606,8 @@ const TidyTreeView = ({
     };
   }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height]);
 
-  const isDarkTheme = theme === "dark";
+  const normalizedTheme = normalizeThemeKey(theme);
+  const isDarkTheme = DARK_LIKE_THEMES.has(normalizedTheme);
   const linkStroke = isDarkTheme ? "rgba(148, 163, 184, 0.95)" : "rgba(100, 116, 139, 0.95)";
   const labelColor = isDarkTheme ? "#f8fafc" : "#000000";
   const labelStroke = isDarkTheme ? "rgba(15, 23, 42, 0.7)" : "rgba(255, 255, 255, 0.9)";
@@ -806,6 +815,11 @@ const TidyTreeView = ({
           // SVG 배경 클릭 (노드나 링크가 아닌 경우)
           const target = event.target;
           if (target === svgRef.current || target.tagName === 'g') {
+            // 하이라이트 즉시 해제
+            const hasHighlight = clickedNodeId !== null;
+            setClickedNodeId(null);
+            setHoveredNodeId(null);
+
             // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
             if (backgroundClickTimerRef.current) {
               clearTimeout(backgroundClickTimerRef.current);
@@ -813,8 +827,6 @@ const TidyTreeView = ({
 
               if (isChatPanelOpen) {
                 // 채팅창이 열려있으면: 채팅창만 닫기 (줌 유지)
-                setClickedNodeId(null);
-                setHoveredNodeId(null);
                 setInternalSelectedNodeId(null);
                 if (typeof onBackgroundClick === "function") {
                   onBackgroundClick();
@@ -826,22 +838,14 @@ const TidyTreeView = ({
             } else {
               // 싱글 클릭: 타이머 시작
               backgroundClickTimerRef.current = setTimeout(() => {
-                const hasHighlight = clickedNodeId !== null;
-
-                if (hasHighlight) {
-                  // 하이라이트가 있으면 하이라이트만 해제 (채팅창과 테두리 유지)
-                  setClickedNodeId(null);
-                  setHoveredNodeId(null);
-                  // 선택(테두리)은 유지, 채팅창도 유지
-                } else {
-                  // 하이라이트가 없으면 채팅창 닫기
-                  setClickedNodeId(null);
-                  setHoveredNodeId(null);
+                if (!hasHighlight) {
+                  // 하이라이트가 없었으면 채팅창 닫기
                   setInternalSelectedNodeId(null);
                   if (typeof onBackgroundClick === "function") {
                     onBackgroundClick();
                   }
                 }
+                // 하이라이트가 있었으면 하이라이트만 해제 (이미 위에서 처리됨)
                 backgroundClickTimerRef.current = null;
               }, 250);
             }
