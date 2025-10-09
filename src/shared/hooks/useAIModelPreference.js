@@ -45,6 +45,7 @@ const DEFAULT_STATE = {
   provider: 'openai',
   model: PROVIDER_MAP.openai.defaultModel,
   temperature: 0.7,
+  webSearchEnabled: false,
 };
 
 const PREFERENCE_EVENT = 'jarvis:ai-preference-change';
@@ -69,10 +70,15 @@ const normalizePreference = (raw) => {
     ? raw.temperature
     : DEFAULT_STATE.temperature;
 
+  const webSearchEnabled = typeof raw.webSearchEnabled === 'boolean'
+    ? raw.webSearchEnabled
+    : DEFAULT_STATE.webSearchEnabled;
+
   return {
     provider,
     model,
     temperature,
+    webSearchEnabled,
   };
 };
 
@@ -196,15 +202,24 @@ export const useAIModelPreference = () => {
     }));
   }, [setPreference]);
 
+  const setWebSearchEnabled = useCallback((next) => {
+    setPreference((prev) => ({
+      ...prev,
+      webSearchEnabled: Boolean(next),
+    }));
+  }, [setPreference]);
+
   return {
     preference,
     provider: preference.provider,
-   model: preference.model,
-   temperature: preference.temperature,
-   providerOptions,
+    model: preference.model,
+    temperature: preference.temperature,
+    webSearchEnabled: preference.webSearchEnabled,
+    providerOptions,
     currentProvider: providerConfig,
     setProvider,
     setTemperature,
+    setWebSearchEnabled,
     setPreference,
   };
 };

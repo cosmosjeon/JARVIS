@@ -75,6 +75,7 @@ const HierarchicalForceTree = () => {
     provider: selectedProvider,
     model: selectedModel,
     temperature: preferredTemperature,
+    webSearchEnabled,
   } = useAIModelPreference();
 
   // 테마 옵션 정의
@@ -1035,6 +1036,7 @@ const HierarchicalForceTree = () => {
     const requestPayload = {
       ...payload,
       provider: selectedProvider,
+      webSearchEnabled,
     };
 
     if (!requestPayload.model) {

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Paperclip, Network, Shield } from 'lucide-react';
+import { Loader2, X, Paperclip, Network, Shield, Globe } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
+import ChatAttachmentPreviewList from 'features/chat/components/ChatAttachmentPreviewList';
 import ProviderDropdown from 'features/chat/components/ProviderDropdown';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
 import EditableTitle, { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
@@ -66,6 +67,8 @@ const LibraryQAPanel = ({
     temperature: preferredTemperature,
     providerOptions,
     setProvider: setSelectedProvider,
+    webSearchEnabled,
+    setWebSearchEnabled,
   } = useAIModelPreference();
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
@@ -560,6 +563,7 @@ const LibraryQAPanel = ({
     const requestPayload = {
       ...payload,
       provider: selectedProvider,
+      webSearchEnabled,
     };
 
     if (!requestPayload.model) {
@@ -710,6 +714,8 @@ const LibraryQAPanel = ({
 
     const mapToOpenAIMessage = (msg) => {
       const role = msg.role === 'assistant' ? 'assistant' : 'user';
+      const textType = role === 'assistant' ? 'output_text' : 'input_text';
+      const imageType = role === 'assistant' ? 'output_image' : 'input_image';
 
       if (Array.isArray(msg.content)) {
         const normalizedContent = msg.content
@@ -719,9 +725,9 @@ const LibraryQAPanel = ({
             }
             if (item.type === 'input_text' || item.type === 'text') {
               const text = typeof item.text === 'string' ? item.text.trim() : '';
-              return text ? { type: 'input_text', text } : null;
+              return text ? { type: textType, text } : null;
             }
-            if (item.type === 'input_image' || item.type === 'image_url') {
+            if (item.type === 'input_image' || item.type === 'image_url' || item.type === 'image') {
               const urlCandidate = typeof item.image_url?.url === 'string'
                 ? item.image_url.url
                 : typeof item.url === 'string'
@@ -730,7 +736,7 @@ const LibraryQAPanel = ({
                     ? item.dataUrl
                     : '';
               const url = urlCandidate.trim();
-              return url ? { type: 'input_image', image_url: { url } } : null;
+              return url ? { type: imageType, image_url: { url } } : null;
             }
             return null;
           })
@@ -749,7 +755,7 @@ const LibraryQAPanel = ({
       const contentParts = [];
 
       if (trimmed) {
-        contentParts.push({ type: 'input_text', text: trimmed });
+        contentParts.push({ type: textType, text: trimmed });
       }
 
       const messageAttachments = Array.isArray(msg.attachments)
@@ -758,7 +764,7 @@ const LibraryQAPanel = ({
 
       messageAttachments.forEach((item) => {
         contentParts.push({
-          type: 'input_image',
+          type: imageType,
           image_url: { url: item.dataUrl },
         });
       });
@@ -767,7 +773,7 @@ const LibraryQAPanel = ({
         return null;
       }
 
-      if (contentParts.length === 1 && contentParts[0].type === 'input_text') {
+      if (contentParts.length === 1 && contentParts[0].type === textType) {
         return { role, content: contentParts[0].text };
       }
 
@@ -1213,55 +1219,13 @@ const LibraryQAPanel = ({
         </div>
       )}
 
-      {attachments.length > 0 ? (
-        <div
-          className="flex w-full flex-wrap gap-3 rounded-xl border px-3 py-3"
-          style={{
-            pointerEvents: 'auto',
-            borderColor: chatPanelStyles.borderColor,
-            backgroundColor: isDarkTheme ? 'rgba(55, 55, 55, 0.85)' : 'rgba(255, 255, 255, 0.85)',
-          }}
-          data-block-pan="true"
-        >
-          {attachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className="relative h-24 w-32 overflow-hidden rounded-lg border"
-              style={{
-                borderColor: chatPanelStyles.borderColor,
-                backgroundColor: isDarkTheme ? 'rgba(65, 65, 65, 0.75)' : 'rgba(15, 23, 42, 0.35)',
-              }}
-            >
-              <img
-                src={attachment.dataUrl}
-                alt={attachment.label || attachment.name || '첨부 이미지'}
-                className="h-full w-full object-cover"
-              />
-              <button
-                type="button"
-                onClick={() => handleAttachmentRemove(attachment.id)}
-                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-xs font-bold text-white transition hover:bg-black/80"
-                aria-label="첨부 이미지 제거"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {attachments.length > 1 ? (
-            <button
-              type="button"
-              onClick={clearAttachments}
-              className="flex h-10 items-center justify-center rounded-lg border border-dashed px-3 text-[11px] font-medium transition hover:bg-white/40"
-              style={{ 
-                borderColor: chatPanelStyles.borderColor,
-                color: chatPanelStyles.textColor,
-              }}
-            >
-              전체 제거
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      <ChatAttachmentPreviewList
+        attachments={attachments}
+        onRemove={handleAttachmentRemove}
+        onClear={clearAttachments}
+        panelStyles={chatPanelStyles}
+        isDarkTheme={isDarkTheme}
+      />
 
       {!isLibraryIntroActive && (
         <div
@@ -1396,6 +1360,17 @@ const LibraryQAPanel = ({
               align="start"
             />
             <div className="flex items-center gap-1">
+              <PromptInputButton
+                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                variant={webSearchEnabled ? 'secondary' : 'ghost'}
+                disabled={isProcessing}
+                className={cn(
+                  'rounded-full px-2',
+                  webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                <Globe className="h-4 w-4" />
+              </PromptInputButton>
               <PromptInputButton
                 onClick={handleAttachmentButtonClick}
                 disabled={isAttachmentUploading || isProcessing}

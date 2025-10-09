@@ -120,7 +120,7 @@ const extractAttachments = (message) => {
       if (!item || typeof item !== 'object') {
         return;
       }
-      if (item.type === 'input_image' || item.type === 'image_url') {
+      if (item.type === 'input_image' || item.type === 'image_url' || item.type === 'image') {
         const attachment = normalizeAttachment(item, generateId(`content_attachment_${index}`));
         if (attachment) {
           append(attachment);

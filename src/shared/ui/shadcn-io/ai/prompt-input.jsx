@@ -18,6 +18,7 @@ export const PromptInput = ({ className, ...props }) => (
 
 export const PromptInputTextarea = React.forwardRef(({
   onChange,
+  onKeyDown: externalOnKeyDown,
   className,
   placeholder = 'What would you like to know?',
   minHeight = 40,
@@ -72,6 +73,16 @@ export const PromptInputTextarea = React.forwardRef(({
     onChange?.(e);
   };
 
+  const handleTextareaKeyDown = (e) => {
+    if (externalOnKeyDown) {
+      externalOnKeyDown(e);
+      if (e.defaultPrevented) {
+        return;
+      }
+    }
+    handleKeyDown(e);
+  };
+
   return (
     <textarea
       ref={textareaRef}
@@ -94,7 +105,7 @@ export const PromptInputTextarea = React.forwardRef(({
       }}
       name="message"
       onChange={handleChange}
-      onKeyDown={handleKeyDown}
+      onKeyDown={handleTextareaKeyDown}
       placeholder={placeholder}
       {...props}
     />
