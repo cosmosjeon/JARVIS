@@ -684,39 +684,6 @@ const LibraryQAPanel = ({
       timestamp: timestamp + 1,
     };
 
-    const newNodeId = `node_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
-    const keyword = question.split(' ').slice(0, 3).join(' ') || 'Q';
-    const parentId = selectedNode?.id ?? null;
-    const level = selectedNode ? (selectedNode.level || 0) + 1 : 0;
-
-    const newNode = {
-      id: newNodeId,
-      keyword,
-      question,
-      answer: '',
-      status: 'asking',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      conversation: [userMessage, assistantMessage],
-      parentId,
-      level,
-      treeId: selectedTree.id,
-    };
-
-    setMessages([userMessage, assistantMessage]);
-
-    if (onNewNodeCreated) {
-      onNewNodeCreated(newNode, {
-        source: newNode.parentId,
-        target: newNode.id,
-        value: 1,
-      });
-    }
-
-    if (isLibraryIntroActive && onLibraryIntroComplete) {
-      onLibraryIntroComplete(selectedTree.id);
-    }
-
     const mapToOpenAIMessage = (msg) => {
       const role = msg.role === 'assistant' ? 'assistant' : 'user';
 
@@ -782,6 +749,152 @@ const LibraryQAPanel = ({
 
       return { role, content: contentParts };
     };
+
+    const previousMessages = Array.isArray(messages) ? messages : [];
+    const isPlaceholderNode = selectedNode
+      ? selectedNode.status === 'placeholder' || Boolean(selectedNode.placeholder)
+      : false;
+    const hasUserConversation = previousMessages.some((msg) => msg.role === 'user');
+
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.debug('[LibraryQAPanel] send question', {
+        nodeId: selectedNode?.id,
+        status: selectedNode?.status,
+        hasPlaceholderMeta: Boolean(selectedNode?.placeholder),
+        isPlaceholderNode,
+        hasUserConversation,
+        previousMessagesCount: previousMessages.length,
+      });
+    }
+
+    if (isPlaceholderNode && !hasUserConversation && selectedNode) {
+      const pendingMessages = [...previousMessages, userMessage, assistantMessage];
+      setMessages(pendingMessages);
+
+      const openaiMessages = pendingMessages
+        .filter((msg) => msg.id !== assistantId)
+        .map(mapToOpenAIMessage)
+        .filter(Boolean);
+
+      const pendingNode = {
+        ...selectedNode,
+        question: selectedNode.question || question,
+        conversation: pendingMessages,
+        status: 'asking',
+        updatedAt: timestamp,
+        answer: '',
+      };
+
+      if (hasAttachments) {
+        pendingNode.attachments = sanitizedAttachments;
+      }
+
+      onNodeUpdate?.(pendingNode);
+      onNodeSelect?.(pendingNode);
+
+      try {
+        const response = await withTimeout(
+          invokeAgent('askRoot', {
+            messages: openaiMessages,
+            attachments: hasAttachments ? sanitizedAttachments : undefined,
+          }),
+          AGENT_RESPONSE_TIMEOUT_MS,
+        );
+
+        if (response?.success === false && response?.error?.message) {
+          throw new Error(response.error.message);
+        }
+
+        const answerText = response?.answer
+          || response?.data?.answer
+          || response?.result?.answer
+          || response?.message?.answer
+          || '';
+
+        if (!answerText) {
+          throw new Error('답변을 받지 못했습니다.');
+        }
+
+        animateAssistantResponse(assistantId, answerText);
+
+        const updatedMessages = pendingMessages.map((msg) =>
+          msg.id === assistantId
+            ? { ...msg, text: answerText, status: 'complete' }
+            : msg,
+        );
+
+        const answeredNode = {
+          ...pendingNode,
+          conversation: updatedMessages,
+          answer: answerText,
+          status: 'answered',
+          updatedAt: Date.now(),
+        };
+
+        await upsertTreeNodes({
+          treeId: selectedTree.id,
+          nodes: [answeredNode],
+          userId: user.id,
+        });
+
+        onNodeUpdate?.(answeredNode);
+        onNodeSelect?.(answeredNode);
+      } catch (error) {
+        console.error('질문 처리 실패:', error);
+        const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
+        setError(errorMessage);
+        setComposerValue(question);
+        if (hasAttachments) {
+          setAttachments(sanitizedAttachments);
+        }
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? { ...msg, text: `오류: ${errorMessage}`, status: 'error' }
+              : msg,
+          ),
+        );
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
+
+    const newNodeId = `node_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
+    const keyword = question.split(' ').slice(0, 3).join(' ') || 'Q';
+    const parentId = selectedNode?.id ?? null;
+    const level = selectedNode ? (selectedNode.level || 0) + 1 : 0;
+
+    const newNode = {
+      id: newNodeId,
+      keyword,
+      question,
+      answer: '',
+      status: 'asking',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      conversation: [userMessage, assistantMessage],
+      parentId,
+      level,
+      treeId: selectedTree.id,
+    };
+
+    setMessages([userMessage, assistantMessage]);
+
+    if (onNewNodeCreated) {
+      onNewNodeCreated(newNode, {
+        source: newNode.parentId,
+        target: newNode.id,
+        value: 1,
+      });
+    }
+
+    if (isLibraryIntroActive && onLibraryIntroComplete) {
+      onLibraryIntroComplete(selectedTree.id);
+    }
 
     try {
       const openaiMessages = [...messages, userMessage]
