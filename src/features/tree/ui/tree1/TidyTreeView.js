@@ -6,6 +6,7 @@ import InsertionCalculator from 'features/tree/services/drag/InsertionCalculator
 import PreviewLayoutCalculator from 'features/tree/services/drag/PreviewLayoutCalculator';
 import SiblingReorderService from 'features/tree/services/drag/SiblingReorderService';
 import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
+import { useSettings } from 'shared/hooks/SettingsContext';
 
 const MIN_SCALE = 0.18;
 const MAX_SCALE = 4;
@@ -110,23 +111,24 @@ const computeDefaultTransform = (layout, viewportDimensions) => {
     return null;
   }
 
+  // 실제 컨텐츠의 너비/높이 계산 (패딩 제외)
+  const actualContentWidth = Math.max(1, maxY - minY);
+  const actualContentHeight = Math.max(1, maxX - minX);
+
+  // 패딩을 고려한 스케일 계산
   const horizontalPadding = Number.isFinite(layout?.dy) ? layout.dy * 1.2 : 80;
   const verticalPadding = Number.isFinite(layout?.dx) ? layout.dx * 1.2 : 80;
 
-  const contentWidth = Math.max(1, (maxY - minY) + horizontalPadding * 2);
-  const contentHeight = Math.max(1, (maxX - minX) + verticalPadding * 2);
-
-  const scaleX = viewportWidth / contentWidth;
-  const scaleY = viewportHeight / contentHeight;
+  const scaleX = (viewportWidth - horizontalPadding * 2) / actualContentWidth;
+  const scaleY = (viewportHeight - verticalPadding * 2) / actualContentHeight;
   const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleX, scaleY)));
 
-  // 바운딩 박스 중심 기준 기본 이동값 계산
-  const rootNode = nodes.find((node) => node.depth === 0) || null;
-  const rootX = Number.isFinite(rootNode?.y) ? rootNode.y : (minY + maxY) / 2;
-  const rootY = Number.isFinite(rootNode?.x) ? rootNode.x : (minX + maxX) / 2;
+  // 실제 컨텐츠 중심을 화면 중앙에 배치
+  const contentCenterX = (minY + maxY) / 2;
+  const contentCenterY = (minX + maxX) / 2;
 
-  const translateX = viewportWidth / 2 - rootX * targetScale;
-  const translateY = viewportHeight / 2 - rootY * targetScale;
+  const translateX = viewportWidth / 2 - contentCenterX * targetScale;
+  const translateY = viewportHeight / 2 - contentCenterY * targetScale;
 
   if (!Number.isFinite(translateX) || !Number.isFinite(translateY) || !Number.isFinite(targetScale)) {
     return null;
@@ -158,6 +160,8 @@ const TidyTreeView = ({
   onReorderSiblings,
   isChatPanelOpen = false,
 }) => {
+  const { zoomOnClickEnabled } = useSettings();
+
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
   const isInitialMountRef = useRef(true);
@@ -297,7 +301,7 @@ const TidyTreeView = ({
 
   // 클릭이나 호버가 있으면 하이라이트 모드
   const isHighlightMode = clickedAncestorIds.size > 0 || hoveredAncestorIds.size > 0;
-  
+
   // 통합된 조상 체인 (클릭 또는 호버)
   const highlightedAncestorIds = useMemo(() => {
     const combined = new Set();
@@ -506,8 +510,21 @@ const TidyTreeView = ({
     previousLayoutRef.current = layout;
   }, [layout, linkGenerator, dragPreview]);
 
-  // 기본 뷰포트로 복원하는 함수
-  const resetToDefaultView = () => {};
+  // 기본 뷰포트로 복원하는 함수 (viewBox가 이미 중앙 정렬되어 있으므로 identity transform으로 리셋)
+  const resetToDefaultView = useCallback(() => {
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+
+    if (!svgElement || !zoom || !layout) {
+      return;
+    }
+
+    d3.select(svgElement)
+      .transition()
+      .duration(600)
+      .ease(d3.easeCubicInOut)
+      .call(zoom.transform, d3.zoomIdentity);
+  }, [layout]);
 
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
@@ -555,7 +572,8 @@ const TidyTreeView = ({
     const storageKey = buildTransformStorageKey(treeKey);
     storageKeyRef.current = storageKey;
 
-    const defaultTransform = computeDefaultTransform(layout, dimensions) || d3.zoomIdentity;
+    // viewBox가 이미 중앙 정렬되어 있으므로 기본 transform은 identity
+    const defaultTransform = d3.zoomIdentity;
     const storedTransform = readStoredTransform(storageKey);
     const storedZoom = toZoomTransform(storedTransform);
     const initialTransform = storedZoom || lastViewTransformRef.current || defaultTransform;
@@ -595,7 +613,12 @@ const TidyTreeView = ({
       return;
     }
     const coordinates = getCartesianFromTidyNode(node);
-    focusNodeById(nodeId);
+
+    // 설정이 켜져있을 때만 확대
+    if (zoomOnClickEnabled) {
+      focusNodeById(nodeId);
+    }
+
     if (typeof onNodeClick === "function") {
       onNodeClick({
         id: nodeId,
@@ -603,7 +626,7 @@ const TidyTreeView = ({
         position: coordinates,
       });
     }
-  }, [focusNodeById, onNodeClick]);
+  }, [focusNodeById, onNodeClick, zoomOnClickEnabled]);
 
   // 드래그 시작
   const beginDrag = (event, node) => {
@@ -624,6 +647,9 @@ const TidyTreeView = ({
 
     // 부모가 가상 루트이거나 일반 노드인 경우 모두 드래그 가능
     dragStateManager.startDrag(node, event.clientX, event.clientY, parent);
+
+    // 드래그 시작 시 호버 효과 초기화
+    setHoveredNodeId(null);
 
     // 드래그 이동 플래그 초기화
     hasDragMovedRef.current = false;
@@ -943,8 +969,17 @@ const TidyTreeView = ({
                     handleNodeActivate(node);
                   }}
                   onMouseDown={(event) => beginDrag(event, node)}
-                  onMouseEnter={() => setHoveredNodeId(node.data.id)}
+                  onMouseEnter={() => {
+                    // 드래그 중에는 호버 상태 변경 안 함
+                    if (!dragPreview?.active) {
+                      setHoveredNodeId(node.data.id);
+                    }
+                  }}
                   onMouseLeave={() => {
+                    // 드래그 중에는 호버 상태 변경 안 함
+                    if (dragPreview?.active) {
+                      return;
+                    }
                     // 클릭된 노드는 호버 효과 유지
                     if (clickedNodeId !== node.data.id) {
                       setHoveredNodeId((current) => (current === node.data.id ? null : current));

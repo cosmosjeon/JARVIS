@@ -188,19 +188,28 @@ export const buildTidyTreeLayout = (rawData, options = {}) => {
 
   let x0 = Infinity;
   let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+
   root.each((node) => {
     if (node.x < x0) x0 = node.x;
     if (node.x > x1) x1 = node.x;
+    if (node.y < y0) y0 = node.y;
+    if (node.y > y1) y1 = node.y;
   });
 
   const height = x1 - x0 + dx * 2;
   const nodes = root.descendants().filter((node) => node.data?.id !== VIRTUAL_ROOT_ID);
   const linksWithAncestors = root.links().filter((link) => link.target?.data?.id !== VIRTUAL_ROOT_ID);
 
+  // viewBox를 실제 컨텐츠 중심에 맞춤
+  const contentCenterY = (y0 + y1) / 2;
+  const viewBoxX = contentCenterY - desiredWidth / 2;
+
   return {
     width: desiredWidth,
     height,
-    viewBox: [-dy / 3, x0 - dx, desiredWidth, height],
+    viewBox: [viewBoxX, x0 - dx, desiredWidth, height],
     nodes,
     links: linksWithAncestors,
     root,

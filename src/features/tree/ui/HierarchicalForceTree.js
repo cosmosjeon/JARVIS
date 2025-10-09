@@ -18,6 +18,7 @@ import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
 import TreeTabBar from 'features/tree/ui/components/TreeTabBar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from 'shared/components/library/ThemeProvider';
+import { useSettings } from 'shared/hooks/SettingsContext';
 import { Sun, Moon, Sparkles, Settings } from 'lucide-react';
 import { useTreeViewport } from 'features/tree/hooks/useTreeViewport';
 import { useTreePersistence } from 'features/tree/hooks/useTreePersistence';
@@ -68,6 +69,7 @@ const HierarchicalForceTree = () => {
   const treeBridge = useMemo(() => createTreeWidgetBridge(), []);
   const captureBridge = useMemo(() => createCaptureBridge(), []);
   const { theme, setTheme, mode } = useTheme();
+  const { zoomOnClickEnabled, setZoomOnClickEnabled } = useSettings();
 
   // 테마 옵션 정의
   const themeOptions = useMemo(() => {
@@ -1868,20 +1870,20 @@ const HierarchicalForceTree = () => {
         // 초기 로딩 시 전체 트리가 화면에 보이도록 설정 (TidyTreeView는 자체 computeDefaultTransform 사용)
         if (!isTidyView && !hasInitializedViewRef.current && animatedNodes.length > 0) {
           hasInitializedViewRef.current = true;
-          
+
           // 약간의 지연을 두어 레이아웃 계산이 완료된 후 전체 트리 fit
           setTimeout(() => {
             const svgElement = svgRef.current;
             const zoom = zoomBehaviourRef.current;
-            
+
             if (!svgElement || !zoom) return;
-            
+
             // 전체 노드의 경계 계산
             let minX = Infinity;
             let maxX = -Infinity;
             let minY = Infinity;
             let maxY = -Infinity;
-            
+
             animatedNodes.forEach(node => {
               if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
                 minX = Math.min(minX, node.x);
@@ -1890,16 +1892,16 @@ const HierarchicalForceTree = () => {
                 maxY = Math.max(maxY, node.y);
               }
             });
-            
+
             if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return;
-            
+
             // 여백 추가
             const padding = 80;
             const contentWidth = maxX - minX + padding * 2;
             const contentHeight = maxY - minY + padding * 2;
             const contentCenterX = (minX + maxX) / 2;
             const contentCenterY = (minY + maxY) / 2;
-            
+
             // 화면에 맞는 scale 계산
             const viewportWidth = dimensions?.width || 800;
             const viewportHeight = dimensions?.height || 600;
@@ -1907,21 +1909,21 @@ const HierarchicalForceTree = () => {
             const scaleY = viewportHeight / contentHeight;
             const scale = Math.min(scaleX, scaleY, 4); // max zoom
             const finalScale = Math.max(scale, 0.3); // min zoom
-            
+
             // 중앙 정렬을 위한 translate 계산
             const translateX = viewportWidth / 2 - contentCenterX * finalScale;
             const translateY = viewportHeight / 2 - contentCenterY * finalScale;
-            
+
             const initialTransform = d3.zoomIdentity
               .translate(translateX, translateY)
               .scale(finalScale);
-            
+
             const selection = d3.select(svgElement);
             selection
               .transition()
               .duration(0)
               .call(zoom.transform, initialTransform);
-            
+
             setViewTransform(initialTransform);
           }, 100);
         }
@@ -2577,6 +2579,23 @@ const HierarchicalForceTree = () => {
                 >
                   <span>트리 2</span>
                   {viewMode === 'tree2' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
+                </button>
+              </div>
+
+              <div className="mt-3 border-t border-white/10 pt-2">
+                <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">설정</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoomOnClickEnabled(!zoomOnClickEnabled);
+                  }}
+                  className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${zoomOnClickEnabled ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                  tabIndex={-1}
+                >
+                  <span>클릭 시 확대</span>
+                  <span className={`text-xs font-medium ${zoomOnClickEnabled ? 'text-black/70' : 'text-white/50'}`}>
+                    {zoomOnClickEnabled ? '켜짐' : '꺼짐'}
+                  </span>
                 </button>
               </div>
             </div>

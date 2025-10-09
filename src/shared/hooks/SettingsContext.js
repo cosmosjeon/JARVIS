@@ -12,6 +12,8 @@ const SettingsContext = createContext({
   accessibilityGranted: null,
   refreshAccessibilityStatus: () => { },
   requestAccessibility: () => Promise.resolve(),
+  zoomOnClickEnabled: true,
+  setZoomOnClickEnabled: () => { },
 });
 
 const normalizeBoolean = (value, fallback = true) => {
@@ -24,6 +26,7 @@ const normalizeBoolean = (value, fallback = true) => {
 export const SettingsProvider = ({ children }) => {
   const [trayEnabled, setTrayEnabledState] = useState(true);
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
+  const [zoomOnClickEnabled, setZoomOnClickEnabledState] = useState(true);
 
   const settingsBridge = useMemo(() => createSettingsBridge(), []);
   const loggerBridge = useMemo(() => createLoggerBridge(), []);
@@ -47,6 +50,7 @@ export const SettingsProvider = ({ children }) => {
     const applySettings = (next = {}) => {
       if (!mounted) return;
       setTrayEnabledState(normalizeBoolean(next.trayEnabled, true));
+      setZoomOnClickEnabledState(normalizeBoolean(next.zoomOnClickEnabled, true));
     };
 
     const load = async () => {
@@ -83,6 +87,12 @@ export const SettingsProvider = ({ children }) => {
     loggerBridge.log?.('info', 'settings_tray_changed', { enabled: next });
   }, [loggerBridge, updateSettings]);
 
+  const setZoomOnClickEnabled = useCallback((next) => {
+    setZoomOnClickEnabledState(next);
+    updateSettings({ zoomOnClickEnabled: next });
+    loggerBridge.log?.('info', 'settings_zoom_on_click_changed', { enabled: next });
+  }, [loggerBridge, updateSettings]);
+
   const requestAccessibility = useCallback(async () => {
     const result = await systemBridge.requestAccessibilityPermission?.();
     refreshAccessibilityStatus();
@@ -111,7 +121,9 @@ export const SettingsProvider = ({ children }) => {
     setTrayEnabled,
     refreshAccessibilityStatus,
     requestAccessibility,
-  }), [trayEnabled, accessibilityGranted, setTrayEnabled, refreshAccessibilityStatus, requestAccessibility]);
+    zoomOnClickEnabled,
+    setZoomOnClickEnabled,
+  }), [trayEnabled, accessibilityGranted, setTrayEnabled, refreshAccessibilityStatus, requestAccessibility, zoomOnClickEnabled, setZoomOnClickEnabled]);
 
   return (
     <SettingsContext.Provider value={value}>
