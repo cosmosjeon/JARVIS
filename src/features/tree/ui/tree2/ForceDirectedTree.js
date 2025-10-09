@@ -11,6 +11,7 @@ import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
+import { motion } from 'framer-motion';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
@@ -19,7 +20,17 @@ const NODE_RADIUS = 2.6;
 const FOCUS_ANIMATION_DURATION = 620;
 const DEFAULT_FORCE_SCALE = 2.6;
 const FORCE_TARGET_X_RATIO = 0.5;
-const FORCE_TARGET_Y_RATIO = 0.35;
+const FORCE_TARGET_Y_RATIO = 0.5;
+const FULL_ROTATION = Math.PI * 2;
+const FORCE_ROTATION_DURATION = 360;
+
+const normalizeAngle = (angle) => {
+  if (!Number.isFinite(angle)) {
+    return 0;
+  }
+  const normalized = angle % FULL_ROTATION;
+  return normalized < 0 ? normalized + FULL_ROTATION : normalized;
+};
 
 const toCartesianFromRadial = (node) => {
   const angle = (Number.isFinite(node?.x) ? node.x : 0) - Math.PI / 2;
@@ -246,6 +257,20 @@ const ForceDirectedTree = ({
   const lastViewTransformRef = useRef(d3.zoomIdentity);
   const lastFitSignatureRef = useRef(null);
   const viewStorageKeyRef = useRef(null);
+  const [globalRotationDeg, setGlobalRotationDeg] = useState(0);
+  const globalRotationRad = useMemo(() => (globalRotationDeg * Math.PI) / 180, [globalRotationDeg]);
+  const rotationTimeoutRef = useRef(null);
+
+  useEffect(() => () => {
+    if (rotationTimeoutRef.current !== null) {
+      clearTimeout(rotationTimeoutRef.current);
+      rotationTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    setGlobalRotationDeg(0);
+  }, [treeId]);
 
   useEffect(() => {
     if (questionService) {
@@ -422,6 +447,11 @@ const ForceDirectedTree = ({
     }
 
     const [x, y] = toCartesianFromRadial(layoutNode);
+    const nodeAngleDeg = Number.isFinite(layoutNode?.x)
+      ? (layoutNode.x * 180) / Math.PI
+      : 90;
+    const targetRotationDeg = 90 - nodeAngleDeg;
+    setGlobalRotationDeg(targetRotationDeg);
     const baseTransform = lastViewTransformRef.current || viewTransform;
     const currentTransform = {
       x: Number.isFinite(baseTransform?.x) ? baseTransform.x : viewTransform.x,
@@ -510,19 +540,74 @@ const ForceDirectedTree = ({
       console.debug('[FocusDebug] force', logPayload);
     }
 
-    focusNodeToCenterUtil({
-      node: { x, y },
-      svgElement,
-      zoomBehaviour: zoom,
-      dimensions: viewportDimensions,
-      viewTransform: currentTransform,
-      setViewTransform,
-      duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
-      scale: Number.isFinite(options.scale) ? options.scale : targetScale,
-      origin: 'center',
-      offset: { x: offsetX, y: offsetY },
-      allowScaleOverride: false,
-    }).catch(() => undefined);
+    const rotationRad = (targetRotationDeg * Math.PI) / 180;
+    const rotatedX = x * Math.cos(rotationRad) - y * Math.sin(rotationRad);
+    const rotatedY = x * Math.sin(rotationRad) + y * Math.cos(rotationRad);
+
+    const executeFocus = () => {
+      const selection = d3.select(svgElement);
+      focusNodeToCenterUtil({
+        node: { x: rotatedX, y: rotatedY },
+        svgElement,
+        zoomBehaviour: zoom,
+        dimensions: viewportDimensions,
+        viewTransform: currentTransform,
+        setViewTransform,
+        duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
+        scale: Number.isFinite(options.scale) ? options.scale : targetScale,
+        origin: 'center',
+        offset: { x: offsetX, y: offsetY },
+        allowScaleOverride: false,
+      })
+        .then(() => {
+          const targetElement = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
+          const latestSvgRect = svgElement.getBoundingClientRect?.();
+          if (!targetElement || !latestSvgRect) {
+            return;
+          }
+          const nodeRect = targetElement.getBoundingClientRect();
+          const transform = d3.zoomTransform(svgElement);
+          const centerX = nodeRect.x + nodeRect.width / 2;
+          const centerY = nodeRect.y + nodeRect.height / 2;
+          const targetX = latestSvgRect.x + latestSvgRect.width * FORCE_TARGET_X_RATIO;
+          const targetY = latestSvgRect.y + latestSvgRect.height * FORCE_TARGET_Y_RATIO;
+          const deltaX = centerX - targetX;
+          const deltaY = centerY - targetY;
+          if (!Number.isFinite(transform.k) || transform.k === 0) {
+            return;
+          }
+          if (Math.abs(deltaX) < 0.6 && Math.abs(deltaY) < 0.6) {
+            return;
+          }
+          const adjusted = transform.translate(-deltaX / transform.k, -deltaY / transform.k);
+          selection
+            .transition('force-focus-adjust')
+            .duration(240)
+            .ease(d3.easeCubicOut)
+            .call(zoom.transform, adjusted);
+        })
+        .catch(() => undefined);
+    };
+
+    if (rotationTimeoutRef.current !== null) {
+      clearTimeout(rotationTimeoutRef.current);
+      rotationTimeoutRef.current = null;
+    }
+
+    const rotationDelay = Number.isFinite(options.rotationDelay)
+      ? options.rotationDelay
+      : FORCE_ROTATION_DURATION;
+
+    setGlobalRotationDeg(targetRotationDeg);
+
+    if (rotationDelay <= 0 || typeof window === 'undefined') {
+      executeFocus();
+    } else {
+      rotationTimeoutRef.current = window.setTimeout(() => {
+        rotationTimeoutRef.current = null;
+        executeFocus();
+      }, rotationDelay);
+    }
   }, [
     layoutNodeById,
     viewportDimensions,
@@ -530,6 +615,7 @@ const ForceDirectedTree = ({
     viewTransform.y,
     viewTransform.k,
     setViewTransform,
+    setGlobalRotationDeg,
   ]);
 
   const handleNodeClick = useCallback((node) => {
@@ -668,6 +754,11 @@ const ForceDirectedTree = ({
                     .ease(d3.easeCubicInOut)
                     .call(zoom.transform, d3.zoomIdentity);
                 }
+                if (rotationTimeoutRef.current !== null) {
+                  clearTimeout(rotationTimeoutRef.current);
+                  rotationTimeoutRef.current = null;
+                }
+                setGlobalRotationDeg(0);
               }
             } else {
               // 싱글 클릭: 타이머 시작
@@ -713,7 +804,13 @@ const ForceDirectedTree = ({
           </style>
         </defs>
         <g transform={`translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`}>
-          <g fill="none">
+          <motion.g
+            initial={false}
+            animate={{ rotate: globalRotationDeg }}
+            transition={{ duration: FORCE_ROTATION_DURATION / 1000, ease: [0.4, 0, 0.2, 1] }}
+            style={{ transformOrigin: '0px 0px' }}
+          >
+            <g fill="none">
             {layout.links.map((link, index) => {
               const linkSourceId = resolveNodeId(link.source);
               const linkTargetId = resolveNodeId(link.target);
@@ -732,9 +829,9 @@ const ForceDirectedTree = ({
                 />
               );
             })}
-          </g>
+            </g>
 
-          <g strokeLinejoin="round" strokeWidth={3}>
+            <g strokeLinejoin="round" strokeWidth={3}>
             {layout.nodes.map((node) => {
               const datum = resolveNodeDatum(node);
               const nodeId = datum?.id;
@@ -748,9 +845,11 @@ const ForceDirectedTree = ({
               const isRootNode = node.depth === 0;
               const rotation = isRootNode ? 0 : (node.x * 180) / Math.PI - 90;
               const translation = isRootNode ? 'translate(0,0)' : `translate(${node.y},0)`;
-              const orientationFlip = !isRootNode && node.x >= Math.PI;
-              const textAnchor = isRootNode ? 'middle' : (node.x < Math.PI === isLeaf ? 'start' : 'end');
-              const textOffset = isRootNode ? 0 : (node.x < Math.PI === isLeaf ? 8 : -8);
+              const adjustedAngle = normalizeAngle(node.x + globalRotationRad);
+              const orientationFlip = !isRootNode && adjustedAngle >= Math.PI;
+              const isFrontSide = adjustedAngle < Math.PI;
+              const textAnchor = isRootNode ? 'middle' : (isFrontSide === isLeaf ? 'start' : 'end');
+              const textOffset = isRootNode ? 0 : (isFrontSide === isLeaf ? 8 : -8);
               const isHovered = hoveredNodeId === nodeId;
               const isNodeHighlighted = nodeId ? highlightedAncestorIds.has(nodeId) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
@@ -815,7 +914,8 @@ const ForceDirectedTree = ({
                 </g>
               );
             })}
-          </g>
+            </g>
+          </motion.g>
         </g>
       </svg>
 

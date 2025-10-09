@@ -123,6 +123,16 @@ export const useNodeAssistantConversation = ({
       : [];
 
     const isPlaceholderNode = node?.status === 'placeholder' || Boolean(node?.placeholder);
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.debug('[useNodeAssistantConversation] sendResponse', {
+        nodeId: node?.id,
+        nodeStatus: node?.status,
+        hasPlaceholderMeta: Boolean(node?.placeholder),
+        isPlaceholderNode,
+        messageCount: messages.length,
+      });
+    }
 
     let shouldCreateChild = false;
     if (!skipSecondQuestionCheck) {
