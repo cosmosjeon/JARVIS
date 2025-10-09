@@ -36,6 +36,7 @@ const LibraryApp = () => {
           height: TOP_DRAG_ZONE_HEIGHT,
           WebkitAppRegion: 'drag',
           zIndex: 15,
+          pointerEvents: 'none',
         }}
       />
       <LibraryWindowTitleBar />

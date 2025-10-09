@@ -149,11 +149,11 @@ const TreeCanvas = ({
 
   return (
     <div className="flex h-full flex-col" style={{ background: treeBackground }}>
-      <header className="relative z-10 mt-4 mx-4 mb-0" style={headerStyle}>
+      <header className="tree-canvas-header relative z-10 mt-4 mx-4 mb-0" style={headerStyle}>
         <div className="rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur-sm">
           <div className="flex flex-col gap-2 px-4 py-6">
             <div className="flex items-center justify-between gap-3 relative">
-              <div className="flex-1 min-w-0" style={headerInteractiveStyle}>
+              <div className="flex-1 min-w-0 no-drag" style={headerInteractiveStyle}>
                 <EditableTitle
                   title={selectedMemo.title}
                   onUpdate={(newTitle) => {
@@ -163,7 +163,7 @@ const TreeCanvas = ({
                   }}
                 />
               </div>
-              <div className="shrink-0" style={headerInteractiveStyle}>
+              <div className="shrink-0 no-drag" style={headerInteractiveStyle}>
                 <TreeWorkspaceToolbar
                   viewMode={viewMode}
                   onChange={(mode) => setViewMode(mode)}

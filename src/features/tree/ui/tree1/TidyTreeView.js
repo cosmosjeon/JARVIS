@@ -335,7 +335,15 @@ const TidyTreeView = ({
       k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
     };
 
-    const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, currentTransform.k));
+    const DEFAULT_TIDY_SCALE = 2.6;
+    const requestedScale = Number.isFinite(options.scale) ? options.scale : DEFAULT_TIDY_SCALE;
+    const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, requestedScale));
+
+    const baseOffset = viewportDimensions.height
+      ? viewportDimensions.height * 0.52
+      : 300;
+    const clampedOffset = Math.min(Math.max(baseOffset, 260), 620);
+    const verticalOffset = -clampedOffset;
 
     if (process.env.NODE_ENV !== "production") {
       const debugNode = layoutNode?.data ?? null;
@@ -348,6 +356,7 @@ const TidyTreeView = ({
         requestedScale: options.scale,
         appliedScale: targetScale,
         nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
+        offset: { x: 0, y: verticalOffset },
       };
 
       try {
@@ -387,6 +396,8 @@ const TidyTreeView = ({
       setViewTransform,
       duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
       scale: Number.isFinite(options.scale) ? options.scale : targetScale,
+      offset: { x: 0, y: verticalOffset },
+      allowScaleOverride: false,
     }).catch(() => undefined);
   }, [
     layoutNodeById,

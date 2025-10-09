@@ -51,12 +51,33 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.library-sidebar [data-radix-scroll-area-viewport],
 .library-sidebar [data-radix-scroll-area-scrollbar],
 .library-sidebar [data-radix-scroll-area-corner],
 .library-sidebar [data-radix-scroll-area-thumb],
 .library-sidebar .scrollarea-thumb,
 .library-sidebar .scrollarea-track {
+  -webkit-app-region: no-drag;
+}
+
+.tree-canvas-header,
+.tree-canvas-header * {
+  -webkit-app-region: drag;
+}
+
+.tree-canvas-header button,
+.tree-canvas-header [role="button"],
+.tree-canvas-header a,
+.tree-canvas-header input,
+.tree-canvas-header textarea,
+.tree-canvas-header select,
+.tree-canvas-header [contenteditable="true"],
+.tree-canvas-header .no-drag,
+.tree-canvas-header [data-no-drag="true"] {
+  -webkit-app-region: no-drag;
+}
+
+.tree-canvas-header .group,
+.tree-canvas-header .group * {
   -webkit-app-region: no-drag;
 }
 
