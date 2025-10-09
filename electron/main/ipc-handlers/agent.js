@@ -10,6 +10,7 @@ const registerAgentHandlers = ({ ipcMain, llmService, logger }) => {
         model,
         temperature,
         maxTokens,
+        provider,
       } = payload;
 
       const sanitizedMessages = Array.isArray(messages) ? messages : [];
@@ -19,12 +20,13 @@ const registerAgentHandlers = ({ ipcMain, llmService, logger }) => {
         model,
         temperature,
         maxTokens,
+        provider,
       });
 
       return { success: true, ...result };
     } catch (error) {
-      const code = error?.code || 'openai_request_failed';
-      const message = error?.message || 'OpenAI request failed';
+      const code = error?.code || 'llm_request_failed';
+      const message = error?.message || 'LLM request failed';
       logger?.error?.('agent_request_failed', { code, message });
       return {
         success: false,
@@ -83,6 +85,7 @@ const registerAgentHandlers = ({ ipcMain, llmService, logger }) => {
         model: payload.model,
         temperature: typeof payload.temperature === 'number' ? payload.temperature : 0,
         maxTokens: payload.maxTokens ?? 8,
+        provider: payload.provider,
       });
 
       const keyword = normalizeKeyword(result?.answer || '');

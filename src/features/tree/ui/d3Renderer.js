@@ -135,7 +135,7 @@ export const focusNodeToCenter = ({
   let nextTransform;
   if (origin === 'center') {
     nextTransform = d3.zoomIdentity
-      .translate(offsetX, offsetY)
+      .translate(width / 2 + offsetX, height / 2 + offsetY)
       .scale(targetScale)
       .translate(-nodeX, -nodeY);
   } else {

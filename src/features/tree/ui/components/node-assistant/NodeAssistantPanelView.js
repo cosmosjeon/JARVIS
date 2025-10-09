@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
 import AssistantPanelHeader from 'features/tree/ui/components/node-assistant/AssistantPanelHeader';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
+import ProviderDropdown from 'features/chat/components/ProviderDropdown';
+import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 
 const NodeAssistantPanelView = ({
   panelRef,
@@ -39,6 +41,11 @@ const NodeAssistantPanelView = ({
   showHeaderControls = true,
 }) => {
   const fileInputRef = useRef(null);
+  const {
+    provider: selectedProvider,
+    providerOptions,
+    setProvider: setSelectedProvider,
+  } = useAIModelPreference();
 
   const handleAttachmentButtonClick = () => {
     fileInputRef.current?.click();
@@ -151,9 +158,9 @@ const NodeAssistantPanelView = ({
     ) : null}
 
     <div
-      className="flex -mb-2 flex-shrink-0 justify-start"
+      className="flex -mb-2 flex-shrink-0 flex-wrap items-center justify-between gap-3"
       data-block-pan="true"
-      style={{ position: 'relative', zIndex: 2 }}
+      style={{ position: 'relative', zIndex: 2, width: '100%' }}
     >
       <button
         type="button"
@@ -180,6 +187,14 @@ const NodeAssistantPanelView = ({
       >
         다중 질문
       </button>
+      <ProviderDropdown
+        options={providerOptions}
+        value={selectedProvider}
+        onChange={setSelectedProvider}
+        disabled={isAttachmentUploading}
+        className="ml-auto"
+        align="end"
+      />
     </div>
 
     <form

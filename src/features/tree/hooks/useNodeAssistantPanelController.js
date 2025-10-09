@@ -625,6 +625,42 @@ export const useNodeAssistantPanelController = ({
     }, 0);
   }, []);
 
+  useEffect(() => {
+    if (!node || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) {
+        return;
+      }
+
+      const panelElement = panelRef.current;
+      if (!panelElement) {
+        onCloseNode();
+        return;
+      }
+
+      const doc = typeof document !== 'undefined' ? document : null;
+      const activeElement = doc?.activeElement ?? null;
+      const isPanelFocused = !activeElement
+        || activeElement === doc?.body
+        || panelElement.contains(activeElement);
+
+      if (!isPanelFocused) {
+        return;
+      }
+
+      onCloseNode();
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [node, onCloseNode]);
+
   const isSendDisabled = isAttachmentUploading
     || (composerValue.trim().length === 0 && draftAttachments.length === 0);
 

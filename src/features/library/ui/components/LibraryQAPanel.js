@@ -4,6 +4,7 @@ import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
+import ProviderDropdown from 'features/chat/components/ProviderDropdown';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
 import EditableTitle, { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
 import AgentClient from 'infrastructure/ai/agentClient';
@@ -16,7 +17,9 @@ import {
   PromptInputTextarea,
   PromptInputButton,
   PromptInputSubmit,
+  PromptInputToolbar,
 } from 'shared/ui/shadcn-io/ai/prompt-input';
+import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 
 const TYPING_INTERVAL_MS = 18;
 const AGENT_RESPONSE_TIMEOUT_MS = 30000;
@@ -57,6 +60,13 @@ const LibraryQAPanel = ({
 }) => {
   const { user } = useSupabaseAuth();
   const { theme } = useTheme();
+  const {
+    provider: selectedProvider,
+    model: selectedModel,
+    temperature: preferredTemperature,
+    providerOptions,
+    setProvider: setSelectedProvider,
+  } = useAIModelPreference();
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
@@ -547,10 +557,24 @@ const LibraryQAPanel = ({
 
   // LLM API 호출
   const invokeAgent = useCallback(async (channel, payload = {}) => {
-    if (channel === 'askRoot') return AgentClient.askRoot(payload);
-    if (channel === 'askChild') return AgentClient.askChild(payload);
+    const requestPayload = {
+      ...payload,
+      provider: selectedProvider,
+    };
+
+    if (!requestPayload.model) {
+      requestPayload.model = selectedModel;
+    }
+
+    const hasPreferredTemperature = typeof preferredTemperature === 'number' && Number.isFinite(preferredTemperature);
+    if ((!Number.isFinite(requestPayload.temperature)) && hasPreferredTemperature) {
+      requestPayload.temperature = preferredTemperature;
+    }
+
+    if (channel === 'askRoot') return AgentClient.askRoot(requestPayload);
+    if (channel === 'askChild') return AgentClient.askChild(requestPayload);
     throw new Error(`지원하지 않는 채널: ${channel}`);
-  }, []);
+  }, [preferredTemperature, selectedModel, selectedProvider]);
 
   // 답변 생성 및 타이핑 애니메이션
   const animateAssistantResponse = useCallback((assistantId, answerText, context = {}) => {
@@ -1346,7 +1370,8 @@ const LibraryQAPanel = ({
             handleSendMessage();
           }}
           className={cn(
-            isLibraryIntroActive && "mx-auto w-full max-w-2xl relative"
+            'flex-col items-stretch gap-2',
+            isLibraryIntroActive && 'mx-auto w-full max-w-2xl relative',
           )}
           style={{ zIndex: 10 }}
         >
@@ -1361,27 +1386,43 @@ const LibraryQAPanel = ({
               event.target.value = '';
             }}
           />
-          <PromptInputButton
-            onClick={handleAttachmentButtonClick}
-            disabled={isAttachmentUploading || isProcessing}
-          >
-            <Paperclip size={16} />
-          </PromptInputButton>
-          <PromptInputTextarea
-            ref={textareaRef}
-            value={composerValue}
-            onChange={(e) => setComposerValue(e.target.value)}
-            onFocus={handleComposerFocus}
-            onBlur={handleComposerBlur}
-            placeholder="질문을 입력하세요... (Enter로 전송)"
-            disabled={isProcessing}
-            minHeight={40}
-            maxHeight={164}
-          />
-          <PromptInputSubmit
-            disabled={(composerValue.trim().length === 0 && attachments.length === 0) || isProcessing}
-            status={isProcessing ? 'streaming' : 'ready'}
-          />
+
+          <PromptInputToolbar className="flex items-center justify-between px-1">
+            <ProviderDropdown
+              options={providerOptions}
+              value={selectedProvider}
+              onChange={setSelectedProvider}
+              disabled={isProcessing}
+              align="start"
+            />
+            <div className="flex items-center gap-1">
+              <PromptInputButton
+                onClick={handleAttachmentButtonClick}
+                disabled={isAttachmentUploading || isProcessing}
+                variant="ghost"
+              >
+                <Paperclip size={16} />
+              </PromptInputButton>
+            </div>
+          </PromptInputToolbar>
+
+          <div className="flex w-full items-end gap-2">
+            <PromptInputTextarea
+              ref={textareaRef}
+              value={composerValue}
+              onChange={(e) => setComposerValue(e.target.value)}
+              onFocus={handleComposerFocus}
+              onBlur={handleComposerBlur}
+              placeholder="질문을 입력하세요... (Enter로 전송)"
+              disabled={isProcessing}
+              minHeight={40}
+              maxHeight={164}
+            />
+            <PromptInputSubmit
+              disabled={(composerValue.trim().length === 0 && attachments.length === 0) || isProcessing}
+              status={isProcessing ? 'streaming' : 'ready'}
+            />
+          </div>
         </PromptInput>
       )}
     </div>

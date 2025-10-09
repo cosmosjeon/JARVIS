@@ -213,14 +213,15 @@ const TidyTreeView = ({
     ? selectedNodeId
     : internalSelectedNodeId;
 
-  // Measure text width using canvas
-  const getTextWidth = (text) => {
+  // Measure text width using canvas (size/weight aware for accurate hitbox)
+  const getTextWidth = (text, { fontSize = 11, fontWeight = 400 } = {}) => {
     if (typeof text !== "string") {
       return 0;
     }
+    const cacheKey = `${fontWeight}-${fontSize}-${text}`;
     const cache = textMeasureCacheRef.current;
-    if (cache.has(text)) {
-      return cache.get(text);
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey);
     }
     if (!getTextWidth.ctx) {
       const canvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
@@ -229,12 +230,12 @@ const TidyTreeView = ({
     const ctx = getTextWidth.ctx;
     if (!ctx) {
       const approx = estimateLabelWidth(text);
-      cache.set(text, approx);
+      cache.set(cacheKey, approx);
       return approx;
     }
-    ctx.font = "11px sans-serif";
+    ctx.font = `${fontWeight} ${fontSize}px sans-serif`;
     const measured = Math.ceil(ctx.measureText(text).width);
-    cache.set(text, measured);
+    cache.set(cacheKey, measured);
     return measured;
   };
 
@@ -689,10 +690,28 @@ const TidyTreeView = ({
     };
   }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height]);
 
-  const normalizedTheme = normalizeThemeKey(theme);
-  const isDarkTheme = DARK_LIKE_THEMES.has(normalizedTheme);
-  const linkStroke = isDarkTheme ? "rgba(148, 163, 184, 0.95)" : "rgba(100, 116, 139, 0.95)";
-  const labelColor = isDarkTheme ? "#f8fafc" : "#000000";
+  const isDarkTheme = theme === "dark";
+  const isGlassTheme = theme === "glass";
+  const linkStroke = (() => {
+    if (isDarkTheme) {
+      return "rgba(148, 197, 253, 0.95)";
+    }
+    if (isGlassTheme) {
+      return "rgba(147, 197, 253, 0.96)";
+    }
+    return "rgba(100, 116, 139, 0.95)";
+  })();
+  const linkGlowFilter = (() => {
+    if (isDarkTheme) {
+      return "drop-shadow(0 0 6px rgba(125, 211, 252, 0.45))";
+    }
+    if (isGlassTheme) {
+      return "drop-shadow(0 0 9px rgba(125, 211, 252, 0.65))";
+    }
+    return undefined;
+  })();
+  const linkStrokeWidth = isGlassTheme ? 1.6 : 1.2;
+  const labelColor = isDarkTheme ? "#f8fafc" : (isGlassTheme ? "rgba(248, 250, 252, 0.96)" : "#000000");
   const labelStroke = isDarkTheme ? "rgba(15, 23, 42, 0.7)" : "rgba(255, 255, 255, 0.9)";
   const parentFill = isDarkTheme ? "rgba(125, 211, 252, 0.95)" : "rgba(59, 130, 246, 0.88)";
   const leafFill = isDarkTheme ? "rgba(148, 163, 184, 0.92)" : "rgba(148, 163, 184, 0.88)";
@@ -972,7 +991,7 @@ const TidyTreeView = ({
                   d={linkGenerator(link)}
                   stroke={linkStroke}
                   strokeOpacity={linkOpacity}
-                  strokeWidth={1.2}
+                  strokeWidth={linkStrokeWidth}
                   strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                   onClick={(event) => {
@@ -986,6 +1005,7 @@ const TidyTreeView = ({
                   style={{
                     cursor: "pointer",
                     transition: "stroke-opacity 120ms ease",
+                    filter: linkGlowFilter,
                   }}
                 />
               );
@@ -1017,7 +1037,10 @@ const TidyTreeView = ({
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
 
               const labelText = typeof node.data?.name === "string" ? node.data.name : "";
-              const measuredWidth = getTextWidth(labelText);
+              // Measure width according to current visual style to avoid overflow
+              const currentFontSize = isHovered ? 13 : 11;
+              const currentFontWeight = isHovered ? 700 : 400;
+              const measuredWidth = getTextWidth(labelText, { fontSize: currentFontSize, fontWeight: currentFontWeight }) + 2; // small safety padding
               const hitboxPaddingY = 6;
               const baseRadius = isSelected ? 4 : 3;
               const interactiveRadius = baseRadius + 3;

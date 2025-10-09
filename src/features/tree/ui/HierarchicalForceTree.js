@@ -32,6 +32,7 @@ import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
 import { createCaptureBridge } from 'infrastructure/electron/bridges';
 import AgentClient from 'infrastructure/ai/agentClient';
+import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import { useTreeState } from 'features/tree/state/useTreeState';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from 'features/tree/services/treeCreation';
 import {
@@ -70,6 +71,11 @@ const HierarchicalForceTree = () => {
   const captureBridge = useMemo(() => createCaptureBridge(), []);
   const { theme, setTheme, mode } = useTheme();
   const { zoomOnClickEnabled, setZoomOnClickEnabled } = useSettings();
+  const {
+    provider: selectedProvider,
+    model: selectedModel,
+    temperature: preferredTemperature,
+  } = useAIModelPreference();
 
   // 테마 옵션 정의
   const themeOptions = useMemo(() => {
@@ -1026,8 +1032,22 @@ const HierarchicalForceTree = () => {
   }, [parentByChild]);
 
   const invokeAgent = useCallback(async (channel, payload = {}) => {
-    return AgentClient.request(channel, payload);
-  }, []);
+    const requestPayload = {
+      ...payload,
+      provider: selectedProvider,
+    };
+
+    if (!requestPayload.model) {
+      requestPayload.model = selectedModel;
+    }
+
+    const hasPreferredTemperature = typeof preferredTemperature === 'number' && Number.isFinite(preferredTemperature);
+    if ((!Number.isFinite(requestPayload.temperature)) && hasPreferredTemperature) {
+      requestPayload.temperature = preferredTemperature;
+    }
+
+    return AgentClient.request(channel, requestPayload);
+  }, [preferredTemperature, selectedModel, selectedProvider]);
 
   const handleRequestAnswer = useCallback(
     async ({ node: targetNode, question, isRootNode }) => {

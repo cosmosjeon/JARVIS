@@ -9,7 +9,6 @@ import * as d3 from 'd3';
 import DataTransformService from 'features/tree/services/DataTransformService';
 import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
-import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 import { motion, useAnimationControls } from 'framer-motion';
 import { useSettings } from 'shared/hooks/SettingsContext';
@@ -19,10 +18,6 @@ const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 4;
 const NODE_RADIUS = 2.6;
-const FOCUS_ANIMATION_DURATION = 620;
-const DEFAULT_FORCE_SCALE = 2.6;
-const FORCE_TARGET_X_RATIO = 0.5;
-const FORCE_TARGET_Y_RATIO = 0.5;
 const FULL_ROTATION = Math.PI * 2;
 const FORCE_ROTATION_DURATION = 360;
 const TEXT_COLOR_BY_THEME = Object.freeze({
@@ -349,7 +344,8 @@ const ForceDirectedTree = ({
 
   useEffect(() => {
     setGlobalRotationDeg(0);
-  }, [treeId]);
+    rotationControls.set({ rotate: 0 });
+  }, [treeId, rotationControls]);
 
   useEffect(() => {
     if (questionService) {
@@ -415,6 +411,20 @@ const ForceDirectedTree = ({
     }
 
     const zoom = d3.zoom()
+      .filter((event) => {
+        if (!event) {
+          return false;
+        }
+
+        if (event.type === 'mousedown' || event.type === 'pointerdown') {
+          if (event.ctrlKey) {
+            return false;
+          }
+          return event.button !== 2;
+        }
+
+        return !event.ctrlKey;
+      })
       .scaleExtent([MIN_ZOOM, MAX_ZOOM])
       .filter((event) => {
         // 우클릭은 차단
@@ -540,151 +550,30 @@ const ForceDirectedTree = ({
     ? resolveNodeColor(selectedHierarchyNode)
     : (theme === 'dark' ? '#38bdf8' : '#2563eb');
 
-  const focusNodeById = useCallback((nodeId, options = {}) => {
+  const focusNodeById = useCallback((nodeId) => {
     if (!nodeId) {
       return;
     }
     const layoutNode = layoutNodeById.get(nodeId);
-    const svgElement = svgRef.current;
-    const zoom = zoomBehaviorRef.current;
-    if (!layoutNode || !svgElement || !zoom) {
+    if (!layoutNode) {
       return;
     }
-
-    const [x, y] = toCartesianFromRadial(layoutNode);
     const nodeAngleDeg = Number.isFinite(layoutNode?.x)
       ? (layoutNode.x * 180) / Math.PI
       : 90;
     const targetRotationDeg = 90 - nodeAngleDeg;
     setGlobalRotationDeg(targetRotationDeg);
-    const baseTransform = lastViewTransformRef.current || viewTransform;
-    const currentTransform = {
-      x: Number.isFinite(baseTransform?.x) ? baseTransform.x : viewTransform.x,
-      y: Number.isFinite(baseTransform?.y) ? baseTransform.y : viewTransform.y,
-      k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
-    };
-
-    const requestedScale = Number.isFinite(options.scale) ? options.scale : DEFAULT_FORCE_SCALE;
-    const targetScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, requestedScale));
-
-    const initialSvgRect = typeof svgElement.getBoundingClientRect === 'function'
-      ? svgElement.getBoundingClientRect()
-      : null;
-
-    const targetViewportWidth = Number.isFinite(initialSvgRect?.width)
-      ? initialSvgRect.width
-      : viewportDimensions.width;
-    const targetViewportHeight = Number.isFinite(initialSvgRect?.height)
-      ? initialSvgRect.height
-      : viewportDimensions.height;
-
-    const offsetX = Number.isFinite(targetViewportWidth)
-      ? targetViewportWidth * (FORCE_TARGET_X_RATIO - 0.5)
-      : 0;
-    const offsetY = Number.isFinite(targetViewportHeight)
-      ? targetViewportHeight * (FORCE_TARGET_Y_RATIO - 0.5)
-      : 0;
-
-    if (process.env.NODE_ENV !== 'production') {
-      const debugNode = layoutNode?.data ?? resolveNodeDatum(layoutNode);
-      const logPayload = {
-        phase: 'force-focus',
-        nodeId,
-        cartesian: { x, y },
-        polar: { angle: layoutNode?.x, radius: layoutNode?.y },
-        transformBefore: currentTransform,
-        requestedScale: options.scale,
-        appliedScale: targetScale,
-        nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
-        offset: { x: offsetX, y: offsetY },
-        viewport: {
-          width: targetViewportWidth,
-          height: targetViewportHeight,
-        },
-        targetRatio: { x: FORCE_TARGET_X_RATIO, y: FORCE_TARGET_Y_RATIO },
-      };
-
-      try {
-        const element = svgElement.querySelector?.(`[data-node-id="${nodeId}"]`);
-        if (element) {
-          const rect = element.getBoundingClientRect();
-          logPayload.boundingRect = {
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
-          };
-          const domMatrix = element.getCTM();
-          if (domMatrix) {
-            logPayload.ctm = {
-              e: domMatrix.e,
-              f: domMatrix.f,
-              a: domMatrix.a,
-              d: domMatrix.d,
-            };
-          }
-        }
-        const latestSvgRect = svgElement.getBoundingClientRect?.();
-        if (latestSvgRect) {
-          logPayload.svgRect = {
-            x: latestSvgRect.x,
-            y: latestSvgRect.y,
-            width: latestSvgRect.width,
-            height: latestSvgRect.height,
-          };
-          logPayload.targetCenter = {
-            x: latestSvgRect.x + latestSvgRect.width * FORCE_TARGET_X_RATIO,
-            y: latestSvgRect.y + latestSvgRect.height * FORCE_TARGET_Y_RATIO,
-          };
-        }
-      } catch (error) {
-        logPayload.error = error?.message;
-      }
-
-      // eslint-disable-next-line no-console
-      console.debug('[FocusDebug] force', logPayload);
-    }
-
-    const rotationRad = (targetRotationDeg * Math.PI) / 180;
-    const rotatedX = x * Math.cos(rotationRad) - y * Math.sin(rotationRad);
-    const rotatedY = x * Math.sin(rotationRad) + y * Math.cos(rotationRad);
-
-    const executeFocus = () => {
-      focusNodeToCenterUtil({
-        node: { x: rotatedX, y: rotatedY },
-        svgElement,
-        zoomBehaviour: zoom,
-        dimensions: viewportDimensions,
-        viewTransform: currentTransform,
-        setViewTransform,
-        duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
-        scale: Number.isFinite(options.scale) ? options.scale : targetScale,
-        origin: 'center',
-        offset: { x: offsetX, y: offsetY },
-        allowScaleOverride: false,
-      }).catch(() => undefined);
-    };
-
-    setGlobalRotationDeg(targetRotationDeg);
     rotationControls.stop();
-    rotationControls.start({
-      rotate: targetRotationDeg,
-      transition: {
-        duration: FORCE_ROTATION_DURATION / 1000,
-        ease: [0.4, 0, 0.2, 1],
-      },
-    }).then(() => {
-      executeFocus();
-    });
-  }, [
-    layoutNodeById,
-    viewportDimensions,
-    viewTransform.x,
-    viewTransform.y,
-    viewTransform.k,
-    setViewTransform,
-    setGlobalRotationDeg,
-  ]);
+    rotationControls
+      .start({
+        rotate: targetRotationDeg,
+        transition: {
+          duration: FORCE_ROTATION_DURATION / 1000,
+          ease: [0.4, 0, 0.2, 1],
+        },
+      })
+      .catch(() => undefined);
+  }, [layoutNodeById, setGlobalRotationDeg, rotationControls]);
 
   const handleNodeClick = useCallback((node) => {
     const datum = resolveNodeDatum(node);
@@ -748,9 +637,36 @@ const ForceDirectedTree = ({
 
   const nodeFill = useCallback((node) => resolveNodeColor(node), [resolveNodeColor]);
 
-  const textFill = TEXT_COLOR_BY_THEME[theme] || '#0f172a';
-  const baseLinkColor = theme === 'dark' ? 'rgba(148, 163, 184, 0.95)' : 'rgba(100, 116, 139, 0.95)';
-
+  const isGlassTheme = theme === 'glass';
+  const textFill = (() => {
+    if (theme === 'dark') {
+      return '#e2e8f0';
+    }
+    if (isGlassTheme) {
+      return 'rgba(248, 250, 252, 0.96)';
+    }
+    return '#0f172a';
+  })();
+  const baseLinkColor = (() => {
+    if (theme === 'dark') {
+      return 'rgba(148, 197, 253, 0.9)';
+    }
+    if (isGlassTheme) {
+      return 'rgba(147, 197, 253, 0.9)';
+    }
+    return 'rgba(100, 116, 139, 0.95)';
+  })();
+  const linkGlowFilter = (() => {
+    if (theme === 'dark') {
+      return 'drop-shadow(0 0 6px rgba(96, 165, 250, 0.45))';
+    }
+    if (isGlassTheme) {
+      return 'drop-shadow(0 0 9px rgba(125, 211, 252, 0.65))';
+    }
+    return undefined;
+  })();
+  const linkStrokeWidth = isGlassTheme ? 1.6 : 1.2;
+  
   // 클릭된 노드의 조상 체인 계산
   const clickedAncestorIds = useMemo(() => {
     if (!clickedNodeId) {
@@ -865,24 +781,28 @@ const ForceDirectedTree = ({
             style={{ transformOrigin: '0px 0px' }}
           >
             <g fill="none">
-              {layout.links.map((link, index) => {
-                const linkSourceId = resolveNodeId(link.source);
-                const linkTargetId = resolveNodeId(link.target);
-                const isHighlightedLink = !isHighlightMode
-                  || (highlightedAncestorIds.has(linkTargetId)
-                    && parentById.get(linkTargetId) === linkSourceId);
-                const strokeOpacity = isHighlightedLink ? 0.7 : 0.18;
-                return (
-                  <path
-                    key={`link-${index}`}
-                    d={radialLink(link)}
-                    stroke={baseLinkColor}
-                    strokeWidth={1.2}
-                    strokeOpacity={strokeOpacity}
-                    strokeLinecap="round"
-                  />
-                );
-              })}
+            {layout.links.map((link, index) => {
+              const linkSourceId = resolveNodeId(link.source);
+              const linkTargetId = resolveNodeId(link.target);
+              const isHighlightedLink = !isHighlightMode
+                || (highlightedAncestorIds.has(linkTargetId)
+                  && parentById.get(linkTargetId) === linkSourceId);
+              const strokeOpacity = isHighlightedLink ? 0.7 : 0.18;
+              return (
+                <path
+                  key={`link-${index}`}
+                  d={radialLink(link)}
+                  stroke={baseLinkColor}
+                  strokeWidth={linkStrokeWidth}
+                  strokeOpacity={strokeOpacity}
+                  strokeLinecap="round"
+                  style={{
+                    filter: linkGlowFilter,
+                    transition: 'stroke-opacity 160ms ease',
+                  }}
+                />
+              );
+            })}
             </g>
 
             <g strokeLinejoin="round" strokeWidth={3}>

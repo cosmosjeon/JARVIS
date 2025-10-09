@@ -2,6 +2,8 @@
  * InsertionCalculator
  * 마우스 위치 기반으로 노드가 삽입될 위치 계산
  */
+const QUICK_SWAP_THRESHOLD = 6;
+
 class InsertionCalculator {
     /**
      * 삽입 위치 계산
@@ -13,43 +15,54 @@ class InsertionCalculator {
     calculateInsertPosition(siblings, currentNode, mouseY) {
         // 1. 형제노드 정렬 (Y좌표 기준) - 트리1에서 x가 실제 Y좌표
         const sorted = siblings
-            .map((s, i) => ({ node: s, index: i, y: s.x }))
+            .map((s) => ({ node: s, y: s.x }))
             .sort((a, b) => a.y - b.y);
 
         const currentIndex = sorted.findIndex((s) => s.node === currentNode);
 
-        if (currentIndex === -1) {
-            return { insertIndex: 0, isValidDrop: false };
+        if (currentIndex === -1 || sorted.length <= 1) {
+            return { insertIndex: currentIndex === -1 ? 0 : currentIndex, isValidDrop: false };
         }
 
-        // 2. 삽입 위치 찾기
-        let insertIndex = 0;
+        // 2. 드롭 후 목표 인덱스 계산
+        let targetIndex = currentIndex;
 
-        // 첫 번째 노드보다 위
         if (mouseY < sorted[0].y - 20) {
-            insertIndex = 0;
-        }
-        // 마지막 노드보다 아래
-        else if (mouseY > sorted[sorted.length - 1].y + 20) {
-            insertIndex = sorted.length;
-        }
-        // 노드들 사이
-        else {
+            targetIndex = 0;
+        } else if (mouseY > sorted[sorted.length - 1].y + 20) {
+            targetIndex = sorted.length - 1;
+        } else {
             for (let i = 0; i < sorted.length - 1; i++) {
                 const midY = (sorted[i].y + sorted[i + 1].y) / 2;
 
                 if (mouseY < midY) {
-                    insertIndex = i;
+                    targetIndex = i;
                     break;
-                } else {
-                    insertIndex = i + 1;
                 }
+                targetIndex = i + 1;
             }
         }
 
-        // 3. 유효성 검증 (현재 위치와 같으면 invalid)
-        const isValidDrop =
-            insertIndex !== currentIndex && insertIndex !== currentIndex + 1;
+        // 3. 현재 위치와 동일하면 방향에 따라 빠른 스왑 허용
+        if (targetIndex === currentIndex) {
+            const currentY = sorted[currentIndex].y;
+
+            if (mouseY < currentY - QUICK_SWAP_THRESHOLD && currentIndex > 0) {
+                targetIndex = currentIndex - 1;
+            } else if (mouseY > currentY + QUICK_SWAP_THRESHOLD && currentIndex < sorted.length - 1) {
+                targetIndex = currentIndex + 1;
+            }
+        }
+
+        // 4. 삽입 인덱스 보정 (기존 알고리즘과 호환)
+        let insertIndex = targetIndex;
+        if (targetIndex > currentIndex) {
+            insertIndex = targetIndex + 1;
+        }
+
+        insertIndex = Math.max(0, Math.min(sorted.length, insertIndex));
+
+        const isValidDrop = targetIndex !== currentIndex;
 
         return { insertIndex, isValidDrop };
     }
