@@ -140,8 +140,8 @@ const TreeCanvas = ({
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <header className="relative z-10 m-4">
+    <div className="flex h-full flex-col" style={{ background: treeBackground }}>
+      <header className="relative z-10 mt-4 mx-4 mb-0">
         <div className="rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur-sm">
           <div className="flex flex-col gap-2 px-4 py-6">
             <div className="flex items-center justify-between gap-3 relative">
@@ -177,7 +177,7 @@ const TreeCanvas = ({
         </div>
       </header>
 
-      <div ref={containerRef} className="flex flex-1 overflow-hidden bg-background">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden">
         {nodeCount > 0 ? (
           <div className="relative z-0 h-full w-full overflow-hidden">
             {viewMode === 'tree1'
