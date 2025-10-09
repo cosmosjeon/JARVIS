@@ -37,17 +37,17 @@ class NodeNavigationService {
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             return targetId === nodeId;
         });
-        
+
         if (!link) return null;
-        
+
         const parentId = typeof link.source === 'object' ? link.source.id : link.source;
         const parentNode = this.findNodeById(parentId);
-        
+
         // 메모 노드는 부모로 이동할 수 없음
         if (parentNode?.nodeType === 'memo') {
             return null;
         }
-        
+
         return parentNode;
     }
 
@@ -61,7 +61,7 @@ class NodeNavigationService {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             return sourceId === nodeId;
         });
-        
+
         return childLinks.map(link => {
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             return this.findNodeById(targetId);
@@ -75,12 +75,12 @@ class NodeNavigationService {
      */
     findSiblingNodes(nodeId) {
         const parentNode = this.findParentNode(nodeId);
-        
+
         if (!parentNode) {
             // 루트 노드인 경우, 다른 루트 노드들을 반환 (메모 노드 제외)
             return this.nodes.filter(node => !this.findParentNode(node.id) && node.nodeType !== 'memo');
         }
-        
+
         const siblings = this.findChildNodes(parentNode.id);
         // 현재 노드가 메모가 아닌 경우에만 형제 목록에 포함
         const currentNode = this.findNodeById(nodeId);
@@ -163,21 +163,21 @@ class NodeNavigationService {
      */
     navigate(currentNodeId, direction) {
         const currentNode = this.findNodeById(currentNodeId);
-        
+
         // 메모 노드에서는 이동할 수 없음
         if (currentNode?.nodeType === 'memo') {
             return null;
         }
-        
+
         switch (direction) {
             case 'ArrowUp':
-                return this.navigateUp(currentNodeId);
+                return this.navigateLeft(currentNodeId); // 이전 형제 노드
             case 'ArrowDown':
-                return this.navigateDown(currentNodeId);
+                return this.navigateRight(currentNodeId); // 다음 형제 노드
             case 'ArrowLeft':
-                return this.navigateLeft(currentNodeId);
+                return this.navigateUp(currentNodeId); // 부모 노드
             case 'ArrowRight':
-                return this.navigateRight(currentNodeId);
+                return this.navigateDown(currentNodeId); // 첫 번째 자식 노드
             default:
                 return null;
         }
