@@ -195,14 +195,15 @@ const TidyTreeView = ({
     ? selectedNodeId
     : internalSelectedNodeId;
 
-  // Measure text width using canvas
-  const getTextWidth = (text) => {
+  // Measure text width using canvas (size/weight aware for accurate hitbox)
+  const getTextWidth = (text, { fontSize = 11, fontWeight = 400 } = {}) => {
     if (typeof text !== "string") {
       return 0;
     }
+    const cacheKey = `${fontWeight}-${fontSize}-${text}`;
     const cache = textMeasureCacheRef.current;
-    if (cache.has(text)) {
-      return cache.get(text);
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey);
     }
     if (!getTextWidth.ctx) {
       const canvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
@@ -211,12 +212,12 @@ const TidyTreeView = ({
     const ctx = getTextWidth.ctx;
     if (!ctx) {
       const approx = estimateLabelWidth(text);
-      cache.set(text, approx);
+      cache.set(cacheKey, approx);
       return approx;
     }
-    ctx.font = "11px sans-serif";
+    ctx.font = `${fontWeight} ${fontSize}px sans-serif`;
     const measured = Math.ceil(ctx.measureText(text).width);
-    cache.set(text, measured);
+    cache.set(cacheKey, measured);
     return measured;
   };
 
@@ -905,7 +906,10 @@ const TidyTreeView = ({
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
 
               const labelText = typeof node.data?.name === "string" ? node.data.name : "";
-              const measuredWidth = getTextWidth(labelText);
+              // Measure width according to current visual style to avoid overflow
+              const currentFontSize = isHovered ? 13 : 11;
+              const currentFontWeight = isHovered ? 700 : 400;
+              const measuredWidth = getTextWidth(labelText, { fontSize: currentFontSize, fontWeight: currentFontWeight }) + 2; // small safety padding
               const hitboxPaddingY = 6;
               const baseRadius = isSelected ? 4 : 3;
               const interactiveRadius = baseRadius + 3;
