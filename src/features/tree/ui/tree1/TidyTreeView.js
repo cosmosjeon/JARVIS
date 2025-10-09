@@ -3,9 +3,12 @@ import * as d3 from "d3";
 import { buildTidyTreeLayout } from 'shared/utils/tidyTreeLayout';
 import DragStateManager from 'features/tree/services/drag/DragStateManager';
 import InsertionCalculator from 'features/tree/services/drag/InsertionCalculator';
+
 import PreviewLayoutCalculator from 'features/tree/services/drag/PreviewLayoutCalculator';
 import SiblingReorderService from 'features/tree/services/drag/SiblingReorderService';
 import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
+import { useSettings } from 'shared/hooks/SettingsContext';
+import NodeContextMenu from 'features/tree/ui/components/NodeContextMenu';
 
 const MIN_SCALE = 0.18;
 const MAX_SCALE = 4;
@@ -13,6 +16,13 @@ const FOCUS_ANIMATION_DURATION = 620;
 const VIRTUAL_ROOT_ID = '__virtual_root__';
 const DEFAULT_TREE_KEY = '__default_tree__';
 const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
+const DARK_LIKE_THEMES = new Set(["dark", "glass"]);
+const normalizeThemeKey = (value) => {
+  if (typeof value !== "string") {
+    return "light";
+  }
+  return value.trim().toLowerCase();
+};
 
 const getCartesianFromTidyNode = (node) => ({
   x: Number.isFinite(node?.y) ? node.y : 0,
@@ -110,23 +120,24 @@ const computeDefaultTransform = (layout, viewportDimensions) => {
     return null;
   }
 
+  // 실제 컨텐츠의 너비/높이 계산 (패딩 제외)
+  const actualContentWidth = Math.max(1, maxY - minY);
+  const actualContentHeight = Math.max(1, maxX - minX);
+
+  // 패딩을 고려한 스케일 계산
   const horizontalPadding = Number.isFinite(layout?.dy) ? layout.dy * 1.2 : 80;
   const verticalPadding = Number.isFinite(layout?.dx) ? layout.dx * 1.2 : 80;
 
-  const contentWidth = Math.max(1, (maxY - minY) + horizontalPadding * 2);
-  const contentHeight = Math.max(1, (maxX - minX) + verticalPadding * 2);
-
-  const scaleX = viewportWidth / contentWidth;
-  const scaleY = viewportHeight / contentHeight;
+  const scaleX = (viewportWidth - horizontalPadding * 2) / actualContentWidth;
+  const scaleY = (viewportHeight - verticalPadding * 2) / actualContentHeight;
   const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleX, scaleY)));
 
-  // 바운딩 박스 중심 기준 기본 이동값 계산
-  const rootNode = nodes.find((node) => node.depth === 0) || null;
-  const rootX = Number.isFinite(rootNode?.y) ? rootNode.y : (minY + maxY) / 2;
-  const rootY = Number.isFinite(rootNode?.x) ? rootNode.x : (minX + maxX) / 2;
+  // 실제 컨텐츠 중심을 화면 중앙에 배치
+  const contentCenterX = (minY + maxY) / 2;
+  const contentCenterY = (minX + maxX) / 2;
 
-  const translateX = viewportWidth / 2 - rootX * targetScale;
-  const translateY = viewportHeight / 2 - rootY * targetScale;
+  const translateX = viewportWidth / 2 - contentCenterX * targetScale;
+  const translateY = viewportHeight / 2 - contentCenterY * targetScale;
 
   if (!Number.isFinite(translateX) || !Number.isFinite(translateY) || !Number.isFinite(targetScale)) {
     return null;
@@ -157,7 +168,11 @@ const TidyTreeView = ({
   onBackgroundClick,
   onReorderSiblings,
   isChatPanelOpen = false,
+  onNodeDelete,
+  onNodeUpdate,
 }) => {
+  const { zoomOnClickEnabled } = useSettings();
+
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
   const isInitialMountRef = useRef(true);
@@ -188,6 +203,9 @@ const TidyTreeView = ({
   const backgroundClickTimerRef = useRef(null);
   const recentDragEndRef = useRef(false);
   const hasDragMovedRef = useRef(false);
+
+  // 컨텍스트 메뉴 상태
+  const [contextMenu, setContextMenu] = useState({ open: false, node: null, x: 0, y: 0 });
 
   // 외부에서 selectedNodeId가 제공되면 사용, 아니면 내부 상태 사용
   // null이 아닌 값이 제공되거나, undefined가 아니고 null인 경우에는 외부 값 사용
@@ -298,7 +316,7 @@ const TidyTreeView = ({
 
   // 클릭이나 호버가 있으면 하이라이트 모드
   const isHighlightMode = clickedAncestorIds.size > 0 || hoveredAncestorIds.size > 0;
-  
+
   // 통합된 조상 체인 (클릭 또는 호버)
   const highlightedAncestorIds = useMemo(() => {
     const combined = new Set();
@@ -429,7 +447,28 @@ const TidyTreeView = ({
     };
   }, [dragStateManager]);
 
-  // D3 transition으로 노드와 링크 애니메이션
+  // 컨텍스트 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!contextMenu.open) return;
+
+    const handleClickOutside = (event) => {
+      // 약간의 딜레이 후에 이벤트 리스너 등록 (컨텍스트 메뉴 열기 이벤트와 분리)
+      setTimeout(() => {
+        setContextMenu({ open: false, node: null, x: 0, y: 0 });
+      }, 0);
+    };
+
+    // 다음 이벤트 루프에서 리스너 등록
+    setTimeout(() => {
+      document.addEventListener('click', handleClickOutside, { once: true });
+    }, 0);
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [contextMenu.open]);
+
+  // D3 transition으로 노드와 링크 애니메이션 (부모 위치에서 자라나는 효과)
   useLayoutEffect(() => {
     if (!layout || !nodesGroupRef.current || !linksGroupRef.current) {
       return;
@@ -440,59 +479,73 @@ const TidyTreeView = ({
       return;
     }
 
-    const ANIMATION_DURATION = 300;
+    const ANIMATION_DURATION = 600;
     const previousLayout = previousLayoutRef.current;
     const shouldAnimate = previousLayout !== null && !isInitialMountRef.current;
 
     if (shouldAnimate) {
-      // 1단계: 이전 위치로 즉시 되돌림 (브라우저 paint 전)
-      d3.select(linksGroupRef.current)
-        .selectAll('path')
-        .each(function () {
-          const key = d3.select(this).attr('data-link-key');
-          if (!key) return;
+      const previousNodeIds = new Set(previousLayout.nodes.map(n => n.data.id));
 
-          const prevLink = previousLayout.links.find(l =>
-            `${l.source.data.id}->${l.target.data.id}` === key
-          );
-          if (prevLink) {
-            d3.select(this).attr('d', linkGenerator(prevLink));
-          }
-        });
-
+      // 1단계: 이전 위치로 즉시 되돌림 + 새 노드는 부모 위치에서 시작
       d3.select(nodesGroupRef.current)
         .selectAll('g[data-node-id]')
         .each(function () {
           const nodeId = d3.select(this).attr('data-node-id');
           if (!nodeId) return;
 
-          const prevNode = previousLayout.nodes.find(n => n.data.id === nodeId);
-          if (prevNode) {
-            d3.select(this).attr('transform', `translate(${prevNode.y},${prevNode.x})`);
+          const currentNode = layout.nodes.find(n => n.data.id === nodeId);
+          if (!currentNode) return;
+
+          // 새로 추가된 노드인지 확인
+          const isNewNode = !previousNodeIds.has(nodeId);
+
+          if (isNewNode && currentNode.parent) {
+            // 새 노드는 부모의 위치에서 시작
+            d3.select(this)
+              .attr('transform', `translate(${currentNode.parent.y},${currentNode.parent.x})`)
+              .style('opacity', 0);
+          } else {
+            // 기존 노드는 이전 위치로
+            const prevNode = previousLayout.nodes.find(n => n.data.id === nodeId);
+            if (prevNode) {
+              d3.select(this).attr('transform', `translate(${prevNode.y},${prevNode.x})`);
+            }
+          }
+        });
+
+      d3.select(linksGroupRef.current)
+        .selectAll('path')
+        .each(function () {
+          const key = d3.select(this).attr('data-link-key');
+          if (!key) return;
+
+          const link = layout.links.find(l => `${l.source.data.id}->${l.target.data.id}` === key);
+          if (!link) return;
+
+          // 새 링크는 부모 위치의 점에서 시작
+          const prevLink = previousLayout.links.find(l =>
+            `${l.source.data.id}->${l.target.data.id}` === key
+          );
+
+          if (!prevLink && link.source) {
+            // 새 링크: 부모 위치의 점에서 시작
+            const parentPoint = { x: link.source.x, y: link.source.y };
+            d3.select(this)
+              .attr('d', linkGenerator({ source: parentPoint, target: parentPoint }))
+              .style('opacity', 0);
+          } else if (prevLink) {
+            // 기존 링크: 이전 위치
+            d3.select(this).attr('d', linkGenerator(prevLink));
           }
         });
 
       // 2단계: 새 위치로 transition
-      d3.select(linksGroupRef.current)
-        .selectAll('path')
-        .transition()
-        .duration(ANIMATION_DURATION)
-        .ease(d3.easeCubicInOut)
-        .attr('d', function () {
-          const key = d3.select(this).attr('data-link-key');
-          if (!key) return d3.select(this).attr('d');
-
-          const link = layout.links.find(l =>
-            `${l.source.data.id}->${l.target.data.id}` === key
-          );
-          return link ? linkGenerator(link) : d3.select(this).attr('d');
-        });
-
       d3.select(nodesGroupRef.current)
         .selectAll('g[data-node-id]')
         .transition()
         .duration(ANIMATION_DURATION)
         .ease(d3.easeCubicInOut)
+        .style('opacity', 1)
         .attr('transform', function () {
           const nodeId = d3.select(this).attr('data-node-id');
           if (!nodeId) return d3.select(this).attr('transform');
@@ -502,13 +555,42 @@ const TidyTreeView = ({
 
           return `translate(${node.y},${node.x})`;
         });
+
+      d3.select(linksGroupRef.current)
+        .selectAll('path')
+        .transition()
+        .duration(ANIMATION_DURATION)
+        .ease(d3.easeCubicInOut)
+        .style('opacity', 1)
+        .attr('d', function () {
+          const key = d3.select(this).attr('data-link-key');
+          if (!key) return d3.select(this).attr('d');
+
+          const link = layout.links.find(l =>
+            `${l.source.data.id}->${l.target.data.id}` === key
+          );
+          return link ? linkGenerator(link) : d3.select(this).attr('d');
+        });
     }
 
     previousLayoutRef.current = layout;
   }, [layout, linkGenerator, dragPreview]);
 
-  // 기본 뷰포트로 복원하는 함수
-  const resetToDefaultView = () => {};
+  // 기본 뷰포트로 복원하는 함수 (viewBox가 이미 중앙 정렬되어 있으므로 identity transform으로 리셋)
+  const resetToDefaultView = useCallback(() => {
+    const svgElement = svgRef.current;
+    const zoom = zoomBehaviorRef.current;
+
+    if (!svgElement || !zoom || !layout) {
+      return;
+    }
+
+    d3.select(svgElement)
+      .transition()
+      .duration(600)
+      .ease(d3.easeCubicInOut)
+      .call(zoom.transform, d3.zoomIdentity);
+  }, [layout]);
 
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
@@ -522,15 +604,41 @@ const TidyTreeView = ({
     const zoom = d3
       .zoom()
       .filter((event) => {
+        // 드래그 중이면 차단
         if (dragStateManager.isDragging()) return false;
+
+        // 노드 위에서는 차단
         const t = event?.target;
         if (t && typeof t.closest === "function") {
           if (t.closest('g[data-node-interactive="true"]')) return false;
         }
-        return !event.ctrlKey && event.button !== 2;
+
+        // 우클릭은 차단
+        if (event.button === 2) return false;
+
+        // 휠 이벤트: Ctrl 키를 누른 상태에서만 확대/축소 허용
+        if (event.type === 'wheel') {
+          return event.ctrlKey || event.metaKey;
+        }
+
+        // 마우스 드래그 이동: 휠 클릭(button 1) 또는 Ctrl + 좌클릭만 허용
+        if (event.type === 'mousedown' || event.type === 'mousemove') {
+          return event.button === 1 || (event.ctrlKey && event.button === 0);
+        }
+
+        // 터치/트랙패드 제스처는 기본 허용 (두 손가락 드래그, 핀치 줌)
+        if (event.type === 'touchstart' || event.type === 'touchmove' || event.type === 'touchend') {
+          return true;
+        }
+
+        return true;
       })
       .scaleExtent([MIN_SCALE, MAX_SCALE])
       .wheelDelta((event) => {
+        // Ctrl 키를 누른 상태에서만 확대/축소
+        if (!event.ctrlKey && !event.metaKey) {
+          return 0;
+        }
         const modeFactor = event.deltaMode === 1 ? 0.33 : event.deltaMode ? 33 : 1;
         return (-event.deltaY * modeFactor) / 600;
       })
@@ -556,7 +664,8 @@ const TidyTreeView = ({
     const storageKey = buildTransformStorageKey(treeKey);
     storageKeyRef.current = storageKey;
 
-    const defaultTransform = computeDefaultTransform(layout, dimensions) || d3.zoomIdentity;
+    // viewBox가 이미 중앙 정렬되어 있으므로 기본 transform은 identity
+    const defaultTransform = d3.zoomIdentity;
     const storedTransform = readStoredTransform(storageKey);
     const storedZoom = toZoomTransform(storedTransform);
     const initialTransform = storedZoom || lastViewTransformRef.current || defaultTransform;
@@ -615,7 +724,12 @@ const TidyTreeView = ({
       return;
     }
     const coordinates = getCartesianFromTidyNode(node);
-    focusNodeById(nodeId);
+
+    // 설정이 켜져있을 때만 확대
+    if (zoomOnClickEnabled) {
+      focusNodeById(nodeId);
+    }
+
     if (typeof onNodeClick === "function") {
       onNodeClick({
         id: nodeId,
@@ -623,7 +737,7 @@ const TidyTreeView = ({
         position: coordinates,
       });
     }
-  }, [focusNodeById, onNodeClick]);
+  }, [focusNodeById, onNodeClick, zoomOnClickEnabled]);
 
   // 드래그 시작
   const beginDrag = (event, node) => {
@@ -644,6 +758,9 @@ const TidyTreeView = ({
 
     // 부모가 가상 루트이거나 일반 노드인 경우 모두 드래그 가능
     dragStateManager.startDrag(node, event.clientX, event.clientY, parent);
+
+    // 드래그 시작 시 호버 효과 초기화
+    setHoveredNodeId(null);
 
     // 드래그 이동 플래그 초기화
     hasDragMovedRef.current = false;
@@ -800,6 +917,11 @@ const TidyTreeView = ({
           // SVG 배경 클릭 (노드나 링크가 아닌 경우)
           const target = event.target;
           if (target === svgRef.current || target.tagName === 'g') {
+            // 하이라이트 즉시 해제
+            const hasHighlight = clickedNodeId !== null;
+            setClickedNodeId(null);
+            setHoveredNodeId(null);
+
             // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
             if (backgroundClickTimerRef.current) {
               clearTimeout(backgroundClickTimerRef.current);
@@ -807,8 +929,6 @@ const TidyTreeView = ({
 
               if (isChatPanelOpen) {
                 // 채팅창이 열려있으면: 채팅창만 닫기 (줌 유지)
-                setClickedNodeId(null);
-                setHoveredNodeId(null);
                 setInternalSelectedNodeId(null);
                 if (typeof onBackgroundClick === "function") {
                   onBackgroundClick();
@@ -820,22 +940,14 @@ const TidyTreeView = ({
             } else {
               // 싱글 클릭: 타이머 시작
               backgroundClickTimerRef.current = setTimeout(() => {
-                const hasHighlight = clickedNodeId !== null;
-
-                if (hasHighlight) {
-                  // 하이라이트가 있으면 하이라이트만 해제 (채팅창과 테두리 유지)
-                  setClickedNodeId(null);
-                  setHoveredNodeId(null);
-                  // 선택(테두리)은 유지, 채팅창도 유지
-                } else {
-                  // 하이라이트가 없으면 채팅창 닫기
-                  setClickedNodeId(null);
-                  setHoveredNodeId(null);
+                if (!hasHighlight) {
+                  // 하이라이트가 없었으면 채팅창 닫기
                   setInternalSelectedNodeId(null);
                   if (typeof onBackgroundClick === "function") {
                     onBackgroundClick();
                   }
                 }
+                // 하이라이트가 있었으면 하이라이트만 해제 (이미 위에서 처리됨)
                 backgroundClickTimerRef.current = null;
               }, 250);
             }
@@ -966,9 +1078,32 @@ const TidyTreeView = ({
                     setHoveredNodeId(node.data.id);
                     handleNodeActivate(node);
                   }}
-                  onMouseDown={(event) => beginDrag(event, node)}
-                  onMouseEnter={() => setHoveredNodeId(node.data.id)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setContextMenu({
+                      open: true,
+                      node: node.data,
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
+                  }}
+                  onMouseDown={(event) => {
+                    // 우클릭은 드래그 시작하지 않음
+                    if (event.button === 2) return;
+                    beginDrag(event, node);
+                  }}
+                  onMouseEnter={() => {
+                    // 드래그 중에는 호버 상태 변경 안 함
+                    if (!dragPreview?.active) {
+                      setHoveredNodeId(node.data.id);
+                    }
+                  }}
                   onMouseLeave={() => {
+                    // 드래그 중에는 호버 상태 변경 안 함
+                    if (dragPreview?.active) {
+                      return;
+                    }
                     // 클릭된 노드는 호버 효과 유지
                     if (clickedNodeId !== node.data.id) {
                       setHoveredNodeId((current) => (current === node.data.id ? null : current));
@@ -1033,6 +1168,25 @@ const TidyTreeView = ({
           </g>
         </g>
       </svg>
+
+      {/* 노드 컨텍스트 메뉴 */}
+      <NodeContextMenu
+        isOpen={contextMenu.open}
+        position={{ x: contextMenu.x, y: contextMenu.y }}
+        node={contextMenu.node}
+        theme={theme}
+        onClose={() => setContextMenu({ open: false, node: null, x: 0, y: 0 })}
+        onDelete={(nodeId) => {
+          if (onNodeDelete) {
+            onNodeDelete(nodeId);
+          }
+        }}
+        onRename={(nodeId, newName) => {
+          if (onNodeUpdate) {
+            onNodeUpdate(nodeId, { name: newName });
+          }
+        }}
+      />
     </div>
   );
 };
