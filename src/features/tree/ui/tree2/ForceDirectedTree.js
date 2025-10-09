@@ -17,6 +17,9 @@ const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 4;
 const NODE_RADIUS = 2.6;
 const FOCUS_ANIMATION_DURATION = 620;
+const DEFAULT_FORCE_SCALE = 2.6;
+const FORCE_TARGET_X_RATIO = 0.5;
+const FORCE_TARGET_Y_RATIO = 0.35;
 
 const toCartesianFromRadial = (node) => {
   const angle = (Number.isFinite(node?.x) ? node.x : 0) - Math.PI / 2;
@@ -426,7 +429,26 @@ const ForceDirectedTree = ({
       k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
     };
 
-    const targetScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentTransform.k));
+    const requestedScale = Number.isFinite(options.scale) ? options.scale : DEFAULT_FORCE_SCALE;
+    const targetScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, requestedScale));
+
+    const initialSvgRect = typeof svgElement.getBoundingClientRect === 'function'
+      ? svgElement.getBoundingClientRect()
+      : null;
+
+    const targetViewportWidth = Number.isFinite(initialSvgRect?.width)
+      ? initialSvgRect.width
+      : viewportDimensions.width;
+    const targetViewportHeight = Number.isFinite(initialSvgRect?.height)
+      ? initialSvgRect.height
+      : viewportDimensions.height;
+
+    const offsetX = Number.isFinite(targetViewportWidth)
+      ? targetViewportWidth * (FORCE_TARGET_X_RATIO - 0.5)
+      : 0;
+    const offsetY = Number.isFinite(targetViewportHeight)
+      ? targetViewportHeight * (FORCE_TARGET_Y_RATIO - 0.5)
+      : 0;
 
     if (process.env.NODE_ENV !== 'production') {
       const debugNode = layoutNode?.data ?? resolveNodeDatum(layoutNode);
@@ -439,6 +461,12 @@ const ForceDirectedTree = ({
         requestedScale: options.scale,
         appliedScale: targetScale,
         nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
+        offset: { x: offsetX, y: offsetY },
+        viewport: {
+          width: targetViewportWidth,
+          height: targetViewportHeight,
+        },
+        targetRatio: { x: FORCE_TARGET_X_RATIO, y: FORCE_TARGET_Y_RATIO },
       };
 
       try {
@@ -461,6 +489,19 @@ const ForceDirectedTree = ({
             };
           }
         }
+        const latestSvgRect = svgElement.getBoundingClientRect?.();
+        if (latestSvgRect) {
+          logPayload.svgRect = {
+            x: latestSvgRect.x,
+            y: latestSvgRect.y,
+            width: latestSvgRect.width,
+            height: latestSvgRect.height,
+          };
+          logPayload.targetCenter = {
+            x: latestSvgRect.x + latestSvgRect.width * FORCE_TARGET_X_RATIO,
+            y: latestSvgRect.y + latestSvgRect.height * FORCE_TARGET_Y_RATIO,
+          };
+        }
       } catch (error) {
         logPayload.error = error?.message;
       }
@@ -479,6 +520,8 @@ const ForceDirectedTree = ({
       duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
       scale: Number.isFinite(options.scale) ? options.scale : targetScale,
       origin: 'center',
+      offset: { x: offsetX, y: offsetY },
+      allowScaleOverride: false,
     }).catch(() => undefined);
   }, [
     layoutNodeById,
