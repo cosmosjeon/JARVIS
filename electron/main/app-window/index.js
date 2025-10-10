@@ -155,9 +155,15 @@ const createMainWindow = ({
   }
 
   const isMac = process.platform === 'darwin';
+
+  // fresh=true (새 트리)인 경우 작은 크기로 시작
+  const isNewTree = fresh === true;
+  const initialWidth = isNewTree ? 600 : 1024;
+  const initialHeight = isNewTree ? 480 : 720;
+
   const window = new BrowserWindow({
-    width: 1024,
-    height: 720,
+    width: initialWidth,
+    height: initialHeight,
     minWidth: 320,
     minHeight: 240,
     frame: false,
@@ -221,9 +227,15 @@ const createWidgetWindow = ({
   onClosed,
 } = {}) => {
   const isMac = process.platform === 'darwin';
+
+  // fresh=true (새 트리)인 경우 작은 크기로 시작
+  const isNewTree = fresh === true;
+  const initialWidth = isNewTree ? 600 : 1024;
+  const initialHeight = isNewTree ? 480 : 720;
+
   const window = new BrowserWindow({
-    width: 1024,
-    height: 720,
+    width: initialWidth,
+    height: initialHeight,
     minWidth: 320,
     minHeight: 240,
     frame: false,

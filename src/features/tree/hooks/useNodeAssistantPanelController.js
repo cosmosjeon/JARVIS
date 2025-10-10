@@ -40,6 +40,13 @@ const buildPanelStyles = (theme) => {
         borderColor: 'rgba(255, 255, 255, 0.1)',
         textColor: 'rgba(255, 255, 255, 0.9)',
       };
+    case 'glass':
+      return {
+        background: 'rgba(0, 0, 0, 0.65)',
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        textColor: 'rgba(248, 250, 252, 0.98)',
+        subtleTextColor: 'rgba(226, 232, 240, 0.88)',
+      };
     default:
       return {
         background: 'rgba(255, 255, 255, 0.85)',
