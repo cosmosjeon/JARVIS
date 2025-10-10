@@ -37,8 +37,9 @@ const INPUT_MODES = Object.freeze({
   MOUSE: 'mouse',
   TRACKPAD: 'trackpad',
 });
-// 트랙패드 모드 설정을 마우스 모드에도 적용 - 딜레이 최적화
-const UNIFIED_ZOOM_DIVISOR = 100; // 트랙패드 줌 감도 대폭 향상 (낮을수록 민감)
+// 모드별 줌 감도 설정 (낮을수록 민감)
+const MOUSE_ZOOM_DIVISOR = 220; // 마우스 모드 기본 감도
+const TRACKPAD_ZOOM_DIVISOR = 100; // 트랙패드 모드 높은 감도
 const UNIFIED_PAN_PIXEL_MULTIPLIER = 2.5; // 패닝 감도 향상 (딜레이 감소)
 const UNIFIED_PAN_LINE_MULTIPLIER = 45; // 라인 모드 감도 향상
 const UNIFIED_PAN_PAGE_MULTIPLIER = 800; // 페이지 모드 감도 향상
@@ -502,7 +503,7 @@ const ForceDirectedTree = ({
           event.preventDefault();
         }
         const modeFactor = resolveUnifiedWheelModeFactor(event);
-        const divisor = UNIFIED_ZOOM_DIVISOR;
+        const divisor = isTrackpadMode ? TRACKPAD_ZOOM_DIVISOR : MOUSE_ZOOM_DIVISOR;
         return (-clampFinite(event?.deltaY) * modeFactor) / divisor;
       })
       .on('zoom', (event) => {
