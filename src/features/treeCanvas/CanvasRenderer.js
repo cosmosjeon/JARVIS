@@ -1,4 +1,4 @@
-import { NODE_HEIGHT, NODE_WIDTH, NODE_HORIZONTAL_GAP, NODE_VERTICAL_GAP } from "./constants";
+import { NODE_HEIGHT, NODE_WIDTH } from "./constants";
 
 const FONT_FAMILY = "500 14px 'Inter', 'Segoe UI', sans-serif";
 const SUBTEXT_FONT = "400 11px 'Inter', 'Segoe UI', sans-serif";
@@ -9,33 +9,72 @@ export default class CanvasRenderer {
     this.ctx = null;
     this.size = { width: 0, height: 0 };
     this.viewport = { left: 0, top: 0, width: 0, height: 0 };
+    this.renderRegion = null;
+    this.pixelRatio = window.devicePixelRatio || 1;
+    this.scale = 1;
   }
 
   attachCanvas(canvas) {
     this.canvas = canvas;
     this.ctx = canvas ? canvas.getContext("2d") : null;
+    if (this.canvas) {
+      this.canvas.style.willChange = "transform";
+      this.canvas.style.transformOrigin = "0 0";
+    }
   }
 
-  resize(width, height) {
+  prepareRegion(region, scale = 1) {
     if (!this.canvas) return;
     const pixelRatio = window.devicePixelRatio || 1;
-    this.canvas.width = Math.floor(width * pixelRatio);
-    this.canvas.height = Math.floor(height * pixelRatio);
-    this.canvas.style.width = `${Math.floor(width)}px`;
-    this.canvas.style.height = `${Math.floor(height)}px`;
-    if (this.ctx) {
-      this.ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    const displayWidth = Math.max(1, Math.ceil(region.width * scale));
+    const displayHeight = Math.max(1, Math.ceil(region.height * scale));
+    const needsResize =
+      this.size.width !== displayWidth ||
+      this.size.height !== displayHeight ||
+      this.pixelRatio !== pixelRatio ||
+      this.scale !== scale;
+
+    this.pixelRatio = pixelRatio;
+    this.scale = scale;
+
+    if (needsResize) {
+      const bufferWidth = Math.floor(displayWidth * pixelRatio);
+      const bufferHeight = Math.floor(displayHeight * pixelRatio);
+      this.canvas.width = bufferWidth;
+      this.canvas.height = bufferHeight;
+      this.canvas.style.width = `${Math.floor(displayWidth)}px`;
+      this.canvas.style.height = `${Math.floor(displayHeight)}px`;
+      if (this.ctx) {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+      this.size = { width: displayWidth, height: displayHeight };
     }
-    this.size = { width, height };
+
+    const offsetX = Math.floor(region.left * scale);
+    const offsetY = Math.floor(region.top * scale);
+    this.canvas.style.left = `${offsetX}px`;
+    this.canvas.style.top = `${offsetY}px`;
+    this.canvas.style.transform = "";
+
+    this.renderRegion = region;
   }
 
-  beginFrame(viewport) {
+  beginFrame(region, scale = 1) {
     if (!this.ctx) return false;
-    this.viewport = viewport;
+    this.viewport = region;
     this.ctx.save();
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.ctx.translate(-viewport.left, -viewport.top);
+    const effectiveScale = scale;
+    const ratio = this.pixelRatio;
+    this.ctx.setTransform(
+      effectiveScale * ratio,
+      0,
+      0,
+      effectiveScale * ratio,
+      -region.left * effectiveScale * ratio,
+      -region.top * effectiveScale * ratio
+    );
     return true;
   }
 

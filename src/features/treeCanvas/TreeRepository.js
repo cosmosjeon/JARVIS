@@ -24,6 +24,7 @@ export default class TreeRepository {
     this.links = [];
     this.orderedNodes = [];
     this.maxDepth = 0;
+    this.linkIndex = new Map();
   }
 
   load(treeData) {
@@ -35,6 +36,7 @@ export default class TreeRepository {
     this.links = [];
     this.orderedNodes = [];
     this.maxDepth = 0;
+    this.linkIndex.clear();
 
     const parentMap = new Map();
     for (const rawLink of rawLinks) {
@@ -73,6 +75,7 @@ export default class TreeRepository {
       if (!link) continue;
       if (!this.nodesById.has(link.source) || !this.nodesById.has(link.target)) continue;
       sanitizedLinks.push(link);
+      this.linkIndex.set(`${link.source}|${link.target}`, link);
     }
     this.links = sanitizedLinks;
 
@@ -130,6 +133,21 @@ export default class TreeRepository {
 
   getLinks() {
     return this.links;
+  }
+
+  getLinkBetween(sourceId, targetId) {
+    if (!sourceId || !targetId) {
+      return null;
+    }
+    const key = `${String(sourceId)}|${String(targetId)}`;
+    const existing = this.linkIndex.get(key);
+    return (
+      existing || {
+        source: String(sourceId),
+        target: String(targetId),
+        value: 1,
+      }
+    );
   }
 
   getNodeById(nodeId) {

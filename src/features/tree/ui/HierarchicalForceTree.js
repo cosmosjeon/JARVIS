@@ -2618,7 +2618,7 @@ const HierarchicalForceTree = () => {
         </div>
       ) : null}
 
-      {isForceView && showBootstrapChat && (
+      {showBootstrapChat && (
         <div
           className="pointer-events-none absolute"
           style={{

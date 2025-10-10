@@ -78,6 +78,7 @@ export const useLibraryAppViewModel = () => {
     isQAPanelVisible: state.isQAPanelVisible,
     libraryIntroTreeId: selectors.libraryIntroTreeId,
     isLibraryIntroActive: selectors.isLibraryIntroActive,
+    showSettingsDialog: state.showSettingsDialog,
   }), [
     selectors.selectedTree,
     selectors.libraryIntroTreeId,
@@ -95,6 +96,7 @@ export const useLibraryAppViewModel = () => {
     state.trees,
     state.isSidebarCollapsed,
     state.isQAPanelVisible,
+    state.showSettingsDialog,
   ]);
 
   const status = useMemo(() => ({
@@ -107,7 +109,8 @@ export const useLibraryAppViewModel = () => {
     showVoranBoxManager: state.showVoranBoxManager,
     showCreateDialog: state.showCreateDialog,
     createType: state.createType,
-  }), [state.createType, state.showCreateDialog, state.showVoranBoxManager]);
+    showSettingsDialog: state.showSettingsDialog,
+  }), [state.createType, state.showCreateDialog, state.showVoranBoxManager, state.showSettingsDialog]);
 
   return {
     user,

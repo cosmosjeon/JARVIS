@@ -22,6 +22,7 @@ const ACTIONS = {
   SET_SIDEBAR_COLLAPSED: 'setSidebarCollapsed',
   SET_QA_PANEL_VISIBLE: 'setQAPanelVisible',
   SET_LIBRARY_INTRO_TREE_ID: 'setLibraryIntroTreeId',
+  SET_SHOW_SETTINGS_DIALOG: 'setShowSettingsDialog',
 };
 
 const BASE_STATE = {
@@ -43,6 +44,7 @@ const BASE_STATE = {
   isSidebarCollapsed: false,
   isQAPanelVisible: true,
   libraryIntroTreeId: null,
+  showSettingsDialog: false,
 };
 
 const createInitialState = (overrides = {}) => {
@@ -112,6 +114,8 @@ const reducer = (state, action) => {
       return { ...state, isQAPanelVisible: resolveNext(action.payload, state.isQAPanelVisible) };
     case ACTIONS.SET_LIBRARY_INTRO_TREE_ID:
       return { ...state, libraryIntroTreeId: resolveNext(action.payload, state.libraryIntroTreeId) };
+    case ACTIONS.SET_SHOW_SETTINGS_DIALOG:
+      return { ...state, showSettingsDialog: resolveNext(action.payload, state.showSettingsDialog) };
     default:
       return state;
   }
@@ -139,6 +143,7 @@ const buildActions = (dispatch) => {
   const setSidebarCollapsed = dispatchAction(ACTIONS.SET_SIDEBAR_COLLAPSED);
   const setQAPanelVisible = dispatchAction(ACTIONS.SET_QA_PANEL_VISIBLE);
   const setLibraryIntroTreeId = dispatchAction(ACTIONS.SET_LIBRARY_INTRO_TREE_ID);
+  const setShowSettingsDialog = dispatchAction(ACTIONS.SET_SHOW_SETTINGS_DIALOG);
 
   const toggleFolder = (folderId) => {
     if (!folderId) {
@@ -229,6 +234,9 @@ const buildActions = (dispatch) => {
     });
   };
 
+  const showSettingsDialog = () => setShowSettingsDialog(true);
+  const hideSettingsDialog = () => setShowSettingsDialog(false);
+
   return {
     data: {
       setTrees,
@@ -262,6 +270,9 @@ const buildActions = (dispatch) => {
       closeCreateDialog,
       setShowCreateDialog,
       setCreateType,
+      showSettingsDialog,
+      hideSettingsDialog,
+      setShowSettingsDialog,
     },
     layout: {
       setSidebarCollapsed,

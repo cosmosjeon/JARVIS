@@ -69,11 +69,14 @@ export const forwardPanZoomGesture = ({ event, svgElement, zoomBehaviour }) => {
 
   const currentTransform = d3.zoomTransform(svgElement);
   const scale = Number.isFinite(currentTransform.k) && currentTransform.k > 0 ? currentTransform.k : 1;
+  
+  // 딜레이 최소화를 위한 감도 향상
+  const sensitivityMultiplier = 2.5;
 
   event.preventDefault();
   event.stopPropagation();
   selection.interrupt('focus-node');
-  zoomBehaviour.translateBy(selection, -normalizedDeltaX / scale, -normalizedDeltaY / scale);
+  zoomBehaviour.translateBy(selection, (-normalizedDeltaX * sensitivityMultiplier) / scale, (-normalizedDeltaY * sensitivityMultiplier) / scale);
   return true;
 };
 

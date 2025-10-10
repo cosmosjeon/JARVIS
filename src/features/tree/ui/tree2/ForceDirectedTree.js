@@ -37,36 +37,36 @@ const INPUT_MODES = Object.freeze({
   MOUSE: 'mouse',
   TRACKPAD: 'trackpad',
 });
-const MOUSE_WHEEL_DIVISOR = 600;
-const TRACKPAD_ZOOM_DIVISOR = 220;
-const TRACKPAD_PAN_PIXEL_MULTIPLIER = 1.8;
-const TRACKPAD_PAN_LINE_MULTIPLIER = 36;
-const TRACKPAD_PAN_PAGE_MULTIPLIER = 640;
+// 트랙패드 모드 설정을 마우스 모드에도 적용 - 딜레이 최적화
+const UNIFIED_ZOOM_DIVISOR = 220; // 트랙패드 줌 감도 사용
+const UNIFIED_PAN_PIXEL_MULTIPLIER = 2.5; // 패닝 감도 향상 (딜레이 감소)
+const UNIFIED_PAN_LINE_MULTIPLIER = 45; // 라인 모드 감도 향상
+const UNIFIED_PAN_PAGE_MULTIPLIER = 800; // 페이지 모드 감도 향상
 
 const clampFinite = (value, fallback = 0) => (Number.isFinite(value) ? value : fallback);
 
-const getTrackpadPanMultiplier = (event) => {
+const getUnifiedPanMultiplier = (event) => {
   if (!event) {
-    return TRACKPAD_PAN_PIXEL_MULTIPLIER;
+    return UNIFIED_PAN_PIXEL_MULTIPLIER;
   }
   if (event.deltaMode === 1) {
-    return TRACKPAD_PAN_LINE_MULTIPLIER;
+    return UNIFIED_PAN_LINE_MULTIPLIER;
   }
   if (event.deltaMode === 2) {
-    return TRACKPAD_PAN_PAGE_MULTIPLIER;
+    return UNIFIED_PAN_PAGE_MULTIPLIER;
   }
-  return TRACKPAD_PAN_PIXEL_MULTIPLIER;
+  return UNIFIED_PAN_PIXEL_MULTIPLIER;
 };
 
-const resolveWheelModeFactor = (event, isTrackpadMode) => {
+const resolveUnifiedWheelModeFactor = (event) => {
   if (!event) {
     return 1;
   }
   if (event.deltaMode === 1) {
-    return isTrackpadMode ? 0.45 : 0.33;
+    return 0.45; // 트랙패드 감도 사용
   }
   if (event.deltaMode === 2) {
-    return isTrackpadMode ? 48 : 33;
+    return 48; // 트랙패드 감도 사용
   }
   return 1;
 };
@@ -444,13 +444,15 @@ const ForceDirectedTree = ({
     const selection = d3.select(svgElement);
     const zoom = d3.zoom();
 
-    const applyTrackpadPan = (event) => {
+    const applyUnifiedPan = (event) => {
       const transform = lastViewTransformRef.current || d3.zoomIdentity;
       const scale = Number.isFinite(transform?.k) ? transform.k : 1;
-      const multiplier = getTrackpadPanMultiplier(event) / Math.max(scale, 0.001);
+      const multiplier = getUnifiedPanMultiplier(event) / Math.max(scale, 0.1); // 최소 스케일 값 증가로 반응성 향상
       const deltaX = clampFinite(event?.deltaX);
       const deltaY = clampFinite(event?.deltaY);
       if (deltaX !== 0 || deltaY !== 0) {
+        // 즉시 반응하도록 interrupt 제거하고 직접 translateBy 호출
+        selection.interrupt();
         selection.call(zoom.translateBy, -deltaX * multiplier, -deltaY * multiplier);
       }
     };
@@ -464,24 +466,24 @@ const ForceDirectedTree = ({
         if (event.button === 2) return false;
 
         if (event.type === 'wheel') {
-          if (isTrackpadMode) {
-            if (typeof event.preventDefault === 'function') {
-              event.preventDefault();
-            }
-            if (!event.ctrlKey && !event.metaKey) {
-              applyTrackpadPan(event);
-              return false;
-            }
-            return true;
+          if (typeof event.preventDefault === 'function') {
+            event.preventDefault();
           }
-          return event.ctrlKey || event.metaKey;
+          if (typeof event.stopPropagation === 'function') {
+            event.stopPropagation();
+          }
+          if (isTrackpadMode && !event.ctrlKey && !event.metaKey) {
+            applyUnifiedPan(event);
+            return false;
+          }
+          return true;
         }
 
         if (event.type === 'mousedown' || event.type === 'pointerdown' || event.type === 'mousemove' || event.type === 'pointermove') {
           if ((event.type === 'mousedown' || event.type === 'pointerdown') && event.ctrlKey) {
             return false;
           }
-          return isTrackpadMode ? (event.button === 0 || event.button === 1) : (event.button === 1 || (event.ctrlKey && event.button === 0));
+          return event.button === 0 || event.button === 1; // 트랙패드 스타일로 통일
         }
 
         if (event.type === 'touchstart' || event.type === 'touchmove' || event.type === 'touchend') {
@@ -492,14 +494,15 @@ const ForceDirectedTree = ({
       })
       .scaleExtent([MIN_ZOOM, MAX_ZOOM])
       .wheelDelta((event) => {
-        if (isTrackpadMode && !(event.ctrlKey || event.metaKey)) {
+        const shouldZoom = !isTrackpadMode || event.ctrlKey || event.metaKey;
+        if (!shouldZoom) {
           return 0;
         }
-        if (isTrackpadMode && typeof event.preventDefault === 'function') {
+        if (typeof event.preventDefault === 'function') {
           event.preventDefault();
         }
-        const modeFactor = resolveWheelModeFactor(event, isTrackpadMode);
-        const divisor = isTrackpadMode ? TRACKPAD_ZOOM_DIVISOR : MOUSE_WHEEL_DIVISOR;
+        const modeFactor = resolveUnifiedWheelModeFactor(event);
+        const divisor = UNIFIED_ZOOM_DIVISOR;
         return (-clampFinite(event?.deltaY) * modeFactor) / divisor;
       })
       .on('zoom', (event) => {

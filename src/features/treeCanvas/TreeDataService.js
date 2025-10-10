@@ -1,4 +1,10 @@
-import { CACHE_SIZE, NODE_HEIGHT, NODE_VERTICAL_GAP } from "./constants";
+import {
+  CACHE_SIZE,
+  NODE_HEIGHT,
+  NODE_VERTICAL_GAP,
+  NODE_WIDTH,
+  NODE_HORIZONTAL_GAP,
+} from "./constants";
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -12,6 +18,7 @@ export default class TreeDataService {
       virtualHeight: 0,
       rootCount: 0,
       maxDepth: 0,
+      virtualWidth: 0,
     };
     this.listeners = new Set();
   }
@@ -21,6 +28,10 @@ export default class TreeDataService {
     this.metrics.virtualHeight = Math.max(
       0,
       this.metrics.nodeCount * (NODE_HEIGHT + NODE_VERTICAL_GAP)
+    );
+    this.metrics.virtualWidth = Math.max(
+      0,
+      (this.metrics.maxDepth + 1) * (NODE_WIDTH + NODE_HORIZONTAL_GAP) + NODE_HORIZONTAL_GAP
     );
     this.cache.clear();
     this.cacheKeys = [];
@@ -73,9 +84,16 @@ export default class TreeDataService {
 
     const nodes = orderedNodes.slice(startIndex, endIndex);
     const nodeIds = new Set(nodes.map((node) => node.id));
-    const links = this.repository
-      .getLinks()
-      .filter((link) => nodeIds.has(link.source) && nodeIds.has(link.target));
+    const links = [];
+    for (const node of nodes) {
+      if (!node.parentId || !nodeIds.has(node.parentId)) {
+        continue;
+      }
+      const link = this.repository.getLinkBetween(node.parentId, node.id);
+      if (link) {
+        links.push(link);
+      }
+    }
 
     const payload = { nodes, links, startIndex, endIndex };
     this.cache.set(cacheKey, payload);

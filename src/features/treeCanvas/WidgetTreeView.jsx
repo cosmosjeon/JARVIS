@@ -4,25 +4,25 @@ import TreeRenderController from "./TreeRenderController";
 import TreeRepository from "./TreeRepository";
 import TreeDataService from "./TreeDataService";
 import RenderPerformanceMonitor from "./RenderPerformanceMonitor";
-import {
-  NODE_WIDTH,
-  NODE_HEIGHT,
-  NODE_HORIZONTAL_GAP,
-  NODE_VERTICAL_GAP,
-} from "./constants";
+import { NODE_WIDTH, NODE_HEIGHT } from "./constants";
+import { useSettings } from "shared/hooks/SettingsContext";
 
 const approxEqual = (a, b) => Math.abs(a - b) < 0.5;
+const zoomEqual = (a, b) => Math.abs(a - b) < 0.001;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.5;
+const clampZoom = (value) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 
 const WidgetTreeView = ({
   treeData,
   onNodeClick,
   className = "",
 }) => {
+  console.log("[WidgetTreeView] render start", { timestamp: Date.now() });
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const repositoryRef = useRef(null);
   const dataServiceRef = useRef(null);
-  const rendererRef = useRef(null);
   const controllerRef = useRef(null);
   const viewportSizeRef = useRef({ width: 0, height: 0 });
   const lastViewportRef = useRef({ left: 0, top: 0, width: 0, height: 0 });
@@ -31,8 +31,12 @@ const WidgetTreeView = ({
     virtualHeight: 0,
     rootCount: 0,
     maxDepth: 0,
+    virtualWidth: 0,
   });
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  const { inputMode = "mouse" } = useSettings();
 
   useEffect(() => {
     const repository = new TreeRepository();
@@ -47,7 +51,6 @@ const WidgetTreeView = ({
 
     repositoryRef.current = repository;
     dataServiceRef.current = dataService;
-    rendererRef.current = renderer;
     controllerRef.current = controller;
 
     renderer.attachCanvas(canvasRef.current);
@@ -60,20 +63,27 @@ const WidgetTreeView = ({
       controller.dispose();
       repositoryRef.current = null;
       dataServiceRef.current = null;
-      rendererRef.current = null;
       controllerRef.current = null;
     };
   }, []);
 
-  const updateViewport = useCallback(() => {
+  const updateViewport = useCallback((options = {}) => {
     const container = containerRef.current;
     const controller = controllerRef.current;
-    const renderer = rendererRef.current;
-    if (!container || !controller || !renderer) return;
+    if (!container || !controller) return;
 
     const rect = container.getBoundingClientRect();
     const width = rect.width;
     const height = rect.height;
+    const scale = zoomRef.current || 1;
+
+    const viewport = {
+      left: container.scrollLeft / scale,
+      top: container.scrollTop / scale,
+      width: width / scale,
+      height: height / scale,
+      scale,
+    };
 
     if (
       !approxEqual(viewportSizeRef.current.width, width) ||
@@ -81,32 +91,143 @@ const WidgetTreeView = ({
     ) {
       viewportSizeRef.current = { width, height };
       setViewportSize({ width, height });
-      renderer.resize(width, height);
+      lastViewportRef.current = viewport;
+      controller.requestRender(viewport, { force: true });
+      return;
     }
 
-    const viewport = {
-      left: container.scrollLeft,
-      top: container.scrollTop,
-      width,
-      height,
-    };
     lastViewportRef.current = viewport;
-    controller.requestRender(viewport);
+    if (options.forceRender) {
+      controller.requestRender(viewport, { force: true });
+    } else {
+      controller.handleViewportChange(viewport);
+    }
   }, []);
+
+  const applyZoom = useCallback(
+    (requestedZoom, anchor) => {
+      const container = containerRef.current;
+      if (!container) return;
+      const prevZoom = zoomRef.current || 1;
+      const nextZoom = clampZoom(requestedZoom || 1);
+      if (zoomEqual(prevZoom, nextZoom)) {
+        return;
+      }
+
+      zoomRef.current = nextZoom;
+      setZoom(nextZoom);
+
+      const rect = container.getBoundingClientRect();
+      const anchorOffsetX =
+        anchor && typeof anchor.x === "number" ? anchor.x - rect.left : rect.width / 2;
+      const anchorOffsetY =
+        anchor && typeof anchor.y === "number" ? anchor.y - rect.top : rect.height / 2;
+
+      const worldX = (container.scrollLeft + anchorOffsetX) / prevZoom;
+      const worldY = (container.scrollTop + anchorOffsetY) / prevZoom;
+
+      const nextScrollLeft = worldX * nextZoom - anchorOffsetX;
+      const nextScrollTop = worldY * nextZoom - anchorOffsetY;
+
+      container.scrollLeft = nextScrollLeft;
+      container.scrollTop = nextScrollTop;
+
+      updateViewport({ forceRender: true });
+    },
+    [updateViewport]
+  );
+
+  useEffect(() => {
+    if (inputMode === "trackpad" && !zoomEqual(zoomRef.current, 1)) {
+      applyZoom(1);
+    }
+  }, [applyZoom, inputMode]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const resizeObserver = new ResizeObserver(() => updateViewport());
+    const resizeObserver = new ResizeObserver(() => updateViewport({ forceRender: true }));
     resizeObserver.observe(container);
     return () => resizeObserver.disconnect();
   }, [updateViewport]);
 
   useEffect(() => {
+    const container = containerRef.current;
+    console.log("[WidgetTreeView] wheel effect init", {
+      hasContainer: !!container,
+      inputMode,
+    });
+    if (!container) return;
+
+    if (inputMode !== "mouse") {
+      console.log("[WidgetTreeView] wheel effect skipped (not mouse mode)", { inputMode });
+      container.style.overscrollBehavior = "";
+      return undefined;
+    }
+
+    console.log("[WidgetTreeView] wheel effect active (mouse mode)");
+
+    const handleWheelCapture = (event) => {
+      if (!container.contains(event.target)) {
+        return;
+      }
+
+      console.log("[WidgetTreeView] wheel capture", { deltaY: event.deltaY, target: event.target });
+
+      if (!event.cancelable || !Number.isFinite(event.deltaY)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+    };
+
+    const handleWheel = (event) => {
+      if (!container.contains(event.target)) {
+        return;
+      }
+
+      console.log("[WidgetTreeView] wheel handler", { deltaY: event.deltaY });
+
+      if (!event.cancelable || !Number.isFinite(event.deltaY)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+
+      const baseZoom = zoomRef.current || 1;
+      const zoomFactor = Math.pow(2, -event.deltaY / 240);
+      const targetZoom = clampZoom(baseZoom * zoomFactor);
+      if (zoomEqual(baseZoom, targetZoom)) {
+        console.log("[WidgetTreeView] zoom unchanged", { baseZoom, targetZoom });
+        return;
+      }
+      console.log("[WidgetTreeView] applying zoom", { baseZoom, targetZoom });
+      applyZoom(targetZoom, { x: event.clientX, y: event.clientY });
+    };
+
+    const wheelOptions = { passive: false, capture: true };
+    container.style.overscrollBehavior = "contain";
+    window.addEventListener("wheel", handleWheelCapture, wheelOptions);
+    container.addEventListener("wheel", handleWheel, wheelOptions);
+
+    return () => {
+      window.removeEventListener("wheel", handleWheelCapture, wheelOptions);
+      container.removeEventListener("wheel", handleWheel, wheelOptions);
+      container.style.overscrollBehavior = "";
+    };
+  }, [applyZoom, inputMode]);
+
+  useEffect(() => {
     const dataService = dataServiceRef.current;
     if (!dataService) return;
     dataService.load(treeData || { nodes: [], links: [] });
-    requestAnimationFrame(() => updateViewport());
+    requestAnimationFrame(() => updateViewport({ forceRender: true }));
   }, [treeData, updateViewport]);
 
   const handleScroll = useCallback(() => {
@@ -121,8 +242,9 @@ const WidgetTreeView = ({
       if (!onNodeClick) return;
 
       const rect = container.getBoundingClientRect();
-      const x = event.clientX - rect.left + container.scrollLeft;
-      const y = event.clientY - rect.top + container.scrollTop;
+      const scale = zoomRef.current || 1;
+      const x = (event.clientX - rect.left + container.scrollLeft) / scale;
+      const y = (event.clientY - rect.top + container.scrollTop) / scale;
 
       const nodes = controller.getLastNodes() || [];
       for (const node of nodes) {
@@ -142,10 +264,8 @@ const WidgetTreeView = ({
   }, [metrics.virtualHeight, viewportSize.height]);
 
   const virtualWidth = useMemo(() => {
-    const depth = metrics.maxDepth || 0;
-    const contentWidth = (depth + 1) * (NODE_WIDTH + NODE_HORIZONTAL_GAP) + NODE_HORIZONTAL_GAP;
-    return Math.max(contentWidth, viewportSize.width || 0);
-  }, [metrics.maxDepth, viewportSize.width]);
+    return Math.max(metrics.virtualWidth || 0, viewportSize.width || 0);
+  }, [metrics.virtualWidth, viewportSize.width]);
 
   return (
     <div
@@ -156,12 +276,14 @@ const WidgetTreeView = ({
     >
       <div
         className="relative"
-        style={{ width: virtualWidth, height: virtualHeight }}
+        style={{
+          width: Math.max(1, Math.floor((virtualWidth || 0) * zoom)),
+          height: Math.max(1, Math.floor((virtualHeight || 0) * zoom)),
+        }}
       >
         <canvas
           ref={canvasRef}
           className="absolute left-0 top-0"
-          style={{ width: "100%", height: "100%" }}
         />
       </div>
     </div>

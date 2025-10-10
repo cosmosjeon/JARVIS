@@ -4,6 +4,7 @@ import LibraryContent from './LibraryContent';
 import VoranBoxManager from './components/VoranBoxManager';
 import CreateDialog from './components/CreateDialog';
 import LibraryWindowTitleBar from './components/LibraryWindowTitleBar';
+import LibrarySettingsDialog from './components/LibrarySettingsDialog';
 import useLibraryAppViewModel from 'features/library/hooks/useLibraryAppViewModel';
 
 const TOP_DRAG_ZONE_HEIGHT = 16;
@@ -79,6 +80,7 @@ const LibraryApp = () => {
           onVoranDragLeave={handlers.voranDragLeave}
           onToggleCollapsed={handlers.toggleSidebar}
           onMoveTreesToFolder={handlers.moveTreesToFolder}
+          onOpenSettings={handlers.showSettingsDialog}
         />
 
         <main className="flex flex-1 flex-col bg-background overflow-hidden">
@@ -136,6 +138,18 @@ const LibraryApp = () => {
         folders={state.folders}
         onFolderCreate={(name, parentId) => handlers.folderCreate({ name, parentId })}
         onMemoCreate={() => { }}
+      />
+
+      <LibrarySettingsDialog
+        open={dialog.showSettingsDialog}
+        onOpenChange={handlers.setShowSettingsDialog}
+        user={user}
+        ActiveThemeIcon={theme.active.icon}
+        activeThemeLabel={theme.active.label}
+        onCycleTheme={theme.cycle}
+        onRefresh={handlers.refreshLibrary}
+        onSignOut={signOut}
+        isRefreshing={status.loading}
       />
     </div>
   );
