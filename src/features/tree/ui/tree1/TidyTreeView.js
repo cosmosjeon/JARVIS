@@ -705,9 +705,10 @@ const TidyTreeView = ({
     if (isDarkTheme) {
       return "drop-shadow(0 0 6px rgba(125, 211, 252, 0.45))";
     }
-    if (isGlassTheme) {
-      return "drop-shadow(0 0 9px rgba(125, 211, 252, 0.65))";
-    }
+    // glass 테마 빛나는 효과 제거
+    // if (isGlassTheme) {
+    //   return "drop-shadow(0 0 9px rgba(125, 211, 252, 0.65))";
+    // }
     return undefined;
   })();
   const linkStrokeWidth = isGlassTheme ? 1.6 : 1.2;
@@ -756,19 +757,36 @@ const TidyTreeView = ({
       return;
     }
 
-    // 부모가 가상 루트이거나 일반 노드인 경우 모두 드래그 가능
-    dragStateManager.startDrag(node, event.clientX, event.clientY, parent);
-
-    // 드래그 시작 시 호버 효과 초기화
-    setHoveredNodeId(null);
+    // 드래그 임계값 설정 (5px 이상 움직여야 드래그 시작)
+    const DRAG_THRESHOLD = 5;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragStarted = false;
 
     // 드래그 이동 플래그 초기화
     hasDragMovedRef.current = false;
 
     // 전역 마우스 이벤트 리스너 추가
-    const handleGlobalMouseMove = (e) => handleDragMove(e);
+    const handleGlobalMouseMove = (e) => {
+      const deltaX = Math.abs(e.clientX - startX);
+      const deltaY = Math.abs(e.clientY - startY);
+
+      // 임계값을 넘으면 실제 드래그 시작
+      if (!dragStarted && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
+        dragStarted = true;
+        dragStateManager.startDrag(node, startX, startY, parent);
+        setHoveredNodeId(null);
+      }
+
+      if (dragStarted) {
+        handleDragMove(e);
+      }
+    };
+
     const handleGlobalMouseUp = (e) => {
-      endDrag(e);
+      if (dragStarted) {
+        endDrag(e);
+      }
       document.removeEventListener("mousemove", handleGlobalMouseMove);
       document.removeEventListener("mouseup", handleGlobalMouseUp);
     };
