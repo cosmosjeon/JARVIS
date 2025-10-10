@@ -42,7 +42,7 @@ const BASE_STATE = {
   showCreateDialog: false,
   createType: 'folder',
   isSidebarCollapsed: false,
-  isQAPanelVisible: true,
+  isQAPanelVisible: false,
   libraryIntroTreeId: null,
   showSettingsDialog: false,
 };

@@ -27,7 +27,9 @@ export const useLibraryHandlers = ({
       return;
     }
     actions.selection.selectTree(treeId, options);
-  }, [actions.selection]);
+    // 트리 선택 시 사이드바 자동으로 접기
+    actions.layout.setSidebarCollapsed(true);
+  }, [actions.selection, actions.layout]);
 
   const folderSelect = useCallback((folderId) => {
     actions.selection.selectFolder(folderId ?? null);
@@ -45,13 +47,12 @@ export const useLibraryHandlers = ({
     addNode(node, link);
     if (options.select !== false) {
       actions.selection.setSelectedNode(node);
-      // 새 노드를 추가하고 선택하면 AI 패널을 자동으로 켬
-      actions.layout.showQAPanel();
+      // 노드 추가 시 자동으로 QA 패널을 열지 않음 (노드 클릭 시에만 열림)
     }
     if (node?.treeId) {
       actions.flow.clearLibraryIntro(node.treeId);
     }
-  }, [actions.flow, actions.layout, actions.selection, addNode]);
+  }, [actions.flow, actions.selection, addNode]);
 
   const toggleCreateDialog = useCallback((open) => {
     if (open) {
@@ -119,6 +120,7 @@ export const useLibraryHandlers = ({
     actions.modal.hideSettingsDialog,
     actions.modal.setShowSettingsDialog,
     actions.layout.toggleSidebar,
+    actions.layout.setSidebarCollapsed,
     actions.layout.hideQAPanel,
     actions.layout.showQAPanel,
     actions.layout.toggleQAPanel,

@@ -130,7 +130,7 @@ const LibraryContent = ({
 
     return (
       <ResizablePanelGroup direction="horizontal" className="h-full overflow-hidden">
-        <ResizablePanel defaultSize={70} minSize={30} className="min-h-0 bg-background">
+        <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 bg-background">
           <TreeCanvas
             selectedMemo={selectedTree}
             onNodeSelect={onNodeSelect}
@@ -144,7 +144,7 @@ const LibraryContent = ({
           />
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-border/80 hover:bg-border" />
-        <ResizablePanel defaultSize={30} minSize={20} maxSize={80} className="bg-card">
+        <ResizablePanel defaultSize={50} minSize={20} maxSize={80} className="bg-card">
           <LibraryQAPanel
             selectedNode={selectedNode}
             selectedTree={selectedTree}
