@@ -74,6 +74,7 @@ const HierarchicalForceTree = () => {
     model: selectedModel,
     temperature: preferredTemperature,
     webSearchEnabled,
+    reasoningEnabled,
   } = useAIModelPreference();
 
   // 테마 옵션 정의
@@ -1028,11 +1029,22 @@ const HierarchicalForceTree = () => {
       requestPayload.temperature = preferredTemperature;
     }
 
+    const providerId = (requestPayload.provider || '').toLowerCase();
+    const modelId = typeof requestPayload.model === 'string' ? requestPayload.model.toLowerCase() : '';
+    if (reasoningEnabled) {
+      if (providerId === 'auto' || (providerId === 'openai' && modelId.startsWith('gpt-5'))) {
+        if (!requestPayload.reasoning) {
+          requestPayload.reasoning = { effort: modelId.includes('high') ? 'high' : 'medium' };
+        }
+        requestPayload.reasoningEnabled = true;
+      }
+    }
+
     return AgentClient.request(channel, requestPayload);
-  }, [preferredTemperature, selectedModel, selectedProvider]);
+  }, [preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
 
   const handleRequestAnswer = useCallback(
-    async ({ node: targetNode, question, isRootNode }) => {
+    async ({ node: targetNode, question, isRootNode, autoSelectionHint }) => {
       const trimmedQuestion = (question || '').trim();
       if (!trimmedQuestion) {
         throw new Error('질문이 비어있습니다.');
@@ -1115,7 +1127,10 @@ const HierarchicalForceTree = () => {
         payload.questionContext = contextNote;
       }
 
-      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', payload);
+      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', {
+        ...payload,
+        autoSelectionHint,
+      });
 
       return response;
     },
@@ -1138,7 +1153,7 @@ const HierarchicalForceTree = () => {
         attachments: Array.isArray(attachments) && attachments.length ? attachments : undefined,
         timestamp,
       },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '', status: 'pending', timestamp: Date.now() },
     ]);
 
     try {
@@ -1233,7 +1248,7 @@ const HierarchicalForceTree = () => {
     const timestamp = Date.now();
     const initialConversation = [
       { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending' }
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '', status: 'pending' }
     ];
 
     setConversationForNode(newNodeData.id, initialConversation);

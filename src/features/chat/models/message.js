@@ -26,10 +26,9 @@ export function createAssistantMessagePlaceholder() {
   return {
     id: Date.now() + '-assistant',
     role: ChatRole.Assistant,
-    text: '생각 중…',
+    text: '',
     status: ChatStatus.Pending,
     timestamp: Date.now() + 1,
   };
 }
-
 

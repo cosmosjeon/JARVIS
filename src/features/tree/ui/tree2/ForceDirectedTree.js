@@ -11,7 +11,6 @@ import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 import { motion, useAnimationControls } from 'framer-motion';
-import { useSettings } from 'shared/hooks/SettingsContext';
 import NodeContextMenu from 'features/tree/ui/components/NodeContextMenu';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
@@ -237,7 +236,6 @@ const ForceDirectedTree = ({
   onBackgroundClick,
   isChatPanelOpen = false,
 }) => {
-  const { zoomOnClickEnabled } = useSettings();
   const normalizedTheme = normalizeThemeKey(theme);
   const isDarkLikeTheme = DARK_LIKE_THEMES.has(normalizedTheme);
 
@@ -574,11 +572,6 @@ const ForceDirectedTree = ({
     }
     const [cartesianX, cartesianY] = toCartesianFromRadial(layoutNodeById.get(nodeId) || node);
 
-    // 설정이 켜져있을 때만 확대
-    if (zoomOnClickEnabled) {
-      focusNodeById(nodeId);
-    }
-
     if (externalSelectedNodeId === undefined) {
       setInternalSelectedNodeId(nodeId);
     }
@@ -587,7 +580,7 @@ const ForceDirectedTree = ({
       node: datum,
       position: { x: cartesianX, y: cartesianY },
     });
-  }, [focusNodeById, onNodeClick, externalSelectedNodeId, layoutNodeById, zoomOnClickEnabled]);
+  }, [onNodeClick, externalSelectedNodeId, layoutNodeById]);
 
   const handleClosePanel = useCallback(() => {
     if (externalSelectedNodeId === undefined) {
@@ -619,6 +612,90 @@ const ForceDirectedTree = ({
       position: { x: cartesianX, y: cartesianY },
     });
   }, [nodeMap, layoutNodeById, focusNodeById, onNodeClick, externalSelectedNodeId]);
+
+  // 새로운 노드로 포커스 이동을 위한 핸들러
+  const handleFocusNewNode = useCallback((newNodeId) => {
+    if (!newNodeId) {
+      return;
+    }
+    
+    console.log('[ForceDirectedTree] Attempting to focus on new node:', newNodeId);
+    
+    // 즉시 선택된 노드 ID 업데이트
+    if (externalSelectedNodeId === undefined) {
+      setInternalSelectedNodeId(newNodeId);
+      console.log('[ForceDirectedTree] Updated selectedNodeId to:', newNodeId);
+    }
+    
+    // 호버 상태도 업데이트
+    setHoveredNodeId(newNodeId);
+    setClickedNodeId(newNodeId);
+    
+    // 레이아웃이 준비될 때까지 기다린 후 포커스 이동
+    const attemptFocus = (retryCount = 0) => {
+      const layoutNode = layoutNodeById.get(newNodeId);
+      const original = nodeMap.get(newNodeId);
+      
+      if (layoutNode && original) {
+        console.log('[ForceDirectedTree] Layout ready, focusing on new node:', newNodeId);
+        
+        // 새 노드로 포커스 이동
+        focusNodeById(newNodeId);
+        
+        // 노드 클릭 이벤트 발생
+        const [cartesianX, cartesianY] = toCartesianFromRadial(layoutNode);
+        onNodeClick({
+          id: newNodeId,
+          node: original,
+          position: { x: cartesianX, y: cartesianY },
+        });
+        
+        console.log('[ForceDirectedTree] Node click event triggered for:', newNodeId);
+      } else if (retryCount < 30) {
+        // 최대 1.5초까지 재시도 (30 * 50ms)
+        console.log('[ForceDirectedTree] Layout not ready, retrying...', retryCount);
+        setTimeout(() => attemptFocus(retryCount + 1), 50);
+      } else {
+        console.log('[ForceDirectedTree] Failed to focus after 30 retries:', newNodeId);
+      }
+    };
+    
+    attemptFocus();
+  }, [focusNodeById, externalSelectedNodeId, layoutNodeById, nodeMap, onNodeClick]);
+
+  // 새로운 노드로 포커스 이동이 필요한지 추적
+  const shouldFocusNewNodeRef = useRef(false);
+  const previousNodeIdsRef = useRef(new Set());
+  
+  // onSecondQuestion 콜백을 감싸서 플래그 설정
+  const wrappedOnSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
+    console.log('[ForceDirectedTree] onSecondQuestion called for parent:', parentNodeId);
+    shouldFocusNewNodeRef.current = true;
+    if (typeof onSecondQuestion === 'function') {
+      return await onSecondQuestion(parentNodeId, question, answerFromLLM, metadata);
+    }
+  }, [onSecondQuestion]);
+  
+  useEffect(() => {
+    const currentNodeIds = new Set(data?.nodes?.map(node => node.id) || []);
+    const previousNodeIds = previousNodeIdsRef.current;
+    
+    // 새로운 노드가 추가되었는지 확인
+    const newNodes = Array.from(currentNodeIds).filter(id => !previousNodeIds.has(id));
+    
+    if (newNodes.length > 0 && shouldFocusNewNodeRef.current) {
+      // 새로운 노드가 추가되었을 때 가장 최근에 추가된 노드로 포커스 이동
+      const latestNodeId = newNodes[newNodes.length - 1];
+      console.log('[ForceDirectedTree] New node detected:', latestNodeId, 'Focusing...');
+      
+      // 즉시 포커스 이동 시도
+      handleFocusNewNode(latestNodeId);
+      shouldFocusNewNodeRef.current = false;
+    }
+    
+    // 현재 노드 ID들을 이전 노드 ID로 업데이트
+    previousNodeIdsRef.current = currentNodeIds;
+  }, [data?.nodes, handleFocusNewNode]);
 
   const handleAttachmentsChange = useCallback((nodeId, next) => {
     if (typeof onNodeAttachmentsChange === 'function') {
@@ -816,6 +893,8 @@ const ForceDirectedTree = ({
                 const textAnchor = isRootNode ? 'middle' : (isFrontSide === isLeaf ? 'start' : 'end');
                 const textOffset = isRootNode ? 0 : (isFrontSide === isLeaf ? 8 : -8);
                 const isHovered = hoveredNodeId === nodeId;
+                const isSelected = selectedNodeId === nodeId;
+                const shouldShowHoverEffect = isHovered || isSelected;
                 const isNodeHighlighted = nodeId ? highlightedAncestorIds.has(nodeId) : false;
                 const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
                 const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
@@ -859,13 +938,13 @@ const ForceDirectedTree = ({
                   >
                     <circle
                       fill={nodeFill(node)}
-                      r={isHovered ? NODE_RADIUS * 1.6 : NODE_RADIUS}
-                      fillOpacity={isHovered ? 1 : circleOpacity}
-                      stroke={isHovered ? 'rgba(59, 130, 246, 0.6)' : 'transparent'}
-                      strokeWidth={isHovered ? 1.2 : 0}
+                      r={shouldShowHoverEffect ? NODE_RADIUS * 1.6 : NODE_RADIUS}
+                      fillOpacity={shouldShowHoverEffect ? 1 : circleOpacity}
+                      stroke={shouldShowHoverEffect ? 'rgba(59, 130, 246, 0.6)' : 'transparent'}
+                      strokeWidth={shouldShowHoverEffect ? 1.2 : 0}
                       style={{
                         transition: 'all 200ms ease',
-                        filter: isHovered ? 'drop-shadow(0 0 3px rgba(59, 130, 246, 0.5))' : 'none',
+                        filter: shouldShowHoverEffect ? 'drop-shadow(0 0 3px rgba(59, 130, 246, 0.5))' : 'none',
                       }}
                     />
                     {label ? (
@@ -875,11 +954,11 @@ const ForceDirectedTree = ({
                         textAnchor={textAnchor}
                         transform={orientationFlip ? 'rotate(180)' : undefined}
                         fill={textFill}
-                        fillOpacity={isHovered ? 1 : textOpacity}
+                        fillOpacity={shouldShowHoverEffect ? 1 : textOpacity}
                         style={{
                           fontFamily: 'sans-serif',
-                          fontSize: isHovered ? 13 : 11,
-                          fontWeight: isHovered ? 700 : 400,
+                          fontSize: shouldShowHoverEffect ? 13 : 11,
+                          fontWeight: shouldShowHoverEffect ? 700 : 400,
                           transition: 'all 200ms ease',
                         }}
                       >
@@ -901,7 +980,7 @@ const ForceDirectedTree = ({
             color={selectedColor}
             theme={theme}
             onSizeChange={() => { }}
-            onSecondQuestion={onSecondQuestion}
+            onSecondQuestion={wrappedOnSecondQuestion}
             onPlaceholderCreate={onPlaceholderCreate}
             questionService={questionServiceRef.current}
             initialConversation={

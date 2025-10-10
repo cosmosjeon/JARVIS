@@ -49,8 +49,15 @@ const VoranFolderPanel = ({
   onEditingTreeNameChange,
   onTreeRename,
   formatDate,
-}) => (
-  <div className="flex-1 bg-card/40 flex flex-col">
+}) => {
+  const chipBaseClass = 'flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-transparent bg-card/70 px-2 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-card';
+  const chipHoverClass = 'hover:border-border/70 hover:bg-card hover:text-foreground';
+  const chipActiveClass = 'border-primary/60 bg-primary/10 text-card-foreground ring-1 ring-primary/30';
+  const chipDragTargetClass = 'ring-2 ring-primary/50 bg-primary/15 text-card-foreground';
+  const chipPreviewClass = 'ring-1 ring-primary/30 bg-primary/12 shadow-md';
+
+  return (
+    <div className="flex-1 bg-card/40 flex flex-col">
     <div className="px-4 pt-3 pb-0">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-card-foreground">폴더 관리</h3>
@@ -71,10 +78,10 @@ const VoranFolderPanel = ({
         <button
           type="button"
           className={cn(
-            'flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-muted/80 border border-border/60 focus:outline-none focus:ring-0',
-            !(selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && 'hover:bg-border/80 hover:border-border/50',
-            (selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && 'bg-blue-600/30 border-blue-500/70',
-            dragOverTarget?.type === 'voran' && 'bg-blue-900/30 border-blue-500/70 ring-1 ring-blue-400/60 scale-[1.02] shadow-md'
+            chipBaseClass,
+            !(selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && chipHoverClass,
+            (selectedFolderId === null || (navigationMode && currentFolderIndex === 0)) && chipActiveClass,
+            dragOverTarget?.type === 'voran' && chipDragTargetClass
           )}
           onClick={onSelectVoranBox}
         >
@@ -98,11 +105,11 @@ const VoranFolderPanel = ({
                 type="button"
                 key={folder.id}
                 className={cn(
-                  'flex-shrink-0 flex items-center gap-1.5 px-1.5 py-1 rounded-md text-xs transition-all bg-muted/80 border border-border/60 focus:outline-none focus:ring-0',
-                  !(selectedFolderId === folder.id || isNavigationSelected) && 'hover:bg-border/80 hover:border-border/50',
-                  (selectedFolderId === folder.id || isNavigationSelected) && 'bg-blue-600/30 border-blue-500/70',
-                  isDragTarget && 'bg-blue-900/30 border-blue-500/70 ring-1 ring-blue-400/60',
-                  isPreview && 'scale-[1.04] shadow-lg ring-2 ring-blue-300/60'
+                  chipBaseClass,
+                  !(selectedFolderId === folder.id || isNavigationSelected) && chipHoverClass,
+                  (selectedFolderId === folder.id || isNavigationSelected) && chipActiveClass,
+                  isDragTarget && chipDragTargetClass,
+                  isPreview && chipPreviewClass
                 )}
                 onClick={() => onSelectFolder(folder, folderIndex)}
                 onDragOver={(event) => onDragOver(event, 'folder', folder.id)}
@@ -134,7 +141,7 @@ const VoranFolderPanel = ({
               onChange={(event) => onNewFolderNameChange(event.target.value)}
               onKeyDown={onCreateInputKeyDown}
               placeholder="폴더 이름"
-              className="h-8 text-sm bg-muted border-border focus:border-blue-500"
+              className="h-8 text-sm bg-card/70 border-border focus-visible:ring-primary focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               autoFocus
             />
             <div className="flex gap-2">
@@ -165,7 +172,7 @@ const VoranFolderPanel = ({
         <div
           className={cn(
             'h-full',
-            dragOverTarget?.type === 'folder' && dragOverTarget?.id === selectedFolderId && 'bg-blue-900/20'
+            dragOverTarget?.type === 'folder' && dragOverTarget?.id === selectedFolderId && 'bg-primary/10 ring-1 ring-primary/30 rounded-lg'
           )}
           onDragOver={(event) => onDragOver(event, 'folder', selectedFolderId)}
           onDragLeave={onDragLeave}
@@ -179,7 +186,7 @@ const VoranFolderPanel = ({
                   <TreeIcon className="h-8 w-8 text-muted-foreground/70 mb-2" />
                   <p className="text-sm text-muted-foreground">이 폴더에 트리가 없습니다</p>
                   {dragOverTarget?.type === 'folder' && dragOverTarget?.id === selectedFolderId && (
-                    <div className="mt-2 text-xs text-blue-400 font-medium">여기에 트리를 놓으면 이 폴더로 이동합니다</div>
+                    <div className="mt-2 text-xs text-primary font-medium">여기에 트리를 놓으면 이 폴더로 이동합니다</div>
                   )}
                 </div>
               );
@@ -256,8 +263,9 @@ const VoranFolderPanel = ({
         </div>
       )}
     </div>
-  </div>
-);
+    </div>
+  );
+};
 
 
 export default VoranFolderPanel;

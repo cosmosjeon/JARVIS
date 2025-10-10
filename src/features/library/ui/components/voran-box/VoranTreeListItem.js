@@ -43,10 +43,10 @@ const VoranTreeListItem = ({
     onClick={onClick}
     onDoubleClick={onDoubleClick}
     className={cn(
-      'group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all',
-      !isEditing && 'cursor-pointer hover:bg-muted/50 active:bg-muted/70',
-      isSelected && 'bg-border/60 border border-border/60 shadow-inner',
-      isDragging && 'opacity-60 scale-[0.98]'
+      'group relative flex items-center gap-2 rounded-lg border border-transparent bg-card/80 px-2.5 py-2 text-sm shadow-sm transition-colors',
+      !isEditing && 'cursor-pointer hover:border-border/70 hover:bg-card',
+      isSelected && 'border-primary/60 bg-primary/10 text-card-foreground ring-1 ring-primary/40 shadow-md',
+      isDragging && 'border-dashed border-primary/50 bg-primary/5 opacity-80 ring-1 ring-primary/40'
     )}
   >
     <TreeIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />

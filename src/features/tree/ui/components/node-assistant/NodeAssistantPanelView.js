@@ -3,7 +3,6 @@ import AssistantPanelHeader from 'features/tree/ui/components/node-assistant/Ass
 import ChatAttachmentPreviewList from 'features/chat/components/ChatAttachmentPreviewList';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import ProviderDropdown from 'features/chat/components/ProviderDropdown';
-import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import { useFileDropZone } from 'shared/hooks/useFileDropZone';
 import { ChatStatus } from 'features/chat/models/message';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
@@ -21,7 +20,50 @@ import {
   LONG_RESPONSE_NOTICE_DELAY_MS,
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
-import { Globe, Paperclip } from 'lucide-react';
+import { Globe, Paperclip, Lightbulb } from 'lucide-react';
+
+const MODEL_LABELS = {
+  'gpt-5': 'GPT-5',
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o mini',
+  'gpt-4.1-mini': 'GPT-4.1 mini',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-1.5-flash': 'Gemini 1.5 Flash',
+  'gemini-1.5-pro': 'Gemini 1.5 Pro',
+  'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
+};
+
+const formatModelLabel = (value) => {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase();
+  if (MODEL_LABELS[value]) {
+    return MODEL_LABELS[value];
+  }
+  if (MODEL_LABELS[normalized]) {
+    return MODEL_LABELS[normalized];
+  }
+  if (normalized.startsWith('gpt-5')) return 'GPT-5';
+  if (normalized.startsWith('gpt-4o-mini')) return 'GPT-4o mini';
+  if (normalized.startsWith('gpt-4o')) return 'GPT-4o';
+  if (normalized.startsWith('gpt-4.1')) return 'GPT-4.1 mini';
+  if (normalized.includes('gemini')) return 'Gemini';
+  if (normalized.includes('claude')) return 'Claude';
+  return value;
+};
+
+const formatProviderLabel = (value) => {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase();
+  if (normalized === 'openai') return 'OpenAI';
+  if (normalized === 'gemini') return 'Gemini';
+  if (normalized === 'claude') return 'Claude';
+  if (normalized === 'auto') return 'Smart Auto';
+  return value.replace(/^\w/, (char) => char.toUpperCase());
+};
 
 const NodeAssistantPanelView = ({
   panelRef,
@@ -58,15 +100,18 @@ const NodeAssistantPanelView = ({
   panelWheelHandler,
   isSendDisabled,
   showHeaderControls = true,
+  selectedProvider,
+  selectedModel,
+  providerOptions,
+  setSelectedProvider,
+  webSearchEnabled,
+  setWebSearchEnabled,
+  reasoningEnabled,
+  setReasoningEnabled,
+  autoSelectionPreview,
+  lastAutoSelection,
 }) => {
   const fileInputRef = useRef(null);
-  const {
-    provider: selectedProvider,
-    providerOptions,
-    setProvider: setSelectedProvider,
-    webSearchEnabled,
-    setWebSearchEnabled,
-  } = useAIModelPreference();
   const [slowResponseNotice, setSlowResponseNotice] = useState(null);
 
   const resolvedPanelStyles = useMemo(
@@ -275,7 +320,7 @@ const NodeAssistantPanelView = ({
         onChange={handleAttachmentInputChange}
       />
 
-      <PromptInputToolbar className="flex items-center justify-between px-1">
+      <PromptInputToolbar className="flex items-center justify-between px-1 gap-2">
         <ProviderDropdown
           options={providerOptions}
           value={selectedProvider}
@@ -283,12 +328,75 @@ const NodeAssistantPanelView = ({
           disabled={isAttachmentUploading || isStreaming}
           align="start"
         />
-        <div className="flex items-center gap-1">
-          <PromptInputButton
-            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-            variant={webSearchEnabled ? 'secondary' : 'ghost'}
-            disabled={isAttachmentUploading || isStreaming}
-            className={cn(
+        <div className="flex flex-1 items-center justify-end gap-2">
+          {selectedProvider === 'auto' ? (
+            <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
+              <span>
+                {autoSelectionPreview
+                  ? (() => {
+                    const providerLabel = formatProviderLabel(autoSelectionPreview.provider);
+                    const modelLabel = formatModelLabel(autoSelectionPreview.model);
+                    const parts = [providerLabel, modelLabel].filter(Boolean);
+                    return parts.length ? `자동: ${parts.join(' · ')}` : '자동 모델 평가 중';
+                  })()
+                  : '자동 모델 평가 중'}
+              </span>
+              {autoSelectionPreview?.explanation ? (
+                <span className="text-muted-foreground/70">
+                  {autoSelectionPreview.explanation}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
+              <span>
+                현재: {(() => {
+                  const providerLabel = formatProviderLabel(selectedProvider);
+                  const modelLabel = formatModelLabel(selectedModel);
+                  const parts = [providerLabel, modelLabel].filter(Boolean);
+                  return parts.length ? parts.join(' · ') : '모델 미지정';
+                })()}
+              </span>
+              {lastAutoSelection ? (
+                <span className="text-muted-foreground/70">
+                  최근 자동 선택: {(() => {
+                    const providerLabel = formatProviderLabel(lastAutoSelection.provider);
+                    const modelLabel = formatModelLabel(lastAutoSelection.model);
+                    const parts = [providerLabel, modelLabel].filter(Boolean);
+                    return parts.join(' · ');
+                  })()}
+                </span>
+              ) : null}
+              {lastAutoSelection?.explanation ? (
+                <span className="text-muted-foreground/60">
+                  {lastAutoSelection.explanation}
+                </span>
+              ) : null}
+              {reasoningEnabled && selectedProvider !== 'auto' && (!selectedModel || !selectedModel.toLowerCase().startsWith('gpt-5')) ? (
+                <span className="text-muted-foreground/60">
+                  Reasoning은 GPT-5에서만 활성화됩니다.
+                </span>
+              ) : null}
+            </div>
+          )}
+          <div className="flex items-center gap-1">
+            <PromptInputButton
+              onClick={() => setReasoningEnabled(!reasoningEnabled)}
+              variant={reasoningEnabled ? 'secondary' : 'ghost'}
+              disabled={isAttachmentUploading || isStreaming}
+              className={cn(
+                'rounded-full px-2',
+                reasoningEnabled ? 'text-foreground' : 'text-muted-foreground',
+              )}
+              aria-label="Reasoning 모드 토글"
+            >
+              <Lightbulb className="h-4 w-4" />
+            </PromptInputButton>
+            <PromptInputButton
+              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              variant={webSearchEnabled ? 'secondary' : 'ghost'}
+              disabled={isAttachmentUploading || isStreaming}
+              className={cn(
               'rounded-full px-2',
               webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
             )}
@@ -304,6 +412,7 @@ const NodeAssistantPanelView = ({
           >
             <Paperclip className="h-4 w-4" />
           </PromptInputButton>
+          </div>
         </div>
       </PromptInputToolbar>
 

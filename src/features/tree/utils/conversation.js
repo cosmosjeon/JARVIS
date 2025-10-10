@@ -180,6 +180,18 @@ export const sanitizeConversationMessages = (messages) => {
       entry.metadata = message.metadata;
     }
 
+    if (message.modelInfo && typeof message.modelInfo === 'object') {
+      entry.modelInfo = { ...message.modelInfo };
+    }
+
+    if (message.reasoning && typeof message.reasoning === 'object') {
+      entry.reasoning = message.reasoning;
+    }
+
+    if (message.usage && typeof message.usage === 'object') {
+      entry.usage = message.usage;
+    }
+
     sanitized.push(entry);
   });
 

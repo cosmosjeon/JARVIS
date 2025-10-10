@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Paperclip, Network, Shield, Globe } from 'lucide-react';
+import { Loader2, X, Paperclip, Network, Shield, Globe, Lightbulb } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useFileDropZone } from 'shared/hooks/useFileDropZone';
@@ -23,6 +23,7 @@ import {
   PromptInputToolbar,
 } from 'shared/ui/shadcn-io/ai/prompt-input';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import selectAutoModel from 'shared/utils/aiModelSelector';
 import {
   DEFAULT_AGENT_RESPONSE_TIMEOUT_MS,
   LONG_RESPONSE_NOTICE_DELAY_MS,
@@ -34,6 +35,49 @@ const AGENT_RESPONSE_TIMEOUT_MS = DEFAULT_AGENT_RESPONSE_TIMEOUT_MS;
 const SLOW_RESPONSE_FIRST_HINT = 'AI가 답변을 준비 중입니다. 잠시만 기다려 주세요.';
 const SLOW_RESPONSE_SECOND_HINT = '아직 계산 중이에요. 최대 2분 정도 더 걸릴 수 있습니다.';
 const TIMEOUT_MESSAGE = 'AI 응답이 지연되고 있습니다. 잠시 후 다시 시도하거나 다른 모델을 선택해 주세요.';
+
+const MODEL_LABELS = {
+  'gpt-5': 'GPT-5',
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o mini',
+  'gpt-4.1-mini': 'GPT-4.1 mini',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-1.5-flash': 'Gemini 1.5 Flash',
+  'gemini-1.5-pro': 'Gemini 1.5 Pro',
+  'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
+};
+
+const formatModelLabel = (value) => {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase();
+  if (MODEL_LABELS[value]) {
+    return MODEL_LABELS[value];
+  }
+  if (MODEL_LABELS[normalized]) {
+    return MODEL_LABELS[normalized];
+  }
+  if (normalized.startsWith('gpt-5')) return 'GPT-5';
+  if (normalized.startsWith('gpt-4o-mini')) return 'GPT-4o mini';
+  if (normalized.startsWith('gpt-4o')) return 'GPT-4o';
+  if (normalized.startsWith('gpt-4.1')) return 'GPT-4.1 mini';
+  if (normalized.includes('gemini')) return 'Gemini';
+  if (normalized.includes('claude')) return 'Claude';
+  return value;
+};
+
+const formatProviderLabel = (value) => {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase();
+  if (normalized === 'openai') return 'OpenAI';
+  if (normalized === 'gemini') return 'Gemini';
+  if (normalized === 'claude') return 'Claude';
+  if (normalized === 'auto') return 'Smart Auto';
+  return value.replace(/^[a-z]/, (char) => char.toUpperCase());
+};
 
 const withTimeout = (promise, timeoutMs = 0, timeoutMessage = TIMEOUT_MESSAGE) => {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || typeof window === 'undefined') {
@@ -79,6 +123,8 @@ const LibraryQAPanel = ({
     setProvider: setSelectedProvider,
     webSearchEnabled,
     setWebSearchEnabled,
+    reasoningEnabled,
+    setReasoningEnabled,
   } = useAIModelPreference();
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
@@ -91,6 +137,7 @@ const LibraryQAPanel = ({
   });
   const [attachments, setAttachments] = useState([]);
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
+  const [lastAutoSelection, setLastAutoSelection] = useState(null);
   const [slowResponseNotice, setSlowResponseNotice] = useState(null);
 
   const messageContainerRef = useRef(null);
@@ -274,6 +321,18 @@ const LibraryQAPanel = ({
     onDropFiles: handleAttachmentFiles,
     isDisabled: isAttachmentUploading || isProcessing,
   });
+
+  const autoSelectionPreview = useMemo(() => {
+    if (selectedProvider !== 'auto') {
+      return null;
+    }
+    return selectAutoModel({
+      question: composerValue,
+      attachments,
+      webSearchEnabled,
+      forceReasoning: reasoningEnabled,
+    });
+  }, [attachments, composerValue, reasoningEnabled, selectedProvider, webSearchEnabled]);
 
   useEffect(() => {
     if (!isProcessing) {
@@ -617,8 +676,12 @@ const LibraryQAPanel = ({
       webSearchEnabled,
     };
 
-    if (!requestPayload.model) {
+    if (selectedProvider !== 'auto' && !requestPayload.model) {
       requestPayload.model = selectedModel;
+    }
+
+    if (payload.autoSelectionHint && selectedProvider === 'auto') {
+      requestPayload.autoSelectionHint = payload.autoSelectionHint;
     }
 
     const hasPreferredTemperature = typeof preferredTemperature === 'number' && Number.isFinite(preferredTemperature);
@@ -626,49 +689,139 @@ const LibraryQAPanel = ({
       requestPayload.temperature = preferredTemperature;
     }
 
+    const providerId = (requestPayload.provider || '').toLowerCase();
+    const modelId = typeof requestPayload.model === 'string' ? requestPayload.model.toLowerCase() : '';
+    if (reasoningEnabled) {
+      if (providerId === 'auto' || (providerId === 'openai' && modelId.startsWith('gpt-5'))) {
+        if (!requestPayload.reasoning) {
+          requestPayload.reasoning = { effort: modelId.includes('high') || composerValue.length > 800 ? 'high' : 'medium' };
+        }
+        requestPayload.reasoningEnabled = true;
+      }
+    }
+
     if (channel === 'askRoot') return AgentClient.askRoot(requestPayload);
     if (channel === 'askChild') return AgentClient.askChild(requestPayload);
     throw new Error(`지원하지 않는 채널: ${channel}`);
-  }, [preferredTemperature, selectedModel, selectedProvider]);
+  }, [composerValue.length, preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
 
   // 답변 생성 및 타이핑 애니메이션
   const animateAssistantResponse = useCallback((assistantId, answerText, context = {}) => {
     clearTypingTimers();
 
+    let finalModelInfo = null;
+
+    const applyFinalContext = (message, finalText, status) => {
+      const baseInfo = {
+        ...(message.modelInfo || {}),
+        ...(context.autoSelection || {}),
+      };
+
+      if (context.provider) {
+        baseInfo.provider = context.provider;
+      }
+      if (context.model) {
+        baseInfo.model = context.model;
+      }
+      if (context.autoSelection?.explanation) {
+        baseInfo.explanation = context.autoSelection.explanation;
+      }
+
+      const next = {
+        ...message,
+        text: finalText,
+        status,
+      };
+
+      if (Object.keys(baseInfo).length) {
+        next.modelInfo = baseInfo;
+      }
+      finalModelInfo = next.modelInfo || finalModelInfo;
+      if (context.reasoning) {
+        next.reasoning = context.reasoning;
+      }
+      if (context.usage) {
+        next.usage = context.usage;
+      }
+      if (context.latencyMs !== undefined) {
+        next.latencyMs = context.latencyMs;
+      }
+      return next;
+    };
+
+    const words = typeof answerText === 'string' && answerText.trim().length > 0
+      ? answerText.split(' ')
+      : [];
+
+    if (!words.length) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId
+            ? applyFinalContext(msg, '', 'complete')
+            : msg,
+        ),
+      );
+      setIsProcessing(false);
+      if (context.autoSelection || context.model || context.provider) {
+        setLastAutoSelection(context.autoSelection || finalModelInfo || {
+          provider: context.provider,
+          model: context.model,
+          explanation: context.autoSelection?.explanation,
+        });
+      }
+      return;
+    }
+
     let currentText = '';
-    const words = answerText.split(' ');
     let wordIndex = 0;
 
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === assistantId
+          ? { ...msg, status: 'typing' }
+          : msg,
+      ),
+    );
+
     const typeNextWord = () => {
-      if (wordIndex < words.length) {
-        currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex];
-        wordIndex++;
+      currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex];
+      wordIndex += 1;
 
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === assistantId
-              ? { ...msg, text: currentText }
-              : msg
-          )
-        );
+      const isComplete = wordIndex >= words.length;
 
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== assistantId) {
+            return msg;
+          }
+          if (isComplete) {
+            return applyFinalContext(msg, currentText, 'complete');
+          }
+          return {
+            ...msg,
+            text: currentText,
+            status: 'typing',
+          };
+        }),
+      );
+
+      if (isComplete) {
+        setIsProcessing(false);
+        if (context.autoSelection || context.model || context.provider) {
+          setLastAutoSelection(context.autoSelection || finalModelInfo || {
+            provider: context.provider,
+            model: context.model,
+            explanation: context.autoSelection?.explanation,
+          });
+        }
+      } else {
         const timer = setTimeout(typeNextWord, TYPING_INTERVAL_MS);
         typingTimers.current.push(timer);
-      } else {
-        // 타이핑 완료
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === assistantId
-              ? { ...msg, status: 'complete' }
-              : msg
-          )
-        );
-        setIsProcessing(false);
       }
     };
 
     typeNextWord();
-  }, [clearTypingTimers]);
+  }, [clearTypingTimers, setIsProcessing, setLastAutoSelection]);
 
   // 질문 전송 처리
   const handleSendMessage = useCallback(async () => {
@@ -748,6 +901,24 @@ const LibraryQAPanel = ({
     }));
     const hasAttachments = sanitizedAttachments.length > 0;
 
+    const activeAutoSelection = selectedProvider === 'auto'
+      ? selectAutoModel({
+        question,
+        attachments: sanitizedAttachments,
+        webSearchEnabled,
+        forceReasoning: reasoningEnabled,
+      })
+      : null;
+
+    const pendingModelInfo = activeAutoSelection
+      || (selectedProvider !== 'auto'
+        ? {
+          provider: selectedProvider,
+          model: selectedModel,
+          ...(reasoningEnabled ? { explanation: 'Reasoning 모드 활성화' } : {}),
+        }
+        : null);
+
     const userMessage = {
       id: userId,
       role: 'user',
@@ -760,10 +931,21 @@ const LibraryQAPanel = ({
     const assistantMessage = {
       id: assistantId,
       role: 'assistant',
-      text: '생각 중…',
+      text: '',
       status: 'pending',
+      modelInfo: pendingModelInfo || undefined,
       timestamp: timestamp + 1,
     };
+
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      assistantMessage,
+    ]);
+
+    if (pendingModelInfo) {
+      setLastAutoSelection(pendingModelInfo);
+    }
 
     const mapToOpenAIMessage = (msg) => {
       const role = msg.role === 'assistant' ? 'assistant' : 'user';
@@ -874,6 +1056,9 @@ const LibraryQAPanel = ({
       if (hasAttachments) {
         pendingNode.attachments = sanitizedAttachments;
       }
+      if (pendingModelInfo) {
+        pendingNode.modelInfo = pendingModelInfo;
+      }
 
       onNodeUpdate?.(pendingNode);
       onNodeSelect?.(pendingNode);
@@ -883,6 +1068,7 @@ const LibraryQAPanel = ({
           invokeAgent('askRoot', {
             messages: openaiMessages,
             attachments: hasAttachments ? sanitizedAttachments : undefined,
+            autoSelectionHint: selectedProvider === 'auto' ? activeAutoSelection : undefined,
           }),
           AGENT_RESPONSE_TIMEOUT_MS,
         );
@@ -901,13 +1087,48 @@ const LibraryQAPanel = ({
           throw new Error('답변을 받지 못했습니다.');
         }
 
-        animateAssistantResponse(assistantId, answerText);
+        animateAssistantResponse(assistantId, answerText, {
+          provider: response.provider,
+          model: response.model,
+          reasoning: response.reasoning,
+          autoSelection: response.autoSelection || activeAutoSelection,
+          usage: response.usage,
+          latencyMs: response.latencyMs,
+        });
 
-        const updatedMessages = pendingMessages.map((msg) =>
-          msg.id === assistantId
-            ? { ...msg, text: answerText, status: 'complete' }
-            : msg,
-        );
+        const finalModelInfo = response.autoSelection || activeAutoSelection || pendingModelInfo;
+        const updatedMessages = pendingMessages.map((msg) => {
+          if (msg.id !== assistantId) {
+            return msg;
+          }
+          const mergedModel = finalModelInfo
+            ? {
+              ...(msg.modelInfo || {}),
+              ...finalModelInfo,
+              provider: response.provider || finalModelInfo.provider,
+              model: response.model || finalModelInfo.model,
+              explanation: finalModelInfo.explanation || msg.modelInfo?.explanation,
+            }
+            : msg.modelInfo;
+          const next = {
+            ...msg,
+            text: answerText,
+            status: 'complete',
+          };
+          if (mergedModel) {
+            next.modelInfo = mergedModel;
+          }
+          if (response.reasoning) {
+            next.reasoning = response.reasoning;
+          }
+          if (response.usage) {
+            next.usage = response.usage;
+          }
+          if (response.latencyMs !== undefined) {
+            next.latencyMs = response.latencyMs;
+          }
+          return next;
+        });
 
         const answeredNode = {
           ...pendingNode,
@@ -916,6 +1137,15 @@ const LibraryQAPanel = ({
           status: 'answered',
           updatedAt: Date.now(),
         };
+        if (finalModelInfo) {
+          answeredNode.modelInfo = finalModelInfo;
+        }
+        if (response.reasoning) {
+          answeredNode.reasoning = response.reasoning;
+        }
+        if (response.usage) {
+          answeredNode.usage = response.usage;
+        }
 
         await upsertTreeNodes({
           treeId: selectedTree.id,
@@ -966,6 +1196,9 @@ const LibraryQAPanel = ({
       level,
       treeId: selectedTree.id,
     };
+    if (pendingModelInfo) {
+      newNode.modelInfo = pendingModelInfo;
+    }
 
     setMessages([userMessage, assistantMessage]);
 
@@ -992,6 +1225,7 @@ const LibraryQAPanel = ({
         invokeAgent('askRoot', {
           messages: openaiMessages,
           attachments: hasAttachments ? sanitizedAttachments : undefined,
+          autoSelectionHint: selectedProvider === 'auto' ? activeAutoSelection : undefined,
         }),
         AGENT_RESPONSE_TIMEOUT_MS,
       );
@@ -1010,13 +1244,36 @@ const LibraryQAPanel = ({
         throw new Error('답변을 받지 못했습니다.');
       }
 
-      animateAssistantResponse(assistantId, answerText);
+      animateAssistantResponse(assistantId, answerText, {
+        provider: response.provider,
+        model: response.model,
+        reasoning: response.reasoning,
+        autoSelection: response.autoSelection || activeAutoSelection,
+        usage: response.usage,
+        latencyMs: response.latencyMs,
+      });
 
-      const updatedMessages = [userMessage, {
-        ...assistantMessage,
-        text: answerText,
-        status: 'complete',
-      }];
+      const finalModelInfo = response.autoSelection || activeAutoSelection || pendingModelInfo;
+      const updatedMessages = [
+        userMessage,
+        {
+          ...assistantMessage,
+          text: answerText,
+          status: 'complete',
+          modelInfo: finalModelInfo
+            ? {
+              ...(assistantMessage.modelInfo || {}),
+              ...finalModelInfo,
+              provider: response.provider || finalModelInfo.provider,
+              model: response.model || finalModelInfo.model,
+              explanation: finalModelInfo.explanation || assistantMessage.modelInfo?.explanation,
+            }
+            : assistantMessage.modelInfo,
+          reasoning: response.reasoning || assistantMessage.reasoning,
+          usage: response.usage || assistantMessage.usage,
+          latencyMs: response.latencyMs !== undefined ? response.latencyMs : assistantMessage.latencyMs,
+        },
+      ];
 
       const updatedNode = {
         ...newNode,
@@ -1025,6 +1282,15 @@ const LibraryQAPanel = ({
         status: 'answered',
         updatedAt: timestamp,
       };
+      if (finalModelInfo) {
+        updatedNode.modelInfo = finalModelInfo;
+      }
+      if (response.reasoning) {
+        updatedNode.reasoning = response.reasoning;
+      }
+      if (response.usage) {
+        updatedNode.usage = response.usage;
+      }
 
       await upsertTreeNodes({
         treeId: selectedTree.id,
@@ -1419,7 +1685,7 @@ const LibraryQAPanel = ({
             }}
           />
 
-          <PromptInputToolbar className="flex items-center justify-between px-1">
+          <PromptInputToolbar className="flex items-center justify-between px-1 gap-2">
             <ProviderDropdown
               options={providerOptions}
               value={selectedProvider}
@@ -1427,12 +1693,75 @@ const LibraryQAPanel = ({
               disabled={isProcessing}
               align="start"
             />
-            <div className="flex items-center gap-1">
-              <PromptInputButton
-                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                variant={webSearchEnabled ? 'secondary' : 'ghost'}
-                disabled={isProcessing}
-                className={cn(
+            <div className="flex flex-1 items-center justify-end gap-2">
+              {selectedProvider === 'auto' ? (
+                <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
+                  <span>
+                    {autoSelectionPreview
+                      ? (() => {
+                        const providerLabel = formatProviderLabel(autoSelectionPreview.provider);
+                        const modelLabel = formatModelLabel(autoSelectionPreview.model);
+                        const parts = [providerLabel, modelLabel].filter(Boolean);
+                        return parts.length ? `자동: ${parts.join(' · ')}` : '자동 모델 평가 중';
+                      })()
+                      : '자동 모델 평가 중'}
+                  </span>
+                  {autoSelectionPreview?.explanation ? (
+                    <span className="text-muted-foreground/70">
+                      {autoSelectionPreview.explanation}
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
+                  <span>
+                    현재: {(() => {
+                      const providerLabel = formatProviderLabel(selectedProvider);
+                      const modelLabel = formatModelLabel(selectedModel);
+                      const parts = [providerLabel, modelLabel].filter(Boolean);
+                      return parts.length ? parts.join(' · ') : '모델 미지정';
+                    })()}
+                  </span>
+                  {lastAutoSelection ? (
+                    <span className="text-muted-foreground/70">
+                      최근 자동 선택: {(() => {
+                        const providerLabel = formatProviderLabel(lastAutoSelection.provider);
+                        const modelLabel = formatModelLabel(lastAutoSelection.model);
+                        const parts = [providerLabel, modelLabel].filter(Boolean);
+                        return parts.join(' · ');
+                      })()}
+                    </span>
+                  ) : null}
+                  {lastAutoSelection?.explanation ? (
+                    <span className="text-muted-foreground/60">
+                      {lastAutoSelection.explanation}
+                    </span>
+                  ) : null}
+                  {reasoningEnabled && selectedProvider !== 'auto' && (!selectedModel || !selectedModel.toLowerCase().startsWith('gpt-5')) ? (
+                    <span className="text-muted-foreground/60">
+                      Reasoning은 GPT-5에서만 활성화됩니다.
+                    </span>
+                  ) : null}
+                </div>
+              )}
+              <div className="flex items-center gap-1">
+                <PromptInputButton
+                  onClick={() => setReasoningEnabled(!reasoningEnabled)}
+                  variant={reasoningEnabled ? 'secondary' : 'ghost'}
+                  disabled={isProcessing}
+                  className={cn(
+                    'rounded-full px-2',
+                    reasoningEnabled ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                  aria-label="Reasoning 모드 토글"
+                >
+                  <Lightbulb className="h-4 w-4" />
+                </PromptInputButton>
+                <PromptInputButton
+                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                  variant={webSearchEnabled ? 'secondary' : 'ghost'}
+                  disabled={isProcessing}
+                  className={cn(
                   'rounded-full px-2',
                   webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
                 )}
@@ -1446,6 +1775,7 @@ const LibraryQAPanel = ({
               >
                 <Paperclip size={16} />
               </PromptInputButton>
+              </div>
             </div>
           </PromptInputToolbar>
 
