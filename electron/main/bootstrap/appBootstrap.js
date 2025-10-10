@@ -1,8 +1,7 @@
-const { app, ipcMain, nativeTheme, screen, globalShortcut } = require('electron');
+const { app, ipcMain, nativeTheme, globalShortcut } = require('electron');
 const accessibility = require('../../accessibility');
 const logs = require('../../logs');
 const { createTrayService } = require('../../services/tray-service');
-const { createCaptureService } = require('../../services/capture-service');
 const { LLMService } = require('../../services/llm-service');
 const { createLogBridge } = require('../logger');
 const {
@@ -18,12 +17,6 @@ const {
 } = require('../app-window');
 const { windowConfig, applyWindowConfigTo } = require('../bootstrap/window-state');
 const { createLibraryWindow, getLibraryWindow } = require('../library-window');
-const {
-  ensureAdminPanelWindow,
-  closeAdminPanelWindow,
-  getAdminPanelWindow,
-  positionAdminPanelWindow,
-} = require('../admin-panel');
 const { createSettingsManager } = require('../settingsManager');
 const { registerDeepLinkScheme, prepareSingleInstance } = require('./deepLink');
 const { registerIpcHandlers } = require('./ipc');
@@ -37,7 +30,6 @@ const start = () => {
   let logger;
   let llmService;
   let trayService;
-  let captureService;
   let oauthServer;
   let handleOAuthDeepLinkRef = (url) => {
     if (url) {
@@ -110,7 +102,6 @@ const start = () => {
     handleOAuthDeepLink: (url) => handleOAuthDeepLinkRef(url),
     getLogger: () => logger,
     getTrayService: () => trayService,
-    getCaptureService: () => captureService,
     getOAuthServer: () => oauthServer,
     ensureMainWindowFocus,
     getMainWindow,
@@ -136,13 +127,6 @@ const start = () => {
       app,
     });
 
-    captureService = createCaptureService({
-      logger,
-      ensureMainWindowFocus,
-      getMainWindow,
-      getAllWidgetWindows,
-    });
-
     const oauthController = createOAuthController({
       ipcMain,
       logger,
@@ -166,18 +150,6 @@ const start = () => {
     trayService.applyTraySettings(settingsManager.getSettings());
     settingsManager.broadcastSettings();
 
-    try {
-      screen.on?.('display-metrics-changed', () => {
-        const panel = getAdminPanelWindow();
-        if (!panel || panel.isDestroyed()) {
-          return;
-        }
-        positionAdminPanelWindow(panel, screen, logger);
-      });
-    } catch (error) {
-      logger?.warn?.('admin_panel_screen_listener_failed', { message: error?.message });
-    }
-
     registerIpcHandlers({
       ipcMain,
       accessibility,
@@ -186,9 +158,7 @@ const start = () => {
       llmService,
       settingsManager,
       trayService,
-      captureService,
       createLogBridge,
-      screen,
       isDev,
       toggleWidgetVisibility,
       createMainWindow,
@@ -202,9 +172,6 @@ const start = () => {
       applyWindowConfigTo,
       createLibraryWindow,
       getLibraryWindow,
-      ensureAdminPanelWindow,
-      closeAdminPanelWindow,
-      positionAdminPanelWindow,
     });
 
     // 전역 단축키 등록: Alt+1로 위젯 토글
@@ -224,10 +191,6 @@ const start = () => {
     }
 
     app.on('activate', () => {
-      const existingMain = getMainWindow();
-      if (!existingMain) {
-        createMainWindow({ logger, settings: settingsManager.getSettings(), isDev });
-      }
       if (!getLibraryWindow()) {
         createLibraryWindow({ isDev, logger });
       }

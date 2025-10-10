@@ -94,10 +94,6 @@
     font-family: "Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 
-  body.admin-panel-mode {
-    background-color: transparent;
-  }
-
   /* 반투명 모드에서만 backdrop-filter 적용 */
   .glass body {
     backdrop-filter: blur(var(--backdrop-blur));

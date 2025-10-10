@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, ChevronDown, ChevronUp, FolderTree as TreeIcon, X } from 'lucide-react';
 import { Button } from 'shared/ui/button';
 import { cn } from 'shared/utils';
+import { DialogClose } from 'shared/ui/dialog';
 import VoranTreeListItem from './VoranTreeListItem';
 
 const VoranTreeListPanel = ({
@@ -12,7 +13,6 @@ const VoranTreeListPanel = ({
   canScrollDown,
   onScrollUp,
   onScrollDown,
-  onClose,
   navigationMode,
   localSelectedTreeId,
   dragOverTarget,
@@ -40,8 +40,8 @@ const VoranTreeListPanel = ({
 }) => (
   <div
     className={cn(
-      'flex-1 border-r border-border/60 bg-card/40 transition-colors',
-      dragOverTarget?.type === 'voran' && 'bg-blue-900/25 border-blue-500/60'
+      'flex-1 border-r border-border/60 bg-card/60 transition-colors',
+      dragOverTarget?.type === 'voran' && 'border-primary/50 bg-primary/10 ring-1 ring-primary/40'
     )}
     onDragOver={onDragOver}
     onDragLeave={onDragLeave}
@@ -75,22 +75,23 @@ const VoranTreeListPanel = ({
           >
             <ChevronDown className="h-3 w-3" />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          <DialogClose asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </DialogClose>
         </div>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">저장된 트리들을 관리하세요</p>
       {navigationMode && localSelectedTreeId && (
-        <div className="mt-2 text-xs text-blue-400 font-medium">탭키로 폴더를 선택하고 엔터로 저장하세요</div>
+        <div className="mt-2 text-xs text-primary font-medium">탭키로 폴더를 선택하고 엔터로 저장하세요</div>
       )}
       {dragOverTarget?.type === 'voran' && (
-        <div className="mt-2 text-xs text-blue-400 font-medium">여기에 트리를 놓으면 BOX로 이동합니다</div>
+        <div className="mt-2 text-xs text-primary font-medium">여기에 트리를 놓으면 BOX로 이동합니다</div>
       )}
     </div>
 

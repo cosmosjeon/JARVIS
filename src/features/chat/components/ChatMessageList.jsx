@@ -4,6 +4,16 @@ import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
 import { Response } from 'shared/ui/shadcn-io/ai/response';
 import { cn } from 'shared/utils';
 import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+  ThinkingIndicator,
+} from 'shared/ui';
+import {
   DEFAULT_CHAT_PANEL_STYLES,
   DEFAULT_CHAT_THEME,
   isLightLikeChatTheme,
@@ -53,6 +63,119 @@ const renderAttachments = (attachments = [], theme, panelStyles) => {
         </div>
       ))}
     </div>
+  );
+};
+
+const MODEL_LABELS = {
+  'gpt-5': 'GPT-5',
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o mini',
+  'gpt-4.1-mini': 'GPT-4.1 mini',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-1.5-flash': 'Gemini 1.5 Flash',
+  'gemini-1.5-pro': 'Gemini 1.5 Pro',
+  'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
+};
+
+const formatModelLabel = (model) => {
+  if (!model) {
+    return null;
+  }
+  const normalized = model.toLowerCase();
+  if (MODEL_LABELS[model]) {
+    return MODEL_LABELS[model];
+  }
+  if (MODEL_LABELS[normalized]) {
+    return MODEL_LABELS[normalized];
+  }
+  if (normalized.startsWith('gpt-5')) return 'GPT-5';
+  if (normalized.startsWith('gpt-4o-mini')) return 'GPT-4o mini';
+  if (normalized.startsWith('gpt-4o')) return 'GPT-4o';
+  if (normalized.startsWith('gpt-4.1')) return 'GPT-4.1 mini';
+  if (normalized.includes('gemini')) return 'Gemini';
+  if (normalized.includes('claude')) return 'Claude';
+  return model;
+};
+
+const formatProviderLabel = (provider) => {
+  if (!provider) {
+    return null;
+  }
+  const normalized = provider.toLowerCase();
+  if (normalized === 'openai') return 'OpenAI';
+  if (normalized === 'gemini') return 'Gemini';
+  if (normalized === 'claude') return 'Claude';
+  if (normalized === 'auto') return 'Smart Auto';
+  return provider.replace(/^\w/, (char) => char.toUpperCase());
+};
+
+const renderModelInfo = (modelInfo) => {
+  if (!modelInfo) {
+    return null;
+  }
+  const providerLabel = formatProviderLabel(modelInfo.provider);
+  const modelLabel = formatModelLabel(modelInfo.model);
+  return (
+    <div className="mt-2 rounded-md border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground/90">
+      <span className="font-medium text-foreground/80">모델</span>{' '}
+      {[providerLabel, modelLabel].filter(Boolean).join(' · ')}
+      {modelInfo.explanation ? (
+        <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground/70">
+          {modelInfo.explanation}
+        </span>
+      ) : null}
+    </div>
+  );
+};
+
+const renderReasoning = (reasoning, status) => {
+  if (!reasoning) {
+    return null;
+  }
+  const summaries = Array.isArray(reasoning.summary) ? reasoning.summary.filter(Boolean) : [];
+  const details = Array.isArray(reasoning.details) ? reasoning.details.filter(Boolean) : [];
+
+  if (!summaries.length && !details.length) {
+    return null;
+  }
+
+  return (
+    <Reasoning className="mt-3" isStreaming={status === 'typing'}>
+      <ReasoningTrigger />
+      <ReasoningContent>
+        {summaries.map((text, index) => (
+          <p
+            key={`reasoning-summary-${index}`}
+            className="whitespace-pre-wrap text-sm leading-6 text-foreground/80"
+          >
+            {text}
+          </p>
+        ))}
+        {details.length ? (
+          <ChainOfThought className="mt-3" defaultOpen={false}>
+            <ChainOfThoughtHeader>Chain of Thought</ChainOfThoughtHeader>
+            <ChainOfThoughtContent>
+              {details.map((detail, index) => (
+                <ChainOfThoughtStep
+                  key={`reasoning-step-${index}`}
+                  status="complete"
+                  label={`Step ${index + 1}`}
+                >
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                    {detail}
+                  </p>
+                </ChainOfThoughtStep>
+              ))}
+            </ChainOfThoughtContent>
+          </ChainOfThought>
+        ) : null}
+        {typeof reasoning.tokens === 'number' ? (
+          <p className="mt-2 text-[11px] text-muted-foreground/80">
+            Reasoning tokens · {reasoning.tokens}
+          </p>
+        ) : null}
+      </ReasoningContent>
+    </Reasoning>
   );
 };
 
@@ -224,11 +347,17 @@ export default function ChatMessageList({
           resolvedTheme,
           resolvedPanelStyles,
         );
+        const isAssistantPending = status === 'pending' || status === 'typing';
+        const shouldShowThinking = isAssistantPending && (!message.text || message.text.trim().length === 0);
+        const modelInfoNode = renderModelInfo(message.modelInfo);
+        const reasoningNode = renderReasoning(message.reasoning, status);
 
         return (
           <div key={key} className="flex justify-start" data-role="assistant" data-status={status}>
             <div className="w-full" style={{ maxWidth: assistantMessageMaxWidth }}>
-              {message.text ? (
+              {shouldShowThinking ? (
+                <ThinkingIndicator modelInfo={message.modelInfo} />
+              ) : message.text ? (
                 <Response
                   className="w-full text-base leading-7"
                   style={{ color: resolvedPanelStyles.textColor }}
@@ -236,6 +365,8 @@ export default function ChatMessageList({
                   {message.text}
                 </Response>
               ) : null}
+              {modelInfoNode}
+              {reasoningNode}
               {attachmentsNode}
               {showActions && (
                 <Actions className="mt-2">

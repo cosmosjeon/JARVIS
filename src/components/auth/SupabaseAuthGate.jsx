@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo } from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { Button } from 'shared/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from 'shared/ui/card';
-import { createAdminBridge } from 'infrastructure/electron/bridges';
 
 const providerConfigs = [
   {
@@ -23,22 +22,7 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
     error,
     signInWithOAuth,
   } = useSupabaseAuth();
-  const adminBridge = useMemo(() => createAdminBridge(), []);
 
-  useEffect(() => {
-    if (mode !== 'library' || typeof window === 'undefined') {
-      return;
-    }
-
-    if (user) {
-      adminBridge.openAdminPanel?.();
-      return;
-    }
-
-    if (!loading) {
-      adminBridge.closeAdminPanel?.();
-    }
-  }, [adminBridge, loading, mode, user]);
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100">
@@ -89,7 +73,7 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
 
 SupabaseAuthGate.propTypes = {
   children: PropTypes.node.isRequired,
-  mode: PropTypes.oneOf(['widget', 'library', 'admin-panel', 'capture-overlay']),
+  mode: PropTypes.oneOf(['widget', 'library']),
 };
 
 export default SupabaseAuthGate;

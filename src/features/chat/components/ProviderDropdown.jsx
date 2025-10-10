@@ -37,7 +37,7 @@ const ProviderDropdown = ({
           <ChevronDown className="ml-1 h-3 w-3 opacity-70" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="min-w-[10rem]">
+      <DropdownMenuContent align={align} className="min-w-[10rem]" data-interactive-zone="true">
         <DropdownMenuRadioGroup
           value={active ? active.id : options[0]?.id}
           onValueChange={(next) => onChange?.(next)}
