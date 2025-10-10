@@ -25,6 +25,7 @@ export const PromptInputTextarea = React.forwardRef(({
   minHeight = 40,
   maxHeight = 164,
   value,
+  isBootstrapCompact = false,
   ...props
 }, ref) => {
   const textareaRef = React.useRef(null);

@@ -458,6 +458,7 @@ const NodeAssistantPanelView = ({
             autoFocus={false}
             spellCheck={false}
             data-node-assistant-composer="true"
+            isBootstrapCompact={isBootstrapCompact}
           />
           <PromptInputSubmit
             disabled={isSendDisabled}

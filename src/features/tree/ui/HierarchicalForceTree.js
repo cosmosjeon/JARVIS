@@ -1234,8 +1234,9 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     const isNewTree = typeof window !== 'undefined' && 
                       window.location.search.includes('fresh=1');
 
-    // 컴팩트 모드 해제
+    // 컴팩트 모드 해제 및 부트스트랩 채팅 즉시 숨김
     setIsBootstrapCompact(false);
+    setShowBootstrapChat(false); // 중간 단계 건너뛰기 위해 즉시 숨김
     
     // 리사이즈 관련 ref 초기화
     currentHeightRef.current = 720; // 확장된 높이로 설정
@@ -1260,7 +1261,11 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       setBootstrapChatTop('50%');
     }
 
-    setConversationForNode('__bootstrap__', [
+    // 먼저 빈 노드를 생성하여 스플릿뷰를 즉시 표시
+    const rootId = createClientGeneratedId('root');
+    const keyword = await extractImportantKeyword(trimmed);
+    
+    const initialConversation = [
       {
         id: `${timestamp}-user`,
         role: 'user',
@@ -1268,21 +1273,47 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
         attachments: Array.isArray(attachments) && attachments.length ? attachments : undefined,
         timestamp,
       },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: '', status: 'pending', timestamp: Date.now() },
-    ]);
+      { id: `${timestamp}-assistant}`, role: 'assistant', text: '', status: 'pending', timestamp: Date.now() },
+    ];
+
+    const initialRootNode = {
+      id: rootId,
+      keyword: keyword || trimmed,
+      fullText: '', // 빈 상태로 시작
+      level: 0,
+      size: 20,
+      status: 'pending', // pending 상태로 시작
+      question: trimmed,
+      answer: '',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      conversation: initialConversation,
+    };
+
+    // 즉시 노드 생성 및 스플릿뷰 표시
+    setData(() => {
+      const nextState = { nodes: [initialRootNode], links: [] };
+      dataRef.current = nextState;
+      return nextState;
+    });
+
+    setConversationForNode(rootId, initialConversation);
+    clearBootstrap();
+    setExpandedNodeId(rootId);
+    setSelectedNodeId(rootId);
+    questionService.current.setQuestionCount(rootId, 1);
 
     try {
+      // AI 응답을 받아서 노드 업데이트
       const response = await handleRequestAnswer({
-        node: { id: '__bootstrap__' },
+        node: { id: rootId },
         question: trimmed,
         isRootNode: true,
       });
 
-      const rootId = createClientGeneratedId('root');
       const answer = typeof response?.answer === 'string' ? response.answer.trim() : '';
-      const keyword = await extractImportantKeyword(trimmed);
-
-      const rawConversation = [
+      
+      const finalConversation = [
         {
           id: `${timestamp}-user`,
           role: 'user',
@@ -1293,9 +1324,9 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
         { id: `${timestamp}-assistant`, role: 'assistant', text: answer, status: 'complete', metadata: response, timestamp },
       ];
 
-      const sanitizedConversation = sanitizeConversationMessages(rawConversation);
+      const sanitizedConversation = sanitizeConversationMessages(finalConversation);
 
-      const rootNode = {
+      const updatedRootNode = {
         id: rootId,
         keyword: keyword || trimmed,
         fullText: answer || trimmed,
@@ -1309,24 +1340,48 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
         conversation: sanitizedConversation,
       };
 
-      setData(() => {
-        const nextState = { nodes: [rootNode], links: [] };
+      // 노드 업데이트
+      setData((prevData) => {
+        const nextState = { ...prevData, nodes: [updatedRootNode] };
         dataRef.current = nextState;
         return nextState;
       });
 
       setConversationForNode(rootId, sanitizedConversation);
-      clearBootstrap();
-
-      questionService.current.setQuestionCount(rootId, 1);
-      setExpandedNodeId(rootId);
-      setSelectedNodeId(rootId);
-      setShowBootstrapChat(false);
     } catch (error) {
-      setConversationForNode('__bootstrap__', [
-        { id: `${timestamp}-user`, role: 'user', text: trimmed, timestamp },
+      // 에러 발생 시 노드 상태를 error로 업데이트
+      const errorConversation = [
+        {
+          id: `${timestamp}-user`,
+          role: 'user',
+          text: trimmed,
+          attachments: Array.isArray(attachments) && attachments.length ? attachments : undefined,
+          timestamp,
+        },
         { id: `${timestamp}-assistant`, role: 'assistant', text: '⚠️ 루트 노드 생성 중 오류가 발생했습니다.', status: 'error', timestamp: Date.now() },
-      ]);
+      ];
+
+      const errorRootNode = {
+        id: rootId,
+        keyword: keyword || trimmed,
+        fullText: '오류가 발생했습니다.',
+        level: 0,
+        size: 20,
+        status: 'error',
+        question: trimmed,
+        answer: '오류가 발생했습니다.',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        conversation: errorConversation,
+      };
+
+      setData((prevData) => {
+        const nextState = { ...prevData, nodes: [errorRootNode] };
+        dataRef.current = nextState;
+        return nextState;
+      });
+
+      setConversationForNode(rootId, errorConversation);
 
       if (process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
