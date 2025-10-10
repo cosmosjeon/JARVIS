@@ -14,6 +14,8 @@ const SettingsContext = createContext({
   requestAccessibility: () => Promise.resolve(),
   zoomOnClickEnabled: true,
   setZoomOnClickEnabled: () => { },
+  inputMode: 'mouse',
+  setInputMode: () => { },
 });
 
 const normalizeBoolean = (value, fallback = true) => {
@@ -22,11 +24,17 @@ const normalizeBoolean = (value, fallback = true) => {
   }
   return fallback;
 };
+const INPUT_MODE_FALLBACK = 'mouse';
+const isValidInputMode = (value) => value === 'mouse' || value === 'trackpad';
+const normalizeInputMode = (value, fallback = INPUT_MODE_FALLBACK) => (
+  isValidInputMode(value) ? value : fallback
+);
 
 export const SettingsProvider = ({ children }) => {
   const [trayEnabled, setTrayEnabledState] = useState(true);
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
   const [zoomOnClickEnabled, setZoomOnClickEnabledState] = useState(true);
+  const [inputMode, setInputModeState] = useState(INPUT_MODE_FALLBACK);
 
   const settingsBridge = useMemo(() => createSettingsBridge(), []);
   const loggerBridge = useMemo(() => createLoggerBridge(), []);
@@ -51,6 +59,7 @@ export const SettingsProvider = ({ children }) => {
       if (!mounted) return;
       setTrayEnabledState(normalizeBoolean(next.trayEnabled, true));
       setZoomOnClickEnabledState(normalizeBoolean(next.zoomOnClickEnabled, true));
+      setInputModeState(normalizeInputMode(next.inputMode, INPUT_MODE_FALLBACK));
     };
 
     const load = async () => {
@@ -93,6 +102,13 @@ export const SettingsProvider = ({ children }) => {
     loggerBridge.log?.('info', 'settings_zoom_on_click_changed', { enabled: next });
   }, [loggerBridge, updateSettings]);
 
+  const setInputMode = useCallback((next) => {
+    const normalized = normalizeInputMode(next, INPUT_MODE_FALLBACK);
+    setInputModeState(normalized);
+    updateSettings({ inputMode: normalized });
+    loggerBridge.log?.('info', 'settings_input_mode_changed', { mode: normalized });
+  }, [loggerBridge, updateSettings]);
+
   const requestAccessibility = useCallback(async () => {
     const result = await systemBridge.requestAccessibilityPermission?.();
     refreshAccessibilityStatus();
@@ -123,7 +139,19 @@ export const SettingsProvider = ({ children }) => {
     requestAccessibility,
     zoomOnClickEnabled,
     setZoomOnClickEnabled,
-  }), [trayEnabled, accessibilityGranted, setTrayEnabled, refreshAccessibilityStatus, requestAccessibility, zoomOnClickEnabled, setZoomOnClickEnabled]);
+    inputMode,
+    setInputMode,
+  }), [
+    trayEnabled,
+    accessibilityGranted,
+    setTrayEnabled,
+    refreshAccessibilityStatus,
+    requestAccessibility,
+    zoomOnClickEnabled,
+    setZoomOnClickEnabled,
+    inputMode,
+    setInputMode,
+  ]);
 
   return (
     <SettingsContext.Provider value={value}>
