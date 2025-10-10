@@ -12,6 +12,7 @@ import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 import { motion, useAnimationControls } from 'framer-motion';
 import NodeContextMenu from 'features/tree/ui/components/NodeContextMenu';
+import { useSettings } from 'shared/hooks/SettingsContext';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };
 const MIN_ZOOM = 0.18;
