@@ -45,6 +45,7 @@ export const useNodeAssistantConversation = ({
   );
 
   const [messages, setMessages] = useState(() => normalizedInitialConversation);
+  const [lastAutoSelection, setLastAutoSelection] = useState(null);
   const questionServiceRef = useRef(externalQuestionService ?? new QuestionService());
   const typingTimersRef = useRef([]);
   const isHydratingRef = useRef(true);
@@ -69,49 +70,115 @@ export const useNodeAssistantConversation = ({
 
   const animateAssistantResponse = useCallback((assistantId, answerText, context = {}) => {
     const characters = Array.from(answerText || '');
+    const metadata = context?.metadata || {};
+    let finalModelInfo = null;
+
+    const applyFinalContext = (message, finalText, status) => {
+      const baseInfo = {
+        ...(message.modelInfo || {}),
+        ...(metadata.autoSelection || {}),
+      };
+      if (metadata.provider) {
+        baseInfo.provider = metadata.provider;
+      }
+      if (metadata.model) {
+        baseInfo.model = metadata.model;
+      }
+      if (metadata.autoSelection?.explanation) {
+        baseInfo.explanation = metadata.autoSelection.explanation;
+      }
+
+      const next = {
+        ...message,
+        text: finalText,
+        status,
+      };
+      if (Object.keys(baseInfo).length) {
+        next.modelInfo = baseInfo;
+      }
+      finalModelInfo = next.modelInfo || finalModelInfo;
+      if (metadata.reasoning) {
+        next.reasoning = metadata.reasoning;
+      }
+      if (metadata.usage) {
+        next.usage = metadata.usage;
+      }
+      if (metadata.latencyMs !== undefined) {
+        next.latencyMs = metadata.latencyMs;
+      }
+      return next;
+    };
 
     if (characters.length === 0) {
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantId
-            ? { ...message, text: '', status: 'complete' }
+            ? applyFinalContext(message, '', 'complete')
             : message,
         ),
       );
+      if (metadata.autoSelection || metadata.model || metadata.provider) {
+        setLastAutoSelection(metadata.autoSelection || finalModelInfo || {
+          provider: metadata.provider,
+          model: metadata.model,
+          explanation: metadata.autoSelection?.explanation,
+        });
+      }
       onAnswerComplete?.(node.id, { ...context, answer: '' });
       return;
     }
 
     let index = 0;
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === assistantId
+          ? { ...message, status: 'typing' }
+          : message,
+      ),
+    );
+
     const intervalId = setInterval(() => {
       index += 1;
       const typedText = characters.slice(0, index).join('');
+      const isDone = index >= characters.length;
+
       setMessages((prev) =>
         prev.map((message) => {
           if (message.id !== assistantId) return message;
-          const isDone = index >= characters.length;
+          if (isDone) {
+            return applyFinalContext(message, typedText, 'complete');
+          }
           return {
             ...message,
             text: typedText,
-            status: isDone ? 'complete' : 'typing',
+            status: 'typing',
           };
         }),
       );
 
-      if (index >= characters.length) {
+      if (isDone) {
         clearInterval(intervalId);
         typingTimersRef.current = typingTimersRef.current.filter((timer) => timer !== intervalId);
+        if (metadata.autoSelection || metadata.model || metadata.provider) {
+          setLastAutoSelection(metadata.autoSelection || finalModelInfo || {
+            provider: metadata.provider,
+            model: metadata.model,
+            explanation: metadata.autoSelection?.explanation,
+          });
+        }
         onAnswerComplete?.(node.id, { ...context, answer: typedText });
       }
     }, TYPING_INTERVAL_MS);
 
     typingTimersRef.current.push(intervalId);
-  }, [node.id, onAnswerComplete]);
+  }, [node.id, onAnswerComplete, setLastAutoSelection]);
 
   const sendResponse = useCallback(async (question, {
     skipSecondQuestionCheck = false,
     overrideAnswerText,
     attachments = [],
+    modelInfoHint = null,
+    reasoningEnabled = false,
   } = {}) => {
     clearTypingTimers();
 
@@ -162,7 +229,13 @@ export const useNodeAssistantConversation = ({
           text: questionText,
           attachments: sanitizedAttachments.length ? sanitizedAttachments : undefined,
         },
-        { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
+        {
+          id: assistantId,
+          role: 'assistant',
+          text: '',
+          status: 'pending',
+          modelInfo: modelInfoHint || undefined,
+        },
       ]);
     } else {
       if (shouldCreateChild && onSecondQuestion) {
@@ -194,6 +267,8 @@ export const useNodeAssistantConversation = ({
             question,
             isRootNode: resolvedIsRootNode,
             shouldCreateChild: false,
+            autoSelectionHint: modelInfoHint,
+            reasoningEnabled,
           });
           answerText = result?.answer ?? '';
           metadata = result || {};
@@ -205,7 +280,12 @@ export const useNodeAssistantConversation = ({
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantId
-            ? { ...message, text: '', status: 'typing' }
+            ? {
+              ...message,
+              text: '',
+              status: 'typing',
+              modelInfo: modelInfoHint || message.modelInfo,
+            }
             : message,
         ),
       );
@@ -255,6 +335,8 @@ export const useNodeAssistantConversation = ({
     const attachments = Array.isArray(payload.attachments)
       ? payload.attachments.filter((item) => item && typeof item === 'object' && item.id)
       : [];
+    const reasoningEnabledFlag = Boolean(payload.reasoningEnabled);
+    const modelInfoHint = payload.modelInfoHint || null;
 
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) {
@@ -276,7 +358,13 @@ export const useNodeAssistantConversation = ({
             text: trimmed,
             attachments: attachments.length ? attachments : undefined,
           },
-          { id: assistantId, role: 'assistant', text: '생각 중…', status: 'pending' },
+          {
+            id: assistantId,
+            role: 'assistant',
+            text: '',
+            status: 'pending',
+            modelInfo: modelInfoHint || undefined,
+          },
         ]);
 
         try {
@@ -300,7 +388,7 @@ export const useNodeAssistantConversation = ({
       }
     }
 
-    await sendResponse(trimmed, { attachments });
+    await sendResponse(trimmed, { attachments, modelInfoHint, reasoningEnabled: reasoningEnabledFlag });
   }, [bootstrapMode, messages, onBootstrapFirstSend, sendResponse]);
 
   useEffect(() => {
@@ -338,6 +426,7 @@ export const useNodeAssistantConversation = ({
     isTyping,
     submitMessage,
     sendResponse,
+    lastAutoSelection,
   };
 };
 

@@ -71,10 +71,12 @@ const normalizeAttachment = (attachment, fallbackId) => {
     ? attachment.dataUrl.trim()
     : typeof attachment.url === 'string' && attachment.url.trim()
       ? attachment.url.trim()
-      : typeof attachment.image_url === 'object' && attachment.image_url !== null
-        && typeof attachment.image_url.url === 'string'
-        ? attachment.image_url.url.trim()
-        : '';
+      : typeof attachment.image_url === 'string'
+        ? attachment.image_url.trim()
+        : typeof attachment.image_url === 'object' && attachment.image_url !== null
+          && typeof attachment.image_url.url === 'string'
+          ? attachment.image_url.url.trim()
+          : '';
   if (!id || !dataUrl) {
     return null;
   }
@@ -176,6 +178,18 @@ export const sanitizeConversationMessages = (messages) => {
 
     if (message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)) {
       entry.metadata = message.metadata;
+    }
+
+    if (message.modelInfo && typeof message.modelInfo === 'object') {
+      entry.modelInfo = { ...message.modelInfo };
+    }
+
+    if (message.reasoning && typeof message.reasoning === 'object') {
+      entry.reasoning = message.reasoning;
+    }
+
+    if (message.usage && typeof message.usage === 'object') {
+      entry.usage = message.usage;
     }
 
     sanitized.push(entry);

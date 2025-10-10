@@ -145,7 +145,7 @@ const NodeContextMenu = ({
                         <Button
                             onClick={handleRenameSubmit}
                             disabled={!newName.trim()}
-                            className={isLightMode ? '' : 'bg-blue-600 hover:bg-blue-700'}
+                            className={isLightMode ? '' : '!bg-slate-600 !hover:bg-slate-700 !text-white border-0'}
                         >
                             확인
                         </Button>

@@ -7,6 +7,8 @@ import { useNodeAssistantConversation } from 'features/tree/hooks/useNodeAssista
 import NodeNavigationService from 'features/tree/services/node-assistant/NodeNavigationService';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
 import { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
+import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import selectAutoModel from 'shared/utils/aiModelSelector';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -95,6 +97,16 @@ export const useNodeAssistantPanelController = ({
     Array.isArray(attachments) ? attachments : []
   ));
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
+  const {
+    provider: selectedProvider,
+    model: selectedModel,
+    providerOptions,
+    setProvider: setSelectedProvider,
+    webSearchEnabled,
+    setWebSearchEnabled,
+    reasoningEnabled,
+    setReasoningEnabled,
+  } = useAIModelPreference();
 
   const [spinningMap, setSpinningMap] = useState({});
 
@@ -123,6 +135,7 @@ export const useNodeAssistantPanelController = ({
     isTyping,
     submitMessage,
     sendResponse,
+    lastAutoSelection,
   } = useNodeAssistantConversation({
     node,
     summary,
@@ -418,6 +431,18 @@ export const useNodeAssistantPanelController = ({
     setHasFocusedComposer(false);
   }, [node?.id]);
 
+  const autoSelectionPreview = useMemo(() => {
+    if (selectedProvider !== 'auto') {
+      return null;
+    }
+    return selectAutoModel({
+      question: composerValue,
+      attachments: draftAttachments,
+      webSearchEnabled,
+      forceReasoning: reasoningEnabled,
+    });
+  }, [composerValue, draftAttachments, reasoningEnabled, selectedProvider, webSearchEnabled]);
+
   const handleSend = useCallback(async (textSnapshot, attachmentsSnapshot) => {
     const rawText = typeof textSnapshot === 'string' ? textSnapshot : '';
     const trimmed = rawText.trim();
@@ -431,11 +456,29 @@ export const useNodeAssistantPanelController = ({
       return;
     }
 
+    let modelInfoHint = null;
+    if (selectedProvider === 'auto') {
+      modelInfoHint = selectAutoModel({
+        question: trimmed,
+        attachments: sanitizedAttachments,
+        webSearchEnabled,
+        forceReasoning: reasoningEnabled,
+      });
+    } else {
+      modelInfoHint = {
+        provider: selectedProvider,
+        model: selectedModel,
+        ...(reasoningEnabled ? { explanation: 'Reasoning 모드 활성화' } : {}),
+      };
+    }
+
     const payload = {
       text: trimmed,
       attachments: hasAttachments
         ? sanitizedAttachments.map((item) => ({ ...item }))
         : undefined,
+      modelInfoHint,
+      reasoningEnabled,
     };
 
     try {
@@ -447,7 +490,7 @@ export const useNodeAssistantPanelController = ({
       console.error('메시지 전송 오류:', error);
       throw error;
     }
-  }, [clearAttachments, submitMessage]);
+  }, [clearAttachments, reasoningEnabled, selectedModel, selectedProvider, submitMessage, webSearchEnabled]);
 
   const triggerSend = useCallback(() => {
     const textSnapshot = composerValueRef.current;
@@ -698,6 +741,16 @@ export const useNodeAssistantPanelController = ({
     isSendDisabled,
     onAttachmentFiles: handleAttachmentFiles,
     isAttachmentUploading,
+    selectedProvider,
+    selectedModel,
+    providerOptions,
+    setSelectedProvider,
+    webSearchEnabled,
+    setWebSearchEnabled,
+    reasoningEnabled,
+    setReasoningEnabled,
+    autoSelectionPreview,
+    lastAutoSelection,
   };
 };
 

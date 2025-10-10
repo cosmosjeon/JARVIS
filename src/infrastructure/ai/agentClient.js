@@ -1,14 +1,17 @@
 import { createAgentBridge } from '../electron/bridges';
+import selectAutoModel from 'shared/utils/aiModelSelector';
 
 const resolveAgentBridge = (bridgeOverride) => createAgentBridge(bridgeOverride);
 
 export const PROVIDERS = {
+  AUTO: 'auto',
   OPENAI: 'openai',
   GEMINI: 'gemini',
   CLAUDE: 'claude',
 };
 
 const PROVIDER_LABELS = {
+  [PROVIDERS.AUTO]: 'Smart Auto',
   [PROVIDERS.OPENAI]: 'OpenAI',
   [PROVIDERS.GEMINI]: 'Google Gemini',
   [PROVIDERS.CLAUDE]: 'Anthropic Claude',
@@ -34,6 +37,9 @@ const FALLBACK_CONFIG = {
 
 const normalizeProvider = (value) => {
   const provider = typeof value === 'string' ? value.toLowerCase() : '';
+  if (provider === PROVIDERS.AUTO) {
+    return PROVIDERS.AUTO;
+  }
   if (provider && FALLBACK_CONFIG[provider]) {
     return provider;
   }
@@ -74,15 +80,17 @@ const normalizeContentPart = (part) => {
   }
 
   if (type === 'input_image' || type === 'image_url' || type === 'image') {
-    const urlCandidate = typeof part.image_url?.url === 'string'
-      ? part.image_url.url
-      : typeof part.url === 'string'
-        ? part.url
-        : typeof part.dataUrl === 'string'
-          ? part.dataUrl
-          : '';
+    const urlCandidate = typeof part.image_url === 'string'
+      ? part.image_url
+      : typeof part.image_url?.url === 'string'
+        ? part.image_url.url
+        : typeof part.url === 'string'
+          ? part.url
+          : typeof part.dataUrl === 'string'
+            ? part.dataUrl
+            : '';
     const url = toTrimmedString(urlCandidate);
-    return url ? { type: 'image_url', image_url: { url } } : null;
+    return url ? { type: 'image_url', image_url: url } : null;
   }
 
   return null;
@@ -152,7 +160,7 @@ const mapToOpenAIContentParts = (message) => {
   const appendImage = (value) => {
     const url = toTrimmedString(value);
     if (url) {
-      parts.push({ type: imageType, image_url: { url } });
+      parts.push({ type: imageType, image_url: url });
     }
   };
 
@@ -172,12 +180,12 @@ const mapToOpenAIContentParts = (message) => {
         return;
       }
       if (type === 'image_url' || type === 'input_image' || type === 'image') {
-        appendImage(
-          (part.image_url && part.image_url.url)
-          || part.url
-          || part.dataUrl
-          || ''
-        );
+        const imageValue = typeof part.image_url === 'string'
+          ? part.image_url
+          : typeof part.image_url?.url === 'string'
+            ? part.image_url.url
+            : part.url;
+        appendImage(imageValue || part.dataUrl || '');
       }
     });
   } else {
@@ -225,7 +233,7 @@ const normalizeMessage = (message) => {
 
   const combined = text ? [{ type: 'text', text }] : [];
   attachments.forEach((attachment) => {
-    combined.push({ type: 'image_url', image_url: { url: attachment.dataUrl } });
+    combined.push({ type: 'image_url', image_url: attachment.dataUrl });
   });
 
   return { role, content: combined };
@@ -279,6 +287,75 @@ const mapToClaudeMessages = (messages = []) => {
   };
 };
 
+const extractReasoningFromOpenAIResponse = (data) => {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const summaries = [];
+  const detailed = [];
+
+  const appendSummaryParts = (summaryParts) => {
+    if (!Array.isArray(summaryParts)) {
+      return;
+    }
+    summaryParts.forEach((part) => {
+      if (part && typeof part.text === 'string') {
+        const trimmed = part.text.trim();
+        if (trimmed) {
+          summaries.push(trimmed);
+        }
+      }
+    });
+  };
+
+  if (Array.isArray(data.output)) {
+    data.output.forEach((item) => {
+      if (!item || typeof item !== 'object') {
+        return;
+      }
+      if (item.type === 'reasoning') {
+        appendSummaryParts(item.summary);
+        if (Array.isArray(item.content)) {
+          item.content.forEach((part) => {
+            if (part && typeof part.text === 'string') {
+              const trimmed = part.text.trim();
+              if (trimmed) {
+                detailed.push(trimmed);
+              }
+            }
+          });
+        }
+      }
+      if (Array.isArray(item.content)) {
+        item.content.forEach((part) => {
+          if (part && typeof part === 'object' && part.type === 'reasoning' && typeof part.text === 'string') {
+            const trimmed = part.text.trim();
+            if (trimmed) {
+              detailed.push(trimmed);
+            }
+          }
+        });
+      }
+    });
+  }
+
+  if (typeof data.reasoning === 'object' && data.reasoning !== null) {
+    appendSummaryParts(data.reasoning.summary);
+  }
+
+  if (!summaries.length && !detailed.length) {
+    return null;
+  }
+
+  const tokens = data?.usage?.output_tokens_details?.reasoning_tokens ?? null;
+  return {
+    summary: summaries.length ? summaries : undefined,
+    details: detailed.length ? detailed : undefined,
+    tokens,
+  };
+};
+
 const isTemperatureSupportedByOpenAI = (modelId) => {
   if (!modelId) {
     return true;
@@ -290,7 +367,14 @@ const isTemperatureSupportedByOpenAI = (modelId) => {
   return true;
 };
 
-const callOpenAIChat = async ({ messages, model, temperature, maxTokens, webSearchEnabled }) => {
+const callOpenAIChat = async ({
+  messages,
+  model,
+  temperature,
+  maxTokens,
+  webSearchEnabled,
+  reasoning,
+}) => {
   const config = getFallbackConfig(PROVIDERS.OPENAI);
   const apiKey = getFallbackApiKey(PROVIDERS.OPENAI);
   if (!apiKey) {
@@ -332,6 +416,10 @@ const callOpenAIChat = async ({ messages, model, temperature, maxTokens, webSear
     ];
   }
 
+  if (reasoning && typeof reasoning === 'object') {
+    body.reasoning = reasoning;
+  }
+
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -355,6 +443,7 @@ const callOpenAIChat = async ({ messages, model, temperature, maxTokens, webSear
   const extracted = typeof data.output_text === 'string'
     ? data.output_text.trim()
     : '';
+  const reasoningData = extractReasoningFromOpenAIResponse(data);
 
   if (!extracted) {
     throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });
@@ -366,6 +455,9 @@ const callOpenAIChat = async ({ messages, model, temperature, maxTokens, webSear
     usage: data.usage || null,
     finishReason: data.output?.[0]?.stop_reason || null,
     model: data.model || body.model,
+    provider: PROVIDERS.OPENAI,
+    reasoning: reasoningData,
+    output: data.output,
   };
 };
 
@@ -449,6 +541,7 @@ const callGeminiChat = async ({ messages, model, temperature, maxTokens, webSear
     usage: data.usageMetadata || null,
     finishReason: candidate?.finishReason || null,
     model: data.model || candidate?.model || model || config.defaultModel,
+    provider: PROVIDERS.GEMINI,
   };
 };
 
@@ -525,6 +618,7 @@ const callClaudeChat = async ({ messages, model, temperature, maxTokens, webSear
     usage: data.usage || null,
     finishReason: data.stop_reason || null,
     model: data.model || body.model,
+    provider: PROVIDERS.CLAUDE,
   };
 };
 
@@ -645,14 +739,53 @@ const buildRequestFailedError = (result) => {
 
 export class AgentClient {
   static async request(channel, payload = {}, bridgeOverride) {
-    const provider = normalizeProvider(payload?.provider);
+    const normalizedProvider = normalizeProvider(payload?.provider);
     const webSearchEnabled = Boolean(payload?.webSearchEnabled);
-    const requestPayload = { ...payload, provider, webSearchEnabled };
+    const requestPayload = { ...payload, provider: normalizedProvider, webSearchEnabled };
+
+    let autoSelection = null;
+    if (requestPayload.provider === PROVIDERS.AUTO) {
+      autoSelection = selectAutoModel({
+        messages: requestPayload.messages,
+        question: payload?.question || payload?.input || '',
+        attachments: requestPayload.attachments,
+        webSearchEnabled,
+        forceReasoning: Boolean(requestPayload.reasoningEnabled),
+      });
+      if (autoSelection && autoSelection.provider) {
+        requestPayload.provider = normalizeProvider(autoSelection.provider);
+        if (!requestPayload.model) {
+          requestPayload.model = autoSelection.model;
+        }
+        if (autoSelection.reasoning && !requestPayload.reasoning) {
+          requestPayload.reasoning = { ...autoSelection.reasoning };
+        }
+      }
+      requestPayload.autoSelection = autoSelection;
+      if (requestPayload.reasoningEnabled && (!autoSelection || !autoSelection.model || !String(autoSelection.model).toLowerCase().startsWith('gpt-5'))) {
+        autoSelection = {
+          provider: PROVIDERS.OPENAI,
+          model: 'gpt-5',
+          reasoning: requestPayload.reasoning || { effort: 'medium' },
+          explanation: autoSelection?.explanation || 'Reasoning 모드가 활성화되어 GPT-5를 선택했습니다.',
+          confidence: autoSelection?.confidence || 'medium',
+        };
+        requestPayload.provider = PROVIDERS.OPENAI;
+        requestPayload.model = 'gpt-5';
+        requestPayload.reasoning = autoSelection.reasoning;
+        requestPayload.autoSelection = autoSelection;
+      }
+    }
+
+    const effectiveProvider = requestPayload.provider;
+    const startedAt = Date.now();
 
     const bridge = resolveAgentBridge(bridgeOverride);
     const bridgeMethod = bridge ? bridge[channel] : null;
     const hasBridge = typeof bridgeMethod === 'function';
     const bridgeAvailable = Boolean(bridge);
+
+    let response = null;
 
     if (hasBridge) {
       const result = await bridgeMethod(requestPayload);
@@ -660,27 +793,48 @@ export class AgentClient {
         if (!result?.success) {
           throw buildRequestFailedError(result);
         }
-        return result;
+        response = result;
       }
     }
 
-    if (channel === 'askRoot' || channel === 'askChild') {
-      if (canUseFallback(provider)) {
-        return fallbackAsk(requestPayload);
+    if (!response) {
+      if (channel === 'askRoot' || channel === 'askChild') {
+        if (canUseFallback(effectiveProvider)) {
+          response = await fallbackAsk(requestPayload);
+        }
+      } else if (channel === 'extractKeyword' && canUseFallback(PROVIDERS.OPENAI)) {
+        response = await fallbackExtractKeyword(requestPayload);
       }
-    } else if (channel === 'extractKeyword' && canUseFallback(PROVIDERS.OPENAI)) {
-      return fallbackExtractKeyword(requestPayload);
     }
 
-    if (!hasBridge) {
-      if (bridgeAvailable) {
-        throw buildInvalidChannelError(channel);
+    if (!response) {
+      if (!hasBridge) {
+        if (bridgeAvailable) {
+          throw buildInvalidChannelError(channel);
+        }
+        const missingProvider = channel === 'extractKeyword' ? PROVIDERS.OPENAI : effectiveProvider;
+        throw buildMissingProviderConfigError(missingProvider);
       }
-      const missingProvider = channel === 'extractKeyword' ? PROVIDERS.OPENAI : provider;
-      throw buildMissingProviderConfigError(missingProvider);
+      throw buildMissingBridgeError(effectiveProvider);
     }
 
-    throw buildMissingBridgeError(provider);
+    if (autoSelection) {
+      response.autoSelection = autoSelection;
+    } else if (requestPayload.autoSelectionHint) {
+      response.autoSelection = requestPayload.autoSelectionHint;
+    }
+
+    if (!response.provider) {
+      response.provider = effectiveProvider;
+    }
+    if (!response.model && requestPayload.model) {
+      response.model = requestPayload.model;
+    }
+    if (response.latencyMs === undefined) {
+      response.latencyMs = Date.now() - startedAt;
+    }
+
+    return response;
   }
 
   static async askRoot({ messages, model, temperature, maxTokens, provider, webSearchEnabled } = {}) {

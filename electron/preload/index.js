@@ -10,7 +10,6 @@ if (process.env.ELECTRON_RUN_AS_NODE === '1') {
   const channelFactories = {
     system: require('./channels/system'),
     windowControls: require('./channels/windowControls'),
-    admin: require('./channels/admin'),
     library: require('./channels/library'),
     settings: require('./channels/settings'),
     agent: require('./channels/agent'),
@@ -19,7 +18,6 @@ if (process.env.ELECTRON_RUN_AS_NODE === '1') {
     tray: require('./channels/tray'),
     widget: require('./channels/widget'),
     oauth: require('./channels/oauth'),
-    capture: require('./channels/capture'),
   };
 
   console.log('[preload] Channel modules loaded successfully');

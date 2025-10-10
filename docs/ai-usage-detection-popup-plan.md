@@ -69,7 +69,7 @@
    - 이벤트명: `activity:detection`, 페이로드에 도메인, URL, 감지 시각 포함.
 3. **Renderer 브리지** (`src/infrastructure/electron/bridges/detectionBridge.js`)  
    - `onDetection`/`ackDetection` 핸들러 구현.  
-   - tree widget, admin panel 양쪽에서 동일하게 사용할 수 있도록 export.
+   - tree widget에서 사용할 수 있도록 export.
 4. **디바운싱/쿨다운 공유 상태**  
    - 메인 프로세스에서 마지막 감지 시각, 무시 설정을 저장해 중복 방송을 차단.
 5. **에러 복구 및 로깅**  
@@ -94,8 +94,8 @@
 3. **애니메이션 & 테마**  
    - `framer-motion`으로 float-in/out, 다크/라이트 테마 지원.  
    - 접근성: 키보드 포커스 순서, ARIA 라벨 지정.
-4. **위젯/패널 통합**  
-   - `App.js`에서 Provider 래핑, `HierarchicalForceTree` 및 `AdminWidgetPanel`에서 팝업 표시.
+4. **위젯 통합**  
+   - `App.js`에서 Provider 래핑, `HierarchicalForceTree`에서 팝업 표시.
 5. **i18n 및 문자열 관리**  
    - 다국어 확장 대비 `shared/i18n` 사용 혹은 문자열 상수 분리.
 
@@ -111,8 +111,8 @@
 #### 작업(Task)
 1. **설정 스키마 확장**  
    - `settingsManager`: `detection.enabled`, `detection.cooldownMinutes`, `detection.dismissedDomains`, `detection.neverShow` 추가.
-2. **설정 UI** (`AdminWidgetPanel` 또는 별도 설정 페이지)  
-   - 토글 스위치, 도메인 목록 관리, 쿨다운 입력(분 단위), “다시 보이기” 버튼.
+2. **설정 UI** (별도 설정 페이지)  
+   - 토글 스위치, 도메인 목록 관리, 쿨다운 입력(분 단위), "다시 보이기" 버튼.
 3. **IPC 연동**  
    - Renderer에서 설정 변경 시 메인 프로세스로 전송 → 감지 서비스 재구성.
 4. **로컬 캐시**  

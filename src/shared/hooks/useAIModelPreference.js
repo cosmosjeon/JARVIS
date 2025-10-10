@@ -4,12 +4,21 @@ const STORAGE_KEY = 'jarvis.ai.preference';
 
 export const AI_PROVIDERS = [
   {
+    id: 'auto',
+    label: 'Auto (추천)',
+    defaultModel: 'auto-smart',
+    models: [
+      { id: 'auto-smart', label: '스마트 선택' },
+    ],
+  },
+  {
     id: 'openai',
-    label: 'GPT-5',
+    label: 'OpenAI',
     defaultModel: 'gpt-5',
     models: [
       { id: 'gpt-5', label: 'GPT-5' },
       { id: 'gpt-4o', label: 'GPT-4o' },
+      { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
       { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
     ],
   },
@@ -42,10 +51,11 @@ const PROVIDER_MAP = AI_PROVIDERS.reduce((acc, item) => {
 }, {});
 
 const DEFAULT_STATE = {
-  provider: 'openai',
-  model: PROVIDER_MAP.openai.defaultModel,
+  provider: 'auto',
+  model: PROVIDER_MAP.auto.defaultModel,
   temperature: 0.7,
   webSearchEnabled: false,
+  reasoningEnabled: false,
 };
 
 const PREFERENCE_EVENT = 'jarvis:ai-preference-change';
@@ -73,12 +83,16 @@ const normalizePreference = (raw) => {
   const webSearchEnabled = typeof raw.webSearchEnabled === 'boolean'
     ? raw.webSearchEnabled
     : DEFAULT_STATE.webSearchEnabled;
+  const reasoningEnabled = typeof raw.reasoningEnabled === 'boolean'
+    ? raw.reasoningEnabled
+    : DEFAULT_STATE.reasoningEnabled;
 
   return {
     provider,
     model,
     temperature,
     webSearchEnabled,
+    reasoningEnabled,
   };
 };
 
@@ -209,17 +223,26 @@ export const useAIModelPreference = () => {
     }));
   }, [setPreference]);
 
+  const setReasoningEnabled = useCallback((next) => {
+    setPreference((prev) => ({
+      ...prev,
+      reasoningEnabled: Boolean(next),
+    }));
+  }, [setPreference]);
+
   return {
     preference,
     provider: preference.provider,
     model: preference.model,
     temperature: preference.temperature,
     webSearchEnabled: preference.webSearchEnabled,
+    reasoningEnabled: preference.reasoningEnabled,
     providerOptions,
     currentProvider: providerConfig,
     setProvider,
     setTemperature,
     setWebSearchEnabled,
+    setReasoningEnabled,
     setPreference,
   };
 };

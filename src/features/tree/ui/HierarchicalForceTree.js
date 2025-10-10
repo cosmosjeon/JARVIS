@@ -30,7 +30,6 @@ import {
 import useConversationStore from 'features/tree/state/useConversationStore';
 import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
-import { createCaptureBridge } from 'infrastructure/electron/bridges';
 import AgentClient from 'infrastructure/ai/agentClient';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import { useTreeState } from 'features/tree/state/useTreeState';
@@ -68,7 +67,6 @@ const HierarchicalForceTree = () => {
     removeTree,
   } = useTreeDataSource();
   const treeBridge = useMemo(() => createTreeWidgetBridge(), []);
-  const captureBridge = useMemo(() => createCaptureBridge(), []);
   const { theme, setTheme, mode } = useTheme();
   const { zoomOnClickEnabled, setZoomOnClickEnabled } = useSettings();
   const {
@@ -76,6 +74,7 @@ const HierarchicalForceTree = () => {
     model: selectedModel,
     temperature: preferredTemperature,
     webSearchEnabled,
+    reasoningEnabled,
   } = useAIModelPreference();
 
   // 테마 옵션 정의
@@ -400,7 +399,6 @@ const HierarchicalForceTree = () => {
   const treeSyncDebounceRef = useRef(null);
   const [showBootstrapChat, setShowBootstrapChat] = useState(false);
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
-  const [isAwaitingCapture, setIsAwaitingCapture] = useState(false);
   const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
   const [isTidyPanelResizing, setIsTidyPanelResizing] = useState(false);
   const tidyPanelResizeStateRef = useRef({
@@ -410,23 +408,6 @@ const HierarchicalForceTree = () => {
     startWidth: TIDY_ASSISTANT_PANEL_MIN_WIDTH,
   });
   const tidyPanelResizeCleanupRef = useRef(null);
-
-  const consumePendingCapturePayload = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    try {
-      const raw = window.localStorage.getItem('jarvis.capture.pending');
-      if (!raw) {
-        return null;
-      }
-      const payload = JSON.parse(raw);
-      window.localStorage.removeItem('jarvis.capture.pending');
-      return payload;
-    } catch (error) {
-      return null;
-    }
-  }, []);
 
   useEffect(() => {
     setOverlayElement(overlayContainerRef.current);
@@ -939,7 +920,7 @@ const HierarchicalForceTree = () => {
 
   useEffect(() => {
     const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
-    setShowBootstrapChat(isEmpty && !isAwaitingCapture);
+    setShowBootstrapChat(isEmpty);
 
     if (isEmpty) {
       setSelectedNodeId(null);
@@ -948,7 +929,7 @@ const HierarchicalForceTree = () => {
     } else {
       clearBootstrap();
     }
-  }, [data.nodes, isAwaitingCapture, ensureBootstrap, clearBootstrap]);
+  }, [data.nodes, ensureBootstrap, clearBootstrap]);
 
   const clearPendingExpansion = useCallback(() => {
     pendingFocusNodeIdRef.current = null;
@@ -1048,11 +1029,22 @@ const HierarchicalForceTree = () => {
       requestPayload.temperature = preferredTemperature;
     }
 
+    const providerId = (requestPayload.provider || '').toLowerCase();
+    const modelId = typeof requestPayload.model === 'string' ? requestPayload.model.toLowerCase() : '';
+    if (reasoningEnabled) {
+      if (providerId === 'auto' || (providerId === 'openai' && modelId.startsWith('gpt-5'))) {
+        if (!requestPayload.reasoning) {
+          requestPayload.reasoning = { effort: modelId.includes('high') ? 'high' : 'medium' };
+        }
+        requestPayload.reasoningEnabled = true;
+      }
+    }
+
     return AgentClient.request(channel, requestPayload);
-  }, [preferredTemperature, selectedModel, selectedProvider]);
+  }, [preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
 
   const handleRequestAnswer = useCallback(
-    async ({ node: targetNode, question, isRootNode }) => {
+    async ({ node: targetNode, question, isRootNode, autoSelectionHint }) => {
       const trimmedQuestion = (question || '').trim();
       if (!trimmedQuestion) {
         throw new Error('질문이 비어있습니다.');
@@ -1135,7 +1127,10 @@ const HierarchicalForceTree = () => {
         payload.questionContext = contextNote;
       }
 
-      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', payload);
+      const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', {
+        ...payload,
+        autoSelectionHint,
+      });
 
       return response;
     },
@@ -1158,7 +1153,7 @@ const HierarchicalForceTree = () => {
         attachments: Array.isArray(attachments) && attachments.length ? attachments : undefined,
         timestamp,
       },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending', timestamp: Date.now() },
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '', status: 'pending', timestamp: Date.now() },
     ]);
 
     try {
@@ -1253,7 +1248,7 @@ const HierarchicalForceTree = () => {
     const timestamp = Date.now();
     const initialConversation = [
       { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
-      { id: `${timestamp}-assistant`, role: 'assistant', text: '생각 중…', status: 'pending' }
+      { id: `${timestamp}-assistant`, role: 'assistant', text: '', status: 'pending' }
     ];
 
     setConversationForNode(newNodeData.id, initialConversation);
@@ -2051,91 +2046,6 @@ const HierarchicalForceTree = () => {
         }, 140);
       });
   }, [nodes, focusNodeToCenter]);
-
-  useEffect(() => {
-    const unsubscribeStarted = captureBridge.onCaptureStarted(() => {
-      setIsAwaitingCapture(true);
-      setShowBootstrapChat(false);
-      setWindowMousePassthrough(true);
-    });
-
-    return () => unsubscribeStarted?.();
-  }, [captureBridge, setWindowMousePassthrough]);
-
-  const handleCapturePayload = useCallback((payload) => {
-    if (!payload?.base64) {
-      setIsAwaitingCapture(false);
-      setWindowMousePassthrough(false);
-      return;
-    }
-
-    const rootId = getRootNodeId();
-    const targetNodeId = rootId || '__bootstrap__';
-
-    if (!targetNodeId) {
-      setIsAwaitingCapture(false);
-      setWindowMousePassthrough(false);
-      return;
-    }
-
-    if (rootId) {
-      handleNodeClickForAssistant({ id: rootId });
-    } else {
-      setShowBootstrapChat(true);
-    }
-
-    const dataUrl = `data:${payload.mimeType || 'image/png'};base64,${payload.base64}`;
-    const attachment = {
-      id: `capture-${payload.timestamp || Date.now()}`,
-      type: 'image',
-      mimeType: payload.mimeType || 'image/png',
-      dataUrl,
-      width: payload.width,
-      height: payload.height,
-      createdAt: payload.timestamp || Date.now(),
-      label: 'Screenshot',
-    };
-
-    addAttachmentForNode(targetNodeId, attachment);
-    setIsAwaitingCapture(false);
-    setWindowMousePassthrough(false);
-  }, [addAttachmentForNode, getRootNodeId, handleNodeClickForAssistant]);
-
-  useEffect(() => {
-    const unsubscribes = [
-      captureBridge.onCaptureCompleted((payload) => {
-        handleCapturePayload(payload);
-      }),
-      captureBridge.onCaptureCancelled(() => {
-        setIsAwaitingCapture(false);
-        setWindowMousePassthrough(false);
-      }),
-      captureBridge.onCaptureFailed(() => {
-        setIsAwaitingCapture(false);
-        setWindowMousePassthrough(false);
-      }),
-    ];
-
-    return () => {
-      unsubscribes.forEach((unsubscribe) => unsubscribe?.());
-    };
-  }, [
-    handleCapturePayload,
-    captureBridge,
-    setShowBootstrapChat,
-    setIsAwaitingCapture,
-    setWindowMousePassthrough,
-  ]);
-
-  useEffect(() => {
-    const pending = consumePendingCapturePayload();
-    if (pending) {
-      handleCapturePayload(pending);
-    }
-    return () => {
-      setWindowMousePassthrough(false);
-    };
-  }, [consumePendingCapturePayload, handleCapturePayload, setWindowMousePassthrough]);
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
 

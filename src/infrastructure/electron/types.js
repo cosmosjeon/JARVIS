@@ -87,24 +87,6 @@
  */
 
 /**
- * @typedef {Object} CaptureBridge
- * @property {() => Promise<{ success?: boolean, reason?: string }>|any} requestCapture
- *   전역 화면 캡처를 요청합니다.
- * @property {(payload: { displayId: number, rect: { x: number, y: number, width: number, height: number, scaleFactor?: number } }) => Promise<{ success?: boolean, result?: any }>|any} performCapture
- *   선택 영역 정보를 전달하여 캡처를 수행합니다.
- * @property {() => Promise<{ success?: boolean }>|any} cancelCapture
- *   진행 중인 캡처를 취소합니다.
- * @property {(listener: (payload: { base64: string, mimeType: string, width: number, height: number, displayId?: number, timestamp: number }) => void) => (() => void)} onCaptureCompleted
- *   캡처 완료 이벤트를 구독합니다.
- * @property {(listener: (payload: { timestamp: number }) => void) => (() => void)} onCaptureStarted
- *   캡처 시작 이벤트를 구독합니다.
- * @property {(listener: (payload: any) => void) => (() => void)} onCaptureCancelled
- *   캡처 취소 이벤트를 구독합니다.
- * @property {(listener: (payload: { message?: string }) => void) => (() => void)} onCaptureFailed
- *   캡처 실패 이벤트를 구독합니다.
- */
-
-/**
  * @typedef {Object} SystemBridge
  * @property {() => Promise<{ success?: boolean, granted?: boolean }>|null} checkAccessibilityPermission
  *   접근성 권한 상태를 조회합니다.
@@ -130,14 +112,6 @@
  *   라이브러리 데이터를 새로고침합니다.
  * @property {(listener: () => void) => (() => void)} onLibraryRefresh
  *   라이브러리 새로고침 이벤트를 구독합니다.
- */
-
-/**
- * @typedef {Object} AdminBridge
- * @property {() => Promise<{ success?: boolean }>|null} openAdminPanel
- *   Admin 패널을 엽니다.
- * @property {() => Promise<{ success?: boolean }>|null} closeAdminPanel
- *   Admin 패널을 닫습니다.
  */
 
 export {}; // JSDoc 타입 선언 전용 파일

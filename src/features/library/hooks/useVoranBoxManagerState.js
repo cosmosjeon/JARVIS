@@ -735,7 +735,7 @@ const useVoranBoxManagerState = ({
   }, [handleTreeDragEnd, isDragging]);
 
   const handleTreeClick = useCallback((tree, event) => {
-    handleTreeMouseDown(tree, event, { notify: true });
+    handleTreeMouseDown(tree, event, { notify: false });
   }, [handleTreeMouseDown]);
 
   const handleTreeDoubleClick = useCallback((tree) => {
@@ -743,10 +743,8 @@ const useVoranBoxManagerState = ({
       return;
     }
     handleTreeMouseDown(tree, null, { notify: false });
-    if (onTreeOpen) {
-      onTreeOpen(tree.id);
-    }
-  }, [handleTreeMouseDown, onTreeOpen]);
+    // 더블클릭 시 위젯 열기 비활성화
+  }, [handleTreeMouseDown]);
 
   return {
     toasts,

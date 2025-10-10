@@ -17,6 +17,8 @@ import {
   Monitor,
   Move,
   Network,
+  PanelLeft,
+  PanelRight,
   RefreshCcw,
   Settings,
   Trash2,
@@ -137,21 +139,21 @@ const LibrarySidebar = ({
       targetTreeName: '',
     });
   };
-  const ToggleIcon = collapsed ? ChevronRight : ChevronLeft;
+  const ToggleIcon = collapsed ? PanelRight : PanelLeft;
 
   const renderToggleButton = (isCollapsed, className = '') => (
     <button
       type="button"
       onClick={handleToggleCollapsed}
       className={cn(
-        'rounded-full border border-border bg-card shadow-md transition hover:bg-card/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background flex items-center justify-center',
-        isCollapsed ? 'h-10 w-10' : 'h-8 w-8',
+        'rounded-lg border border-border/70 bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background flex items-center justify-center',
+        isCollapsed ? 'h-8 w-8 px-0' : 'h-8 w-8 px-0',
         className,
       )}
       aria-label={toggleLabel}
       title={toggleLabel}
     >
-      <ToggleIcon className={isCollapsed ? 'h-5 w-5' : 'h-4 w-4'} />
+      <ToggleIcon className="h-3.5 w-3.5" />
     </button>
   );
 
@@ -165,7 +167,7 @@ const LibrarySidebar = ({
       aria-expanded={!collapsed}
     >
       {collapsed ? (
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex items-center justify-end px-3 pt-8 pb-4">
           {renderToggleButton(true)}
         </div>
       ) : (
