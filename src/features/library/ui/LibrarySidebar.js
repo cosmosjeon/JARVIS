@@ -6,6 +6,12 @@ import { cn } from 'shared/utils';
 import ContextMenu from 'shared/ui/ContextMenu';
 import FolderSelectModal from 'shared/ui/FolderSelectModal';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from 'shared/ui/tooltip';
+import {
   Box,
   ChevronDown,
   ChevronRight,
@@ -17,6 +23,7 @@ import {
   Network,
   PanelLeft,
   PanelRight,
+  RefreshCw,
   Settings,
   Trash2,
 } from 'lucide-react';
@@ -151,35 +158,286 @@ const LibrarySidebar = ({
   );
 
   return (
-    <aside
-      className={cn(
-        'library-sidebar relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
-        collapsed ? 'w-[60px]' : 'w-[240px]',
-      )}
-      style={{ WebkitAppRegion: 'drag' }}
-      aria-expanded={!collapsed}
-    >
-      {collapsed ? (
-        <div className="flex items-center justify-end px-3 pt-8 pb-4">
-          {renderToggleButton(true)}
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center gap-2 border-b border-border px-3 pt-8 pb-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
-              onClick={onManageVoranBox}
-            >
-              <span className="flex items-center gap-1.5">
-                <Box className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="truncate">BOX</span>
-              </span>
-              <span className="text-[10px] text-muted-foreground flex-shrink-0">관리</span>
-            </Button>
-            {renderToggleButton(false, 'ml-4 flex-shrink-0')}
-          </div>
+    <TooltipProvider delayDuration={300}>
+      <aside
+        className={cn(
+          'library-sidebar relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
+          collapsed ? 'w-[60px]' : 'w-[240px]',
+        )}
+        style={{ WebkitAppRegion: 'drag' }}
+        aria-expanded={!collapsed}
+      >
+        {collapsed ? (
+          <>
+            <div className="flex items-center justify-center px-2 pt-8 pb-4">
+              {renderToggleButton(true)}
+            </div>
+            
+            <ScrollArea className="flex-1">
+              <div className="flex flex-col items-center gap-2 px-2 py-3">
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9 rounded-lg"
+                          disabled={!canCreateTree || isLoading}
+                        >
+                          <GitBranch className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" style={{ WebkitAppRegion: 'no-drag' }}>
+                      <p>새 트리</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent 
+                    align="start" 
+                    side="right" 
+                    className="w-48 z-[9999]"
+                    style={{ WebkitAppRegion: 'no-drag' }}
+                  >
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onCreateTreeWidget?.();
+                      }}
+                      disabled={!canCreateTree || isLoading}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <Monitor className="h-3.5 w-3.5" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">위젯으로 생성</span>
+                        <span className="text-[11px] text-muted-foreground">독립 위젯에서 시작</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onCreateTreeInApp?.();
+                      }}
+                      disabled={!canCreateTree || isLoading}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">라이브러리에서 생성</span>
+                        <span className="text-[11px] text-muted-foreground">앱에서 바로 시작</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <div className="w-full border-t border-border my-2" />
+
+                {folders.map((folder) => {
+                  const folderTrees = folderTreeMap.get(folder.id) || [];
+                  const isFolderSelected = selectedFolderId === folder.id;
+                  const hasSelectedTree = folderTrees.some((tree) => tree.id === selectedTreeId);
+                  const isActiveFolder = isFolderSelected || hasSelectedTree;
+                  const isDragTarget = dragOverFolderId === folder.id;
+
+                  return (
+                    <div key={folder.id} className="relative flex items-center justify-center">
+                      <DropdownMenu>
+                        <Tooltip open={isDragTarget ? false : undefined}>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                onDragOver={(event) => {
+                                  event.preventDefault();
+                                  onFolderDragOver(folder.id);
+                                }}
+                                onDragLeave={() => onFolderDragLeave(folder.id)}
+                                onDrop={(event) => onDropToFolder(event, folder.id)}
+                                className={cn(
+                                  'h-9 w-9 flex items-center justify-center rounded-lg border transition-colors',
+                                  isActiveFolder && 'border-primary/60 bg-primary/10 text-foreground',
+                                  !isActiveFolder && 'border-transparent hover:border-border/70 hover:bg-card text-muted-foreground hover:text-foreground',
+                                  isDragTarget && 'ring-2 ring-primary/50 border-primary/60',
+                                )}
+                              >
+                                <FolderIcon className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" style={{ WebkitAppRegion: 'no-drag' }}>
+                            <p>{folder.name} ({folderTrees.length})</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      <DropdownMenuContent 
+                        align="start" 
+                        side="right" 
+                        className="w-56 max-h-96 overflow-y-auto z-[9999]"
+                        style={{ WebkitAppRegion: 'no-drag' }}
+                      >
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-b border-border mb-1">
+                          {folder.name}
+                        </div>
+                        {folderTrees.length > 0 ? (
+                          folderTrees.map((tree) => {
+                            const isActiveTree = tree.id === selectedTreeId;
+                            const isDragging = draggedTreeIds.includes(tree.id);
+                            return (
+                              <DropdownMenuItem
+                                key={tree.id}
+                                onSelect={(event) => {
+                                  event.preventDefault();
+                                  onSelectTree(tree.id, { folderId: folder.id });
+                                }}
+                                draggable
+                                onDragStart={(event) => {
+                                  onDragStart(event, tree.id);
+                                  // 드롭다운을 닫기 위해 blur
+                                  event.currentTarget.blur();
+                                }}
+                                onDragEnd={onDragEnd}
+                                className={cn(
+                                  "flex items-center gap-2 text-xs cursor-pointer",
+                                  isActiveTree && "bg-primary/10 text-primary",
+                                  isDragging && "opacity-60"
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    'h-2 w-2 rounded-full shrink-0',
+                                    isActiveTree ? 'bg-primary' : 'bg-primary/50'
+                                  )}
+                                />
+                                <span className="flex-1 truncate">{tree.title}</span>
+                              </DropdownMenuItem>
+                            );
+                          })
+                        ) : (
+                          <div className="px-2 py-2 text-xs text-muted-foreground text-center">
+                            트리가 없습니다
+                          </div>
+                        )}
+                      </DropdownMenuContent>
+                      </DropdownMenu>
+                      
+                      {isDragTarget && (
+                        <div 
+                          className="fixed left-16 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md pointer-events-none whitespace-nowrap"
+                          style={{ 
+                            WebkitAppRegion: 'no-drag',
+                            zIndex: 999999
+                          }}
+                        >
+                          <p>{folder.name} ({folderTrees.length})</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="w-full border-t border-border my-2" />
+
+                {voranTrees.map((tree) => {
+                  const isActiveTree = tree.id === selectedTreeId;
+                  const isDragging = draggedTreeIds.includes(tree.id);
+
+                  return (
+                    <Tooltip key={tree.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          draggable
+                          onClick={() => onSelectTree(tree.id)}
+                          onDoubleClick={() => onOpenTree(tree.id)}
+                          onDragStart={(event) => onDragStart(event, tree.id)}
+                          onDragEnd={onDragEnd}
+                          className={cn(
+                            'h-9 w-9 flex items-center justify-center rounded-lg border transition-colors',
+                            isActiveTree && 'border-primary/60 bg-primary/10',
+                            !isActiveTree && 'border-transparent hover:border-border/70 hover:bg-card',
+                            isDragging && 'opacity-60',
+                          )}
+                        >
+                          <Network className={cn('h-4 w-4', isActiveTree ? 'text-primary' : 'text-muted-foreground')} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" style={{ WebkitAppRegion: 'no-drag' }}>
+                        <p>{tree.title}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+
+            <div className="border-t border-border px-2 py-2 flex flex-col items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-full"
+                    onClick={onCycleTheme}
+                  >
+                    {ThemeIcon ? <ThemeIcon className="h-4 w-4" /> : <span className="text-xs">🎨</span>}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" style={{ WebkitAppRegion: 'no-drag' }}>
+                  <p>{themeLabel}</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-full"
+                    onClick={onRefresh}
+                    disabled={isLoading}
+                  >
+                    <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" style={{ WebkitAppRegion: 'no-drag' }}>
+                  <p>새로고침</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-full"
+                    onClick={onOpenSettings}
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" style={{ WebkitAppRegion: 'no-drag' }}>
+                  <p>설정</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 border-b border-border px-3 pt-8 pb-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
+                onClick={onManageVoranBox}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Box className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="truncate">BOX</span>
+                </span>
+                <span className="text-[10px] text-muted-foreground flex-shrink-0">관리</span>
+              </Button>
+              {renderToggleButton(false, 'ml-4 flex-shrink-0')}
+            </div>
 
           <ScrollArea className="flex-1">
             <div className="space-y-2 px-2 py-3">
@@ -482,7 +740,8 @@ const LibrarySidebar = ({
         onCancel={handleFolderSelectCancel}
         selectedItemName={folderSelectModal.targetTreeName}
       />
-    </aside>
+      </aside>
+    </TooltipProvider>
   );
 };
 
