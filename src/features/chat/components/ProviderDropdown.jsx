@@ -17,11 +17,12 @@ const ProviderDropdown = ({
   disabled = false,
   className,
   align = 'end',
+  onOpenChange,
 }) => {
   const active = options.find((option) => option.id === value) || options[0];
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"

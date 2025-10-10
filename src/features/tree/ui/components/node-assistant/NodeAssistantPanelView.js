@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AssistantPanelHeader from 'features/tree/ui/components/node-assistant/AssistantPanelHeader';
 import ChatAttachmentPreviewList from 'features/chat/components/ChatAttachmentPreviewList';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
@@ -112,9 +112,68 @@ const NodeAssistantPanelView = ({
   setReasoningEnabled,
   autoSelectionPreview,
   lastAutoSelection,
+  onDropdownOpenChange,
+  onTextareaHeightChange,
 }) => {
   const fileInputRef = useRef(null);
   const [slowResponseNotice, setSlowResponseNotice] = useState(null);
+  const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
+  const textareaContainerRef = useRef(null);
+
+  const handleProviderDropdownOpenChange = useCallback((open) => {
+    setIsProviderDropdownOpen(open);
+    // 컴팩트 모드일 때만 부모로 상태 전달
+    if (isBootstrapCompact && onDropdownOpenChange) {
+      onDropdownOpenChange(open);
+    }
+  }, [isBootstrapCompact, onDropdownOpenChange]);
+
+  // Textarea 높이 변화 감지 (컴팩트 모드에서만 - 최적화)
+  useEffect(() => {
+    if (!isBootstrapCompact || !textareaContainerRef.current || !onTextareaHeightChange) {
+      return;
+    }
+
+    const container = textareaContainerRef.current;
+    let rafId = null;
+    let lastHeight = 0;
+    let isInitialMount = true;
+    
+    const observer = new ResizeObserver((entries) => {
+      // RAF로 성능 최적화
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      
+      rafId = requestAnimationFrame(() => {
+        for (const entry of entries) {
+          const height = entry.contentRect.height;
+          
+          // 초기 마운트 시에는 무시 (깜빡임 방지)
+          if (isInitialMount) {
+            lastHeight = height;
+            isInitialMount = false;
+            return;
+          }
+          
+          // 높이가 실제로 변경되었을 때만 콜백 호출
+          if (Math.abs(height - lastHeight) > 2) {
+            lastHeight = height;
+            onTextareaHeightChange(height);
+          }
+        }
+      });
+    });
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isBootstrapCompact, onTextareaHeightChange]);
 
   const resolvedPanelStyles = useMemo(
     () => ({
@@ -211,7 +270,7 @@ const NodeAssistantPanelView = ({
         position: 'relative',
         zIndex: 1001,
         pointerEvents: 'auto',
-        WebkitAppRegion: 'no-drag',
+        WebkitAppRegion: isBootstrapCompact ? undefined : 'no-drag',
         background: isBootstrapCompact ? 'transparent' : resolvedPanelStyles.background,
         borderColor: isBootstrapCompact ? 'transparent' : resolvedPanelStyles.borderColor,
         borderWidth: isBootstrapCompact ? '0' : '1px',
@@ -270,11 +329,17 @@ const NodeAssistantPanelView = ({
 
       <PromptInput
         onSubmit={handleFormSubmit}
+        isBootstrapCompact={isBootstrapCompact}
         className={cn(
           'relative flex-col items-stretch gap-2 transition-colors',
           isAttachmentDragOver && 'border-dashed border-primary/60 bg-primary/10 ring-1 ring-primary/30',
+          isBootstrapCompact && 'flex-1'
         )}
-        style={{ zIndex: 1003, pointerEvents: 'auto' }}
+        style={{ 
+          zIndex: 1003, 
+          pointerEvents: 'auto',
+          ...(isBootstrapCompact && { paddingTop: '25px' })
+        }}
         {...attachmentDropHandlers}
       >
         {isAttachmentDragOver ? <AttachmentDropOverlay /> : null}
@@ -295,6 +360,7 @@ const NodeAssistantPanelView = ({
               onChange={setSelectedProvider}
               disabled={isAttachmentUploading || isStreaming}
               align="start"
+              onOpenChange={handleProviderDropdownOpenChange}
             />
           </div>
           <div className="flex flex-1 items-center justify-end gap-2">
@@ -378,7 +444,7 @@ const NodeAssistantPanelView = ({
           </div>
         </PromptInputToolbar>
 
-        <div className="flex w-full items-end gap-2">
+        <div ref={textareaContainerRef} className="flex w-full items-end gap-2">
           <PromptInputTextarea
             ref={composerRef}
             value={composerValue}

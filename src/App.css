@@ -1,3 +1,4 @@
+/* Cache buster for drag handle fix - 2024-01-27 15:30 */
 :root {
 }
 
@@ -116,25 +117,26 @@ body.widget-mode {
   z-index: 9999;
 }
 
-/* 컴팩트 모드일 때 기본 핸들 숨기고 작은 핸들만 표시 */
+/* 컴팩트 모드일 때 드래그 핸들 완전히 제거 */
+body.widget-mode div.App.bootstrap-compact::before,
 .widget-mode .App.bootstrap-compact::before {
   display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  -webkit-app-region: no-drag !important;
+  content: none !important;
 }
 
+/* 컴팩트 모드일 때 ::after 가상 요소도 완전히 제거 */
+body.widget-mode div.App.bootstrap-compact::after,
 .widget-mode .App.bootstrap-compact::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 120px;
-  height: 40px;
-  transform: translateX(-50%);
-  border: 2px solid var(--widget-border-color, rgba(255, 255, 255, 0.2));
-  border-bottom: none;
-  border-radius: 12px 12px 0 0;
-  -webkit-app-region: drag;
-  pointer-events: none;
-  z-index: 9999;
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  -webkit-app-region: no-drag !important;
+  content: none !important;
 }
 
 .App-content {

@@ -952,9 +952,16 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       setExpandedNodeId(null);
       setIsBootstrapCompact(true);
       
+      // 리사이즈 관련 ref 초기화
+      currentHeightRef.current = 130;
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      isResizingRef.current = false;
+      
       // 컴팩트 모드에 맞는 작은 창 크기로 설정 (입력창에 딱 맞게)
       if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
-        window.jarvisAPI.windowControls.resize(540, 100, true)
+        window.jarvisAPI.windowControls.resize(540, 130, true)
           .then(result => {
             console.log('✅ Window resized to compact mode for new tree:', result);
           })
@@ -1230,6 +1237,13 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     // 컴팩트 모드 해제
     setIsBootstrapCompact(false);
     
+    // 리사이즈 관련 ref 초기화
+    currentHeightRef.current = 720; // 확장된 높이로 설정
+    if (resizeTimeoutRef.current) {
+      clearTimeout(resizeTimeoutRef.current);
+    }
+    isResizingRef.current = false;
+    
     // 새 트리인 경우에만 윈도우를 확장 (작은 크기 → 1024x720)
     if (isNewTree && typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
       window.jarvisAPI.windowControls.resize(1024, 720, true)
@@ -1320,6 +1334,112 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       }
     }
   }, [createClientGeneratedId, extractImportantKeyword, handleRequestAnswer, setConversationForNode, setShowBootstrapChat]);
+
+  // 드롭다운 열림/닫힘에 따른 창 크기 제어 (최적화: 디바운싱 + 중복 방지)
+  const resizeTimeoutRef = useRef(null);
+  const currentHeightRef = useRef(130); // 현재 창 높이 추적
+  const isResizingRef = useRef(false); // 리사이즈 진행 중 플래그
+  
+  const handleDropdownOpenChange = useCallback((isOpen) => {
+    if (!isBootstrapCompact) return; // 컴팩트 모드가 아닐 때는 무시
+    
+    // 드롭다운 상태 업데이트
+    isDropdownOpenRef.current = isOpen;
+    
+    const newHeight = isOpen ? 240 : 130;
+    
+    // 이미 같은 높이이거나 리사이즈 중이면 스킵
+    if (currentHeightRef.current === newHeight || isResizingRef.current) {
+      return;
+    }
+    
+    // 이전 타임아웃 취소
+    if (resizeTimeoutRef.current) {
+      clearTimeout(resizeTimeoutRef.current);
+    }
+    
+    // 디바운싱: 50ms 후에 실행
+    resizeTimeoutRef.current = setTimeout(() => {
+      if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
+        isResizingRef.current = true;
+        
+        window.jarvisAPI.windowControls.resize(540, newHeight, true)
+          .then(result => {
+            currentHeightRef.current = newHeight;
+            lastTextareaHeightRef.current = newHeight; // textarea ref도 업데이트
+            isResizingRef.current = false;
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`✅ Window resized for dropdown ${isOpen ? 'open' : 'close'}:`, result);
+            }
+          })
+          .catch(err => {
+            isResizingRef.current = false;
+            console.error('❌ Window resize failed:', err);
+          });
+      }
+    }, 50);
+  }, [isBootstrapCompact]);
+  
+  // 컴포넌트 언마운트 시 타임아웃 정리
+  useEffect(() => {
+    return () => {
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      if (textareaResizeTimeoutRef.current) {
+        clearTimeout(textareaResizeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Textarea 높이 변화에 따른 창 크기 제어 (컴팩트 모드 - 최적화)
+  const textareaResizeTimeoutRef = useRef(null);
+  const lastTextareaHeightRef = useRef(130); // 초기값을 130으로 설정하여 초기 리사이즈 방지
+  const isDropdownOpenRef = useRef(false);
+  const isTextareaResizingRef = useRef(false);
+  
+  const handleTextareaHeightChange = useCallback((textareaHeight) => {
+    if (!isBootstrapCompact) return;
+    
+    // 드롭다운이 열려있거나 이미 리사이즈 중이면 무시
+    if (isDropdownOpenRef.current || isTextareaResizingRef.current) return;
+    
+    // 이전 타임아웃 취소
+    if (textareaResizeTimeoutRef.current) {
+      clearTimeout(textareaResizeTimeoutRef.current);
+    }
+    
+    // 디바운싱: 150ms 후에 실행 (더 긴 지연으로 렉 방지)
+    textareaResizeTimeoutRef.current = setTimeout(() => {
+      if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
+        // 기본 높이 계산
+        const baseHeight = 25 + 24 + 8 + 70 + 16;
+        const newHeight = Math.max(130, Math.min(baseHeight + textareaHeight, 400));
+        
+        // 높이가 변경되었을 때 리사이즈 (증가/감소 모두 처리)
+        // 감소할 때는 임계값을 낮춰서 더 민감하게 반응
+        const isDecreasing = newHeight < lastTextareaHeightRef.current;
+        const threshold = isDecreasing ? 5 : 10; // 감소 시 5px, 증가 시 10px
+        
+        if (Math.abs(newHeight - lastTextareaHeightRef.current) > threshold) {
+          lastTextareaHeightRef.current = newHeight;
+          isTextareaResizingRef.current = true;
+          
+          window.jarvisAPI.windowControls.resize(540, newHeight, true)
+            .then(result => {
+              isTextareaResizingRef.current = false;
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`✅ Window resized for textarea height (${textareaHeight}px -> ${newHeight}px):`, result);
+              }
+            })
+            .catch(err => {
+              isTextareaResizingRef.current = false;
+              console.error('❌ Window resize failed:', err);
+            });
+        }
+      }
+    }, 150);
+  }, [isBootstrapCompact]);
 
   // 2번째 질문 처리 함수
   const handleSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
@@ -2403,88 +2523,49 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
         </div>
       )}
 
-      {/* 창 드래그 핸들 - 중앙 최상단 */}
-      <div
-        className="absolute top-2 z-[1300] cursor-grab active:cursor-grabbing transition-all duration-300"
-        style={{
-          WebkitAppRegion: 'drag',
-          left: tidyAssistantPanelVisible
-            ? `${Math.max(140, (viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 800)) / 2 - tidyAssistantPanelWidth / 2)}px`
-            : '50%',
-          transform: 'translateX(-50%)',
-        }}
-      >
+      {/* 컴팩트 모드용 작은 드래그 핸들 */}
+      {isBootstrapCompact && (
         <div
-          className="relative flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3"
-          style={{ width: '240px' }}
+          className="absolute top-2 left-1/2 z-[1300] transition-all duration-300"
+          style={{
+            transform: 'translateX(-50%)',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            pointerEvents: 'auto',
+          }}
         >
-          {/* 왼쪽: 설정 & 테마 버튼 */}
-          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-            <button
-              ref={handleMenuButtonRef}
-              type="button"
-              className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/60 bg-black/40 p-0.5 transition-all duration-200 hover:bg-gray-700/80"
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleHandleMenu();
-              }}
-              onMouseDown={(event) => event.stopPropagation()}
-              tabIndex={-1}
-              title="트리 설정"
-            >
-              <Settings className="h-3.5 w-3.5 text-white/90" aria-hidden="true" />
-            </button>
-
-            {/* 테마 토글 버튼 */}
-            <button
-              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
-              onClick={cycleTheme}
-              onMouseDown={(e) => e.stopPropagation()}
-              tabIndex={-1}
-              title={`테마 변경 (현재: ${activeTheme.label})`}
-            >
-              <ActiveThemeIcon className="h-3 w-3 text-white/90" />
-            </button>
-          </div>
-
-          {/* 오른쪽: 전체화면 & 닫기 버튼 */}
-          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-            {/* 최대화 버튼 */}
-            <button
-              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
-              onClick={() => {
-                const controls = treeBridge.windowControls || {};
-                const handler = controls.maximize || controls.toggleFullScreen;
-                if (typeof handler !== 'function') {
-                  return;
-                }
-                const maybeResult = handler();
-                if (maybeResult && typeof maybeResult.catch === 'function') {
-                  maybeResult.catch(() => { });
-                }
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              tabIndex={-1}
-              title="최대화"
-            >
-              <svg className="h-3 w-3 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-            </button>
-
+          <div
+            className="flex h-6 items-center rounded-full bg-black/40 backdrop-blur-sm border border-black/30 shadow-lg hover:bg-black/60 transition-colors px-3 cursor-grab active:cursor-grabbing"
+            style={{
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              pointerEvents: 'auto',
+              WebkitAppRegion: 'drag',
+            }}
+          >
+            {/* 드래그 영역 (전체 영역) */}
+            <div className="flex items-center justify-center flex-1">
+              <div className="flex gap-1">
+                <div className="h-1 w-1 rounded-full bg-white/60"></div>
+                <div className="h-1 w-1 rounded-full bg-white/60"></div>
+                <div className="h-1 w-1 rounded-full bg-white/60"></div>
+              </div>
+            </div>
+            
             {/* 닫기 버튼 */}
             <button
-              className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
+              className="ml-4 flex h-4 w-4 items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+              style={{
+                WebkitAppRegion: 'no-drag',
+                pointerEvents: 'auto',
+              }}
               onClick={() => {
                 if (process.env.NODE_ENV === 'development') {
-                  // 개발 중 동작 여부 확인용
-                  // eslint-disable-next-line no-console
-                  console.log('[Jarvis] Drag handle close requested');
+                  console.log('[Jarvis] Compact drag handle close requested');
                 }
 
                 const hideWindow = () => {
                   if (process.env.NODE_ENV === 'development') {
-                    // eslint-disable-next-line no-console
                     console.log('[Jarvis] hideWindow fallback triggered');
                   }
                   try {
@@ -2498,7 +2579,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                     }
                   } catch (toggleError) {
                     if (process.env.NODE_ENV === 'development') {
-                      // eslint-disable-next-line no-console
                       console.warn('[Jarvis] toggleWindow failed', toggleError);
                     }
                   }
@@ -2514,14 +2594,11 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                     const tag = '[Jarvis] windowControls.close result';
                     if (maybeResult && typeof maybeResult.then === 'function') {
                       maybeResult.then((response) => {
-                        // eslint-disable-next-line no-console
                         console.log(tag, response);
                       }).catch((err) => {
-                        // eslint-disable-next-line no-console
                         console.log(`${tag} (rejected)`, err);
                       });
                     } else {
-                      // eslint-disable-next-line no-console
                       console.log(tag, maybeResult);
                     }
                   }
@@ -2530,7 +2607,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                     maybeResult
                       .then((response) => {
                         if (process.env.NODE_ENV === 'development') {
-                          // eslint-disable-next-line no-console
                           console.log('[Jarvis] close response (async)', response, response?.error);
                         }
                         if (!response?.success) {
@@ -2539,7 +2615,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                       })
                       .catch((err) => {
                         if (process.env.NODE_ENV === 'development') {
-                          // eslint-disable-next-line no-console
                           console.warn('[Jarvis] close response error', err);
                         }
                         hideWindow();
@@ -2557,7 +2632,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                   }
                 } catch (error) {
                   if (process.env.NODE_ENV === 'development') {
-                    // eslint-disable-next-line no-console
                     console.warn('[Jarvis] windowControls.close failed', error);
                   }
                   hideWindow();
@@ -2567,10 +2641,9 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                 hideWindow();
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              tabIndex={-1}
             >
               <svg
-                className="h-3 w-3 text-white group-hover:text-black"
+                className="h-2.5 w-2.5 text-white/80 hover:text-white"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -2584,63 +2657,249 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
               </svg>
             </button>
           </div>
-
-          {isHandleMenuOpen ? (
-            <div
-              ref={handleMenuRef}
-              className="absolute right-0 top-10 w-48 rounded-lg border border-white/15 bg-black/85 p-2 text-xs text-white/90 shadow-xl backdrop-blur"
-              style={{ WebkitAppRegion: 'no-drag' }}
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div>
-                <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">뷰 모드</p>
-                <button
-                  type="button"
-                  onClick={() => handleViewSwitch('tree1')}
-                  className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree1' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
-                  tabIndex={-1}
-                >
-                  <span>트리 1</span>
-                  {viewMode === 'tree1' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleViewSwitch('tree2')}
-                  className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree2' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
-                  tabIndex={-1}
-                >
-                  <span>트리 2</span>
-                  {viewMode === 'tree2' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
-                </button>
-              </div>
-
-              <div className="mt-3 border-t border-white/10 pt-2">
-                <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">설정</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoomOnClickEnabled(!zoomOnClickEnabled);
-                  }}
-                  className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${zoomOnClickEnabled ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
-                  tabIndex={-1}
-                >
-                  <span>클릭 시 확대</span>
-                  <span className={`text-xs font-medium ${zoomOnClickEnabled ? 'text-black/70' : 'text-white/50'}`}>
-                    {zoomOnClickEnabled ? '켜짐' : '꺼짐'}
-                  </span>
-                </button>
-              </div>
-            </div>
-          ) : null}
         </div>
-      </div>
+      )}
 
-      {/* 트리 탭 바: 상단 핸들 왼쪽 끝과 정렬 */}
+      {/* 창 드래그 핸들 - 중앙 최상단 (컴팩트 모드가 아닐 때만 표시) */}
+      {!isBootstrapCompact && (
+        <div
+          className="absolute top-2 z-[1300] cursor-grab active:cursor-grabbing transition-all duration-300"
+          style={{
+            WebkitAppRegion: 'drag',
+            left: tidyAssistantPanelVisible
+              ? `${Math.max(140, (viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 800)) / 2 - tidyAssistantPanelWidth / 2)}px`
+              : '50%',
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <div
+            className="relative flex h-8 items-center justify-between rounded-full bg-black/60 backdrop-blur-sm border border-black/50 shadow-lg hover:bg-black/80 transition-colors px-3"
+            style={{ width: '240px' }}
+          >
+            {/* 왼쪽: 설정 & 테마 버튼 */}
+            <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+              <button
+                ref={handleMenuButtonRef}
+                type="button"
+                className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/60 bg-black/40 p-0.5 transition-all duration-200 hover:bg-gray-700/80"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleHandleMenu();
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+                tabIndex={-1}
+                title="트리 설정"
+              >
+                <Settings className="h-3.5 w-3.5 text-white/90" aria-hidden="true" />
+              </button>
+
+              {/* 테마 토글 버튼 */}
+              <button
+                className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+                onClick={cycleTheme}
+                onMouseDown={(e) => e.stopPropagation()}
+                tabIndex={-1}
+                title={`테마 변경 (현재: ${activeTheme.label})`}
+              >
+                <ActiveThemeIcon className="h-3 w-3 text-white/90" />
+              </button>
+            </div>
+
+            {/* 오른쪽: 전체화면 & 닫기 버튼 */}
+            <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+              {/* 최대화 버튼 */}
+              <button
+                className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/40 border border-gray-500/60 hover:bg-gray-700/80 transition-all duration-200"
+                onClick={() => {
+                  const controls = treeBridge.windowControls || {};
+                  const handler = controls.maximize || controls.toggleFullScreen;
+                  if (typeof handler !== 'function') {
+                    return;
+                  }
+                  const maybeResult = handler();
+                  if (maybeResult && typeof maybeResult.catch === 'function') {
+                    maybeResult.catch(() => { });
+                  }
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                tabIndex={-1}
+                title="최대화"
+              >
+                <svg className="h-3 w-3 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </button>
+
+              {/* 닫기 버튼 */}
+              <button
+                className="group flex h-5 w-5 items-center justify-center rounded-full bg-black/60 border border-gray-500/60 hover:bg-white/80 hover:shadow-xl hover:shadow-white/40 hover:scale-110 transition-all duration-200"
+                onClick={() => {
+                  if (process.env.NODE_ENV === 'development') {
+                    // 개발 중 동작 여부 확인용
+                    // eslint-disable-next-line no-console
+                    console.log('[Jarvis] Drag handle close requested');
+                  }
+
+                  const hideWindow = () => {
+                    if (process.env.NODE_ENV === 'development') {
+                      // eslint-disable-next-line no-console
+                      console.log('[Jarvis] hideWindow fallback triggered');
+                    }
+                    try {
+                      const toggleResult = treeBridge.toggleWindow();
+                      if (toggleResult && typeof toggleResult.then === 'function') {
+                        toggleResult.catch(() => { });
+                        return;
+                      }
+                      if (toggleResult !== null && toggleResult !== undefined) {
+                        return;
+                      }
+                    } catch (toggleError) {
+                      if (process.env.NODE_ENV === 'development') {
+                        // eslint-disable-next-line no-console
+                        console.warn('[Jarvis] toggleWindow failed', toggleError);
+                      }
+                    }
+
+                    if (typeof window !== 'undefined' && typeof window.close === 'function') {
+                      window.close();
+                    }
+                  };
+
+                  try {
+                    const maybeResult = treeBridge.windowControls.close();
+                    if (process.env.NODE_ENV === 'development') {
+                      const tag = '[Jarvis] windowControls.close result';
+                      if (maybeResult && typeof maybeResult.then === 'function') {
+                        maybeResult.then((response) => {
+                          // eslint-disable-next-line no-console
+                          console.log(tag, response);
+                        }).catch((err) => {
+                          // eslint-disable-next-line no-console
+                          console.log(`${tag} (rejected)`, err);
+                        });
+                      } else {
+                        // eslint-disable-next-line no-console
+                        console.log(tag, maybeResult);
+                      }
+                    }
+
+                    if (maybeResult && typeof maybeResult.then === 'function') {
+                      maybeResult
+                        .then((response) => {
+                          if (process.env.NODE_ENV === 'development') {
+                            // eslint-disable-next-line no-console
+                            console.log('[Jarvis] close response (async)', response, response?.error);
+                          }
+                          if (!response?.success) {
+                            hideWindow();
+                          }
+                        })
+                        .catch((err) => {
+                          if (process.env.NODE_ENV === 'development') {
+                            // eslint-disable-next-line no-console
+                            console.warn('[Jarvis] close response error', err);
+                          }
+                          hideWindow();
+                        });
+                      return;
+                    }
+
+                    if (maybeResult && maybeResult.success === false) {
+                      hideWindow();
+                      return;
+                    }
+
+                    if (maybeResult !== null && maybeResult !== undefined) {
+                      return;
+                    }
+                  } catch (error) {
+                    if (process.env.NODE_ENV === 'development') {
+                      // eslint-disable-next-line no-console
+                      console.warn('[Jarvis] windowControls.close failed', error);
+                    }
+                    hideWindow();
+                    return;
+                  }
+
+                  hideWindow();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                tabIndex={-1}
+              >
+                <svg
+                  className="h-3 w-3 text-white group-hover:text-black"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {isHandleMenuOpen ? (
+              <div
+                ref={handleMenuRef}
+                className="absolute right-0 top-10 w-48 rounded-lg border border-white/15 bg-black/85 p-2 text-xs text-white/90 shadow-xl backdrop-blur"
+                style={{ WebkitAppRegion: 'no-drag' }}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div>
+                  <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">뷰 모드</p>
+                  <button
+                    type="button"
+                    onClick={() => handleViewSwitch('tree1')}
+                    className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree1' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                    tabIndex={-1}
+                  >
+                    <span>트리 1</span>
+                    {viewMode === 'tree1' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleViewSwitch('tree2')}
+                    className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree2' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                    tabIndex={-1}
+                  >
+                    <span>트리 2</span>
+                    {viewMode === 'tree2' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
+                  </button>
+                </div>
+
+                <div className="mt-3 border-t border-white/10 pt-2">
+                  <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">설정</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setZoomOnClickEnabled(!zoomOnClickEnabled);
+                    }}
+                    className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${zoomOnClickEnabled ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
+                    tabIndex={-1}
+                  >
+                    <span>클릭 시 확대</span>
+                    <span className={`text-xs font-medium ${zoomOnClickEnabled ? 'text-black/70' : 'text-white/50'}`}>
+                      {zoomOnClickEnabled ? '켜짐' : '꺼짐'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* 트리 탭 바: 드래그 핸들 위치에 따라 조정 */}
       <div
         className="absolute z-[1250] transition-all duration-300"
         style={{
-          top: '2.75rem',
+          top: isBootstrapCompact ? '0.5rem' : '2.75rem',
           left: tidyAssistantPanelVisible
             ? `${Math.max(140, (viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 800)) / 2 - tidyAssistantPanelWidth / 2)}px`
             : '50%',
@@ -2739,6 +2998,8 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
               nodeScaleFactor={nodeScaleFactor}
               attachments={pendingAttachmentsByNode['__bootstrap__'] || []}
               onAttachmentsChange={(next) => setAttachmentsForNode('__bootstrap__', next)}
+              onDropdownOpenChange={handleDropdownOpenChange}
+              onTextareaHeightChange={handleTextareaHeightChange}
             />
           </div>
         </div>

@@ -215,7 +215,10 @@ const registerWindowHandlers = ({
       const isNewTreeMode = currentUrl.includes('fresh=1');
       
       const newWidth = Math.max(width, isNewTreeMode ? 320 : 320);
-      const newHeight = Math.max(height, isNewTreeMode ? 120 : 240);
+      // 새 트리 모드에서는 130px~400px 사이 허용
+      const minHeight = isNewTreeMode ? 130 : 240;
+      const maxHeight = isNewTreeMode ? 400 : 1080;
+      const newHeight = Math.max(minHeight, Math.min(height, maxHeight));
 
       // 좌상단 위치 고정, 오른쪽 아래로만 확장
       const newBounds = {
@@ -226,16 +229,18 @@ const registerWindowHandlers = ({
       };
 
       if (animate) {
-        // 오른쪽 아래로 확장
-        const duration = 1000; // 애니메이션 시간 (ms)
+        // 변화량에 따라 애니메이션 duration 동적 조정
+        const widthDelta = Math.abs(newBounds.width - currentBounds.width);
+        const heightDelta = Math.abs(newBounds.height - currentBounds.height);
+        const maxDelta = Math.max(widthDelta, heightDelta);
+        
+        // 작은 변화는 빠르게, 큰 변화는 적당히 (최소 150ms, 최대 300ms)
+        const duration = Math.min(300, Math.max(150, maxDelta * 1.5));
         const fps = 60;
-        const frameTime = 1000 / fps; // ~16.67ms
+        const frameTime = 1000 / fps;
 
-        const widthDelta = newBounds.width - currentBounds.width;
-        const heightDelta = newBounds.height - currentBounds.height;
-
-        // easeOutExpo: 지수 감속으로 매우 부드럽고 우아함
-        const easeOutExpo = (x) => x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+        // easeOutCubic: 부드럽고 빠른 감속
+        const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
 
         const startTime = Date.now();
         const animateFrame = () => {
@@ -243,14 +248,14 @@ const registerWindowHandlers = ({
 
           const elapsed = Date.now() - startTime;
           const progress = Math.min(elapsed / duration, 1);
-          const eased = easeOutExpo(progress);
+          const eased = easeOutCubic(progress);
 
           if (progress < 1) {
             const intermediateBounds = {
               x: currentBounds.x,
               y: currentBounds.y,
-              width: Math.round(currentBounds.width + widthDelta * eased),
-              height: Math.round(currentBounds.height + heightDelta * eased),
+              width: Math.round(currentBounds.width + (newBounds.width - currentBounds.width) * eased),
+              height: Math.round(currentBounds.height + (newBounds.height - currentBounds.height) * eased),
             };
             currentWindow.setBounds(intermediateBounds, false);
             setTimeout(animateFrame, frameTime);
