@@ -1,6 +1,6 @@
 # JARVIS Renderer
 
-Electron 기반 지식 트리·라이브러리·관리자 패널을 렌더링하는 React 애플리케이션입니다. Stage 6 리팩터링을 통해 feature-first 구조, shared/infrastructure 계층 분리, Electron 브리지 캡슐화를 완료했습니다.
+Electron 기반 지식 트리·라이브러리를 렌더링하는 React 애플리케이션입니다. Stage 6 리팩터링을 통해 feature-first 구조, shared/infrastructure 계층 분리, Electron 브리지 캡슐화를 완료했습니다.
 
 ## ✨ 주요 기능
 
@@ -9,14 +9,12 @@ Electron 기반 지식 트리·라이브러리·관리자 패널을 렌더링하
   - Supabase 동기화 및 Electron 위젯 브리지 연동
 - **라이브러리 모드** (`features/library`)
   - 저장된 트리/폴더 관리, Q/A 대화 재활용, Voran Box 드래그 관리
-- **관리자 패널** (`features/admin`)
-  - 빠른 트리 생성, 라이브러리 열기, 최근 트리 접근을 위한 오버레이 패널
 - **Electron 브리지** (`infrastructure/electron/bridges`)
-  - preload 채널을 JSDoc-타입 어댑터로 노출 (`libraryBridge`, `adminBridge`, `settingsBridge`, ...)
+  - preload 채널을 JSDoc-타입 어댑터로 노출 (`libraryBridge`, `settingsBridge`, ...)
 - **OpenAI 연동** (`infrastructure/ai/agentClient.js`)
   - 브리지 경유 호출 + HTTP fallback(Supabase/환경변수 기반)
 - **Shared Design System** (`shared/ui`, `shared/components/**`)
-  - shadcn 기반 UI 프리미티브와 공용 컴포넌트(`admin/AdminWidgetControlBar`, `markdown/MarkdownMessage` 등)
+  - shadcn 기반 UI 프리미티브와 공용 컴포넌트 (`markdown/MarkdownMessage` 등)
 
 ## 🚀 개발 시작
 
@@ -45,13 +43,10 @@ src/
 │  │  ├─ state/
 │  │  ├─ services/
 │  │  └─ utils/
-│  ├─ library/
-│  │  ├─ ui/
-│  │  ├─ state/
-│  │  └─ services/
-│  └─ admin/
+│  └─ library/
 │     ├─ ui/
-│     └─ state/
+│     ├─ state/
+│     └─ services/
 ├─ infrastructure/
 │  ├─ electron/
 │  │  └─ bridges/
@@ -61,7 +56,6 @@ src/
 │     └─ agentClient.js
 ├─ shared/
 │  ├─ components/
-│  │  ├─ admin/
 │  │  └─ markdown/
 │  ├─ hooks/
 │  ├─ ui/
@@ -93,4 +87,4 @@ Stage 6 리팩터 이후 각 기능 변경 시 다음 절차를 따릅니다.
 
 ---
 
-Stage 7에서는 초대형 컴포넌트(`HierarchicalForceTree`, `LibraryApp`, `VoranBoxManager`, `AdminWidgetPanel`)를 커스텀 훅/서비스로 세분화하고 도메인 계층 승격을 진행할 예정입니다.
+Stage 7에서는 초대형 컴포넌트(`HierarchicalForceTree`, `LibraryApp`, `VoranBoxManager`)를 커스텀 훅/서비스로 세분화하고 도메인 계층 승격을 진행할 예정입니다.

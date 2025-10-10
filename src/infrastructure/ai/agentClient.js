@@ -74,15 +74,17 @@ const normalizeContentPart = (part) => {
   }
 
   if (type === 'input_image' || type === 'image_url' || type === 'image') {
-    const urlCandidate = typeof part.image_url?.url === 'string'
-      ? part.image_url.url
-      : typeof part.url === 'string'
-        ? part.url
-        : typeof part.dataUrl === 'string'
-          ? part.dataUrl
-          : '';
+    const urlCandidate = typeof part.image_url === 'string'
+      ? part.image_url
+      : typeof part.image_url?.url === 'string'
+        ? part.image_url.url
+        : typeof part.url === 'string'
+          ? part.url
+          : typeof part.dataUrl === 'string'
+            ? part.dataUrl
+            : '';
     const url = toTrimmedString(urlCandidate);
-    return url ? { type: 'image_url', image_url: { url } } : null;
+    return url ? { type: 'image_url', image_url: url } : null;
   }
 
   return null;
@@ -152,7 +154,7 @@ const mapToOpenAIContentParts = (message) => {
   const appendImage = (value) => {
     const url = toTrimmedString(value);
     if (url) {
-      parts.push({ type: imageType, image_url: { url } });
+      parts.push({ type: imageType, image_url: url });
     }
   };
 
@@ -172,12 +174,12 @@ const mapToOpenAIContentParts = (message) => {
         return;
       }
       if (type === 'image_url' || type === 'input_image' || type === 'image') {
-        appendImage(
-          (part.image_url && part.image_url.url)
-          || part.url
-          || part.dataUrl
-          || ''
-        );
+        const imageValue = typeof part.image_url === 'string'
+          ? part.image_url
+          : typeof part.image_url?.url === 'string'
+            ? part.image_url.url
+            : part.url;
+        appendImage(imageValue || part.dataUrl || '');
       }
     });
   } else {
@@ -225,7 +227,7 @@ const normalizeMessage = (message) => {
 
   const combined = text ? [{ type: 'text', text }] : [];
   attachments.forEach((attachment) => {
-    combined.push({ type: 'image_url', image_url: { url: attachment.dataUrl } });
+    combined.push({ type: 'image_url', image_url: attachment.dataUrl });
   });
 
   return { role, content: combined };

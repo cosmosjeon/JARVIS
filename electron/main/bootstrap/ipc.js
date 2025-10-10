@@ -4,8 +4,6 @@ const { registerAgentHandlers } = require('../ipc-handlers/agent');
 const { registerSettingsHandlers } = require('../ipc-handlers/settings');
 const { registerWindowHandlers } = require('../ipc-handlers/window');
 const { registerLibraryHandlers } = require('../ipc-handlers/library');
-const { registerAdminHandlers } = require('../ipc-handlers/admin');
-const { registerCaptureHandlers } = require('../ipc-handlers/capture');
 
 const registerIpcHandlers = ({
   ipcMain,
@@ -15,7 +13,6 @@ const registerIpcHandlers = ({
   llmService,
   settingsManager,
   trayService,
-  captureService,
   createLogBridge,
   screen,
   isDev,
@@ -31,9 +28,6 @@ const registerIpcHandlers = ({
   applyWindowConfigTo,
   createLibraryWindow,
   getLibraryWindow,
-  ensureAdminPanelWindow,
-  closeAdminPanelWindow,
-  positionAdminPanelWindow,
 }) => {
   registerSystemHandlers({ ipcMain, accessibility });
 
@@ -80,20 +74,6 @@ const registerIpcHandlers = ({
     getLibraryWindow,
     logger,
     isDev,
-  });
-
-  registerAdminHandlers({
-    ipcMain,
-    ensureAdminPanelWindow,
-    closeAdminPanelWindow,
-    screen,
-    isDev,
-    logger,
-  });
-
-  registerCaptureHandlers({
-    ipcMain,
-    captureService,
   });
 };
 

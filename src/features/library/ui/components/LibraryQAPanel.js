@@ -2,12 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, X, Paperclip, Network, Shield, Globe } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
+import { useFileDropZone } from 'shared/hooks/useFileDropZone';
 import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import ChatAttachmentPreviewList from 'features/chat/components/ChatAttachmentPreviewList';
 import ProviderDropdown from 'features/chat/components/ProviderDropdown';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
 import EditableTitle, { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
+import { AttachmentDropOverlay } from 'shared/ui/AttachmentDropOverlay';
 import AgentClient from 'infrastructure/ai/agentClient';
 import Highlighter from 'web-highlighter';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
@@ -21,11 +23,19 @@ import {
   PromptInputToolbar,
 } from 'shared/ui/shadcn-io/ai/prompt-input';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import {
+  DEFAULT_AGENT_RESPONSE_TIMEOUT_MS,
+  LONG_RESPONSE_NOTICE_DELAY_MS,
+  LONG_RESPONSE_REMINDER_DELAY_MS,
+} from 'shared/constants/agentTimeouts';
 
 const TYPING_INTERVAL_MS = 18;
-const AGENT_RESPONSE_TIMEOUT_MS = 30000;
+const AGENT_RESPONSE_TIMEOUT_MS = DEFAULT_AGENT_RESPONSE_TIMEOUT_MS;
+const SLOW_RESPONSE_FIRST_HINT = 'AI가 답변을 준비 중입니다. 잠시만 기다려 주세요.';
+const SLOW_RESPONSE_SECOND_HINT = '아직 계산 중이에요. 최대 2분 정도 더 걸릴 수 있습니다.';
+const TIMEOUT_MESSAGE = 'AI 응답이 지연되고 있습니다. 잠시 후 다시 시도하거나 다른 모델을 선택해 주세요.';
 
-const withTimeout = (promise, timeoutMs = 0, timeoutMessage = 'AI 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.') => {
+const withTimeout = (promise, timeoutMs = 0, timeoutMessage = TIMEOUT_MESSAGE) => {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || typeof window === 'undefined') {
     return promise;
   }
@@ -81,6 +91,7 @@ const LibraryQAPanel = ({
   });
   const [attachments, setAttachments] = useState([]);
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
+  const [slowResponseNotice, setSlowResponseNotice] = useState(null);
 
   const messageContainerRef = useRef(null);
   const highlighterRef = useRef(null);
@@ -255,6 +266,46 @@ const LibraryQAPanel = ({
       setIsAttachmentUploading(false);
     }
   }, []);
+
+  const {
+    isDragOver: isAttachmentDragOver,
+    eventHandlers: attachmentDropHandlers,
+  } = useFileDropZone({
+    onDropFiles: handleAttachmentFiles,
+    isDisabled: isAttachmentUploading || isProcessing,
+  });
+
+  useEffect(() => {
+    if (!isProcessing) {
+      setSlowResponseNotice(null);
+      return undefined;
+    }
+
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const timers = [];
+    timers.push(
+      window.setTimeout(
+        () => setSlowResponseNotice(SLOW_RESPONSE_FIRST_HINT),
+        LONG_RESPONSE_NOTICE_DELAY_MS,
+      ),
+    );
+
+    if (LONG_RESPONSE_REMINDER_DELAY_MS > LONG_RESPONSE_NOTICE_DELAY_MS) {
+      timers.push(
+        window.setTimeout(
+          () => setSlowResponseNotice(SLOW_RESPONSE_SECOND_HINT),
+          LONG_RESPONSE_REMINDER_DELAY_MS,
+        ),
+      );
+    }
+
+    return () => {
+      timers.forEach((timerId) => window.clearTimeout(timerId));
+    };
+  }, [isProcessing]);
 
   const handleAttachmentRemove = useCallback((attachmentId) => {
     setAttachments((prev) => prev.filter((item) => item && item.id !== attachmentId));
@@ -642,6 +693,7 @@ const LibraryQAPanel = ({
     if (highlightTexts.length > 0 && !question) {
       console.log('✅ 플레이스홀더 생성 시작...');
       setComposerValue('');
+      setSlowResponseNotice(null);
       setIsProcessing(true);
       try {
         await createPlaceholderNodes(highlightTexts);
@@ -677,6 +729,7 @@ const LibraryQAPanel = ({
     setComposerValue('');
     clearAttachments();
     setError(null);
+    setSlowResponseNotice(null);
     setIsProcessing(true);
 
     const timestamp = Date.now();
@@ -728,15 +781,17 @@ const LibraryQAPanel = ({
               return text ? { type: textType, text } : null;
             }
             if (item.type === 'input_image' || item.type === 'image_url' || item.type === 'image') {
-              const urlCandidate = typeof item.image_url?.url === 'string'
-                ? item.image_url.url
-                : typeof item.url === 'string'
-                  ? item.url
-                  : typeof item.dataUrl === 'string'
-                    ? item.dataUrl
-                    : '';
+              const urlCandidate = typeof item.image_url === 'string'
+                ? item.image_url
+                : typeof item.image_url?.url === 'string'
+                  ? item.image_url.url
+                  : typeof item.url === 'string'
+                    ? item.url
+                    : typeof item.dataUrl === 'string'
+                      ? item.dataUrl
+                      : '';
               const url = urlCandidate.trim();
-              return url ? { type: imageType, image_url: { url } } : null;
+              return url ? { type: imageType, image_url: url } : null;
             }
             return null;
           })
@@ -765,7 +820,7 @@ const LibraryQAPanel = ({
       messageAttachments.forEach((item) => {
         contentParts.push({
           type: imageType,
-          image_url: { url: item.dataUrl },
+          image_url: item.dataUrl,
         });
       });
 
@@ -1063,6 +1118,7 @@ const LibraryQAPanel = ({
         className={containerClassName}
         style={panelStyle}
         data-interactive-zone="true"
+        {...attachmentDropHandlers}
       >
         <div
           className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
@@ -1104,6 +1160,7 @@ const LibraryQAPanel = ({
         msUserSelect: 'text',
       }}
       data-interactive-zone="true"
+      {...attachmentDropHandlers}
       onMouseDown={(e) => {
         console.log('🖱️ [패널] mouseDown 이벤트', {
           target: e.target,
@@ -1227,6 +1284,12 @@ const LibraryQAPanel = ({
         isDarkTheme={isDarkTheme}
       />
 
+      {slowResponseNotice && (
+        <div className="rounded-lg border border-amber-200/60 bg-amber-50/90 px-3 py-2 text-xs text-amber-700 shadow-sm">
+          {slowResponseNotice}
+        </div>
+      )}
+
       {!isLibraryIntroActive && (
         <div
           className="flex -mb-2 flex-shrink-0 items-center gap-2"
@@ -1334,11 +1397,16 @@ const LibraryQAPanel = ({
             handleSendMessage();
           }}
           className={cn(
-            'flex-col items-stretch gap-2',
+            'relative flex-col items-stretch gap-2 transition-colors',
+            isAttachmentDragOver && 'border-dashed border-primary/60 bg-primary/10 ring-1 ring-primary/30',
             isLibraryIntroActive && 'mx-auto w-full max-w-2xl relative',
           )}
           style={{ zIndex: 10 }}
+          {...attachmentDropHandlers}
         >
+          {isAttachmentDragOver ? (
+            <AttachmentDropOverlay />
+          ) : null}
           <input
             ref={fileInputRef}
             type="file"

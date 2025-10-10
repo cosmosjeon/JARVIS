@@ -9,7 +9,6 @@ import {
 import { Button } from 'shared/ui/button';
 import { Input } from 'shared/ui/input';
 import { cn } from 'shared/utils';
-import Logo from 'assets/admin-widget/logo.svg';
 import VoranTreeListItem from './VoranTreeListItem';
 
 const VoranFolderPanel = ({
@@ -244,7 +243,7 @@ const VoranFolderPanel = ({
       ) : (
         <div className="flex flex-col items-center justify-center h-full text-center">
           <div className="flex items-center gap-3 mb-4">
-            <img src={Logo} alt="VORAN" className="h-12 w-12 opacity-80" />
+            <Box className="h-12 w-12 opacity-80 text-muted-foreground" />
             <div className="text-left">
               <h3 className="text-lg font-semibold text-card-foreground mb-1">라이브러리</h3>
               <p className="text-sm text-muted-foreground">라이브러리에서 열 트리를 선택하세요.</p>

@@ -4,6 +4,7 @@ export * from './button';
 export * from './card';
 export * from './command';
 export * from './context-menu';
+export * from './AttachmentDropOverlay';
 export * from './dialog';
 export * from './dropdown-menu';
 export * from './input';

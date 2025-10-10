@@ -71,10 +71,12 @@ const normalizeAttachment = (attachment, fallbackId) => {
     ? attachment.dataUrl.trim()
     : typeof attachment.url === 'string' && attachment.url.trim()
       ? attachment.url.trim()
-      : typeof attachment.image_url === 'object' && attachment.image_url !== null
-        && typeof attachment.image_url.url === 'string'
-        ? attachment.image_url.url.trim()
-        : '';
+      : typeof attachment.image_url === 'string'
+        ? attachment.image_url.trim()
+        : typeof attachment.image_url === 'object' && attachment.image_url !== null
+          && typeof attachment.image_url.url === 'string'
+          ? attachment.image_url.url.trim()
+          : '';
   if (!id || !dataUrl) {
     return null;
   }

@@ -558,7 +558,7 @@ const mapMessagesToOpenAIInput = (messages = []) => {
     const appendImage = (value) => {
       const url = typeof value === 'string' ? value.trim() : '';
       if (url) {
-        parts.push({ type: imageType, image_url: { url } });
+        parts.push({ type: imageType, image_url: url });
       }
     };
 
@@ -577,12 +577,12 @@ const mapMessagesToOpenAIInput = (messages = []) => {
           return;
         }
         if (type === 'image_url' || type === 'input_image' || type === 'image') {
-          appendImage(
-            (part.image_url && part.image_url.url)
-            || part.url
-            || part.dataUrl
-            || ''
-          );
+          const imageValue = typeof part.image_url === 'string'
+            ? part.image_url
+            : typeof part.image_url?.url === 'string'
+              ? part.image_url.url
+              : part.url;
+          appendImage(imageValue || part.dataUrl || '');
         }
       });
     } else {

@@ -1,9 +1,10 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AssistantPanelHeader from 'features/tree/ui/components/node-assistant/AssistantPanelHeader';
 import ChatAttachmentPreviewList from 'features/chat/components/ChatAttachmentPreviewList';
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import ProviderDropdown from 'features/chat/components/ProviderDropdown';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import { useFileDropZone } from 'shared/hooks/useFileDropZone';
 import { ChatStatus } from 'features/chat/models/message';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
 import {
@@ -13,7 +14,13 @@ import {
   PromptInputTextarea,
   PromptInputToolbar,
 } from 'shared/ui/shadcn-io/ai/prompt-input';
+import { AttachmentDropOverlay } from 'shared/ui/AttachmentDropOverlay';
 import { cn } from 'shared/utils';
+import {
+  DEFAULT_AGENT_RESPONSE_TIMEOUT_MS,
+  LONG_RESPONSE_NOTICE_DELAY_MS,
+  LONG_RESPONSE_REMINDER_DELAY_MS,
+} from 'shared/constants/agentTimeouts';
 import { Globe, Paperclip } from 'lucide-react';
 
 const NodeAssistantPanelView = ({
@@ -60,6 +67,7 @@ const NodeAssistantPanelView = ({
     webSearchEnabled,
     setWebSearchEnabled,
   } = useAIModelPreference();
+  const [slowResponseNotice, setSlowResponseNotice] = useState(null);
 
   const resolvedPanelStyles = useMemo(
     () => ({
@@ -79,6 +87,38 @@ const NodeAssistantPanelView = ({
     [messages],
   );
 
+  useEffect(() => {
+    if (!isStreaming) {
+      setSlowResponseNotice(null);
+      return undefined;
+    }
+
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const timers = [];
+    timers.push(
+      window.setTimeout(
+        () => setSlowResponseNotice('AI가 답변을 정리 중입니다. 잠시만 기다려 주세요.'),
+        LONG_RESPONSE_NOTICE_DELAY_MS,
+      ),
+    );
+
+    if (LONG_RESPONSE_REMINDER_DELAY_MS > LONG_RESPONSE_NOTICE_DELAY_MS) {
+      timers.push(
+        window.setTimeout(
+          () => setSlowResponseNotice(`아직 계산 중이에요. 최대 ${Math.ceil(DEFAULT_AGENT_RESPONSE_TIMEOUT_MS / 60000)}분까지 걸릴 수 있습니다.`),
+          LONG_RESPONSE_REMINDER_DELAY_MS,
+        ),
+      );
+    }
+
+    return () => {
+      timers.forEach((timerId) => window.clearTimeout(timerId));
+    };
+  }, [isStreaming]);
+
   const handleAttachmentButtonClick = () => {
     fileInputRef.current?.click();
   };
@@ -91,25 +131,34 @@ const NodeAssistantPanelView = ({
     event.target.value = '';
   };
 
+  const {
+    isDragOver: isAttachmentDragOver,
+    eventHandlers: attachmentDropHandlers,
+  } = useFileDropZone({
+    onDropFiles: onAttachmentFiles,
+    isDisabled: isAttachmentUploading || isStreaming,
+  });
+
   return (
-  <div
-    ref={panelRef}
-    className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
-    style={{
-      fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      position: 'relative',
-      zIndex: 1001,
-      pointerEvents: 'auto',
-      WebkitAppRegion: 'no-drag',
-      background: resolvedPanelStyles.background,
-      borderColor: resolvedPanelStyles.borderColor,
-      borderWidth: '1px',
-      borderStyle: 'solid',
-      color: resolvedPanelStyles.textColor,
-    }}
-    data-interactive-zone="true"
-    onWheelCapture={panelWheelHandler}
-  >
+    <div
+      ref={panelRef}
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
+      style={{
+        fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        position: 'relative',
+        zIndex: 1001,
+        pointerEvents: 'auto',
+        WebkitAppRegion: 'no-drag',
+        background: resolvedPanelStyles.background,
+        borderColor: resolvedPanelStyles.borderColor,
+        borderWidth: '1px',
+        borderStyle: 'solid',
+        color: resolvedPanelStyles.textColor,
+      }}
+      data-interactive-zone="true"
+      onWheelCapture={panelWheelHandler}
+      {...attachmentDropHandlers}
+    >
     <AssistantPanelHeader
       summaryLabel={summary.label}
       keyword={node.keyword}
@@ -145,6 +194,12 @@ const NodeAssistantPanelView = ({
       panelStyles={resolvedPanelStyles}
       isDarkTheme={isDarkTheme}
     />
+
+    {slowResponseNotice && (
+      <div className="rounded-lg border border-amber-200/60 bg-amber-50/90 px-3 py-2 text-xs text-amber-700 shadow-sm">
+        {slowResponseNotice}
+      </div>
+    )}
 
     <div
       className="flex -mb-2 flex-shrink-0 flex-wrap items-center gap-2"
@@ -203,9 +258,14 @@ const NodeAssistantPanelView = ({
 
     <PromptInput
       onSubmit={handleFormSubmit}
-      className="flex-col items-stretch gap-2"
+      className={cn(
+        'relative flex-col items-stretch gap-2 transition-colors',
+        isAttachmentDragOver && 'border-dashed border-primary/60 bg-primary/10 ring-1 ring-primary/30',
+      )}
       style={{ zIndex: 1003, pointerEvents: 'auto' }}
+      {...attachmentDropHandlers}
     >
+      {isAttachmentDragOver ? <AttachmentDropOverlay /> : null}
       <input
         ref={fileInputRef}
         type="file"

@@ -5,7 +5,6 @@ const registerAppEventHandlers = ({
   handleOAuthDeepLink,
   getLogger,
   getTrayService,
-  getCaptureService,
   getOAuthServer,
   ensureMainWindowFocus,
   getMainWindow,
@@ -30,7 +29,6 @@ const registerAppEventHandlers = ({
     globalShortcut.unregisterAll();
 
     getTrayService()?.dispose();
-    getCaptureService()?.dispose?.();
     const oauthServer = getOAuthServer();
     const logger = getLogger?.();
     if (oauthServer?.teardown) {
