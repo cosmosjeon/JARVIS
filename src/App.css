@@ -62,6 +62,7 @@ body {
 .tree-canvas-header,
 .tree-canvas-header * {
   -webkit-app-region: drag;
+  z-index: 9999 !important;
 }
 
 .tree-canvas-header button,
@@ -100,6 +101,7 @@ body.widget-mode {
   -webkit-app-region: no-drag;
 }
 
+/* 기본 드래그 핸들 - 일반 모드 (전체 너비) */
 .widget-mode .App::before {
   content: '';
   position: absolute;
@@ -109,6 +111,27 @@ body.widget-mode {
   bottom: 0;
   border: 2px solid var(--widget-border-color, rgba(255, 255, 255, 0.2));
   border-radius: 12px;
+  -webkit-app-region: drag;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* 컴팩트 모드일 때 기본 핸들 숨기고 작은 핸들만 표시 */
+.widget-mode .App.bootstrap-compact::before {
+  display: none !important;
+}
+
+.widget-mode .App.bootstrap-compact::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 120px;
+  height: 40px;
+  transform: translateX(-50%);
+  border: 2px solid var(--widget-border-color, rgba(255, 255, 255, 0.2));
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
   -webkit-app-region: drag;
   pointer-events: none;
   z-index: 9999;

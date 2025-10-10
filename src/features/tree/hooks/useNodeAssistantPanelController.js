@@ -9,6 +9,7 @@ import HighlightSelectionStore from 'features/tree/services/node-assistant/Highl
 import { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
+import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -464,6 +465,7 @@ export const useNodeAssistantPanelController = ({
     }
 
     let modelInfoHint = null;
+    let reasoningConfig = null;
     if (selectedProvider === 'auto') {
       modelInfoHint = selectAutoModel({
         question: trimmed,
@@ -471,12 +473,33 @@ export const useNodeAssistantPanelController = ({
         webSearchEnabled,
         forceReasoning: reasoningEnabled,
       });
+      if (modelInfoHint?.reasoning && reasoningEnabled) {
+        reasoningConfig = {
+          provider: 'openai',
+          ...modelInfoHint.reasoning,
+        };
+      }
     } else {
-      modelInfoHint = {
+      const resolvedReasoning = resolveReasoningConfig({
         provider: selectedProvider,
         model: selectedModel,
-        ...(reasoningEnabled ? { explanation: 'Reasoning 모드 활성화' } : {}),
+        reasoningEnabled,
+        inputLength: trimmed.length,
+      });
+
+      modelInfoHint = {
+        provider: selectedProvider,
+        model: resolvedReasoning?.model || selectedModel,
       };
+
+      if (resolvedReasoning?.explanation) {
+        modelInfoHint.explanation = resolvedReasoning.explanation;
+      }
+
+      if (resolvedReasoning?.reasoning) {
+        modelInfoHint.reasoning = resolvedReasoning.reasoning;
+        reasoningConfig = resolvedReasoning.reasoning;
+      }
     }
 
     const payload = {
@@ -486,6 +509,7 @@ export const useNodeAssistantPanelController = ({
         : undefined,
       modelInfoHint,
       reasoningEnabled,
+      reasoningConfig,
     };
 
     try {

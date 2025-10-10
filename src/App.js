@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import './theme/glass.css';
 import HierarchicalForceTree from 'features/tree/ui/HierarchicalForceTree';
@@ -10,6 +10,23 @@ import SupabaseAuthGate from './components/auth/SupabaseAuthGate';
 import OAuthCallbackPage from './views/OAuthCallbackPage';
 
 function App() {
+  // URL 파라미터에서 새 트리인지 확인하여 초기값 설정
+  const isNewTree = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const isFresh = window.location.search.includes('fresh=1');
+    console.log('🔍 [App] isNewTree check:', { 
+      url: window.location.search, 
+      isFresh 
+    });
+    return isFresh;
+  }, []);
+  
+  const [isBootstrapCompact, setIsBootstrapCompact] = useState(isNewTree);
+  
+  useEffect(() => {
+    console.log('🔍 [App] isBootstrapCompact changed:', isBootstrapCompact);
+  }, [isBootstrapCompact]);
+  
   const mode = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('mode') || 'widget';
@@ -42,9 +59,9 @@ function App() {
             {mode === 'library' ? (
               <LibraryApp />
             ) : (
-              <div className="App">
+              <div className={`App ${isBootstrapCompact ? 'bootstrap-compact' : ''}`}>
                 <div className="App-content">
-                  <HierarchicalForceTree />
+                  <HierarchicalForceTree onBootstrapCompactChange={setIsBootstrapCompact} />
                 </div>
               </div>
             )}

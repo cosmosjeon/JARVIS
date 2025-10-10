@@ -158,14 +158,14 @@ const createMainWindow = ({
 
   // fresh=true (새 트리)인 경우 작은 크기로 시작
   const isNewTree = fresh === true;
-  const initialWidth = isNewTree ? 600 : 1024;
-  const initialHeight = isNewTree ? 480 : 720;
+  const initialWidth = isNewTree ? 540 : 1024;
+  const initialHeight = isNewTree ? 140 : 720;
 
   const window = new BrowserWindow({
     width: initialWidth,
     height: initialHeight,
-    minWidth: 320,
-    minHeight: 240,
+    minWidth: isNewTree ? 320 : 320,
+    minHeight: isNewTree ? 120 : 240,
     frame: false,
     transparent: windowConfig.transparent,
     backgroundColor: '#00000000',
@@ -230,14 +230,14 @@ const createWidgetWindow = ({
 
   // fresh=true (새 트리)인 경우 작은 크기로 시작
   const isNewTree = fresh === true;
-  const initialWidth = isNewTree ? 600 : 1024;
-  const initialHeight = isNewTree ? 480 : 720;
+  const initialWidth = isNewTree ? 540 : 1024;
+  const initialHeight = isNewTree ? 140 : 720;
 
   const window = new BrowserWindow({
     width: initialWidth,
     height: initialHeight,
-    minWidth: 320,
-    minHeight: 240,
+    minWidth: isNewTree ? 320 : 320,
+    minHeight: isNewTree ? 120 : 240,
     frame: false,
     transparent: windowConfig.transparent,
     backgroundColor: '#00000000',

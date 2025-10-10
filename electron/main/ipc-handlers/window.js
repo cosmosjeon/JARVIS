@@ -210,8 +210,12 @@ const registerWindowHandlers = ({
     try {
       const currentBounds = currentWindow.getBounds();
 
-      const newWidth = Math.max(width, 320);
-      const newHeight = Math.max(height, 240);
+      // 새 트리 모드인지 확인 (URL 파라미터로 판단)
+      const currentUrl = currentWindow.webContents.getURL();
+      const isNewTreeMode = currentUrl.includes('fresh=1');
+      
+      const newWidth = Math.max(width, isNewTreeMode ? 320 : 320);
+      const newHeight = Math.max(height, isNewTreeMode ? 120 : 240);
 
       // 좌상단 위치 고정, 오른쪽 아래로만 확장
       const newBounds = {

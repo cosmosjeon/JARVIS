@@ -143,6 +143,30 @@ const splitSystemAndConversation = (messages = []) => {
   };
 };
 
+const mapEffortToGeminiBudget = (effort) => {
+  switch (effort) {
+    case 'high':
+      return 2048;
+    case 'low':
+      return 256;
+    case 'medium':
+    default:
+      return 1024;
+  }
+};
+
+const mapEffortToClaudeBudget = (effort) => {
+  switch (effort) {
+    case 'high':
+      return 10000;
+    case 'low':
+      return 2000;
+    case 'medium':
+    default:
+      return 6000;
+  }
+};
+
 const mapToOpenAIContentParts = (message) => {
   const role = message.role === 'assistant' ? 'assistant' : 'user';
   const textType = role === 'assistant' ? 'output_text' : 'input_text';
@@ -461,7 +485,14 @@ const callOpenAIChat = async ({
   };
 };
 
-const callGeminiChat = async ({ messages, model, temperature, maxTokens, webSearchEnabled }) => {
+const callGeminiChat = async ({
+  messages,
+  model,
+  temperature,
+  maxTokens,
+  webSearchEnabled,
+  reasoning,
+}) => {
   const config = getFallbackConfig(PROVIDERS.GEMINI);
   const apiKey = getFallbackApiKey(PROVIDERS.GEMINI);
   if (!apiKey) {
@@ -488,6 +519,22 @@ const callGeminiChat = async ({ messages, model, temperature, maxTokens, webSear
   if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
     generationConfig.maxOutputTokens = maxTokens;
   }
+
+  if (reasoning && typeof reasoning === 'object') {
+    const thinkingConfig = {};
+    if (Number.isFinite(reasoning.thinkingBudget)) {
+      thinkingConfig.thinkingBudget = Math.round(reasoning.thinkingBudget);
+    } else if (typeof reasoning.effort === 'string') {
+      thinkingConfig.thinkingBudget = mapEffortToGeminiBudget(reasoning.effort.toLowerCase());
+    }
+    if (typeof reasoning.includeThoughts === 'boolean') {
+      thinkingConfig.includeThoughts = reasoning.includeThoughts;
+    }
+    if (Object.keys(thinkingConfig).length > 0) {
+      generationConfig.thinkingConfig = thinkingConfig;
+    }
+  }
+
   if (Object.keys(generationConfig).length > 0) {
     body.generationConfig = generationConfig;
   }
@@ -542,10 +589,18 @@ const callGeminiChat = async ({ messages, model, temperature, maxTokens, webSear
     finishReason: candidate?.finishReason || null,
     model: data.model || candidate?.model || model || config.defaultModel,
     provider: PROVIDERS.GEMINI,
+    reasoning: reasoning || null,
   };
 };
 
-const callClaudeChat = async ({ messages, model, temperature, maxTokens, webSearchEnabled }) => {
+const callClaudeChat = async ({
+  messages,
+  model,
+  temperature,
+  maxTokens,
+  webSearchEnabled,
+  reasoning,
+}) => {
   const config = getFallbackConfig(PROVIDERS.CLAUDE);
   const apiKey = getFallbackApiKey(PROVIDERS.CLAUDE);
   if (!apiKey) {
@@ -581,6 +636,23 @@ const callClaudeChat = async ({ messages, model, temperature, maxTokens, webSear
     ];
   }
 
+  if (reasoning && typeof reasoning === 'object') {
+    const budget = Number.isFinite(reasoning.budgetTokens)
+      ? Math.round(reasoning.budgetTokens)
+      : mapEffortToClaudeBudget(
+        typeof reasoning.effort === 'string' ? reasoning.effort.toLowerCase() : 'medium',
+      );
+    if (Number.isFinite(budget) && budget > 0) {
+      body.thinking = {
+        type: 'enabled',
+        budget_tokens: Math.max(1000, Math.min(12000, budget)),
+      };
+      if (typeof reasoning.includeThoughts === 'boolean') {
+        body.thinking.include_thoughts = reasoning.includeThoughts;
+      }
+    }
+  }
+
   const response = await fetch(config.baseUrl, {
     method: 'POST',
     headers: {
@@ -612,6 +684,28 @@ const callClaudeChat = async ({ messages, model, temperature, maxTokens, webSear
     throw buildRequestFailedError({ error: { message: 'Claude 응답이 비어 있습니다.' } });
   }
 
+  const thinkingBlocks = Array.isArray(data.content)
+    ? data.content.filter((block) => block && block.type === 'thinking')
+    : [];
+  const combinedThinking = thinkingBlocks
+    .map((block) => (typeof block.thinking === 'string' ? block.thinking.trim() : ''))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
+  const reasoningPayload = (() => {
+    if (combinedThinking) {
+      return {
+        config: reasoning || null,
+        thinking: combinedThinking,
+      };
+    }
+    if (reasoning) {
+      return { config: reasoning };
+    }
+    return null;
+  })();
+
   return {
     success: true,
     answer,
@@ -619,6 +713,7 @@ const callClaudeChat = async ({ messages, model, temperature, maxTokens, webSear
     finishReason: data.stop_reason || null,
     model: data.model || body.model,
     provider: PROVIDERS.CLAUDE,
+    reasoning: reasoningPayload,
   };
 };
 

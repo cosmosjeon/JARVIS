@@ -24,6 +24,7 @@ import {
 } from 'shared/ui/shadcn-io/ai/prompt-input';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
+import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import {
   DEFAULT_AGENT_RESPONSE_TIMEOUT_MS,
   LONG_RESPONSE_NOTICE_DELAY_MS,
@@ -333,6 +334,18 @@ const LibraryQAPanel = ({
       forceReasoning: reasoningEnabled,
     });
   }, [attachments, composerValue, reasoningEnabled, selectedProvider, webSearchEnabled]);
+
+  const manualReasoningPreview = useMemo(() => {
+    if (selectedProvider === 'auto') {
+      return null;
+    }
+    return resolveReasoningConfig({
+      provider: selectedProvider,
+      model: selectedModel,
+      reasoningEnabled,
+      inputLength: composerValue?.length || 0,
+    });
+  }, [composerValue?.length, reasoningEnabled, selectedModel, selectedProvider]);
 
   useEffect(() => {
     if (!isProcessing) {
@@ -670,8 +683,14 @@ const LibraryQAPanel = ({
 
   // LLM API 호출
   const invokeAgent = useCallback(async (channel, payload = {}) => {
+    const {
+      reasoningConfig,
+      reasoningEnabled: payloadReasoningEnabled,
+      ...restPayload
+    } = payload;
+
     const requestPayload = {
-      ...payload,
+      ...restPayload,
       provider: selectedProvider,
       webSearchEnabled,
     };
@@ -680,8 +699,8 @@ const LibraryQAPanel = ({
       requestPayload.model = selectedModel;
     }
 
-    if (payload.autoSelectionHint && selectedProvider === 'auto') {
-      requestPayload.autoSelectionHint = payload.autoSelectionHint;
+    if (restPayload.autoSelectionHint && selectedProvider === 'auto') {
+      requestPayload.autoSelectionHint = restPayload.autoSelectionHint;
     }
 
     const hasPreferredTemperature = typeof preferredTemperature === 'number' && Number.isFinite(preferredTemperature);
@@ -691,19 +710,55 @@ const LibraryQAPanel = ({
 
     const providerId = (requestPayload.provider || '').toLowerCase();
     const modelId = typeof requestPayload.model === 'string' ? requestPayload.model.toLowerCase() : '';
-    if (reasoningEnabled) {
-      if (providerId === 'auto' || (providerId === 'openai' && modelId.startsWith('gpt-5'))) {
+    const shouldEnableReasoning = payloadReasoningEnabled ?? reasoningEnabled;
+    let appliedReasoning = reasoningConfig || null;
+
+    if (shouldEnableReasoning) {
+      if (providerId === 'auto') {
+        requestPayload.reasoningEnabled = true;
+        if (appliedReasoning && !requestPayload.reasoning) {
+          requestPayload.reasoning = appliedReasoning;
+        }
+      } else if (providerId === 'openai' && modelId.startsWith('gpt-5')) {
         if (!requestPayload.reasoning) {
-          requestPayload.reasoning = { effort: modelId.includes('high') || composerValue.length > 800 ? 'high' : 'medium' };
+          const effort = appliedReasoning?.effort || (modelId.includes('high') ? 'high' : 'medium');
+          requestPayload.reasoning = {
+            provider: 'openai',
+            effort,
+          };
         }
         requestPayload.reasoningEnabled = true;
+      } else {
+        const resolved = appliedReasoning
+          ? { model: requestPayload.model, reasoning: appliedReasoning }
+          : resolveReasoningConfig({
+            provider: providerId,
+            model: requestPayload.model,
+            reasoningEnabled: true,
+            inputLength: typeof restPayload.question === 'string' ? restPayload.question.length : 0,
+          });
+
+        if (resolved?.model && resolved.model !== requestPayload.model) {
+          requestPayload.model = resolved.model;
+        }
+
+        if (resolved?.reasoning && !requestPayload.reasoning) {
+          requestPayload.reasoning = resolved.reasoning;
+        }
+
+        if (requestPayload.reasoning) {
+          requestPayload.reasoningEnabled = true;
+        }
       }
+    } else if (appliedReasoning) {
+      requestPayload.reasoning = appliedReasoning;
+      requestPayload.reasoningEnabled = true;
     }
 
     if (channel === 'askRoot') return AgentClient.askRoot(requestPayload);
     if (channel === 'askChild') return AgentClient.askChild(requestPayload);
     throw new Error(`지원하지 않는 채널: ${channel}`);
-  }, [composerValue.length, preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
+  }, [preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
 
   // 답변 생성 및 타이핑 애니메이션
   const animateAssistantResponse = useCallback((assistantId, answerText, context = {}) => {
@@ -910,12 +965,32 @@ const LibraryQAPanel = ({
       })
       : null;
 
+    const manualReasoning = selectedProvider !== 'auto'
+      ? resolveReasoningConfig({
+        provider: selectedProvider,
+        model: selectedModel,
+        reasoningEnabled,
+        inputLength: question.length,
+      })
+      : null;
+
+    const appliedReasoningConfig = selectedProvider === 'auto'
+      ? (reasoningEnabled && activeAutoSelection?.reasoning
+        ? { provider: 'openai', ...activeAutoSelection.reasoning }
+        : null)
+      : manualReasoning?.reasoning || null;
+
     const pendingModelInfo = activeAutoSelection
       || (selectedProvider !== 'auto'
         ? {
           provider: selectedProvider,
-          model: selectedModel,
-          ...(reasoningEnabled ? { explanation: 'Reasoning 모드 활성화' } : {}),
+          model: manualReasoning?.model || selectedModel,
+          ...(manualReasoning?.explanation
+            ? { explanation: manualReasoning.explanation }
+            : reasoningEnabled
+              ? { explanation: 'Reasoning 모드 활성화' }
+              : {}),
+          ...(manualReasoning?.reasoning ? { reasoning: manualReasoning.reasoning } : {}),
         }
         : null);
 
@@ -1069,6 +1144,9 @@ const LibraryQAPanel = ({
             messages: openaiMessages,
             attachments: hasAttachments ? sanitizedAttachments : undefined,
             autoSelectionHint: selectedProvider === 'auto' ? activeAutoSelection : undefined,
+            reasoningConfig: appliedReasoningConfig || undefined,
+            reasoningEnabled,
+            question,
           }),
           AGENT_RESPONSE_TIMEOUT_MS,
         );
@@ -1090,7 +1168,7 @@ const LibraryQAPanel = ({
         animateAssistantResponse(assistantId, answerText, {
           provider: response.provider,
           model: response.model,
-          reasoning: response.reasoning,
+          reasoning: response.reasoning || appliedReasoningConfig,
           autoSelection: response.autoSelection || activeAutoSelection,
           usage: response.usage,
           latencyMs: response.latencyMs,
@@ -1226,6 +1304,9 @@ const LibraryQAPanel = ({
           messages: openaiMessages,
           attachments: hasAttachments ? sanitizedAttachments : undefined,
           autoSelectionHint: selectedProvider === 'auto' ? activeAutoSelection : undefined,
+          reasoningConfig: appliedReasoningConfig || undefined,
+          reasoningEnabled,
+          question,
         }),
         AGENT_RESPONSE_TIMEOUT_MS,
       );
@@ -1247,7 +1328,7 @@ const LibraryQAPanel = ({
       animateAssistantResponse(assistantId, answerText, {
         provider: response.provider,
         model: response.model,
-        reasoning: response.reasoning,
+        reasoning: response.reasoning || appliedReasoningConfig,
         autoSelection: response.autoSelection || activeAutoSelection,
         usage: response.usage,
         latencyMs: response.latencyMs,
@@ -1717,7 +1798,8 @@ const LibraryQAPanel = ({
                   <span>
                     현재: {(() => {
                       const providerLabel = formatProviderLabel(selectedProvider);
-                      const modelLabel = formatModelLabel(selectedModel);
+                      const effectiveModel = manualReasoningPreview?.model || selectedModel;
+                      const modelLabel = formatModelLabel(effectiveModel);
                       const parts = [providerLabel, modelLabel].filter(Boolean);
                       return parts.length ? parts.join(' · ') : '모델 미지정';
                     })()}
@@ -1737,9 +1819,9 @@ const LibraryQAPanel = ({
                       {lastAutoSelection.explanation}
                     </span>
                   ) : null}
-                  {reasoningEnabled && selectedProvider !== 'auto' && (!selectedModel || !selectedModel.toLowerCase().startsWith('gpt-5')) ? (
+                  {reasoningEnabled && manualReasoningPreview?.explanation ? (
                     <span className="text-muted-foreground/60">
-                      Reasoning은 GPT-5에서만 활성화됩니다.
+                      {manualReasoningPreview.explanation}
                     </span>
                   ) : null}
                 </div>

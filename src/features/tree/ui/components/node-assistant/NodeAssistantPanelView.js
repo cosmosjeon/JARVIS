@@ -21,6 +21,7 @@ import {
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
 import { Globe, Paperclip, Lightbulb } from 'lucide-react';
+import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 
 const MODEL_LABELS = {
   'gpt-5': 'GPT-5',
@@ -72,6 +73,7 @@ const NodeAssistantPanelView = ({
   summary,
   node,
   bootstrapMode,
+  isBootstrapCompact = false,
   disableNavigation,
   onCloseNode,
   onPanZoomGesture,
@@ -121,6 +123,18 @@ const NodeAssistantPanelView = ({
     }),
     [panelStyles],
   );
+
+  const manualReasoningPreview = useMemo(() => {
+    if (selectedProvider === 'auto') {
+      return null;
+    }
+    return resolveReasoningConfig({
+      provider: selectedProvider,
+      model: selectedModel,
+      reasoningEnabled,
+      inputLength: composerValue?.length || 0,
+    });
+  }, [composerValue?.length, reasoningEnabled, selectedModel, selectedProvider]);
 
   const subtleTextColor = resolvedPanelStyles.subtleTextColor;
   const isDarkTheme = theme === 'dark';
@@ -188,16 +202,19 @@ const NodeAssistantPanelView = ({
   return (
     <div
       ref={panelRef}
-      className="relative flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden rounded-2xl p-6 backdrop-blur-3xl"
+      className={cn(
+        "relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden backdrop-blur-3xl",
+        isBootstrapCompact ? "gap-0 p-0 rounded-none" : "gap-3 p-6 rounded-2xl"
+      )}
       style={{
         fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         position: 'relative',
         zIndex: 1001,
         pointerEvents: 'auto',
         WebkitAppRegion: 'no-drag',
-        background: resolvedPanelStyles.background,
-        borderColor: resolvedPanelStyles.borderColor,
-        borderWidth: '1px',
+        background: isBootstrapCompact ? 'transparent' : resolvedPanelStyles.background,
+        borderColor: isBootstrapCompact ? 'transparent' : resolvedPanelStyles.borderColor,
+        borderWidth: isBootstrapCompact ? '0' : '1px',
         borderStyle: 'solid',
         color: resolvedPanelStyles.textColor,
       }}
@@ -205,41 +222,45 @@ const NodeAssistantPanelView = ({
       onWheelCapture={panelWheelHandler}
       {...attachmentDropHandlers}
     >
-      <AssistantPanelHeader
-        summaryLabel={summary.label}
-        keyword={node.keyword}
-        nodeId={node.id}
-        disableNavigation={disableNavigation}
-        panelStyles={resolvedPanelStyles}
-        theme={theme}
-        bootstrapMode={bootstrapMode}
-        onClose={onCloseNode}
-        onPanZoomGesture={onPanZoomGesture}
-        showCloseButton={showHeaderControls}
-      />
+      {!isBootstrapCompact && (
+        <>
+          <AssistantPanelHeader
+            summaryLabel={summary.label}
+            keyword={node.keyword}
+            nodeId={node.id}
+            disableNavigation={disableNavigation}
+            panelStyles={resolvedPanelStyles}
+            theme={theme}
+            bootstrapMode={bootstrapMode}
+            onClose={onCloseNode}
+            onPanZoomGesture={onPanZoomGesture}
+            showCloseButton={showHeaderControls}
+          />
 
-      <ChatMessageList
-        title="Assistant"
-        messages={messages}
-        onRetry={handleRetryMessage}
-        onCopy={handleCopyMessage}
-        panelStyles={resolvedPanelStyles}
-        theme={theme}
-        className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
-        onContainerRef={registerMessageContainer}
-        assistantMessageMaxWidth={560}
-        userBubbleMaxWidth={280}
-        retryingMessageMap={spinningMap}
-        isScrollable={false}
-      />
+          <ChatMessageList
+            title="Assistant"
+            messages={messages}
+            onRetry={handleRetryMessage}
+            onCopy={handleCopyMessage}
+            panelStyles={resolvedPanelStyles}
+            theme={theme}
+            className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
+            onContainerRef={registerMessageContainer}
+            assistantMessageMaxWidth={560}
+            userBubbleMaxWidth={280}
+            retryingMessageMap={spinningMap}
+            isScrollable={false}
+          />
 
-      <ChatAttachmentPreviewList
-        attachments={attachments}
-        onRemove={onAttachmentRemove}
-        onClear={onClearAttachments}
-        panelStyles={resolvedPanelStyles}
-        isDarkTheme={isDarkTheme}
-      />
+          <ChatAttachmentPreviewList
+            attachments={attachments}
+            onRemove={onAttachmentRemove}
+            onClear={onClearAttachments}
+            panelStyles={resolvedPanelStyles}
+            isDarkTheme={isDarkTheme}
+          />
+        </>
+      )}
 
       {slowResponseNotice && (
         <div className="rounded-lg border border-amber-200/60 bg-amber-50/90 px-3 py-2 text-xs text-amber-700 shadow-sm">
@@ -267,72 +288,66 @@ const NodeAssistantPanelView = ({
         />
 
         <PromptInputToolbar className="flex items-center justify-between px-1 gap-2">
-          <ProviderDropdown
-            options={providerOptions}
-            value={selectedProvider}
-            onChange={setSelectedProvider}
-            disabled={isAttachmentUploading || isStreaming}
-            align="start"
-          />
+          <div className="flex items-center gap-2">
+            <ProviderDropdown
+              options={providerOptions}
+              value={selectedProvider}
+              onChange={setSelectedProvider}
+              disabled={isAttachmentUploading || isStreaming}
+              align="start"
+            />
+          </div>
           <div className="flex flex-1 items-center justify-end gap-2">
-            {selectedProvider === 'auto' ? (
-              <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
-                <span>
-                  {autoSelectionPreview
-                    ? (() => {
-                      const providerLabel = formatProviderLabel(autoSelectionPreview.provider);
-                      const modelLabel = formatModelLabel(autoSelectionPreview.model);
-                      const parts = [providerLabel, modelLabel].filter(Boolean);
-                      return parts.length ? `자동: ${parts.join(' · ')}` : '자동 모델 평가 중';
-                    })()
-                    : '자동 모델 평가 중'}
-                </span>
-                {autoSelectionPreview?.explanation ? (
-                  <span className="text-muted-foreground/70">
-                    {autoSelectionPreview.explanation}
-                  </span>
-                ) : null}
-              </div>
-            ) : (
-              <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
-                <span>
-                  현재: {(() => {
+            <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-gray-600">
+              <span>
+                {selectedProvider === 'auto'
+                  ? (
+                    autoSelectionPreview
+                      ? (() => {
+                        const providerLabel = formatProviderLabel(autoSelectionPreview.provider);
+                        const modelLabel = formatModelLabel(autoSelectionPreview.model);
+                        const parts = [providerLabel, modelLabel].filter(Boolean);
+                        return parts.length ? `자동: ${parts.join(' · ')}` : '자동 모델 평가 중';
+                      })()
+                      : '자동 모델 평가 중'
+                  )
+                  : (() => {
                     const providerLabel = formatProviderLabel(selectedProvider);
-                    const modelLabel = formatModelLabel(selectedModel);
+                    const effectiveModel = manualReasoningPreview?.model || selectedModel;
+                    const modelLabel = formatModelLabel(effectiveModel);
                     const parts = [providerLabel, modelLabel].filter(Boolean);
-                    return parts.length ? parts.join(' · ') : '모델 미지정';
+                    return parts.length ? `현재: ${parts.join(' · ')}` : '모델 미지정';
+                  })()}
+              </span>
+              {selectedProvider === 'auto' && autoSelectionPreview?.explanation && (
+                <span className="text-gray-500">
+                  {autoSelectionPreview.explanation}
+                </span>
+              )}
+              {selectedProvider !== 'auto' && reasoningEnabled && manualReasoningPreview?.explanation && (
+                <span className="text-gray-500">
+                  {manualReasoningPreview.explanation}
+                </span>
+              )}
+              {selectedProvider !== 'auto' && lastAutoSelection && (
+                <span className="text-gray-500">
+                  최근 자동 선택: {(() => {
+                    const providerLabel = formatProviderLabel(lastAutoSelection.provider);
+                    const modelLabel = formatModelLabel(lastAutoSelection.model);
+                    const parts = [providerLabel, modelLabel].filter(Boolean);
+                    return parts.join(' · ');
                   })()}
                 </span>
-                {lastAutoSelection ? (
-                  <span className="text-muted-foreground/70">
-                    최근 자동 선택: {(() => {
-                      const providerLabel = formatProviderLabel(lastAutoSelection.provider);
-                      const modelLabel = formatModelLabel(lastAutoSelection.model);
-                      const parts = [providerLabel, modelLabel].filter(Boolean);
-                      return parts.join(' · ');
-                    })()}
-                  </span>
-                ) : null}
-                {lastAutoSelection?.explanation ? (
-                  <span className="text-muted-foreground/60">
-                    {lastAutoSelection.explanation}
-                  </span>
-                ) : null}
-                {reasoningEnabled && selectedProvider !== 'auto' && (!selectedModel || !selectedModel.toLowerCase().startsWith('gpt-5')) ? (
-                  <span className="text-muted-foreground/60">
-                    Reasoning은 GPT-5에서만 활성화됩니다.
-                  </span>
-                ) : null}
-              </div>
-            )}
-            <div className="flex items-center gap-1">
+              )}
+            </div>
+            <div className="flex items-center gap-2">
               <PromptInputButton
                 onClick={() => setReasoningEnabled(!reasoningEnabled)}
-                variant={reasoningEnabled ? 'secondary' : 'ghost'}
+                variant="ghost"
                 disabled={isAttachmentUploading || isStreaming}
                 className={cn(
-                  'rounded-full px-2',
-                  reasoningEnabled ? 'text-foreground' : 'text-muted-foreground',
+                  'rounded-full p-2 hover:bg-gray-100',
+                  reasoningEnabled ? 'text-blue-600' : 'text-gray-500',
                 )}
                 aria-label="Reasoning 모드 토글"
               >
@@ -340,11 +355,11 @@ const NodeAssistantPanelView = ({
               </PromptInputButton>
               <PromptInputButton
                 onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                variant={webSearchEnabled ? 'secondary' : 'ghost'}
+                variant="ghost"
                 disabled={isAttachmentUploading || isStreaming}
                 className={cn(
-                  'rounded-full px-2',
-                  webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
+                  'rounded-full p-2 hover:bg-gray-100',
+                  webSearchEnabled ? 'text-blue-600' : 'text-gray-500',
                 )}
                 aria-label="웹 검색 토글"
               >
@@ -354,6 +369,7 @@ const NodeAssistantPanelView = ({
                 onClick={handleAttachmentButtonClick}
                 disabled={isAttachmentUploading || isStreaming}
                 variant="ghost"
+                className="rounded-full p-2 hover:bg-gray-100 text-gray-500"
                 aria-label="이미지 첨부"
               >
                 <Paperclip className="h-4 w-4" />
@@ -371,7 +387,7 @@ const NodeAssistantPanelView = ({
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
             onPaste={onComposerPaste}
-            placeholder="Ask anything..."
+            placeholder={isBootstrapCompact ? "질문을 입력하세요... (Enter로 전송)" : "질문을 입력하세요... (Enter로 전송)"}
             autoComplete="off"
             autoFocus={false}
             spellCheck={false}

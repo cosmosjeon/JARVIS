@@ -33,6 +33,7 @@ import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
 import AgentClient from 'infrastructure/ai/agentClient';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import { useTreeState } from 'features/tree/state/useTreeState';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from 'features/tree/services/treeCreation';
 import {
@@ -59,7 +60,7 @@ const TIDY_ASSISTANT_PANEL_MIN_WIDTH = 360;
 const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
 const TIDY_ASSISTANT_PANEL_GAP = 0;
 
-const HierarchicalForceTree = () => {
+const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const { user } = useSupabaseAuth();
   const {
     loadTrees,
@@ -399,8 +400,17 @@ const HierarchicalForceTree = () => {
   const isIgnoringMouseRef = useRef(false);
   const treeSyncDebounceRef = useRef(null);
   const [showBootstrapChat, setShowBootstrapChat] = useState(false);
-  const [bootstrapChatHeight, setBootstrapChatHeight] = useState(400); // 초기 400, 확장 후 600
-  const [bootstrapChatTop, setBootstrapChatTop] = useState('55%'); // 초기 55%, 확장 후 조절 가능
+  const [bootstrapChatHeight, setBootstrapChatHeight] = useState(100); // 초기 100px (입력창), 확장 후 600
+  const [bootstrapChatTop, setBootstrapChatTop] = useState('50%'); // 초기 50% (화면 중앙)
+  const [isBootstrapCompact, setIsBootstrapCompact] = useState(true); // 컴팩트 모드 상태
+  
+  // 컴팩트 모드 상태 변화를 부모 컴포넌트에 전달
+  useEffect(() => {
+    console.log('🔍 [HierarchicalForceTree] isBootstrapCompact changed:', isBootstrapCompact);
+    if (onBootstrapCompactChange) {
+      onBootstrapCompactChange(isBootstrapCompact);
+    }
+  }, [isBootstrapCompact, onBootstrapCompactChange]);
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
   const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
   const [isTidyPanelResizing, setIsTidyPanelResizing] = useState(false);
@@ -925,11 +935,52 @@ const HierarchicalForceTree = () => {
     const isEmpty = !Array.isArray(data.nodes) || data.nodes.length === 0;
     setShowBootstrapChat(isEmpty);
 
-    if (isEmpty) {
+    // URL 파라미터에서 새 트리인지 확인
+    const isNewTree = typeof window !== 'undefined' && 
+                      window.location.search.includes('fresh=1');
+    
+    console.log('🔍 [HierarchicalForceTree] Tree state:', { 
+      isEmpty, 
+      isNewTree, 
+      nodeCount: data.nodes?.length,
+      url: typeof window !== 'undefined' ? window.location.search : 'N/A'
+    });
+
+    if (isEmpty && isNewTree) {
+      // 새로 생성된 빈 트리인 경우에만 컴팩트 모드
       setSelectedNodeId(null);
       setExpandedNodeId(null);
+      setIsBootstrapCompact(true);
+      
+      // 컴팩트 모드에 맞는 작은 창 크기로 설정 (입력창에 딱 맞게)
+      if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
+        window.jarvisAPI.windowControls.resize(540, 100, true)
+          .then(result => {
+            console.log('✅ Window resized to compact mode for new tree:', result);
+          })
+          .catch(err => console.error('❌ Window resize failed:', err));
+      }
+      
+      ensureBootstrap();
+    } else if (isEmpty) {
+      // 기존 트리이지만 빈 상태인 경우 (노드가 삭제된 경우 등)
+      setSelectedNodeId(null);
+      setExpandedNodeId(null);
+      setIsBootstrapCompact(false); // 기존 트리는 컴팩트 모드 비활성화
+      
+      // 기존 트리는 원래 크기로 설정
+      if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
+        window.jarvisAPI.windowControls.resize(1024, 720, true)
+          .then(result => {
+            console.log('✅ Window resized to normal size for existing tree:', result);
+          })
+          .catch(err => console.error('❌ Window resize failed:', err));
+      }
+      
       ensureBootstrap();
     } else {
+      // 노드가 있는 트리
+      setIsBootstrapCompact(false);
       clearBootstrap();
     }
   }, [data.nodes, ensureBootstrap, clearBootstrap]);
@@ -990,8 +1041,14 @@ const HierarchicalForceTree = () => {
   ), [getConversation, parentByChild]);
 
   const invokeAgent = useCallback(async (channel, payload = {}) => {
+    const {
+      reasoningConfig,
+      reasoningEnabled: payloadReasoningEnabled,
+      ...restPayload
+    } = payload;
+
     const requestPayload = {
-      ...payload,
+      ...restPayload,
       provider: selectedProvider,
       webSearchEnabled,
     };
@@ -1007,20 +1064,63 @@ const HierarchicalForceTree = () => {
 
     const providerId = (requestPayload.provider || '').toLowerCase();
     const modelId = typeof requestPayload.model === 'string' ? requestPayload.model.toLowerCase() : '';
-    if (reasoningEnabled) {
-      if (providerId === 'auto' || (providerId === 'openai' && modelId.startsWith('gpt-5'))) {
+    const shouldEnableReasoning = payloadReasoningEnabled ?? reasoningEnabled;
+    let appliedReasoning = reasoningConfig || null;
+
+    if (shouldEnableReasoning) {
+      if (providerId === 'auto') {
+        requestPayload.reasoningEnabled = true;
+        if (appliedReasoning && !requestPayload.reasoning) {
+          requestPayload.reasoning = appliedReasoning;
+        }
+      } else if (providerId === 'openai' && modelId.startsWith('gpt-5')) {
         if (!requestPayload.reasoning) {
-          requestPayload.reasoning = { effort: modelId.includes('high') ? 'high' : 'medium' };
+          const effort = appliedReasoning?.effort || (modelId.includes('high') ? 'high' : 'medium');
+          requestPayload.reasoning = {
+            provider: 'openai',
+            effort,
+          };
         }
         requestPayload.reasoningEnabled = true;
+      } else {
+        const resolved = appliedReasoning
+          ? { model: requestPayload.model, reasoning: appliedReasoning }
+          : resolveReasoningConfig({
+            provider: providerId,
+            model: requestPayload.model,
+            reasoningEnabled: true,
+            inputLength: typeof restPayload.question === 'string' ? restPayload.question.length : 0,
+          });
+
+        if (resolved?.model && resolved.model !== requestPayload.model) {
+          requestPayload.model = resolved.model;
+        }
+
+        if (resolved?.reasoning && !requestPayload.reasoning) {
+          requestPayload.reasoning = resolved.reasoning;
+        }
+
+        if (requestPayload.reasoning) {
+          requestPayload.reasoningEnabled = true;
+        }
       }
+    } else if (appliedReasoning) {
+      requestPayload.reasoning = appliedReasoning;
+      requestPayload.reasoningEnabled = true;
     }
 
     return AgentClient.request(channel, requestPayload);
   }, [preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
 
   const handleRequestAnswer = useCallback(
-    async ({ node: targetNode, question, isRootNode, autoSelectionHint }) => {
+    async ({
+      node: targetNode,
+      question,
+      isRootNode,
+      autoSelectionHint,
+      reasoningEnabled: callReasoningEnabled,
+      reasoningConfig,
+    }) => {
       const trimmedQuestion = (question || '').trim();
       if (!trimmedQuestion) {
         throw new Error('질문이 비어있습니다.');
@@ -1106,11 +1206,13 @@ const HierarchicalForceTree = () => {
       const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', {
         ...payload,
         autoSelectionHint,
+        reasoningConfig,
+        reasoningEnabled: callReasoningEnabled ?? reasoningEnabled,
       });
 
       return response;
     },
-    [buildContextMessages, invokeAgent],
+    [buildContextMessages, invokeAgent, reasoningEnabled],
   );
 
   const handleBootstrapSubmit = useCallback(async (text, attachments = []) => {
@@ -1121,16 +1223,27 @@ const HierarchicalForceTree = () => {
 
     const timestamp = Date.now();
 
-    // 윈도우를 부드럽게 확장 (600x480 → 1024x720)
-    if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
+    // URL 파라미터에서 새 트리인지 확인
+    const isNewTree = typeof window !== 'undefined' && 
+                      window.location.search.includes('fresh=1');
+
+    // 컴팩트 모드 해제
+    setIsBootstrapCompact(false);
+    
+    // 새 트리인 경우에만 윈도우를 확장 (작은 크기 → 1024x720)
+    if (isNewTree && typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
       window.jarvisAPI.windowControls.resize(1024, 720, true)
         .then(result => {
-          console.log('✅ Window resized:', result);
+          console.log('✅ Window resized from compact to normal for new tree:', result);
           // 채팅창 높이 & 위치 변경
-          setBootstrapChatHeight(645);  // 400 → 600
-          setBootstrapChatTop('54%');   // 55% → 50% (더 위로)
+          setBootstrapChatHeight(600);  // 120 → 600
+          setBootstrapChatTop('50%');   // 중앙 유지
         })
         .catch(err => console.error('❌ Window resize failed:', err));
+    } else {
+      // 기존 트리이거나 window.jarvisAPI가 없는 경우에도 채팅창 확장
+      setBootstrapChatHeight(600);
+      setBootstrapChatTop('50%');
     }
 
     setConversationForNode('__bootstrap__', [
@@ -2596,12 +2709,13 @@ const HierarchicalForceTree = () => {
         <div
           className="pointer-events-none absolute"
           style={{
-            left: '50%',
-            top: bootstrapChatTop,
-            transform: 'translate(-50%, -50%)',
-            width: 560,
-            height: bootstrapChatHeight,
+            left: isBootstrapCompact ? '0' : '50%',
+            top: isBootstrapCompact ? '0' : bootstrapChatTop,
+            transform: isBootstrapCompact ? 'none' : 'translate(-50%, -50%)',
+            width: isBootstrapCompact ? '100%' : 560,
+            height: isBootstrapCompact ? '100%' : bootstrapChatHeight,
             zIndex: 1000,
+            transition: 'all 0.3s ease-in-out',
           }}
           data-interactive-zone="true"
         >
@@ -2619,6 +2733,7 @@ const HierarchicalForceTree = () => {
               nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
               isRootNode={true}
               bootstrapMode={true}
+              isBootstrapCompact={isBootstrapCompact}
               onBootstrapFirstSend={handleBootstrapSubmit}
               onPanZoomGesture={forwardPanZoomGesture}
               nodeScaleFactor={nodeScaleFactor}

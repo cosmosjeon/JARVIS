@@ -179,6 +179,7 @@ export const useNodeAssistantConversation = ({
     attachments = [],
     modelInfoHint = null,
     reasoningEnabled = false,
+    reasoningConfig = null,
   } = {}) => {
     clearTypingTimers();
 
@@ -269,6 +270,7 @@ export const useNodeAssistantConversation = ({
             shouldCreateChild: false,
             autoSelectionHint: modelInfoHint,
             reasoningEnabled,
+            reasoningConfig,
           });
           answerText = result?.answer ?? '';
           metadata = result || {};
@@ -337,6 +339,7 @@ export const useNodeAssistantConversation = ({
       : [];
     const reasoningEnabledFlag = Boolean(payload.reasoningEnabled);
     const modelInfoHint = payload.modelInfoHint || null;
+    const reasoningConfig = payload.reasoningConfig || null;
 
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) {
@@ -388,7 +391,12 @@ export const useNodeAssistantConversation = ({
       }
     }
 
-    await sendResponse(trimmed, { attachments, modelInfoHint, reasoningEnabled: reasoningEnabledFlag });
+    await sendResponse(trimmed, {
+      attachments,
+      modelInfoHint,
+      reasoningEnabled: reasoningEnabledFlag,
+      reasoningConfig,
+    });
   }, [bootstrapMode, messages, onBootstrapFirstSend, sendResponse]);
 
   useEffect(() => {

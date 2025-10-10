@@ -6,7 +6,7 @@ import { Loader2, Send, Square, X } from 'lucide-react';
 export const PromptInput = ({ className, ...props }) => (
   <form
     className={cn(
-      'w-full flex items-end gap-2 overflow-hidden rounded-xl border bg-background/80 backdrop-blur-sm shadow-lg p-2',
+      'w-full h-full flex items-end gap-2 overflow-hidden rounded-xl border bg-background/80 backdrop-blur-sm shadow-lg p-2',
       className
     )}
     style={{
