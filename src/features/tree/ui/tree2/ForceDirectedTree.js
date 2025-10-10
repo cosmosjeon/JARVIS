@@ -11,6 +11,7 @@ import QuestionService from 'features/tree/services/QuestionService';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
 import { motion, useAnimationControls } from 'framer-motion';
+import { useSettings } from 'shared/hooks/SettingsContext';
 import NodeContextMenu from 'features/tree/ui/components/NodeContextMenu';
 
 const DEFAULT_DIMENSIONS = { width: 954, height: 954 };

@@ -17,6 +17,11 @@ const VIRTUAL_ROOT_ID = '__virtual_root__';
 const DEFAULT_TREE_KEY = '__default_tree__';
 const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
 const DARK_LIKE_THEMES = new Set(["dark", "glass"]);
+
+// Assistant panel sizing heuristic (should mirror HierarchicalForceTree)
+const TIDY_ASSISTANT_PANEL_RATIO = 0.38;
+const TIDY_ASSISTANT_PANEL_MIN_WIDTH = 360;
+const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
 const normalizeThemeKey = (value) => {
   if (typeof value !== "string") {
     return "light";
@@ -404,6 +409,29 @@ const TidyTreeView = ({
     const clampedOffset = Math.min(Math.max(baseOffset, 260), 620);
     const verticalOffset = -clampedOffset;
 
+    // Horizontal offset: keep focused node away from the right-side assistant panel.
+    // Position target around 32% of viewport width by default, and ensure it
+    // never crosses into the panel area when the panel is open.
+    const viewportWidth = Number.isFinite(viewportDimensions?.width) ? viewportDimensions.width : 0;
+    const baseOffsetX = viewportWidth ? viewportWidth * 0.18 : 180;
+    const clampedOffsetX = Math.min(Math.max(baseOffsetX, 120), 320);
+    const defaultTargetX = viewportWidth > 0 ? (viewportWidth / 2) - clampedOffsetX : 0; // 32% position
+
+    let reservedRight = 0;
+    if (isChatPanelOpen && viewportWidth > 0) {
+      const ideal = viewportWidth * TIDY_ASSISTANT_PANEL_RATIO;
+      reservedRight = Math.min(
+        Math.max(ideal, TIDY_ASSISTANT_PANEL_MIN_WIDTH),
+        TIDY_ASSISTANT_PANEL_MAX_WIDTH,
+      );
+      reservedRight = Math.min(reservedRight, Math.max(0, viewportWidth - 160));
+    }
+    const safeRightEdge = viewportWidth > 0 ? (viewportWidth - reservedRight - 40) : 0; // margin
+    const targetX = viewportWidth > 0
+      ? Math.min(defaultTargetX, safeRightEdge)
+      : defaultTargetX;
+    const horizontalOffset = viewportWidth > 0 ? (targetX - viewportWidth / 2) : -clampedOffsetX;
+
     if (process.env.NODE_ENV !== "production") {
       const debugNode = layoutNode?.data ?? null;
       const logPayload = {
@@ -465,7 +493,7 @@ const TidyTreeView = ({
       setViewTransform,
       duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
       scale: Number.isFinite(options.scale) ? options.scale : targetScale,
-      offset: { x: 0, y: verticalOffset },
+      offset: { x: horizontalOffset, y: verticalOffset },
       allowScaleOverride: false,
     }).catch(() => undefined);
   }, [
@@ -1128,10 +1156,13 @@ const TidyTreeView = ({
               const interactiveRadius = baseRadius + 3;
               const labelSpacing = 8;
               const textWidth = Math.max(0, measuredWidth);
-              const leftExtent = hasChildren
+              // When assistant panel is open, place even leaf labels on the left
+              // to avoid clipping under the right-side panel.
+              const placeLabelOnLeft = hasChildren || isChatPanelOpen;
+              const leftExtent = placeLabelOnLeft
                 ? -(textWidth + labelSpacing + interactiveRadius)
                 : -interactiveRadius;
-              const rightExtent = hasChildren
+              const rightExtent = placeLabelOnLeft
                 ? interactiveRadius
                 : textWidth + labelSpacing + interactiveRadius;
               const hitboxWidth = Math.max(interactiveRadius * 2, rightExtent - leftExtent);
@@ -1231,8 +1262,8 @@ const TidyTreeView = ({
                   />
                   <text
                     dy="0.31em"
-                    x={hasChildren ? -8 : 8}
-                    textAnchor={hasChildren ? "end" : "start"}
+                    x={placeLabelOnLeft ? -8 : 8}
+                    textAnchor={placeLabelOnLeft ? "end" : "start"}
                     fill={labelColor}
                     fillOpacity={isHovered ? 1 : textOpacity}
                     style={{
