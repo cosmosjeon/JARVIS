@@ -24,6 +24,45 @@ const normalizeThemeKey = (value) => {
   return value.trim().toLowerCase();
 };
 
+
+const INPUT_MODES = Object.freeze({
+  MOUSE: 'mouse',
+  TRACKPAD: 'trackpad',
+});
+const MOUSE_WHEEL_DIVISOR = 600;
+const TRACKPAD_ZOOM_DIVISOR = 220;
+const TRACKPAD_PAN_PIXEL_MULTIPLIER = 1.8;
+const TRACKPAD_PAN_LINE_MULTIPLIER = 36;
+const TRACKPAD_PAN_PAGE_MULTIPLIER = 640;
+
+const clampFinite = (value, fallback = 0) => (Number.isFinite(value) ? value : fallback);
+
+const getTrackpadPanMultiplier = (event) => {
+  if (!event) {
+    return TRACKPAD_PAN_PIXEL_MULTIPLIER;
+  }
+  if (event.deltaMode === 1) {
+    return TRACKPAD_PAN_LINE_MULTIPLIER;
+  }
+  if (event.deltaMode === 2) {
+    return TRACKPAD_PAN_PAGE_MULTIPLIER;
+  }
+  return TRACKPAD_PAN_PIXEL_MULTIPLIER;
+};
+
+const resolveWheelModeFactor = (event, isTrackpadMode) => {
+  if (!event) {
+    return 1;
+  }
+  if (event.deltaMode === 1) {
+    return isTrackpadMode ? 0.45 : 0.33;
+  }
+  if (event.deltaMode === 2) {
+    return isTrackpadMode ? 48 : 33;
+  }
+  return 1;
+};
+
 const getCartesianFromTidyNode = (node) => ({
   x: Number.isFinite(node?.y) ? node.y : 0,
   y: Number.isFinite(node?.x) ? node.x : 0,
@@ -171,7 +210,8 @@ const TidyTreeView = ({
   onNodeDelete,
   onNodeUpdate,
 }) => {
-  const { zoomOnClickEnabled } = useSettings();
+  const { zoomOnClickEnabled, inputMode = INPUT_MODES.MOUSE } = useSettings();
+  const isTrackpadMode = inputMode === INPUT_MODES.TRACKPAD;
 
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
@@ -601,8 +641,20 @@ const TidyTreeView = ({
     }
 
     const selection = d3.select(svgElement);
-    const zoom = d3
-      .zoom()
+    const zoom = d3.zoom();
+
+    const applyTrackpadPan = (event) => {
+      const transform = lastViewTransformRef.current || d3.zoomIdentity;
+      const scale = Number.isFinite(transform?.k) ? transform.k : 1;
+      const multiplier = getTrackpadPanMultiplier(event) / Math.max(scale, 0.001);
+      const deltaX = clampFinite(event?.deltaX);
+      const deltaY = clampFinite(event?.deltaY);
+      if (deltaX !== 0 || deltaY !== 0) {
+        selection.call(zoom.translateBy, -deltaX * multiplier, -deltaY * multiplier);
+      }
+    };
+
+    zoom
       .filter((event) => {
         // 드래그 중이면 차단
         if (dragStateManager.isDragging()) return false;
@@ -616,8 +668,17 @@ const TidyTreeView = ({
         // 우클릭은 차단
         if (event.button === 2) return false;
 
-        // 휠 이벤트: Ctrl 키를 누른 상태에서만 확대/축소 허용
         if (event.type === 'wheel') {
+          if (isTrackpadMode) {
+            if (typeof event.preventDefault === 'function') {
+              event.preventDefault();
+            }
+            if (!event.ctrlKey && !event.metaKey) {
+              applyTrackpadPan(event);
+              return false;
+            }
+            return true;
+          }
           return event.ctrlKey || event.metaKey;
         }
 
@@ -635,12 +696,15 @@ const TidyTreeView = ({
       })
       .scaleExtent([MIN_SCALE, MAX_SCALE])
       .wheelDelta((event) => {
-        // Ctrl 키를 누른 상태에서만 확대/축소
-        if (!event.ctrlKey && !event.metaKey) {
+        if (isTrackpadMode && !(event.ctrlKey || event.metaKey)) {
           return 0;
         }
-        const modeFactor = event.deltaMode === 1 ? 0.33 : event.deltaMode ? 33 : 1;
-        return (-event.deltaY * modeFactor) / 600;
+        if (isTrackpadMode && typeof event.preventDefault === 'function') {
+          event.preventDefault();
+        }
+        const modeFactor = resolveWheelModeFactor(event, isTrackpadMode);
+        const divisor = isTrackpadMode ? TRACKPAD_ZOOM_DIVISOR : MOUSE_WHEEL_DIVISOR;
+        return (-clampFinite(event?.deltaY) * modeFactor) / divisor;
       })
       .on("start", () => setIsZooming(true))
       .on("zoom", (event) => {
@@ -688,7 +752,7 @@ const TidyTreeView = ({
       selection.on(".zoom", null);
       zoomBehaviorRef.current = null;
     };
-  }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height]);
+  }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height, isTrackpadMode]);
 
   const isDarkTheme = theme === "dark";
   const isGlassTheme = theme === "glass";

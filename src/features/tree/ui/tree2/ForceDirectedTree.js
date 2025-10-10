@@ -32,6 +32,45 @@ const normalizeThemeKey = (value) => {
   return value.trim().toLowerCase();
 };
 
+
+const INPUT_MODES = Object.freeze({
+  MOUSE: 'mouse',
+  TRACKPAD: 'trackpad',
+});
+const MOUSE_WHEEL_DIVISOR = 600;
+const TRACKPAD_ZOOM_DIVISOR = 220;
+const TRACKPAD_PAN_PIXEL_MULTIPLIER = 1.8;
+const TRACKPAD_PAN_LINE_MULTIPLIER = 36;
+const TRACKPAD_PAN_PAGE_MULTIPLIER = 640;
+
+const clampFinite = (value, fallback = 0) => (Number.isFinite(value) ? value : fallback);
+
+const getTrackpadPanMultiplier = (event) => {
+  if (!event) {
+    return TRACKPAD_PAN_PIXEL_MULTIPLIER;
+  }
+  if (event.deltaMode === 1) {
+    return TRACKPAD_PAN_LINE_MULTIPLIER;
+  }
+  if (event.deltaMode === 2) {
+    return TRACKPAD_PAN_PAGE_MULTIPLIER;
+  }
+  return TRACKPAD_PAN_PIXEL_MULTIPLIER;
+};
+
+const resolveWheelModeFactor = (event, isTrackpadMode) => {
+  if (!event) {
+    return 1;
+  }
+  if (event.deltaMode === 1) {
+    return isTrackpadMode ? 0.45 : 0.33;
+  }
+  if (event.deltaMode === 2) {
+    return isTrackpadMode ? 48 : 33;
+  }
+  return 1;
+};
+
 const normalizeAngle = (angle) => {
   if (!Number.isFinite(angle)) {
     return 0;
@@ -237,7 +276,8 @@ const ForceDirectedTree = ({
   onBackgroundClick,
   isChatPanelOpen = false,
 }) => {
-  const { zoomOnClickEnabled } = useSettings();
+  const { zoomOnClickEnabled, inputMode = INPUT_MODES.MOUSE } = useSettings();
+  const isTrackpadMode = inputMode === INPUT_MODES.TRACKPAD;
   const normalizedTheme = normalizeThemeKey(theme);
   const isDarkLikeTheme = DARK_LIKE_THEMES.has(normalizedTheme);
 
@@ -401,50 +441,66 @@ const ForceDirectedTree = ({
       return;
     }
 
-    const zoom = d3.zoom()
+    const selection = d3.select(svgElement);
+    const zoom = d3.zoom();
+
+    const applyTrackpadPan = (event) => {
+      const transform = lastViewTransformRef.current || d3.zoomIdentity;
+      const scale = Number.isFinite(transform?.k) ? transform.k : 1;
+      const multiplier = getTrackpadPanMultiplier(event) / Math.max(scale, 0.001);
+      const deltaX = clampFinite(event?.deltaX);
+      const deltaY = clampFinite(event?.deltaY);
+      if (deltaX !== 0 || deltaY !== 0) {
+        selection.call(zoom.translateBy, -deltaX * multiplier, -deltaY * multiplier);
+      }
+    };
+
+    zoom
       .filter((event) => {
         if (!event) {
           return false;
         }
 
-        if (event.type === 'mousedown' || event.type === 'pointerdown') {
-          if (event.ctrlKey) {
-            return false;
-          }
-          return event.button !== 2;
-        }
-
-        return !event.ctrlKey;
-      })
-      .scaleExtent([MIN_ZOOM, MAX_ZOOM])
-      .filter((event) => {
-        // 우클릭은 차단
         if (event.button === 2) return false;
 
-        // 휠 이벤트: Ctrl 키를 누른 상태에서만 확대/축소 허용
         if (event.type === 'wheel') {
+          if (isTrackpadMode) {
+            if (typeof event.preventDefault === 'function') {
+              event.preventDefault();
+            }
+            if (!event.ctrlKey && !event.metaKey) {
+              applyTrackpadPan(event);
+              return false;
+            }
+            return true;
+          }
           return event.ctrlKey || event.metaKey;
         }
 
-        // 마우스 드래그 이동: 휠 클릭(button 1) 또는 Ctrl + 좌클릭만 허용
-        if (event.type === 'mousedown' || event.type === 'mousemove') {
-          return event.button === 1 || (event.ctrlKey && event.button === 0);
+        if (event.type === 'mousedown' || event.type === 'pointerdown' || event.type === 'mousemove' || event.type === 'pointermove') {
+          if ((event.type === 'mousedown' || event.type === 'pointerdown') && event.ctrlKey) {
+            return false;
+          }
+          return isTrackpadMode ? (event.button === 0 || event.button === 1) : (event.button === 1 || (event.ctrlKey && event.button === 0));
         }
 
-        // 터치/트랙패드 제스처는 기본 허용 (두 손가락 드래그, 핀치 줌)
         if (event.type === 'touchstart' || event.type === 'touchmove' || event.type === 'touchend') {
           return true;
         }
 
         return true;
       })
+      .scaleExtent([MIN_ZOOM, MAX_ZOOM])
       .wheelDelta((event) => {
-        // Ctrl 키를 누른 상태에서만 확대/축소
-        if (!event.ctrlKey && !event.metaKey) {
+        if (isTrackpadMode && !(event.ctrlKey || event.metaKey)) {
           return 0;
         }
-        const modeFactor = event.deltaMode === 1 ? 0.33 : event.deltaMode ? 33 : 1;
-        return (-event.deltaY * modeFactor) / 600;
+        if (isTrackpadMode && typeof event.preventDefault === 'function') {
+          event.preventDefault();
+        }
+        const modeFactor = resolveWheelModeFactor(event, isTrackpadMode);
+        const divisor = isTrackpadMode ? TRACKPAD_ZOOM_DIVISOR : MOUSE_WHEEL_DIVISOR;
+        return (-clampFinite(event?.deltaY) * modeFactor) / divisor;
       })
       .on('zoom', (event) => {
         setViewTransform(event.transform);
@@ -458,7 +514,6 @@ const ForceDirectedTree = ({
         }
       });
 
-    const selection = d3.select(svgElement);
     selection.call(zoom);
 
     // d3의 기본 더블클릭 줌 동작 비활성화 (배경 더블클릭은 onClick에서 처리)
@@ -470,7 +525,7 @@ const ForceDirectedTree = ({
       selection.on('.zoom', null);
       zoomBehaviorRef.current = null;
     };
-  }, [onPanZoomGesture]);
+  }, [onPanZoomGesture, isTrackpadMode]);
 
   // 초기 로딩 시 viewBox가 이미 중앙 정렬되어 있으므로 identity transform 사용
   useEffect(() => {
