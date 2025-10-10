@@ -194,6 +194,86 @@ const registerWindowHandlers = ({
     logger?.info?.('Window config updated', windowConfig);
     return windowConfig;
   });
+
+  ipcMain.handle('window:resize', (event, payload = {}) => {
+    const currentWindow = resolveBrowserWindowFromSender(event.sender);
+    if (!currentWindow || currentWindow.isDestroyed()) {
+      return { success: false, error: { code: 'no_window', message: 'Current window not available' } };
+    }
+
+    const { width, height, animate = true } = payload;
+
+    if (typeof width !== 'number' || typeof height !== 'number') {
+      return { success: false, error: { code: 'invalid_params', message: 'Width and height must be numbers' } };
+    }
+
+    try {
+      const currentBounds = currentWindow.getBounds();
+
+      const newWidth = Math.max(width, 320);
+      const newHeight = Math.max(height, 240);
+
+      // 좌상단 위치 고정, 오른쪽 아래로만 확장
+      const newBounds = {
+        x: currentBounds.x,
+        y: currentBounds.y,
+        width: newWidth,
+        height: newHeight,
+      };
+
+      if (animate) {
+        // 오른쪽 아래로 확장
+        const duration = 1000; // 애니메이션 시간 (ms)
+        const fps = 60;
+        const frameTime = 1000 / fps; // ~16.67ms
+
+        const widthDelta = newBounds.width - currentBounds.width;
+        const heightDelta = newBounds.height - currentBounds.height;
+
+        // easeOutExpo: 지수 감속으로 매우 부드럽고 우아함
+        const easeOutExpo = (x) => x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+
+        const startTime = Date.now();
+        const animateFrame = () => {
+          if (currentWindow.isDestroyed()) return;
+
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = easeOutExpo(progress);
+
+          if (progress < 1) {
+            const intermediateBounds = {
+              x: currentBounds.x,
+              y: currentBounds.y,
+              width: Math.round(currentBounds.width + widthDelta * eased),
+              height: Math.round(currentBounds.height + heightDelta * eased),
+            };
+            currentWindow.setBounds(intermediateBounds, false);
+            setTimeout(animateFrame, frameTime);
+          } else {
+            // 최종 위치
+            currentWindow.setBounds(newBounds, false);
+          }
+        };
+
+        animateFrame();
+      } else {
+        currentWindow.setBounds(newBounds, false);
+      }
+
+      logger?.debug?.('window_resized', { width: newBounds.width, height: newBounds.height, animate });
+      return { success: true, width: newBounds.width, height: newBounds.height };
+    } catch (error) {
+      logger?.error?.('window_resize_failed', { message: error?.message });
+      return {
+        success: false,
+        error: {
+          code: 'resize_failed',
+          message: error?.message || 'Failed to resize window',
+        },
+      };
+    }
+  });
 };
 
 module.exports = {

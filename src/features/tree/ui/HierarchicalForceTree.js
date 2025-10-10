@@ -399,6 +399,8 @@ const HierarchicalForceTree = () => {
   const isIgnoringMouseRef = useRef(false);
   const treeSyncDebounceRef = useRef(null);
   const [showBootstrapChat, setShowBootstrapChat] = useState(false);
+  const [bootstrapChatHeight, setBootstrapChatHeight] = useState(400); // 초기 400, 확장 후 600
+  const [bootstrapChatTop, setBootstrapChatTop] = useState('55%'); // 초기 55%, 확장 후 조절 가능
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
   const [isAwaitingCapture, setIsAwaitingCapture] = useState(false);
   const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
@@ -1149,6 +1151,18 @@ const HierarchicalForceTree = () => {
     }
 
     const timestamp = Date.now();
+
+    // 윈도우를 부드럽게 확장 (600x480 → 1024x720)
+    if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
+      window.jarvisAPI.windowControls.resize(1024, 720, true)
+        .then(result => {
+          console.log('✅ Window resized:', result);
+          // 채팅창 높이 & 위치 변경
+          setBootstrapChatHeight(645);  // 400 → 600
+          setBootstrapChatTop('54%');   // 55% → 50% (더 위로)
+        })
+        .catch(err => console.error('❌ Window resize failed:', err));
+    }
 
     setConversationForNode('__bootstrap__', [
       {
@@ -2699,10 +2713,10 @@ const HierarchicalForceTree = () => {
           className="pointer-events-none absolute"
           style={{
             left: '50%',
-            top: '50%',
+            top: bootstrapChatTop,
             transform: 'translate(-50%, -50%)',
-            width: 600,
-            height: 640,
+            width: 560,
+            height: bootstrapChatHeight,
             zIndex: 1000,
           }}
           data-interactive-zone="true"

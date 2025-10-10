@@ -1,6 +1,6 @@
 const createStateListener = (channel, ipcRenderer) => (handler) => {
   if (typeof handler !== 'function') {
-    return () => {};
+    return () => { };
   }
   const listener = (_event, payload) => handler(payload);
   ipcRenderer.on(channel, listener);
@@ -14,6 +14,7 @@ module.exports = (ipcRenderer) => {
     toggleFullScreen: () => ipcRenderer.invoke('window:control', 'toggleFullScreen'),
     close: () => ipcRenderer.invoke('window:control', 'close'),
     getState: () => ipcRenderer.invoke('window:getState'),
+    resize: (width, height, animate = true) => ipcRenderer.invoke('window:resize', { width, height, animate }),
     onStateChange: createStateListener('window:state', ipcRenderer),
   };
 
