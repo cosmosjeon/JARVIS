@@ -49,7 +49,7 @@ export const forwardPanZoomGesture = ({ event, svgElement, zoomBehaviour }) => {
     const pointerX = clientX - rect.left;
     const pointerY = clientY - rect.top;
 
-    const scaleFactor = Math.pow(2, -normalizedDeltaY / 600);
+    const scaleFactor = Math.pow(2, -normalizedDeltaY / 250); // 트랙패드 핀치 줌 감도 대폭 향상 (낮을수록 민감)
     if (!Number.isFinite(scaleFactor) || scaleFactor === 0) {
       return false;
     }

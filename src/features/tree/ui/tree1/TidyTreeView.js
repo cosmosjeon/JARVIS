@@ -30,7 +30,7 @@ const INPUT_MODES = Object.freeze({
   TRACKPAD: 'trackpad',
 });
 // 트랙패드 모드 설정을 마우스 모드에도 적용 - 딜레이 최적화
-const UNIFIED_ZOOM_DIVISOR = 220; // 트랙패드 줌 감도 사용
+const UNIFIED_ZOOM_DIVISOR = 100; // 트랙패드 줌 감도 대폭 향상 (낮을수록 민감)
 const UNIFIED_PAN_PIXEL_MULTIPLIER = 2.5; // 패닝 감도 향상 (딜레이 감소)
 const UNIFIED_PAN_LINE_MULTIPLIER = 45; // 라인 모드 감도 향상
 const UNIFIED_PAN_PAGE_MULTIPLIER = 800; // 페이지 모드 감도 향상

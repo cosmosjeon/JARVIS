@@ -21,6 +21,7 @@ import {
 } from 'shared/ui/dialog';
 import { Button } from 'shared/ui/button';
 import { Separator } from 'shared/ui/separator';
+import { Switch } from 'shared/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,7 +77,12 @@ const LibrarySettingsDialog = ({
   const userLabel = user?.email || user?.user_metadata?.full_name || '로그인 계정';
   const themeLabel = activeThemeLabel || FALLBACK_THEME_LABEL;
   const canSignOut = Boolean(user);
-  const { inputMode = 'mouse', setInputMode } = useSettings();
+  const { 
+    inputMode = 'mouse', 
+    setInputMode,
+    zoomOnClickEnabled = true,
+    setZoomOnClickEnabled 
+  } = useSettings();
 
   const handleThemeSelect = (themeId) => {
     // 테마 변경 로직 (현재는 기존 onCycleTheme 사용)
@@ -259,6 +265,24 @@ const LibrarySettingsDialog = ({
                   <p className="text-sm text-muted-foreground">두 손가락 이동 및 핀치 줌 유지</p>
                 </div>
               </button>
+
+              <div className="pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">노드 동작</p>
+                <div className="p-6 border border-border rounded-xl bg-card shadow-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <p className="text-base font-medium text-foreground">클릭 시 확대</p>
+                      <p className="text-sm text-muted-foreground">
+                        노드 클릭 시 자동으로 확대합니다
+                      </p>
+                    </div>
+                    <Switch
+                      checked={zoomOnClickEnabled}
+                      onCheckedChange={setZoomOnClickEnabled}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         );

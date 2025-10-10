@@ -27,6 +27,7 @@ import {
   sanitizeConversationMessages,
   buildFallbackConversation,
 } from 'features/tree/utils/conversation';
+import collectAncestorConversationMessages from 'features/tree/utils/assistantContext';
 import useConversationStore from 'features/tree/state/useConversationStore';
 import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
@@ -979,41 +980,14 @@ const HierarchicalForceTree = () => {
     setSelectedNodeId((current) => (current === nodeId ? null : current));
   };
 
-  const buildContextMessages = useCallback((nodeId) => {
-    if (!nodeId) return [];
-
-    const chain = [];
-    const guard = new Set();
-    let current = nodeId;
-
-    while (current) {
-      if (guard.has(current)) break;
-      guard.add(current);
-      chain.unshift(current);
-      current = parentByChild.get(current) || null;
-    }
-
-    const collected = [];
-    chain.forEach((id) => {
-      const history = getConversation(id);
-      history.forEach((entry) => {
-        if (!entry || typeof entry.text !== 'string') {
-          return;
-        }
-        const text = entry.text.trim();
-        if (!text) {
-          return;
-        }
-        const role = entry.role === 'assistant' ? 'assistant' : 'user';
-        collected.push({ role, content: text });
-      });
-    });
-
-    const MAX_HISTORY_MESSAGES = 12;
-    return collected.length > MAX_HISTORY_MESSAGES
-      ? collected.slice(collected.length - MAX_HISTORY_MESSAGES)
-      : collected;
-  }, [parentByChild]);
+  const buildContextMessages = useCallback((nodeId) => (
+    collectAncestorConversationMessages({
+      nodeId,
+      parentByChild,
+      getConversation,
+      maxMessages: 12,
+    })
+  ), [getConversation, parentByChild]);
 
   const invokeAgent = useCallback(async (channel, payload = {}) => {
     const requestPayload = {
