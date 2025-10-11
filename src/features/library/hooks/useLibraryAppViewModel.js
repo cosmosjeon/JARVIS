@@ -4,7 +4,6 @@ import { useTheme } from 'shared/components/library/ThemeProvider';
 import { useLibraryState } from 'features/library/state/useLibraryState';
 import { useLibraryThemeController } from './useLibraryThemeController';
 import { useLibraryData } from './useLibraryData';
-import { useLibraryMemoController } from './useLibraryMemoController';
 import { useLibraryNodeController } from './useLibraryNodeController';
 import { useLibraryTreeOperations } from './useLibraryTreeOperations';
 import { useLibraryNodeRemoval } from './useLibraryNodeRemoval';
@@ -31,11 +30,6 @@ export const useLibraryAppViewModel = () => {
     setError: actions.data.setError,
   });
 
-  const memoController = useLibraryMemoController({
-    setTrees: actions.data.setTrees,
-    getSelectedTree: () => selectors.selectedTree,
-  });
-
   const nodeController = useLibraryNodeController({
     setTrees: actions.data.setTrees,
     getSelectedTree: () => selectors.selectedTree,
@@ -51,7 +45,6 @@ export const useLibraryAppViewModel = () => {
     actions,
     dataApi,
     dragHandlers,
-    memoController,
     nodeController,
     nodeRemoval,
     treeOperations,

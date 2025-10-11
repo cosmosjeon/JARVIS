@@ -17,9 +17,6 @@ const TreeCanvas = ({
   onNodeRemove,
   onNodeUpdate,
   onNewNodeCreated,
-  onMemoCreate,
-  onMemoUpdate,
-  onMemoRemove,
   onTreeRename,
 }) => {
   const { theme } = useTheme();
@@ -222,9 +219,6 @@ const TreeCanvas = ({
                     onNodeClick={handleNodeSelect}
                     onNodeRemove={onNodeRemove}
                     onNodeUpdate={onNodeUpdate}
-                    onMemoCreate={onMemoCreate}
-                    onMemoUpdate={onMemoUpdate}
-                    onMemoRemove={onMemoRemove}
                     onNodeCreate={(newNode) => onNewNodeCreated?.(newNode, null)}
                     onLinkCreate={(newLink) => onNewNodeCreated?.(null, newLink)}
                     onRootCreate={({ position }) => {

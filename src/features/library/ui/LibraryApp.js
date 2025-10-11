@@ -95,9 +95,6 @@ const LibraryApp = () => {
               onNodeRemove={handlers.nodeRemove}
               onNodeUpdate={handlers.nodeUpdate}
               onNewNodeCreated={handlers.nodeAdd}
-              onMemoCreate={handlers.memoCreate}
-              onMemoUpdate={handlers.memoUpdate}
-              onMemoRemove={handlers.memoRemove}
               onTreeRename={handlers.renameTree}
               onQAPanelClose={handlers.hideQAPanel}
             />
@@ -131,7 +128,6 @@ const LibraryApp = () => {
         type={dialog.createType}
         folders={state.folders}
         onFolderCreate={(name, parentId) => handlers.folderCreate({ name, parentId })}
-        onMemoCreate={() => { }}
       />
 
       <LibrarySettingsDialog

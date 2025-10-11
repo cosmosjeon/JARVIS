@@ -33,9 +33,6 @@ const LibraryContent = ({
   onNodeRemove,
   onNodeUpdate,
   onNewNodeCreated,
-  onMemoCreate,
-  onMemoUpdate,
-  onMemoRemove,
   onTreeRename,
   onQAPanelClose,
 }) => {
@@ -100,9 +97,6 @@ const LibraryContent = ({
           onNodeRemove={onNodeRemove}
           onNodeUpdate={onNodeUpdate}
           onNewNodeCreated={onNewNodeCreated}
-          onMemoCreate={onMemoCreate}
-          onMemoUpdate={onMemoUpdate}
-          onMemoRemove={onMemoRemove}
           onTreeRename={onTreeRename}
         />
       );
@@ -117,9 +111,6 @@ const LibraryContent = ({
             onNodeRemove={onNodeRemove}
             onNodeUpdate={onNodeUpdate}
             onNewNodeCreated={onNewNodeCreated}
-            onMemoCreate={onMemoCreate}
-            onMemoUpdate={onMemoUpdate}
-            onMemoRemove={onMemoRemove}
             onTreeRename={onTreeRename}
           />
         </ResizablePanel>
