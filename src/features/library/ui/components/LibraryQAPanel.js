@@ -1168,23 +1168,23 @@ const LibraryQAPanel = ({
     const useExistingNode = Boolean(selectedNode)
       && (reuseCurrentNode || (isPlaceholderNode && !hasUserConversation));
 
-    const conversationSnapshot = (() => {
-      if (isRetryFlow) {
-        return previousMessages.map((msg) =>
-          msg.id === assistantMessage.id
-            ? assistantMessage
-            : msg,
-        );
-      }
-      if (useExistingNode && selectedNode) {
-        return [...previousMessages, userMessage, assistantMessage];
-      }
-      return [userMessage, assistantMessage];
-    })();
+    let pendingMessages;
+    if (isRetryFlow) {
+      pendingMessages = previousMessages.map((msg) =>
+        msg.id === assistantMessage.id
+          ? assistantMessage
+          : msg,
+      );
+      setMessages(pendingMessages);
+    } else if (useExistingNode && selectedNode) {
+      pendingMessages = [...previousMessages, userMessage, assistantMessage];
+      setMessages(pendingMessages);
+    } else {
+      pendingMessages = [userMessage, assistantMessage];
+      setMessages(pendingMessages);
+    }
 
-    setMessages(conversationSnapshot);
-
-    const requestMessages = conversationSnapshot
+    const requestMessages = pendingMessages
       .filter((msg) => msg.id !== assistantId)
       .map(mapToOpenAIMessage)
       .filter(Boolean);
@@ -1209,7 +1209,7 @@ const LibraryQAPanel = ({
       const pendingNode = {
         ...selectedNode,
         question: selectedNode.question || question,
-        conversation: conversationSnapshot,
+        conversation: pendingMessages,
         status: 'asking',
         updatedAt: timestamp,
         answer: '',
@@ -1264,7 +1264,7 @@ const LibraryQAPanel = ({
         });
 
         const finalModelInfo = response.autoSelection || activeAutoSelection || pendingModelInfo;
-        const updatedMessages = conversationSnapshot.map((msg) => {
+        const updatedMessages = pendingMessages.map((msg) => {
           if (msg.id !== assistantId) {
             return msg;
           }
@@ -1415,7 +1415,7 @@ const LibraryQAPanel = ({
       status: 'asking',
       createdAt: timestamp,
       updatedAt: timestamp,
-      conversation: [userMessage, assistantMessage],
+      conversation: pendingMessages,
       parentId,
       level,
       treeId: selectedTree.id,
@@ -1477,26 +1477,28 @@ const LibraryQAPanel = ({
       });
 
       const finalModelInfo = response.autoSelection || activeAutoSelection || pendingModelInfo;
-      const updatedMessages = [
-        userMessage,
-        {
-          ...assistantMessage,
+      const updatedMessages = pendingMessages.map((msg) => {
+        if (msg.id !== assistantId) {
+          return msg;
+        }
+        return {
+          ...msg,
           text: answerText,
           status: 'complete',
           modelInfo: finalModelInfo
             ? {
-              ...(assistantMessage.modelInfo || {}),
+              ...(msg.modelInfo || {}),
               ...finalModelInfo,
               provider: response.provider || finalModelInfo.provider,
               model: response.model || finalModelInfo.model,
-              explanation: finalModelInfo.explanation || assistantMessage.modelInfo?.explanation,
+              explanation: finalModelInfo.explanation || msg.modelInfo?.explanation,
             }
-            : assistantMessage.modelInfo,
-          reasoning: response.reasoning || assistantMessage.reasoning,
-          usage: response.usage || assistantMessage.usage,
-          latencyMs: response.latencyMs !== undefined ? response.latencyMs : assistantMessage.latencyMs,
-        },
-      ];
+            : msg.modelInfo,
+          reasoning: response.reasoning || msg.reasoning,
+          usage: response.usage || msg.usage,
+          latencyMs: response.latencyMs !== undefined ? response.latencyMs : msg.latencyMs,
+        };
+      });
 
       const updatedNode = {
         ...newNode,
