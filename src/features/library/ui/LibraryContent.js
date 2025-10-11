@@ -11,29 +11,9 @@ const EmptyState = ({ message }) => (
   </div>
 );
 
-const DRAG_ZONE_HEIGHT = 56;
-
-const renderWithDragHandle = (content) => (
-  <div className="relative h-full w-full">
-    <div
-      className="absolute left-0 right-0 top-0"
-      style={{
-        height: DRAG_ZONE_HEIGHT,
-        WebkitAppRegion: 'drag',
-        zIndex: 10,
-      }}
-    />
-    <div
-      className="h-full w-full"
-      style={{
-        WebkitAppRegion: 'no-drag',
-        paddingTop: `${DRAG_ZONE_HEIGHT}px`,
-        position: 'relative',
-        zIndex: 0,
-      }}
-    >
-      {content}
-    </div>
+const renderContent = (content) => (
+  <div className="h-full w-full">
+    {content}
   </div>
 );
 
@@ -60,7 +40,7 @@ const LibraryContent = ({
   onQAPanelClose,
 }) => {
   if (loading) {
-    return renderWithDragHandle(
+    return renderContent(
       <div className="flex h-full items-center justify-center gap-3 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
         불러오는 중입니다...
@@ -69,13 +49,13 @@ const LibraryContent = ({
   }
 
   if (!user) {
-    return renderWithDragHandle(
+    return renderContent(
       <EmptyState message="로그인 후 트리를 확인할 수 있습니다." />,
     );
   }
 
   if (error) {
-    return renderWithDragHandle(
+    return renderContent(
       <EmptyState message={error?.message || '트리를 불러오지 못했습니다.'} />,
     );
   }
@@ -94,7 +74,7 @@ const LibraryContent = ({
       question: '',
       level: 0,
     };
-    return renderWithDragHandle(
+    return renderContent(
       <div className="flex h-full flex-col bg-gradient-to-b from-background via-background to-muted/30">
         <LibraryQAPanel
           selectedNode={introSelectedNode}
@@ -163,7 +143,7 @@ const LibraryContent = ({
   if (selectedFolderId) {
     const folderName = folders.find((folder) => folder.id === selectedFolderId)?.name || '폴더';
 
-    return renderWithDragHandle(
+    return renderContent(
       <div className="flex h-full items-center justify-center">
         <Card className="w-full max-w-sm bg-card text-card-foreground">
           <CardHeader className="space-y-2">
@@ -180,7 +160,7 @@ const LibraryContent = ({
     );
   }
 
-  return renderWithDragHandle(
+  return renderContent(
     <EmptyState message="트리나 폴더를 선택해주세요." />,
   );
 };
