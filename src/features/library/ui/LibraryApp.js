@@ -19,6 +19,8 @@ const LibraryApp = () => {
   } = useLibraryAppViewModel();
 
   const sidebarWidth = state.isSidebarCollapsed ? 60 : 240;
+  // QA Panel이 열려있으면 드래그 존을 짧게, 아니면 길게
+  const dragZoneHeight = state.isQAPanelVisible !== false ? '20px' : '80px';
 
   return (
     <div className="relative flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -27,7 +29,7 @@ const LibraryApp = () => {
         className="absolute right-0 top-0 z-[9999]"
         style={{
           left: `${sidebarWidth}px`,
-          height: '80px',
+          height: dragZoneHeight,
           WebkitAppRegion: 'drag',
           pointerEvents: 'auto',
         }}
