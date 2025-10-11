@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { X, Folder, FileText } from 'lucide-react';
+import { X, Folder, Network } from 'lucide-react';
 
 /**
  * TreeSelectModal - Presentation Component
@@ -115,7 +115,7 @@ const TreeSelectModal = ({
                                                 }
                       `}
                                         >
-                                            <FileText className="w-4 h-4 flex-shrink-0" />
+                                            <Network className="w-4 h-4 flex-shrink-0" />
                                             <span className="text-sm truncate">{tree.title || '제목 없음'}</span>
                                         </button>
                                     );
@@ -152,7 +152,7 @@ const TreeSelectModal = ({
                                                     }
                         `}
                                             >
-                                                <FileText className="w-4 h-4 flex-shrink-0" />
+                                                <Network className="w-4 h-4 flex-shrink-0" />
                                                 <span className="text-sm truncate">{tree.title || '제목 없음'}</span>
                                             </button>
                                         );

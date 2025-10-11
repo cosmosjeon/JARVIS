@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Network } from 'lucide-react';
 import TreeSelectModal from './TreeSelectModal';
 import { useTreeSelection } from 'features/tree/hooks/useTreeSelection';
 
@@ -40,11 +40,33 @@ const TreeTabBar = ({ theme, activeTreeId, activeTabId, tabs, onTabChange, onTab
         event.preventDefault();
         event.stopPropagation();
 
+        // 메뉴 크기와 화면 경계를 고려한 위치 계산
+        const menuWidth = 100; // 실제 메뉴 너비 (더 정확한 값)
+        const menuHeight = 36; // 실제 메뉴 높이 (더 정확한 값)
+        const offset = 5; // 마우스에서 약간 떨어진 위치
+
+        let x = event.clientX + offset;
+        let y = event.clientY + offset;
+
+        // 화면 오른쪽 경계 체크 - 메뉴가 넘어가면 왼쪽으로 이동
+        if (x + menuWidth > window.innerWidth) {
+            x = event.clientX - menuWidth - offset;
+        }
+
+        // 화면 아래쪽 경계 체크 - 메뉴가 넘어가면 위쪽으로 이동
+        if (y + menuHeight > window.innerHeight) {
+            y = event.clientY - menuHeight - offset;
+        }
+
+        // 최소 위치 보장 (화면 가장자리에서 벗어나지 않도록)
+        x = Math.max(5, Math.min(x, window.innerWidth - menuWidth - 5));
+        y = Math.max(5, Math.min(y, window.innerHeight - menuHeight - 5));
+
         setContextMenu({
             open: true,
             tabId: tab.id,
-            x: event.clientX,
-            y: event.clientY,
+            x: x,
+            y: y,
         });
     };
 
@@ -77,7 +99,7 @@ const TreeTabBar = ({ theme, activeTreeId, activeTabId, tabs, onTabChange, onTab
 
     return (
         <div className="flex items-center gap-1">
-            {/* 트리 탭들 - 작은 원 형태 (숫자 없음) */}
+            {/* 트리 탭들 - 파일 아이콘 형태 */}
             <div className="flex items-center gap-1">
                 {tabs.map((tab, index) => {
                     const isActive = tab.id === activeTabId;
@@ -87,18 +109,20 @@ const TreeTabBar = ({ theme, activeTreeId, activeTabId, tabs, onTabChange, onTab
                             onClick={() => handleTabClick(tab)}
                             onContextMenu={(e) => handleTabContextMenu(e, tab)}
                             className={`
-                w-3.5 h-3.5 flex-shrink-0 rounded-full transition-all
+                flex items-center justify-center flex-shrink-0 transition-all
                 ${isActive
                                     ? isLightMode
-                                        ? 'bg-black border border-black'
-                                        : 'bg-white border border-white'
+                                        ? 'text-black'
+                                        : 'text-white'
                                     : isLightMode
-                                        ? 'bg-black/25 border border-black/40 hover:bg-black/35'
-                                        : 'bg-white/25 border border-white/40 hover:bg-white/35'
+                                        ? 'text-black/40 hover:text-black/60'
+                                        : 'text-white/40 hover:text-white/60'
                                 }
               `}
                             title={tab.title || `트리 ${index + 1}`}
-                        />
+                        >
+                            <Network className="w-3.5 h-3.5" />
+                        </button>
                     );
                 })}
             </div>
@@ -133,6 +157,7 @@ const TreeTabBar = ({ theme, activeTreeId, activeTabId, tabs, onTabChange, onTab
                     style={{
                         left: contextMenu.x,
                         top: contextMenu.y,
+                        transform: 'translate(0, 0)', // transform을 사용하여 더 정확한 위치 지정
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
@@ -147,7 +172,7 @@ const TreeTabBar = ({ theme, activeTreeId, activeTabId, tabs, onTabChange, onTab
             `}
                     >
                         <X className="w-3 h-3" />
-                        <span>탭 삭제</span>
+                        <span>닫기</span>
                     </button>
                 </div>
             )}

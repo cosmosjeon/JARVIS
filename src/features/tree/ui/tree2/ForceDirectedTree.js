@@ -25,6 +25,7 @@ const TEXT_COLOR_BY_THEME = Object.freeze({
   glass: '#f8fafc',
 });
 const DARK_LIKE_THEMES = new Set(['dark', 'glass']);
+const RECENT_LINK_ANIMATION_DURATION = 1800;
 const normalizeThemeKey = (value) => {
   if (typeof value !== 'string') {
     return 'light';
@@ -152,6 +153,75 @@ const resolveNodeId = (node) => {
 const estimateLabelWidth = (label) => {
   if (!label) return 0;
   return Math.max(24, label.length * 6.2);
+};
+
+const useRecentlyAddedNodeIds = (nodesInput) => {
+  const [recentIds, setRecentIds] = useState(() => new Set());
+  const previousIdsRef = useRef(new Set());
+  const removalTimersRef = useRef(new Map());
+
+  useEffect(() => {
+    const nodesArray = Array.isArray(nodesInput) ? nodesInput : [];
+    const currentIds = new Set();
+    nodesArray.forEach((node) => {
+      if (node?.id) {
+        currentIds.add(node.id);
+      }
+    });
+    const previousIds = previousIdsRef.current;
+    const newIds = [];
+    currentIds.forEach((id) => {
+      if (!previousIds.has(id)) {
+        newIds.push(id);
+      }
+    });
+    if (newIds.length > 0) {
+      setRecentIds((prev) => {
+        const next = new Set(prev);
+        newIds.forEach((id) => next.add(id));
+        return next;
+      });
+      newIds.forEach((id) => {
+        if (removalTimersRef.current.has(id)) {
+          clearTimeout(removalTimersRef.current.get(id));
+        }
+        const timeoutId = setTimeout(() => {
+          setRecentIds((prev) => {
+            if (!prev.has(id)) {
+              return prev;
+            }
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+          removalTimersRef.current.delete(id);
+        }, RECENT_LINK_ANIMATION_DURATION);
+        removalTimersRef.current.set(id, timeoutId);
+      });
+    }
+    removalTimersRef.current.forEach((timeoutId, id) => {
+      if (!currentIds.has(id)) {
+        clearTimeout(timeoutId);
+        removalTimersRef.current.delete(id);
+        setRecentIds((prev) => {
+          if (!prev.has(id)) {
+            return prev;
+          }
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    });
+    previousIdsRef.current = currentIds;
+  }, [nodesInput]);
+
+  useEffect(() => () => {
+    removalTimersRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+    removalTimersRef.current.clear();
+  }, []);
+
+  return recentIds;
 };
 
 // 모든 노드가 화면에 들어가도록 transform 계산 (간단하고 명확한 방식)
@@ -313,6 +383,8 @@ const ForceDirectedTree = ({
     }
     return new Map(data.nodes.map((node) => [node.id, node]));
   }, [data?.nodes]);
+
+  const recentlyAddedNodeIds = useRecentlyAddedNodeIds(data?.nodes);
 
   const layoutNodeById = useMemo(() => {
     const map = new Map();
@@ -917,17 +989,35 @@ const ForceDirectedTree = ({
                   || (highlightedAncestorIds.has(linkTargetId)
                     && parentById.get(linkTargetId) === linkSourceId);
                 const strokeOpacity = isHighlightedLink ? 0.7 : 0.18;
+                const shouldAnimateLink = linkTargetId ? recentlyAddedNodeIds.has(linkTargetId) : false;
+                const linkKey = `link-${linkSourceId ?? 'root'}-${linkTargetId ?? index}`;
                 return (
-                  <path
-                    key={`link-${index}`}
+                  <motion.path
+                    key={linkKey}
                     d={radialLink(link)}
                     stroke={baseLinkColor}
                     strokeWidth={linkStrokeWidth}
-                    strokeOpacity={strokeOpacity}
                     strokeLinecap="round"
+                    strokeOpacity={strokeOpacity}
+                    initial={
+                      shouldAnimateLink
+                        ? { pathLength: 0, strokeOpacity: 0 }
+                        : false
+                    }
+                    animate={{ pathLength: 1, strokeOpacity }}
+                    transition={
+                      shouldAnimateLink
+                        ? {
+                            pathLength: { duration: 1.2, ease: 'easeOut' },
+                            strokeOpacity: { duration: 0.6, ease: 'easeOut' },
+                          }
+                        : {
+                            strokeOpacity: { duration: 0.16, ease: 'linear' },
+                          }
+                    }
                     style={{
                       filter: linkGlowFilter,
-                      transition: 'stroke-opacity 160ms ease',
+                      strokeDasharray: shouldAnimateLink ? '1' : undefined,
                     }}
                   />
                 );
