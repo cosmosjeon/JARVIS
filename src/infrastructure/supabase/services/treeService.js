@@ -66,6 +66,36 @@ const generateId = (prefix = 'tree') => {
 
 export const generateTreeId = () => generateId('tree');
 
+const ALLOWED_NODE_STATUSES = new Set(['placeholder', 'asking', 'answered', 'draft', 'memo']);
+
+const STATUS_ALIASES = Object.freeze({
+  pending: 'asking',
+  typing: 'asking',
+  error: 'draft',
+  complete: 'answered',
+});
+
+const normalizeNodeStatus = (status, nodeType) => {
+  if (nodeType === 'memo') {
+    return 'memo';
+  }
+
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  if (!normalized) {
+    return 'answered';
+  }
+
+  if (STATUS_ALIASES[normalized]) {
+    return STATUS_ALIASES[normalized];
+  }
+
+  if (ALLOWED_NODE_STATUSES.has(normalized)) {
+    return normalized;
+  }
+
+  return 'draft';
+};
+
 const normalizeTimestamp = (value) => {
   if (value === null || value === undefined) {
     return null;
@@ -228,6 +258,7 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
       content: node.fullText || null,
     } : null);
     const memoMetadata = node.memoMetadata || node.memo_metadata || memo?.metadata || null;
+    const status = normalizeNodeStatus(node.status, nodeType);
 
     return {
       id: node.id,
@@ -237,7 +268,7 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
       keyword: node.keyword || (memo?.title ?? null),
       question: nodeType === 'memo' ? null : question,
       answer: nodeType === 'memo' ? null : answer,
-      status: node.status || (nodeType === 'memo' ? 'memo' : 'answered'),
+      status,
       node_type: nodeType,
       memo_parent_id: node.memoParentId || node.parentId || null,
       memo_title: memo?.title ?? null,

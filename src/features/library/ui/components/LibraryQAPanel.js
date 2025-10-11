@@ -140,6 +140,7 @@ const LibraryQAPanel = ({
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
   const [lastAutoSelection, setLastAutoSelection] = useState(null);
   const [slowResponseNotice, setSlowResponseNotice] = useState(null);
+  const [spinningMap, setSpinningMap] = useState({});
 
   const messageContainerRef = useRef(null);
   const highlighterRef = useRef(null);
@@ -154,6 +155,47 @@ const LibraryQAPanel = ({
     messageContainerRef.current = element;
     console.debug('[LibraryQAPanel] message container registered', element);
   }, []);
+
+  const handleCopyMessage = useCallback((message) => {
+    if (!message?.text) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(message.text).catch(() => undefined);
+    }
+  }, []);
+
+  const handleRetryMessage = useCallback((message) => {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const question = lastUser?.text || selectedNode?.question || selectedNode?.keyword || '';
+    if (!question) return;
+    
+    if (message?.id) {
+      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    }
+    
+    // Clear the last assistant message
+    const lastAssistantIndex = [...messages].reverse().findIndex((m) => m.role === 'assistant');
+    if (lastAssistantIndex >= 0) {
+      const actualIndex = messages.length - 1 - lastAssistantIndex;
+      const updatedMessages = messages.slice(0, actualIndex);
+      setMessages(updatedMessages);
+    }
+    
+    // Set the question in composer and trigger send
+    setComposerValue(question);
+    setTimeout(() => {
+      const sendButton = document.querySelector('[aria-label="메시지 전송"]');
+      if (sendButton) {
+        sendButton.click();
+      }
+      
+      // Clear spinning state after a delay
+      if (message?.id) {
+        setTimeout(() => {
+          setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
+        }, 900);
+      }
+    }, 150);
+  }, [messages, selectedNode]);
 
   const isEditableTitleActive = useCallback(() => {
     if (typeof document === 'undefined') {
@@ -1607,12 +1649,15 @@ const LibraryQAPanel = ({
           <ChatMessageList
             title="Assistant"
             messages={messages}
+            onRetry={handleRetryMessage}
+            onCopy={handleCopyMessage}
             endRef={messagesEndRef}
             className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
             onContainerRef={handleRegisterMessageContainer}
             isScrollable={false}
             theme={theme}
             panelStyles={chatPanelStyles}
+            retryingMessageMap={spinningMap}
           />
         )
       )}
