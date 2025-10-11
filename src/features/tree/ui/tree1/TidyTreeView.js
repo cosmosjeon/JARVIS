@@ -831,8 +831,10 @@ const TidyTreeView = ({
     prevSelectedNodeIdRef.current = selectedNodeId;
     setInternalSelectedNodeId(selectedNodeId);
     setClickedNodeId(selectedNodeId);
-    focusNodeById(selectedNodeId, { duration: 520 });
-  }, [focusNodeById, selectedNodeId]);
+    if (zoomOnClickEnabled) {
+      focusNodeById(selectedNodeId, { duration: 520 });
+    }
+  }, [focusNodeById, selectedNodeId, zoomOnClickEnabled]);
 
   // 드래그 시작
   const beginDrag = (event, node) => {

@@ -2274,7 +2274,9 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       return;
     }
 
-    focusNodeToCenter(targetNode, { duration: becameVisible ? 0 : 220 });
+    if (zoomOnClickEnabled) {
+      focusNodeToCenter(targetNode, { duration: becameVisible ? 0 : 220 });
+    }
   }, [
     tidyAssistantPanelVisible,
     effectivePanelOffset,
@@ -2282,6 +2284,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     expandedNodeId,
     nodes,
     focusNodeToCenter,
+    zoomOnClickEnabled,
   ]);
 
   // Handle node click for assistant focus
@@ -2326,7 +2329,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       return current;
     });
 
-    const focusPromise = focusTarget
+    const focusPromise = (zoomOnClickEnabled && focusTarget)
       ? Promise.resolve(focusNodeToCenter(focusTarget, { duration: 600 }))
       : Promise.resolve();
 
@@ -2358,7 +2361,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
           }
         }, 140);
       });
-  }, [nodes, focusNodeToCenter]);
+  }, [nodes, focusNodeToCenter, zoomOnClickEnabled]);
 
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
