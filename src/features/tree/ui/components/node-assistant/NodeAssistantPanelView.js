@@ -22,6 +22,7 @@ import {
 } from 'shared/constants/agentTimeouts';
 import { Globe, Paperclip, Lightbulb } from 'lucide-react';
 import resolveReasoningConfig from 'shared/utils/reasoningConfig';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 
 const MODEL_LABELS = {
   'gpt-5': 'GPT-5',
@@ -364,83 +365,57 @@ const NodeAssistantPanelView = ({
             />
           </div>
           <div className="flex flex-1 items-center justify-end gap-2">
-            <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-gray-600">
-              <span>
-                {selectedProvider === 'auto'
-                  ? (
-                    autoSelectionPreview
-                      ? (() => {
-                        const providerLabel = formatProviderLabel(autoSelectionPreview.provider);
-                        const modelLabel = formatModelLabel(autoSelectionPreview.model);
-                        const parts = [providerLabel, modelLabel].filter(Boolean);
-                        return parts.length ? `자동: ${parts.join(' · ')}` : '자동 모델 평가 중';
-                      })()
-                      : '자동 모델 평가 중'
-                  )
-                  : (() => {
-                    const providerLabel = formatProviderLabel(selectedProvider);
-                    const effectiveModel = manualReasoningPreview?.model || selectedModel;
-                    const modelLabel = formatModelLabel(effectiveModel);
-                    const parts = [providerLabel, modelLabel].filter(Boolean);
-                    return parts.length ? `현재: ${parts.join(' · ')}` : '모델 미지정';
-                  })()}
-              </span>
-              {selectedProvider === 'auto' && autoSelectionPreview?.explanation && (
-                <span className="text-gray-500">
-                  {autoSelectionPreview.explanation}
-                </span>
-              )}
-              {selectedProvider !== 'auto' && reasoningEnabled && manualReasoningPreview?.explanation && (
-                <span className="text-gray-500">
-                  {manualReasoningPreview.explanation}
-                </span>
-              )}
-              {selectedProvider !== 'auto' && lastAutoSelection && (
-                <span className="text-gray-500">
-                  최근 자동 선택: {(() => {
-                    const providerLabel = formatProviderLabel(lastAutoSelection.provider);
-                    const modelLabel = formatModelLabel(lastAutoSelection.model);
-                    const parts = [providerLabel, modelLabel].filter(Boolean);
-                    return parts.join(' · ');
-                  })()}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <PromptInputButton
-                onClick={() => setReasoningEnabled(!reasoningEnabled)}
-                variant="ghost"
-                disabled={isAttachmentUploading || isStreaming}
-                className={cn(
-                  'rounded-full p-2 hover:bg-gray-100',
-                  reasoningEnabled ? 'text-blue-600' : 'text-gray-500',
-                )}
-                aria-label="Reasoning 모드 토글"
-              >
-                <Lightbulb className="h-4 w-4" />
-              </PromptInputButton>
-              <PromptInputButton
-                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                variant="ghost"
-                disabled={isAttachmentUploading || isStreaming}
-                className={cn(
-                  'rounded-full p-2 hover:bg-gray-100',
-                  webSearchEnabled ? 'text-blue-600' : 'text-gray-500',
-                )}
-                aria-label="웹 검색 토글"
-              >
-                <Globe className="h-4 w-4" />
-              </PromptInputButton>
-              <PromptInputButton
-                onClick={handleAttachmentButtonClick}
-                disabled={isAttachmentUploading || isStreaming}
-                variant="ghost"
-                className="rounded-full p-2 hover:bg-gray-100 text-gray-500"
-                aria-label="이미지 첨부"
-              >
-                <Paperclip className="h-4 w-4" />
-              </PromptInputButton>
-            </div>
+            <TooltipProvider>
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PromptInputButton
+                      onClick={() => setReasoningEnabled(!reasoningEnabled)}
+                      variant="ghost"
+                      disabled={isAttachmentUploading || isStreaming}
+                      className={cn(
+                        'rounded-full p-2 hover:bg-gray-100',
+                        reasoningEnabled ? 'text-blue-600' : 'text-gray-500',
+                      )}
+                      aria-label="Reasoning 모드 토글"
+                    >
+                      <Lightbulb className="h-4 w-4" />
+                    </PromptInputButton>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>오래 생각하기</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PromptInputButton
+                      onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                      variant="ghost"
+                      disabled={isAttachmentUploading || isStreaming}
+                      className={cn(
+                        'rounded-full p-2 hover:bg-gray-100',
+                        webSearchEnabled ? 'text-blue-600' : 'text-gray-500',
+                      )}
+                      aria-label="웹 검색 토글"
+                    >
+                      <Globe className="h-4 w-4" />
+                    </PromptInputButton>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>웹검색</p>
+                  </TooltipContent>
+                </Tooltip>
+                <PromptInputButton
+                  onClick={handleAttachmentButtonClick}
+                  disabled={isAttachmentUploading || isStreaming}
+                  variant="ghost"
+                  className="rounded-full p-2 hover:bg-gray-100 text-gray-500"
+                  aria-label="이미지 첨부"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </PromptInputButton>
+              </div>
+            </TooltipProvider>
           </div>
         </PromptInputToolbar>
 

@@ -30,6 +30,7 @@ import {
   LONG_RESPONSE_NOTICE_DELAY_MS,
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 
 const TYPING_INTERVAL_MS = 18;
 const AGENT_RESPONSE_TIMEOUT_MS = DEFAULT_AGENT_RESPONSE_TIMEOUT_MS;
@@ -1820,89 +1821,54 @@ const LibraryQAPanel = ({
               align="start"
             />
             <div className="flex flex-1 items-center justify-end gap-2">
-              {selectedProvider === 'auto' ? (
-                <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
-                  <span>
-                    {autoSelectionPreview
-                      ? (() => {
-                        const providerLabel = formatProviderLabel(autoSelectionPreview.provider);
-                        const modelLabel = formatModelLabel(autoSelectionPreview.model);
-                        const parts = [providerLabel, modelLabel].filter(Boolean);
-                        return parts.length ? `자동: ${parts.join(' · ')}` : '자동 모델 평가 중';
-                      })()
-                      : '자동 모델 평가 중'}
-                  </span>
-                  {autoSelectionPreview?.explanation ? (
-                    <span className="text-muted-foreground/70">
-                      {autoSelectionPreview.explanation}
-                    </span>
-                  ) : null}
+              <TooltipProvider>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PromptInputButton
+                        onClick={() => setReasoningEnabled(!reasoningEnabled)}
+                        variant={reasoningEnabled ? 'secondary' : 'ghost'}
+                        disabled={isProcessing}
+                        className={cn(
+                          'rounded-full px-2',
+                          reasoningEnabled ? 'text-foreground' : 'text-muted-foreground',
+                        )}
+                        aria-label="Reasoning 모드 토글"
+                      >
+                        <Lightbulb className="h-4 w-4" />
+                      </PromptInputButton>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>오래 생각하기</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PromptInputButton
+                        onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                        variant={webSearchEnabled ? 'secondary' : 'ghost'}
+                        disabled={isProcessing}
+                        className={cn(
+                        'rounded-full px-2',
+                        webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      <Globe className="h-4 w-4" />
+                    </PromptInputButton>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>웹검색</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <PromptInputButton
+                    onClick={handleAttachmentButtonClick}
+                    disabled={isAttachmentUploading || isProcessing}
+                    variant="ghost"
+                  >
+                    <Paperclip size={16} />
+                  </PromptInputButton>
                 </div>
-              ) : (
-                <div className="flex flex-col items-end gap-1 text-[11px] leading-tight text-muted-foreground">
-                  <span>
-                    현재: {(() => {
-                      const providerLabel = formatProviderLabel(selectedProvider);
-                      const effectiveModel = manualReasoningPreview?.model || selectedModel;
-                      const modelLabel = formatModelLabel(effectiveModel);
-                      const parts = [providerLabel, modelLabel].filter(Boolean);
-                      return parts.length ? parts.join(' · ') : '모델 미지정';
-                    })()}
-                  </span>
-                  {lastAutoSelection ? (
-                    <span className="text-muted-foreground/70">
-                      최근 자동 선택: {(() => {
-                        const providerLabel = formatProviderLabel(lastAutoSelection.provider);
-                        const modelLabel = formatModelLabel(lastAutoSelection.model);
-                        const parts = [providerLabel, modelLabel].filter(Boolean);
-                        return parts.join(' · ');
-                      })()}
-                    </span>
-                  ) : null}
-                  {lastAutoSelection?.explanation ? (
-                    <span className="text-muted-foreground/60">
-                      {lastAutoSelection.explanation}
-                    </span>
-                  ) : null}
-                  {reasoningEnabled && manualReasoningPreview?.explanation ? (
-                    <span className="text-muted-foreground/60">
-                      {manualReasoningPreview.explanation}
-                    </span>
-                  ) : null}
-                </div>
-              )}
-              <div className="flex items-center gap-1">
-                <PromptInputButton
-                  onClick={() => setReasoningEnabled(!reasoningEnabled)}
-                  variant={reasoningEnabled ? 'secondary' : 'ghost'}
-                  disabled={isProcessing}
-                  className={cn(
-                    'rounded-full px-2',
-                    reasoningEnabled ? 'text-foreground' : 'text-muted-foreground',
-                  )}
-                  aria-label="Reasoning 모드 토글"
-                >
-                  <Lightbulb className="h-4 w-4" />
-                </PromptInputButton>
-                <PromptInputButton
-                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                  variant={webSearchEnabled ? 'secondary' : 'ghost'}
-                  disabled={isProcessing}
-                  className={cn(
-                  'rounded-full px-2',
-                  webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
-                )}
-              >
-                <Globe className="h-4 w-4" />
-              </PromptInputButton>
-              <PromptInputButton
-                onClick={handleAttachmentButtonClick}
-                disabled={isAttachmentUploading || isProcessing}
-                variant="ghost"
-              >
-                <Paperclip size={16} />
-              </PromptInputButton>
-              </div>
+              </TooltipProvider>
             </div>
           </PromptInputToolbar>
 

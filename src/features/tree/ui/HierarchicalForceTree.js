@@ -10,10 +10,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { treeData } from 'data/treeData';
 import TreeAnimationService from 'features/tree/services/TreeAnimationService';
 import QuestionService from 'features/tree/services/QuestionService';
-import useTreeViewController from 'features/tree/hooks/useTreeViewController';
 import { markNewLinks } from 'shared/utils/linkAnimationUtils';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
-import ForceDirectedTree from 'features/tree/ui/tree2/ForceDirectedTree';
 import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
 import TreeTabBar from 'features/tree/ui/components/TreeTabBar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
@@ -109,12 +107,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const [links, setLinks] = useState([]);
   const [sessionTabs, setSessionTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
-  const {
-    viewMode,
-    setViewMode,
-    isForceView,
-    isTidyView,
-  } = useTreeViewController({ initialMode: 'tree1' });
+  const isTidyView = true;
 
   const closeHandleMenu = useCallback(() => {
     setIsHandleMenuOpen(false);
@@ -122,17 +115,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const toggleHandleMenu = useCallback(() => {
     setIsHandleMenuOpen((previous) => !previous);
   }, []);
-  const handleViewSwitch = useCallback((nextMode) => {
-    if (!nextMode || nextMode === viewMode) {
-      setIsHandleMenuOpen(false);
-      return;
-    }
-    setViewMode(nextMode);
-    setIsHandleMenuOpen(false);
-  }, [setViewMode, viewMode]);
-  useEffect(() => {
-    setIsHandleMenuOpen(false);
-  }, [viewMode]);
   useEffect(() => {
     if (!isHandleMenuOpen) {
       return;
@@ -2811,28 +2793,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                 onClick={(event) => event.stopPropagation()}
               >
                 <div>
-                  <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">뷰 모드</p>
-                  <button
-                    type="button"
-                    onClick={() => handleViewSwitch('tree1')}
-                    className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree1' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
-                    tabIndex={-1}
-                  >
-                    <span>트리 1</span>
-                    {viewMode === 'tree1' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleViewSwitch('tree2')}
-                    className={`mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition ${viewMode === 'tree2' ? 'bg-white text-black font-semibold' : 'text-white/80 hover:bg-white/10'}`}
-                    tabIndex={-1}
-                  >
-                    <span>트리 2</span>
-                    {viewMode === 'tree2' ? <span className="text-xs font-medium text-black/70">현재</span> : null}
-                  </button>
-                </div>
-
-                <div className="mt-3 border-t border-white/10 pt-2">
                   <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">설정</p>
                   <button
                     type="button"
@@ -2961,41 +2921,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
               onTextareaHeightChange={handleTextareaHeightChange}
             />
           </div>
-        </div>
-      )}
-
-      {isForceView && (
-        <div
-          className="absolute inset-0"
-        >
-          <ForceDirectedTree
-            data={data}
-            dimensions={dimensions}
-            onNodeClick={handleNodeClickForAssistant}
-            onNodeRemove={removeNodeAndDescendants}
-            onNodeUpdate={handleNodeUpdate}
-            onNodeCreate={handleManualNodeCreate}
-            onLinkCreate={handleManualLinkCreate}
-            onRootCreate={handleManualRootCreate}
-            treeId={activeTreeId}
-            userId={user?.id}
-            questionService={questionService.current}
-            getInitialConversation={getInitialConversationForNode}
-            onConversationChange={handleConversationChange}
-            onRequestAnswer={handleRequestAnswer}
-            onAnswerComplete={handleAnswerComplete}
-            onAnswerError={handleAnswerError}
-            onSecondQuestion={handleSecondQuestion}
-            onPlaceholderCreate={handlePlaceholderCreate}
-            theme={theme}
-            background={treeBackground}
-            attachmentsByNode={pendingAttachmentsByNode}
-            onNodeAttachmentsChange={setAttachmentsForNode}
-            hideAssistantPanel={true}
-            selectedNodeId={selectedNodeId}
-            onBackgroundClick={handleBackgroundClick}
-            isChatPanelOpen={Boolean(expandedNodeId)}
-          />
         </div>
       )}
 
