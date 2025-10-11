@@ -13,11 +13,11 @@ const resolveModelLabel = (model) => {
     return null;
   }
   const normalized = model.toLowerCase();
+  if (normalized === 'gpt-5-mini') return 'GPT-5 mini';
   if (normalized.startsWith('gpt-5')) return 'GPT-5';
-  if (normalized.startsWith('gpt-4o-mini')) return 'GPT-4o mini';
-  if (normalized.startsWith('gpt-4o')) return 'GPT-4o';
-  if (normalized.startsWith('gpt-4.1')) return 'GPT-4.1 mini';
+  if (normalized === 'gemini-2.5-flash') return 'Gemini 2.5 Flash';
   if (normalized.includes('gemini')) return 'Gemini';
+  if (normalized.includes('claude-3-5-haiku')) return 'Claude 3.5 Haiku';
   if (normalized.includes('claude')) return 'Claude';
   return model;
 };

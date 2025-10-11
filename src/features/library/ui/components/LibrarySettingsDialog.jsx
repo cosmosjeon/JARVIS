@@ -339,7 +339,7 @@ const LibrarySettingsDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[90vw] h-[85vh] p-0 flex flex-col">
+      <DialogContent className="max-w-5xl w-[90vw] h-[85vh] p-0 flex flex-col gap-0">
         <DialogHeader className="px-6 py-4 flex-shrink-0 space-y-0">
           <DialogTitle className="text-xl font-semibold flex items-center gap-2">
             <SettingsIcon className="h-5 w-5" />

@@ -20,19 +20,17 @@ import {
   LONG_RESPONSE_NOTICE_DELAY_MS,
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
-import { Globe, Paperclip, Lightbulb } from 'lucide-react';
+import { Globe, Paperclip, Lightbulb, Zap } from 'lucide-react';
 import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 
 const MODEL_LABELS = {
   'gpt-5': 'GPT-5',
-  'gpt-4o': 'GPT-4o',
-  'gpt-4o-mini': 'GPT-4o mini',
-  'gpt-4.1-mini': 'GPT-4.1 mini',
+  'gpt-5-mini': 'GPT-5 mini',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-1.5-flash': 'Gemini 1.5 Flash',
-  'gemini-1.5-pro': 'Gemini 1.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
+  'claude-3-5-haiku-latest': 'Claude 3.5 Haiku',
 };
 
 const formatModelLabel = (value) => {
@@ -40,16 +38,11 @@ const formatModelLabel = (value) => {
     return null;
   }
   const normalized = value.toLowerCase();
-  if (MODEL_LABELS[value]) {
-    return MODEL_LABELS[value];
-  }
-  if (MODEL_LABELS[normalized]) {
-    return MODEL_LABELS[normalized];
+  const mapped = MODEL_LABELS[value] || MODEL_LABELS[normalized];
+  if (mapped) {
+    return mapped;
   }
   if (normalized.startsWith('gpt-5')) return 'GPT-5';
-  if (normalized.startsWith('gpt-4o-mini')) return 'GPT-4o mini';
-  if (normalized.startsWith('gpt-4o')) return 'GPT-4o';
-  if (normalized.startsWith('gpt-4.1')) return 'GPT-4.1 mini';
   if (normalized.includes('gemini')) return 'Gemini';
   if (normalized.includes('claude')) return 'Claude';
   return value;
@@ -60,10 +53,9 @@ const formatProviderLabel = (value) => {
     return null;
   }
   const normalized = value.toLowerCase();
-  if (normalized === 'openai') return 'OpenAI';
+  if (normalized === 'openai') return 'GPT';
   if (normalized === 'gemini') return 'Gemini';
   if (normalized === 'claude') return 'Claude';
-  if (normalized === 'auto') return 'Smart Auto';
   return value.replace(/^\w/, (char) => char.toUpperCase());
 };
 
@@ -81,7 +73,9 @@ const NodeAssistantPanelView = ({
   registerMessageContainer,
   messages,
   handleRetryMessage,
+  handleRetryWithModel,
   handleCopyMessage,
+  availableModels = [],
   spinningMap = {},
   attachments = [],
   onAttachmentRemove = () => { },
@@ -111,6 +105,8 @@ const NodeAssistantPanelView = ({
   setWebSearchEnabled,
   reasoningEnabled,
   setReasoningEnabled,
+  fastResponseEnabled,
+  setFastResponseEnabled,
   autoSelectionPreview,
   lastAutoSelection,
   onDropdownOpenChange,
@@ -301,7 +297,9 @@ const NodeAssistantPanelView = ({
             title="Assistant"
             messages={messages}
             onRetry={handleRetryMessage}
+            onRetryWithModel={handleRetryWithModel}
             onCopy={handleCopyMessage}
+            availableModels={availableModels}
             panelStyles={resolvedPanelStyles}
             theme={theme}
             className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
@@ -365,55 +363,95 @@ const NodeAssistantPanelView = ({
             />
           </div>
           <div className="flex flex-1 items-center justify-end gap-2">
-            <TooltipProvider>
-              <div className="flex items-center gap-2">
+            <TooltipProvider delayDuration={300}>
+              <div className="flex items-center gap-2 relative z-10">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <PromptInputButton
-                      onClick={() => setReasoningEnabled(!reasoningEnabled)}
-                      variant="ghost"
-                      disabled={isAttachmentUploading || isStreaming}
-                      className={cn(
-                        'rounded-full p-2 hover:bg-gray-100',
-                        reasoningEnabled ? 'text-blue-600' : 'text-gray-500',
-                      )}
-                      aria-label="Reasoning 모드 토글"
-                    >
-                      <Lightbulb className="h-4 w-4" />
-                    </PromptInputButton>
+                    <div className="relative z-10">
+                      <PromptInputButton
+                        onClick={() => setReasoningEnabled(!reasoningEnabled)}
+                        variant="ghost"
+                        disabled={isAttachmentUploading || isStreaming}
+                        className={cn(
+                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          reasoningEnabled 
+                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
+                            : 'text-gray-500 hover:bg-gray-100',
+                        )}
+                        aria-label="Reasoning 모드 토글"
+                      >
+                        <Lightbulb className="h-4 w-4" />
+                      </PromptInputButton>
+                    </div>
                   </TooltipTrigger>
-                  <TooltipContent>
+                  <TooltipContent side="top">
                     <p>오래 생각하기</p>
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <PromptInputButton
-                      onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                      variant="ghost"
-                      disabled={isAttachmentUploading || isStreaming}
-                      className={cn(
-                        'rounded-full p-2 hover:bg-gray-100',
-                        webSearchEnabled ? 'text-blue-600' : 'text-gray-500',
-                      )}
-                      aria-label="웹 검색 토글"
-                    >
-                      <Globe className="h-4 w-4" />
-                    </PromptInputButton>
+                    <div className="relative z-10">
+                      <PromptInputButton
+                        onClick={() => setFastResponseEnabled(!fastResponseEnabled)}
+                        variant="ghost"
+                        disabled={isAttachmentUploading || isStreaming}
+                        className={cn(
+                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          fastResponseEnabled
+                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm'
+                            : 'text-gray-500 hover:bg-gray-100',
+                        )}
+                        aria-label="빠른 대답 모드 토글"
+                      >
+                        <Zap className="h-4 w-4" />
+                      </PromptInputButton>
+                    </div>
                   </TooltipTrigger>
-                  <TooltipContent>
+                  <TooltipContent side="top">
+                    <p>빠른대답</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="relative z-10">
+                      <PromptInputButton
+                        onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                        variant="ghost"
+                        disabled={isAttachmentUploading || isStreaming}
+                        className={cn(
+                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          webSearchEnabled 
+                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
+                            : 'text-gray-500 hover:bg-gray-100',
+                        )}
+                        aria-label="웹 검색 토글"
+                      >
+                        <Globe className="h-4 w-4" />
+                      </PromptInputButton>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
                     <p>웹검색</p>
                   </TooltipContent>
                 </Tooltip>
-                <PromptInputButton
-                  onClick={handleAttachmentButtonClick}
-                  disabled={isAttachmentUploading || isStreaming}
-                  variant="ghost"
-                  className="rounded-full p-2 hover:bg-gray-100 text-gray-500"
-                  aria-label="이미지 첨부"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </PromptInputButton>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="relative z-10">
+                      <PromptInputButton
+                        onClick={handleAttachmentButtonClick}
+                        disabled={isAttachmentUploading || isStreaming}
+                        variant="ghost"
+                        className="rounded-full p-2 hover:bg-gray-100 text-gray-500 relative z-10"
+                        aria-label="이미지 첨부"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </PromptInputButton>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>파일첨부</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </TooltipProvider>
           </div>

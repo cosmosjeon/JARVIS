@@ -4,45 +4,35 @@ const STORAGE_KEY = 'jarvis.ai.preference';
 
 export const AI_PROVIDERS = [
   {
-    id: 'auto',
-    label: 'Auto (추천)',
-    defaultModel: 'auto-smart',
-    models: [
-      { id: 'auto-smart', label: '스마트 선택' },
-    ],
-  },
-  {
     id: 'openai',
-    label: 'OpenAI',
+    label: 'GPT',
     defaultModel: 'gpt-5',
     models: [
       { id: 'gpt-5', label: 'GPT-5' },
-      { id: 'gpt-4o', label: 'GPT-4o' },
-      { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
-      { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
     ],
   },
   {
     id: 'gemini',
-    label: 'Gemini 2.5 Pro',
+    label: 'Gemini',
     defaultModel: 'gemini-2.5-pro',
     models: [
       { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (미리보기)' },
     ],
   },
   {
     id: 'claude',
-    label: 'Claude 4.5',
+    label: 'Claude',
     defaultModel: 'claude-sonnet-4-5',
     models: [
       { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-      { id: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku' },
-      { id: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
     ],
   },
+];
+
+export const PRIMARY_MODEL_OPTIONS = [
+  { id: 'openai', label: 'GPT' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'claude', label: 'Claude' },
 ];
 
 const PROVIDER_MAP = AI_PROVIDERS.reduce((acc, item) => {
@@ -50,12 +40,29 @@ const PROVIDER_MAP = AI_PROVIDERS.reduce((acc, item) => {
   return acc;
 }, {});
 
+const FAST_MODEL_BY_PROVIDER = {
+  openai: 'gpt-5-mini',
+  gemini: 'gemini-2.5-flash',
+  claude: 'claude-3-5-haiku-latest',
+};
+
+const DEFAULT_PROVIDER = 'openai';
+
+const resolveModelForProvider = (providerId, fastResponseEnabled) => {
+  const normalized = PROVIDER_MAP[providerId] ? providerId : DEFAULT_PROVIDER;
+  if (fastResponseEnabled && FAST_MODEL_BY_PROVIDER[normalized]) {
+    return FAST_MODEL_BY_PROVIDER[normalized];
+  }
+  return PROVIDER_MAP[normalized]?.defaultModel || FAST_MODEL_BY_PROVIDER[normalized] || '';
+};
+
 const DEFAULT_STATE = {
-  provider: 'auto',
-  model: PROVIDER_MAP.auto.defaultModel,
+  provider: DEFAULT_PROVIDER,
+  model: resolveModelForProvider(DEFAULT_PROVIDER, false),
   temperature: 0.7,
   webSearchEnabled: false,
   reasoningEnabled: false,
+  fastResponseEnabled: false,
 };
 
 const PREFERENCE_EVENT = 'jarvis:ai-preference-change';
@@ -67,14 +74,19 @@ const normalizePreference = (raw) => {
 
   const provider = typeof raw.provider === 'string' && PROVIDER_MAP[raw.provider]
     ? raw.provider
-    : DEFAULT_STATE.provider;
+    : DEFAULT_PROVIDER;
 
   const providerConfig = PROVIDER_MAP[provider];
-  const supportedModels = providerConfig.models.map((model) => model.id);
+  const fastResponseEnabled = typeof raw.fastResponseEnabled === 'boolean'
+    ? raw.fastResponseEnabled
+    : DEFAULT_STATE.fastResponseEnabled;
+  const supportedModels = providerConfig.models
+    .map((model) => model.id)
+    .concat(FAST_MODEL_BY_PROVIDER[provider] ? [FAST_MODEL_BY_PROVIDER[provider]] : []);
 
   const model = typeof raw.model === 'string' && supportedModels.includes(raw.model)
     ? raw.model
-    : providerConfig.defaultModel;
+    : resolveModelForProvider(provider, fastResponseEnabled);
 
   const temperature = typeof raw.temperature === 'number' && Number.isFinite(raw.temperature)
     ? raw.temperature
@@ -93,6 +105,7 @@ const normalizePreference = (raw) => {
     temperature,
     webSearchEnabled,
     reasoningEnabled,
+    fastResponseEnabled,
   };
 };
 
@@ -200,11 +213,10 @@ export const useAIModelPreference = () => {
       if (nextProvider === prev.provider) {
         return prev;
       }
-      const nextProviderConfig = PROVIDER_MAP[nextProvider];
       return {
         ...prev,
         provider: nextProvider,
-        model: nextProviderConfig.defaultModel,
+        model: resolveModelForProvider(nextProvider, prev.fastResponseEnabled),
       };
     });
   }, [setPreference]);
@@ -230,6 +242,17 @@ export const useAIModelPreference = () => {
     }));
   }, [setPreference]);
 
+  const setFastResponseEnabled = useCallback((next) => {
+    setPreference((prev) => {
+      const fastEnabled = Boolean(next);
+      return {
+        ...prev,
+        fastResponseEnabled: fastEnabled,
+        model: resolveModelForProvider(prev.provider, fastEnabled),
+      };
+    });
+  }, [setPreference]);
+
   return {
     preference,
     provider: preference.provider,
@@ -237,12 +260,14 @@ export const useAIModelPreference = () => {
     temperature: preference.temperature,
     webSearchEnabled: preference.webSearchEnabled,
     reasoningEnabled: preference.reasoningEnabled,
+    fastResponseEnabled: preference.fastResponseEnabled,
     providerOptions,
     currentProvider: providerConfig,
     setProvider,
     setTemperature,
     setWebSearchEnabled,
     setReasoningEnabled,
+    setFastResponseEnabled,
     setPreference,
   };
 };

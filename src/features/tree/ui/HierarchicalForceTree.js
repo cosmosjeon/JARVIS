@@ -53,10 +53,11 @@ import {
   buildOrthogonalPath,
 } from 'features/tree/ui/renderUtils';
 
-const TIDY_ASSISTANT_PANEL_RATIO = 0.38;
+const TIDY_ASSISTANT_PANEL_RATIO = 0.5;
 const TIDY_ASSISTANT_PANEL_MIN_WIDTH = 360;
 const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
 const TIDY_ASSISTANT_PANEL_GAP = 0;
+const TIDY_CANVAS_MIN_WIDTH = 320;
 
 const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const { user } = useSupabaseAuth();
@@ -821,14 +822,29 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const tidyAssistantPanelOffset = tidyAssistantPanelVisible
     ? tidyAssistantPanelWidth + TIDY_ASSISTANT_PANEL_GAP
     : 0;
+  const panelFocusStateRef = useRef({ visible: false, offset: 0 });
+  const pendingPanelRefocusRef = useRef(false);
+  const tidyPanelOffsetThrottleRef = useRef(null);
+  const [settledPanelOffset, setSettledPanelOffset] = useState(0);
+  const effectivePanelOffset = tidyAssistantPanelVisible ? settledPanelOffset : 0;
 
   // 트리는 항상 전체 화면 사용 (채팅창은 오버레이로 표시)
   const dimensions = useMemo(() => {
-    if (!baseDimensions) return baseDimensions;
+    if (!baseDimensions) {
+      return baseDimensions;
+    }
+    if (!tidyAssistantPanelVisible) {
+      return { ...baseDimensions };
+    }
+    const baseWidth = Number.isFinite(baseDimensions.width) ? baseDimensions.width : 0;
+    const availableWidth = Math.max(0, baseWidth - effectivePanelOffset);
+    const fallbackWidth = Math.min(baseWidth, TIDY_CANVAS_MIN_WIDTH);
+    const effectiveWidth = Math.max(availableWidth, fallbackWidth);
     return {
       ...baseDimensions,
+      width: effectiveWidth,
     };
-  }, [baseDimensions]);
+  }, [baseDimensions, effectivePanelOffset, tidyAssistantPanelVisible]);
   const tidyAssistantAttachments = useMemo(() => {
     if (!expandedNodeId) {
       return [];
@@ -836,6 +852,46 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     const candidate = pendingAttachmentsByNode[expandedNodeId];
     return Array.isArray(candidate) ? candidate : [];
   }, [expandedNodeId, pendingAttachmentsByNode]);
+
+  useEffect(() => {
+    if (!tidyAssistantPanelVisible) {
+      if (tidyPanelOffsetThrottleRef.current) {
+        window.clearTimeout(tidyPanelOffsetThrottleRef.current);
+        tidyPanelOffsetThrottleRef.current = null;
+      }
+      setSettledPanelOffset(0);
+      return undefined;
+    }
+
+    if (tidyPanelOffsetThrottleRef.current) {
+      window.clearTimeout(tidyPanelOffsetThrottleRef.current);
+      tidyPanelOffsetThrottleRef.current = null;
+    }
+
+    if (isTidyPanelResizing) {
+      tidyPanelOffsetThrottleRef.current = window.setTimeout(() => {
+        setSettledPanelOffset(tidyAssistantPanelOffset);
+        tidyPanelOffsetThrottleRef.current = null;
+      }, 80);
+      return () => {
+        if (tidyPanelOffsetThrottleRef.current) {
+          window.clearTimeout(tidyPanelOffsetThrottleRef.current);
+          tidyPanelOffsetThrottleRef.current = null;
+        }
+      };
+    }
+
+    setSettledPanelOffset(tidyAssistantPanelOffset);
+    return undefined;
+  }, [tidyAssistantPanelVisible, tidyAssistantPanelOffset, isTidyPanelResizing]);
+
+  useEffect(() => () => {
+    if (tidyPanelOffsetThrottleRef.current) {
+      window.clearTimeout(tidyPanelOffsetThrottleRef.current);
+      tidyPanelOffsetThrottleRef.current = null;
+    }
+  }, []);
+
   const tidyAssistantIsRoot = tidyAssistantNode ? !parentByChild.has(tidyAssistantNode.id) : false;
   const beginTidyPanelResize = useCallback((event) => {
     if (!tidyAssistantPanelVisible) {
@@ -2119,19 +2175,92 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   }, [dimensions, data, visibleGraph.nodes, visibleGraph.links, isTidyView, hierarchicalLinks, viewTransform, setViewTransform]);
 
   const focusNodeToCenter = useCallback((node, options = {}) => {
-    // 기본 duration을 600ms로 설정 (부드러운 애니메이션)
     const defaultDuration = 600;
+    const baseWidth = Number.isFinite(dimensions?.width) ? dimensions.width : 0;
+    const baseHeight = Number.isFinite(dimensions?.height) ? dimensions.height : 0;
+    const shouldAdjustForPanel = tidyAssistantPanelVisible && baseWidth > 0;
+    const visibleWidth = shouldAdjustForPanel
+      ? Math.max(
+        Math.max(0, baseWidth - effectivePanelOffset),
+        Math.min(baseWidth, TIDY_CANVAS_MIN_WIDTH),
+      )
+      : baseWidth;
+    const effectiveDimensions = shouldAdjustForPanel
+      ? { width: visibleWidth, height: baseHeight }
+      : dimensions;
+
     return focusNodeToCenterUtil({
       node,
       svgElement: svgRef.current,
       zoomBehaviour: zoomBehaviourRef.current,
-      dimensions,
+      dimensions: effectiveDimensions,
       viewTransform,
       setViewTransform,
       duration: options.duration !== undefined ? options.duration : defaultDuration,
       scale: options.scale,
+      offset: options.offset,
+      origin: options.origin,
+      allowScaleOverride: options.allowScaleOverride,
     });
-  }, [dimensions, viewTransform, setViewTransform]);
+  }, [
+    dimensions,
+    effectivePanelOffset,
+    tidyAssistantPanelVisible,
+    viewTransform,
+    setViewTransform,
+  ]);
+
+  useEffect(() => {
+    const previousState = panelFocusStateRef.current;
+    const nextState = {
+      visible: tidyAssistantPanelVisible,
+      offset: effectivePanelOffset,
+    };
+    panelFocusStateRef.current = nextState;
+
+    if (!nextState.visible) {
+      pendingPanelRefocusRef.current = false;
+    }
+
+    const offsetChanged = nextState.visible
+      && previousState.visible
+      && Math.abs(previousState.offset - nextState.offset) > 1;
+    const becameVisible = nextState.visible && !previousState.visible;
+
+    if (offsetChanged && isTidyPanelResizing) {
+      pendingPanelRefocusRef.current = true;
+      return;
+    }
+
+    const shouldRefocus =
+      becameVisible
+      || (offsetChanged && !isTidyPanelResizing)
+      || (pendingPanelRefocusRef.current && !isTidyPanelResizing && nextState.visible);
+
+    if (!shouldRefocus) {
+      return;
+    }
+
+    pendingPanelRefocusRef.current = false;
+
+    if (!expandedNodeId) {
+      return;
+    }
+
+    const targetNode = nodes.find((candidate) => candidate.id === expandedNodeId);
+    if (!targetNode || !Number.isFinite(targetNode.x) || !Number.isFinite(targetNode.y)) {
+      return;
+    }
+
+    focusNodeToCenter(targetNode, { duration: becameVisible ? 0 : 220 });
+  }, [
+    tidyAssistantPanelVisible,
+    effectivePanelOffset,
+    isTidyPanelResizing,
+    expandedNodeId,
+    nodes,
+    focusNodeToCenter,
+  ]);
 
   // Handle node click for assistant focus
   const handleNodeClickForAssistant = useCallback((payload) => {
@@ -2924,13 +3053,17 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
         </div>
       )}
 
-      {isTidyView && (
-        <div
-          className="absolute inset-0"
-        >
-          <TidyTreeView
-            data={data}
-            dimensions={dimensions}
+  {isTidyView && (
+    <div
+      className="absolute inset-0"
+      style={{
+        right: effectivePanelOffset,
+        transition: 'right 200ms ease',
+      }}
+    >
+      <TidyTreeView
+        data={data}
+        dimensions={dimensions}
             fitRequestVersion={data?.nodes?.length || 0}
             theme={theme}
             background={treeBackground}

@@ -172,46 +172,37 @@ const selectOpenAIModel = ({
       provider: 'openai',
       model: 'gpt-5',
       reasoning: { effort: length > 800 ? 'high' : 'medium' },
-      explanation: '사용자 요청으로 reasoning 모드를 강제 활성화했습니다.',
+      explanation: '사용자 요청으로 reasoning 모드를 강제 활성화해 GPT-5를 사용합니다.',
       confidence: 'high',
     };
   }
 
-  if (wantsVision) {
+  if (wantsVision || hasAttachments) {
     return {
       provider: 'openai',
-      model: 'gpt-4o',
+      model: 'gpt-5',
       explanation: hasAttachments
-        ? '이미지 첨부가 포함되어 멀티모달 모델 GPT-4o를 선택했습니다.'
-        : '시각적 설명이 필요한 질문으로 판단하여 멀티모달 모델 GPT-4o를 선택했습니다.',
+        ? '이미지 첨부가 포함되어 멀티모달을 지원하는 GPT-5를 선택했습니다.'
+        : '시각 정보를 요구하는 질문으로 판단되어 GPT-5를 선택했습니다.',
       confidence: 'high',
     };
   }
 
-  if (reasoningScore >= 3 || length > 600 || (containsMathNotation && length > 280)) {
+  if (reasoningScore >= 2 || length > 320 || containsTableOrListRequest || (containsMathNotation && length > 200)) {
     return {
       provider: 'openai',
       model: 'gpt-5',
       reasoning: { effort: length > 1200 ? 'high' : 'medium' },
-      explanation: '복잡한 추론이 필요한 질문으로 판단되어 GPT-5와 reasoning 모드를 활성화했습니다.',
+      explanation: '복잡한 분석이 필요해 GPT-5와 reasoning 구성을 권장합니다.',
       confidence: 'medium',
     };
   }
 
-  if (reasoningScore >= 2 || length > 320 || containsTableOrListRequest) {
+  if (codeScore >= 2 || length <= 180) {
     return {
       provider: 'openai',
-      model: 'gpt-4o',
-      explanation: '심층 분석이나 비교가 요구되어 균형잡힌 성능의 GPT-4o를 선택했습니다.',
-      confidence: 'medium',
-    };
-  }
-
-  if (codeScore >= 2) {
-    return {
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      explanation: '코드 관련 어휘가 많이 포함되어 빠른 코드 이해에 유리한 GPT-4o mini를 선택했습니다.',
+      model: 'gpt-5-mini',
+      explanation: '빠른 응답이 필요한 일반/코드 질의로 판단되어 GPT-5 mini를 선택했습니다.',
       confidence: 'medium',
     };
   }
@@ -219,33 +210,24 @@ const selectOpenAIModel = ({
   if (webSearchEnabled && length > 200) {
     return {
       provider: 'openai',
-      model: 'gpt-4o',
-      explanation: '웹 검색이 활성화되어 있으며 정보를 요약할 필요가 있어 GPT-4o를 선택했습니다.',
-      confidence: 'medium',
-    };
-  }
-
-  if (length > 180) {
-    return {
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      explanation: '질문 길이가 길지만 복잡한 추론 신호는 적어 GPT-4o mini를 선택했습니다.',
+      model: 'gpt-5',
+      explanation: '웹 검색이 활성화되어 있어 요약 품질을 위해 GPT-5를 선택했습니다.',
       confidence: 'medium',
     };
   }
 
   return {
     provider: 'openai',
-    model: 'gpt-4.1-mini',
-    explanation: '일반적인 질의로 판단되어 빠른 응답이 가능한 GPT-4.1 mini를 선택했습니다.',
-    confidence: 'high',
+    model: 'gpt-5',
+    explanation: '기본적으로 균형 잡힌 GPT-5 모델을 선택했습니다.',
+    confidence: 'low',
   };
 };
 
 const fallbackSelection = () => ({
   provider: 'openai',
-  model: 'gpt-4.1-mini',
-  explanation: '명확한 신호가 없어 기본 모델을 선택했습니다.',
+  model: 'gpt-5-mini',
+  explanation: '명확한 신호가 없어 가볍고 빠른 GPT-5 mini를 선택했습니다.',
   confidence: 'low',
 });
 

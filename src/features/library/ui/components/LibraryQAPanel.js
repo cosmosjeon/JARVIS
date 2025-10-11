@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Paperclip, Network, Shield, Globe, Lightbulb } from 'lucide-react';
+import { Loader2, X, Paperclip, Network, Shield, Globe, Lightbulb, Zap } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useFileDropZone } from 'shared/hooks/useFileDropZone';
@@ -22,7 +22,7 @@ import {
   PromptInputSubmit,
   PromptInputToolbar,
 } from 'shared/ui/shadcn-io/ai/prompt-input';
-import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import { useAIModelPreference, PRIMARY_MODEL_OPTIONS } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
 import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import {
@@ -40,13 +40,11 @@ const TIMEOUT_MESSAGE = 'AI 응답이 지연되고 있습니다. 잠시 후 다�
 
 const MODEL_LABELS = {
   'gpt-5': 'GPT-5',
-  'gpt-4o': 'GPT-4o',
-  'gpt-4o-mini': 'GPT-4o mini',
-  'gpt-4.1-mini': 'GPT-4.1 mini',
+  'gpt-5-mini': 'GPT-5 mini',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-1.5-flash': 'Gemini 1.5 Flash',
-  'gemini-1.5-pro': 'Gemini 1.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
+  'claude-3-5-haiku-latest': 'Claude 3.5 Haiku',
 };
 
 const formatModelLabel = (value) => {
@@ -54,16 +52,11 @@ const formatModelLabel = (value) => {
     return null;
   }
   const normalized = value.toLowerCase();
-  if (MODEL_LABELS[value]) {
-    return MODEL_LABELS[value];
-  }
-  if (MODEL_LABELS[normalized]) {
-    return MODEL_LABELS[normalized];
+  const mapped = MODEL_LABELS[value] || MODEL_LABELS[normalized];
+  if (mapped) {
+    return mapped;
   }
   if (normalized.startsWith('gpt-5')) return 'GPT-5';
-  if (normalized.startsWith('gpt-4o-mini')) return 'GPT-4o mini';
-  if (normalized.startsWith('gpt-4o')) return 'GPT-4o';
-  if (normalized.startsWith('gpt-4.1')) return 'GPT-4.1 mini';
   if (normalized.includes('gemini')) return 'Gemini';
   if (normalized.includes('claude')) return 'Claude';
   return value;
@@ -74,10 +67,9 @@ const formatProviderLabel = (value) => {
     return null;
   }
   const normalized = value.toLowerCase();
-  if (normalized === 'openai') return 'OpenAI';
+  if (normalized === 'openai') return 'GPT';
   if (normalized === 'gemini') return 'Gemini';
   if (normalized === 'claude') return 'Claude';
-  if (normalized === 'auto') return 'Smart Auto';
   return value.replace(/^[a-z]/, (char) => char.toUpperCase());
 };
 
@@ -127,6 +119,8 @@ const LibraryQAPanel = ({
     setWebSearchEnabled,
     reasoningEnabled,
     setReasoningEnabled,
+    fastResponseEnabled,
+    setFastResponseEnabled,
   } = useAIModelPreference();
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
@@ -197,6 +191,50 @@ const LibraryQAPanel = ({
       }
     }, 150);
   }, [messages, selectedNode]);
+
+  const handleRetryWithModel = useCallback((message, providerId) => {
+    const normalizedProvider = typeof providerId === 'string' ? providerId.toLowerCase() : '';
+    const providerOption = PRIMARY_MODEL_OPTIONS.find((option) => option.id === normalizedProvider);
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const question = lastUser?.text || selectedNode?.question || selectedNode?.keyword || '';
+    if (!question || !providerOption) return;
+
+    if (message?.id) {
+      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    }
+
+    // Clear the last assistant message
+    const lastAssistantIndex = [...messages].reverse().findIndex((m) => m.role === 'assistant');
+    if (lastAssistantIndex >= 0) {
+      const actualIndex = messages.length - 1 - lastAssistantIndex;
+      const updatedMessages = messages.slice(0, actualIndex);
+      setMessages(updatedMessages);
+    }
+
+    setSelectedProvider(providerOption.id);
+    // Set the question in composer and trigger send with specific model
+    const scheduleSend = () => {
+      setComposerValue(question);
+      window.setTimeout(() => {
+        const sendButton = document.querySelector('[aria-label="메시지 전송"]');
+        if (sendButton) {
+          sendButton.click();
+        }
+        if (message?.id) {
+          window.setTimeout(() => {
+            setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
+          }, 900);
+        }
+      }, 120);
+    };
+    if (typeof window !== 'undefined') {
+      window.setTimeout(scheduleSend, 0);
+    } else {
+      scheduleSend();
+    }
+  }, [messages, selectedNode, setSelectedProvider]);
+
+  const availableModels = useMemo(() => [...PRIMARY_MODEL_OPTIONS], []);
 
   const isEditableTitleActive = useCallback(() => {
     if (typeof document === 'undefined') {
@@ -1651,7 +1689,9 @@ const LibraryQAPanel = ({
             title="Assistant"
             messages={messages}
             onRetry={handleRetryMessage}
+            onRetryWithModel={handleRetryWithModel}
             onCopy={handleCopyMessage}
+            availableModels={availableModels}
             endRef={messagesEndRef}
             className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
             onContainerRef={handleRegisterMessageContainer}
@@ -1821,52 +1861,93 @@ const LibraryQAPanel = ({
               align="start"
             />
             <div className="flex flex-1 items-center justify-end gap-2">
-              <TooltipProvider>
-                <div className="flex items-center gap-1">
+              <TooltipProvider delayDuration={300}>
+                <div className="flex items-center gap-1 relative z-10">
                   <Tooltip>
                     <TooltipTrigger asChild>
+                      <div className="relative z-10">
+                        <PromptInputButton
+                          onClick={() => setReasoningEnabled(!reasoningEnabled)}
+                          variant="ghost"
+                          disabled={isProcessing}
+                          className={cn(
+                            'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                            reasoningEnabled 
+                              ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
+                              : 'text-gray-500 hover:bg-gray-100',
+                          )}
+                          aria-label="Reasoning 모드 토글"
+                        >
+                          <Lightbulb className="h-4 w-4" />
+                        </PromptInputButton>
+                      </div>
+                    </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>오래 생각하기</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="relative z-10">
                       <PromptInputButton
-                        onClick={() => setReasoningEnabled(!reasoningEnabled)}
-                        variant={reasoningEnabled ? 'secondary' : 'ghost'}
+                        onClick={() => setFastResponseEnabled(!fastResponseEnabled)}
+                        variant="ghost"
                         disabled={isProcessing}
                         className={cn(
-                          'rounded-full px-2',
-                          reasoningEnabled ? 'text-foreground' : 'text-muted-foreground',
+                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          fastResponseEnabled
+                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm'
+                            : 'text-gray-500 hover:bg-gray-100',
                         )}
-                        aria-label="Reasoning 모드 토글"
+                        aria-label="빠른 대답 모드 토글"
                       >
-                        <Lightbulb className="h-4 w-4" />
+                        <Zap className="h-4 w-4" />
                       </PromptInputButton>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>오래 생각하기</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>빠른대답</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="relative z-10">
                       <PromptInputButton
                         onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                        variant={webSearchEnabled ? 'secondary' : 'ghost'}
-                        disabled={isProcessing}
-                        className={cn(
-                        'rounded-full px-2',
-                        webSearchEnabled ? 'text-foreground' : 'text-muted-foreground',
-                      )}
-                    >
-                      <Globe className="h-4 w-4" />
-                    </PromptInputButton>
+                          variant="ghost"
+                          disabled={isProcessing}
+                          className={cn(
+                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          webSearchEnabled 
+                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
+                            : 'text-gray-500 hover:bg-gray-100',
+                        )}
+                      >
+                        <Globe className="h-4 w-4" />
+                      </PromptInputButton>
+                      </div>
                     </TooltipTrigger>
-                    <TooltipContent>
+                    <TooltipContent side="top">
                       <p>웹검색</p>
                     </TooltipContent>
                   </Tooltip>
-                  <PromptInputButton
-                    onClick={handleAttachmentButtonClick}
-                    disabled={isAttachmentUploading || isProcessing}
-                    variant="ghost"
-                  >
-                    <Paperclip size={16} />
-                  </PromptInputButton>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="relative z-10">
+                        <PromptInputButton
+                          onClick={handleAttachmentButtonClick}
+                          disabled={isAttachmentUploading || isProcessing}
+                          variant="ghost"
+                          className="rounded-full p-2 hover:bg-gray-100 text-gray-500 relative z-10"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </PromptInputButton>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>파일첨부</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               </TooltipProvider>
             </div>

@@ -7,7 +7,7 @@ import { useNodeAssistantConversation } from 'features/tree/hooks/useNodeAssista
 import NodeNavigationService from 'features/tree/services/node-assistant/NodeNavigationService';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
 import { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
-import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
+import { useAIModelPreference, PRIMARY_MODEL_OPTIONS } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
 import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 
@@ -114,6 +114,8 @@ export const useNodeAssistantPanelController = ({
     setWebSearchEnabled,
     reasoningEnabled,
     setReasoningEnabled,
+    fastResponseEnabled,
+    setFastResponseEnabled,
   } = useAIModelPreference();
 
   const [spinningMap, setSpinningMap] = useState({});
@@ -597,6 +599,34 @@ export const useNodeAssistantPanelController = ({
     });
   }, [messages, node?.keyword, sendResponse, summary?.label]);
 
+  const handleRetryWithModel = useCallback((message, providerId) => {
+    const normalizedProvider = typeof providerId === 'string' ? providerId.toLowerCase() : '';
+    const providerOption = PRIMARY_MODEL_OPTIONS.find((option) => option.id === normalizedProvider);
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const question = lastUser?.text || summary.label || node?.keyword || '';
+    if (!question || !providerOption) return;
+    if (message?.id) {
+      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    }
+    setSelectedProvider(providerOption.id);
+    const triggerResend = () => {
+      sendResponse(question).finally(() => {
+        if (message?.id) {
+          window.setTimeout(() => {
+            setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
+          }, 900);
+        }
+      });
+    };
+    if (typeof window !== 'undefined') {
+      window.setTimeout(triggerResend, 0);
+    } else {
+      triggerResend();
+    }
+  }, [messages, node?.keyword, sendResponse, setSelectedProvider, summary?.label]);
+
+  const availableModels = useMemo(() => [...PRIMARY_MODEL_OPTIONS], []);
+
   const handleKeyDown = useCallback((event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -753,7 +783,9 @@ export const useNodeAssistantPanelController = ({
     onAttachmentRemove: handleAttachmentRemove,
     onClearAttachments: clearAttachments,
     handleRetryMessage,
+    handleRetryWithModel,
     handleCopyMessage,
+    availableModels,
     spinningMap,
     registerMessageContainer,
     handleHighlightToggle,
@@ -780,6 +812,8 @@ export const useNodeAssistantPanelController = ({
     setWebSearchEnabled,
     reasoningEnabled,
     setReasoningEnabled,
+    fastResponseEnabled,
+    setFastResponseEnabled,
     autoSelectionPreview,
     lastAutoSelection,
   };

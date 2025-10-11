@@ -6,6 +6,8 @@ const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const defaultSettings = {
   autoPasteEnabled: true,
   trayEnabled: true,
+  zoomOnClickEnabled: true,
+  inputMode: 'mouse',
 };
 
 const readSettings = () => {

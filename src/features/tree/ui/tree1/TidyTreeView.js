@@ -662,17 +662,8 @@ const TidyTreeView = ({
         // 드래그 중이면 차단
         if (dragStateManager.isDragging()) return false;
 
-        // 노드 위에서는 차단
-        const t = event?.target;
-        if (t && typeof t.closest === "function") {
-          if (t.closest('g[data-node-interactive="true"]')) return false;
-        }
-
-        // 우클릭은 차단
-        if (event.button === 2) return false;
-
         if (event.type === 'wheel') {
-          // 모든 모드에서 트랙패드 스타일 동작 적용 - 딜레이 최소화
+          // 모든 모드에서 트랙패드 스타일 동작 적용 - 노드 위에서도 패닝 유지
           if (typeof event.preventDefault === 'function') {
             event.preventDefault();
           }
@@ -685,6 +676,15 @@ const TidyTreeView = ({
           }
           return true;
         }
+
+        // 노드 위에서는 차단
+        const t = event?.target;
+        if (t && typeof t.closest === "function") {
+          if (t.closest('g[data-node-interactive="true"]')) return false;
+        }
+
+        // 우클릭은 차단
+        if (event.button === 2) return false;
 
         // 마우스 드래그 이동: 휠 클릭(button 1) 또는 좌클릭 허용 (트랙패드 스타일)
         if (event.type === 'mousedown' || event.type === 'mousemove') {

@@ -23,6 +23,16 @@ const registerSettingsHandlers = ({
       shouldApplyTray = true;
     }
 
+    if (typeof payload.zoomOnClickEnabled === 'boolean' && payload.zoomOnClickEnabled !== nextSettings.zoomOnClickEnabled) {
+      nextSettings.zoomOnClickEnabled = payload.zoomOnClickEnabled;
+      changed = true;
+    }
+
+    if (typeof payload.inputMode === 'string' && payload.inputMode !== nextSettings.inputMode) {
+      nextSettings.inputMode = payload.inputMode;
+      changed = true;
+    }
+
     if (changed) {
       setSettings(nextSettings);
       if (shouldApplyTray) {

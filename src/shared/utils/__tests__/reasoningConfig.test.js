@@ -4,12 +4,12 @@ describe('resolveReasoningConfig', () => {
   it('returns original model when reasoning disabled', () => {
     const result = resolveReasoningConfig({
       provider: 'openai',
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini',
       reasoningEnabled: false,
     });
 
     expect(result).toEqual({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini',
       reasoning: null,
       explanation: null,
     });
@@ -18,7 +18,7 @@ describe('resolveReasoningConfig', () => {
   it('forces GPT-5 with medium effort for OpenAI when reasoning enabled', () => {
     const result = resolveReasoningConfig({
       provider: 'openai',
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini',
       reasoningEnabled: true,
       inputLength: 500,
     });
@@ -31,7 +31,7 @@ describe('resolveReasoningConfig', () => {
   it('applies thinking budget for Gemini reasoning', () => {
     const result = resolveReasoningConfig({
       provider: 'gemini',
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       reasoningEnabled: true,
       inputLength: 1400,
     });

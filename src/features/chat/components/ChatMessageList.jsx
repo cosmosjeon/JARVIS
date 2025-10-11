@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon } from 'lucide-react';
+import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon, ChevronDown } from 'lucide-react';
 import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
 import { Response } from 'shared/ui/shadcn-io/ai/response';
 import { cn } from 'shared/utils';
@@ -13,6 +13,12 @@ import {
   ReasoningTrigger,
   ThinkingIndicator,
 } from 'shared/ui';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from 'shared/ui/dropdown-menu';
 import {
   DEFAULT_CHAT_PANEL_STYLES,
   DEFAULT_CHAT_THEME,
@@ -66,67 +72,7 @@ const renderAttachments = (attachments = [], theme, panelStyles) => {
   );
 };
 
-const MODEL_LABELS = {
-  'gpt-5': 'GPT-5',
-  'gpt-4o': 'GPT-4o',
-  'gpt-4o-mini': 'GPT-4o mini',
-  'gpt-4.1-mini': 'GPT-4.1 mini',
-  'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-1.5-flash': 'Gemini 1.5 Flash',
-  'gemini-1.5-pro': 'Gemini 1.5 Pro',
-  'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
-};
 
-const formatModelLabel = (model) => {
-  if (!model) {
-    return null;
-  }
-  const normalized = model.toLowerCase();
-  if (MODEL_LABELS[model]) {
-    return MODEL_LABELS[model];
-  }
-  if (MODEL_LABELS[normalized]) {
-    return MODEL_LABELS[normalized];
-  }
-  if (normalized.startsWith('gpt-5')) return 'GPT-5';
-  if (normalized.startsWith('gpt-4o-mini')) return 'GPT-4o mini';
-  if (normalized.startsWith('gpt-4o')) return 'GPT-4o';
-  if (normalized.startsWith('gpt-4.1')) return 'GPT-4.1 mini';
-  if (normalized.includes('gemini')) return 'Gemini';
-  if (normalized.includes('claude')) return 'Claude';
-  return model;
-};
-
-const formatProviderLabel = (provider) => {
-  if (!provider) {
-    return null;
-  }
-  const normalized = provider.toLowerCase();
-  if (normalized === 'openai') return 'OpenAI';
-  if (normalized === 'gemini') return 'Gemini';
-  if (normalized === 'claude') return 'Claude';
-  if (normalized === 'auto') return 'Smart Auto';
-  return provider.replace(/^\w/, (char) => char.toUpperCase());
-};
-
-const renderModelInfo = (modelInfo) => {
-  if (!modelInfo) {
-    return null;
-  }
-  const providerLabel = formatProviderLabel(modelInfo.provider);
-  const modelLabel = formatModelLabel(modelInfo.model);
-  return (
-    <div className="mt-2 rounded-md border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground/90">
-      <span className="font-medium text-foreground/80">모델</span>{' '}
-      {[providerLabel, modelLabel].filter(Boolean).join(' · ')}
-      {modelInfo.explanation ? (
-        <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground/70">
-          {modelInfo.explanation}
-        </span>
-      ) : null}
-    </div>
-  );
-};
 
 const renderReasoning = (reasoning, status) => {
   if (!reasoning) {
@@ -185,6 +131,8 @@ export default function ChatMessageList({
   endRef,
   onRetry,
   onCopy,
+  onRetryWithModel,
+  availableModels = [],
   theme = DEFAULT_CHAT_THEME,
   panelStyles = DEFAULT_CHAT_PANEL_STYLES,
   className,
@@ -196,6 +144,7 @@ export default function ChatMessageList({
 }) {
   const [internalCopiedMap, setInternalCopiedMap] = useState({});
   const [internalSpinningMap, setInternalSpinningMap] = useState({});
+  const [openDropdowns, setOpenDropdowns] = useState({});
   const scrollContainerRef = useRef(null);
 
   const resolvedPanelStyles = useMemo(
@@ -241,6 +190,29 @@ export default function ChatMessageList({
     }
   }, [isScrollable, isTyping, messages]);
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const dropdowns = document.querySelectorAll('[data-dropdown]');
+      let clickedInside = false;
+      
+      dropdowns.forEach(dropdown => {
+        if (dropdown.contains(event.target)) {
+          clickedInside = true;
+        }
+      });
+      
+      if (!clickedInside) {
+        setOpenDropdowns({});
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   const hasExternalRetryingState = Boolean(retryingMessageMap);
   const activeSpinningMap = hasExternalRetryingState ? retryingMessageMap : internalSpinningMap;
 
@@ -271,6 +243,20 @@ export default function ChatMessageList({
     window.setTimeout(() => {
       setInternalCopiedMap((prev) => ({ ...prev, [messageId]: false }));
     }, 1600);
+  };
+
+  const toggleDropdown = (messageId) => {
+    setOpenDropdowns((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId]
+    }));
+  };
+
+  const closeDropdown = (messageId) => {
+    setOpenDropdowns((prev) => ({
+      ...prev,
+      [messageId]: false
+    }));
   };
 
   return (
@@ -349,7 +335,6 @@ export default function ChatMessageList({
         );
         const isAssistantPending = status === 'pending' || status === 'typing';
         const shouldShowThinking = isAssistantPending && (!message.text || message.text.trim().length === 0);
-        const modelInfoNode = renderModelInfo(message.modelInfo);
         const reasoningNode = renderReasoning(message.reasoning, status);
 
         return (
@@ -358,30 +343,58 @@ export default function ChatMessageList({
               {shouldShowThinking ? (
                 <ThinkingIndicator modelInfo={message.modelInfo} />
               ) : message.text ? (
-                <Response
-                  className="w-full text-base leading-7"
-                  style={{ color: resolvedPanelStyles.textColor }}
-                >
-                  {message.text}
-                </Response>
-              ) : null}
-              {modelInfoNode}
-              {reasoningNode}
-              {attachmentsNode}
-              {showActions && (
-                <Actions className="mt-2">
-                  {onRetry && (
-                    <Action
-                      tooltip="Regenerate response"
-                      label="Retry"
-                      onClick={() => handleRetryClick(key, message)}
-                    >
-                      <RefreshCcwIcon className={`h-4 w-4 ${activeSpinningMap?.[key] ? 'animate-spin' : ''}`} />
-                    </Action>
+                <div className="w-full">
+                  <Response
+                    className="w-full text-base leading-7"
+                    style={{ color: resolvedPanelStyles.textColor }}
+                  >
+                    {message.text}
+                  </Response>
+                  {showActions && (
+                    <Actions className="mt-1 relative z-10">
+                  {(onRetry || onRetryWithModel) && (
+                    <div className="relative" data-dropdown>
+                      <Action
+                        tooltip="다른 모델로 재생성"
+                        label="Retry"
+                        className="relative"
+                        onClick={() => toggleDropdown(key)}
+                      >
+                        <RefreshCcwIcon className={`h-4 w-4 ${activeSpinningMap?.[key] ? 'animate-spin' : ''}`} />
+                        <ChevronDown className="h-3 w-3 ml-0.5" />
+                      </Action>
+                      {availableModels.length > 0 && openDropdowns[key] && (
+                        <div className="absolute top-8 left-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-[99999] min-w-[160px]">
+                          {availableModels.map((model) => (
+                            <button
+                              key={model.id}
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-md last:rounded-b-md disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={() => {
+                                onRetryWithModel?.(message, model.id);
+                                closeDropdown(key);
+                              }}
+                              disabled={activeSpinningMap?.[key]}
+                            >
+                              {model.label}
+                            </button>
+                          ))}
+                          <button
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 border-t border-gray-200 dark:border-gray-700 rounded-b-md disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => {
+                              handleRetryClick(key, message);
+                              closeDropdown(key);
+                            }}
+                            disabled={activeSpinningMap?.[key]}
+                          >
+                            현재 모델로 재생성
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {onCopy && (
                     <Action
-                      tooltip="Copy to clipboard"
+                      tooltip="클립보드에 복사"
                       label="Copy"
                       onClick={() => handleCopyClick(key, message)}
                     >
@@ -403,7 +416,11 @@ export default function ChatMessageList({
                     </Action>
                   )}
                 </Actions>
-              )}
+                  )}
+                </div>
+              ) : null}
+              {reasoningNode}
+              {attachmentsNode}
             </div>
           </div>
         );
