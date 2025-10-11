@@ -48,7 +48,7 @@ const FAST_MODEL_BY_PROVIDER = {
 
 const DEFAULT_PROVIDER = 'openai';
 
-const resolveModelForProvider = (providerId, fastResponseEnabled) => {
+export const resolveModelForProvider = (providerId, fastResponseEnabled) => {
   const normalized = PROVIDER_MAP[providerId] ? providerId : DEFAULT_PROVIDER;
   if (fastResponseEnabled && FAST_MODEL_BY_PROVIDER[normalized]) {
     return FAST_MODEL_BY_PROVIDER[normalized];

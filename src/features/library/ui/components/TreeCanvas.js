@@ -8,6 +8,7 @@ import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds'
 
 const TreeCanvas = ({
   selectedMemo,
+  selectedNode,
   onNodeSelect,
   onNodeRemove,
   onNodeUpdate,
@@ -109,6 +110,8 @@ const TreeCanvas = ({
     onNodeSelect(resolved ?? null);
   }, [onNodeSelect, resolveNodeCandidate]);
 
+  const activeSelectedNodeId = selectedNode?.id ?? null;
+
   if (!selectedMemo) {
     return (
       <div className="flex h-full items-center justify-center bg-muted/10">
@@ -161,7 +164,7 @@ const TreeCanvas = ({
               theme={theme}
               background={treeBackground}
               onNodeClick={handleNodeSelect}
-              selectedNodeId={null}
+              selectedNodeId={activeSelectedNodeId}
               activeTreeId={selectedMemo.id}
               onBackgroundClick={() => {}}
               onReorderSiblings={() => {}}

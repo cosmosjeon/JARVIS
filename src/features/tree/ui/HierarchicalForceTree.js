@@ -238,6 +238,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const treeLibrarySyncRef = useRef(new Map());
   const zoomBehaviourRef = useRef(null);
   const pendingFocusNodeIdRef = useRef(null);
+  const pendingAssistantNodeRef = useRef(null);
   const expandTimeoutRef = useRef(null);
   const linkValidationTimeoutRef = useRef(null);
   const outsidePointerRef = useRef({
@@ -786,17 +787,37 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     };
   }, [visibleGraph.nodes, visibleGraph.links]);
 
+  const lastAssistantNodeRef = useRef(null);
+
   const tidyAssistantNode = useMemo(() => {
     if (!expandedNodeId) {
+      lastAssistantNodeRef.current = null;
+      pendingAssistantNodeRef.current = null;
       return null;
     }
     const safeVisibleNodes = Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : [];
     const candidateInVisible = safeVisibleNodes.find((node) => node.id === expandedNodeId);
     if (candidateInVisible) {
+      lastAssistantNodeRef.current = candidateInVisible;
+      pendingAssistantNodeRef.current = null;
       return candidateInVisible;
     }
     const safeAllNodes = Array.isArray(data.nodes) ? data.nodes : [];
-    return safeAllNodes.find((node) => node.id === expandedNodeId) || null;
+    const candidate = safeAllNodes.find((node) => node.id === expandedNodeId) || null;
+    if (candidate) {
+      lastAssistantNodeRef.current = candidate;
+      pendingAssistantNodeRef.current = null;
+      return candidate;
+    }
+    const pendingNode = pendingAssistantNodeRef.current;
+    if (pendingNode && pendingNode.id === expandedNodeId) {
+      lastAssistantNodeRef.current = pendingNode;
+      return pendingNode;
+    }
+    if (lastAssistantNodeRef.current && lastAssistantNodeRef.current.id === expandedNodeId) {
+      return lastAssistantNodeRef.current;
+    }
+    return null;
   }, [expandedNodeId, visibleGraph.nodes, data.nodes]);
 
   const viewportWidth = Number.isFinite(baseDimensions?.width) ? baseDimensions.width : null;
@@ -1566,6 +1587,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     ];
 
     setConversationForNode(newNodeData.id, initialConversation);
+    pendingAssistantNodeRef.current = newNodeData;
 
     setData((prev) => ({
       ...prev,

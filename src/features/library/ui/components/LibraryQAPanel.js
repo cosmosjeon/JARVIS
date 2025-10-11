@@ -22,7 +22,7 @@ import {
   PromptInputSubmit,
   PromptInputToolbar,
 } from 'shared/ui/shadcn-io/ai/prompt-input';
-import { useAIModelPreference, PRIMARY_MODEL_OPTIONS } from 'shared/hooks/useAIModelPreference';
+import { useAIModelPreference, PRIMARY_MODEL_OPTIONS, resolveModelForProvider } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
 import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import {
@@ -157,82 +157,6 @@ const LibraryQAPanel = ({
       navigator.clipboard.writeText(message.text).catch(() => undefined);
     }
   }, []);
-
-  const handleRetryMessage = useCallback((message) => {
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    const question = lastUser?.text || selectedNode?.question || selectedNode?.keyword || '';
-    if (!question) return;
-    
-    if (message?.id) {
-      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
-    }
-    
-    // Clear the last assistant message
-    const lastAssistantIndex = [...messages].reverse().findIndex((m) => m.role === 'assistant');
-    if (lastAssistantIndex >= 0) {
-      const actualIndex = messages.length - 1 - lastAssistantIndex;
-      const updatedMessages = messages.slice(0, actualIndex);
-      setMessages(updatedMessages);
-    }
-    
-    // Set the question in composer and trigger send
-    setComposerValue(question);
-    setTimeout(() => {
-      const sendButton = document.querySelector('[aria-label="메시지 전송"]');
-      if (sendButton) {
-        sendButton.click();
-      }
-      
-      // Clear spinning state after a delay
-      if (message?.id) {
-        setTimeout(() => {
-          setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
-        }, 900);
-      }
-    }, 150);
-  }, [messages, selectedNode]);
-
-  const handleRetryWithModel = useCallback((message, providerId) => {
-    const normalizedProvider = typeof providerId === 'string' ? providerId.toLowerCase() : '';
-    const providerOption = PRIMARY_MODEL_OPTIONS.find((option) => option.id === normalizedProvider);
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    const question = lastUser?.text || selectedNode?.question || selectedNode?.keyword || '';
-    if (!question || !providerOption) return;
-
-    if (message?.id) {
-      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
-    }
-
-    // Clear the last assistant message
-    const lastAssistantIndex = [...messages].reverse().findIndex((m) => m.role === 'assistant');
-    if (lastAssistantIndex >= 0) {
-      const actualIndex = messages.length - 1 - lastAssistantIndex;
-      const updatedMessages = messages.slice(0, actualIndex);
-      setMessages(updatedMessages);
-    }
-
-    setSelectedProvider(providerOption.id);
-    // Set the question in composer and trigger send with specific model
-    const scheduleSend = () => {
-      setComposerValue(question);
-      window.setTimeout(() => {
-        const sendButton = document.querySelector('[aria-label="메시지 전송"]');
-        if (sendButton) {
-          sendButton.click();
-        }
-        if (message?.id) {
-          window.setTimeout(() => {
-            setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
-          }, 900);
-        }
-      }, 120);
-    };
-    if (typeof window !== 'undefined') {
-      window.setTimeout(scheduleSend, 0);
-    } else {
-      scheduleSend();
-    }
-  }, [messages, selectedNode, setSelectedProvider]);
 
   const availableModels = useMemo(() => [...PRIMARY_MODEL_OPTIONS], []);
 
@@ -767,20 +691,25 @@ const LibraryQAPanel = ({
     const {
       reasoningConfig,
       reasoningEnabled: payloadReasoningEnabled,
+      provider: providerOverride,
+      model: modelOverride,
       ...restPayload
     } = payload;
 
+    const effectiveProvider = providerOverride || selectedProvider;
+    const effectiveModel = modelOverride || selectedModel;
+
     const requestPayload = {
       ...restPayload,
-      provider: selectedProvider,
+      provider: effectiveProvider,
       webSearchEnabled,
     };
 
-    if (selectedProvider !== 'auto' && !requestPayload.model) {
-      requestPayload.model = selectedModel;
+    if (effectiveProvider !== 'auto' && !requestPayload.model) {
+      requestPayload.model = effectiveModel;
     }
 
-    if (restPayload.autoSelectionHint && selectedProvider === 'auto') {
+    if (restPayload.autoSelectionHint && effectiveProvider === 'auto') {
       requestPayload.autoSelectionHint = restPayload.autoSelectionHint;
     }
 
@@ -960,26 +889,61 @@ const LibraryQAPanel = ({
   }, [clearTypingTimers, setIsProcessing, setLastAutoSelection]);
 
   // 질문 전송 처리
-  const handleSendMessage = useCallback(async () => {
-    console.log('📨 [handleSendMessage] 호출됨');
-    console.log('다중 질문 모드:', isMultiQuestionMode);
-    const highlightTexts = isMultiQuestionMode ? highlightStoreRef.current.getTexts() : [];
-    console.log('하이라이트된 텍스트 개수:', highlightTexts.length);
-    console.log('하이라이트된 텍스트:', highlightTexts);
-    const question = composerValue.trim();
-    console.log('입력된 질문:', question);
+  const handleSendMessage = useCallback(async (overrideQuestion, options = {}) => {
+    const {
+      attachmentsOverride,
+      providerOverride,
+      modelOverride,
+      retryMessage,
+    } = options;
 
-    const attachmentSnapshot = attachments
-      .filter((item) => item && typeof item === 'object' && typeof item.dataUrl === 'string' && item.dataUrl)
-      .map((item) => ({ ...item }));
+    const isOverride = typeof overrideQuestion === 'string';
+    const reuseCurrentNode = Boolean(options.reuseCurrentNode || isOverride);
+    const baseQuestion = isOverride ? overrideQuestion : composerValue;
+    const question = (typeof baseQuestion === 'string' ? baseQuestion : '').trim();
+
+    const highlightTexts = !isOverride && isMultiQuestionMode
+      ? highlightStoreRef.current.getTexts()
+      : [];
+
+    const attachmentSource = attachmentsOverride !== undefined ? attachmentsOverride : attachments;
+    const attachmentSnapshot = (Array.isArray(attachmentSource) ? attachmentSource : [])
+      .filter((item) => item && typeof item === 'object')
+      .map((item, index) => {
+        const dataUrlRaw = typeof item.dataUrl === 'string'
+          ? item.dataUrl
+          : typeof item.url === 'string'
+            ? item.url
+            : undefined;
+        const dataUrl = typeof dataUrlRaw === 'string' ? dataUrlRaw.trim() : '';
+        return {
+          ...item,
+          id: item.id || `override-attachment-${index}`,
+          dataUrl,
+        };
+      })
+      .filter((item) => typeof item.dataUrl === 'string' && item.dataUrl);
+
     const hasAttachmentSnapshot = attachmentSnapshot.length > 0;
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const isRetryFlow = Boolean(reuseCurrentNode && retryMessage && lastUser);
 
-    if (highlightTexts.length > 0 && hasAttachmentSnapshot) {
+    if (!isOverride) {
+      console.log('📨 [handleSendMessage] 호출됨');
+      console.log('다중 질문 모드:', isMultiQuestionMode);
+      console.log('하이라이트된 텍스트 개수:', highlightTexts.length);
+      if (highlightTexts.length) {
+        console.log('하이라이트된 텍스트:', highlightTexts);
+      }
+      console.log('입력된 질문:', question);
+    }
+
+    if (!isOverride && highlightTexts.length > 0 && hasAttachmentSnapshot) {
       setHighlightNotice({ type: 'warning', message: '다중 질문 모드에서는 이미지 첨부를 사용할 수 없습니다.' });
       return;
     }
 
-    if (highlightTexts.length > 0 && !question) {
+    if (!isOverride && highlightTexts.length > 0 && !question) {
       console.log('✅ 플레이스홀더 생성 시작...');
       setComposerValue('');
       setSlowResponseNotice(null);
@@ -1015,15 +979,15 @@ const LibraryQAPanel = ({
       return;
     }
 
-    setComposerValue('');
-    clearAttachments();
+    if (!isOverride) {
+      setComposerValue('');
+      clearAttachments();
+    }
     setError(null);
     setSlowResponseNotice(null);
     setIsProcessing(true);
 
     const timestamp = Date.now();
-    const userId = `${timestamp}-user`;
-    const assistantId = `${timestamp}-assistant`;
 
     const sanitizedAttachments = attachmentSnapshot.map((item, index) => ({
       id: item.id || `attachment-${timestamp}-${index}`,
@@ -1037,7 +1001,13 @@ const LibraryQAPanel = ({
     }));
     const hasAttachments = sanitizedAttachments.length > 0;
 
-    const activeAutoSelection = selectedProvider === 'auto'
+    const effectiveProvider = providerOverride || selectedProvider;
+    const effectiveModelBase = providerOverride
+      ? resolveModelForProvider(providerOverride, fastResponseEnabled)
+      : selectedModel;
+    const effectiveModel = modelOverride || effectiveModelBase;
+
+    const activeAutoSelection = effectiveProvider === 'auto'
       ? selectAutoModel({
         question,
         attachments: sanitizedAttachments,
@@ -1046,58 +1016,75 @@ const LibraryQAPanel = ({
       })
       : null;
 
-    const manualReasoning = selectedProvider !== 'auto'
+    const manualReasoning = effectiveProvider !== 'auto'
       ? resolveReasoningConfig({
-        provider: selectedProvider,
-        model: selectedModel,
+        provider: effectiveProvider,
+        model: effectiveModel,
         reasoningEnabled,
         inputLength: question.length,
       })
       : null;
 
-    const appliedReasoningConfig = selectedProvider === 'auto'
+    const appliedReasoningConfig = effectiveProvider === 'auto'
       ? (reasoningEnabled && activeAutoSelection?.reasoning
         ? { provider: 'openai', ...activeAutoSelection.reasoning }
         : null)
       : manualReasoning?.reasoning || null;
 
-    const pendingModelInfo = activeAutoSelection
-      || (selectedProvider !== 'auto'
-        ? {
-          provider: selectedProvider,
-          model: manualReasoning?.model || selectedModel,
-          ...(manualReasoning?.explanation
-            ? { explanation: manualReasoning.explanation }
-            : reasoningEnabled
-              ? { explanation: 'Reasoning 모드 활성화' }
-              : {}),
-          ...(manualReasoning?.reasoning ? { reasoning: manualReasoning.reasoning } : {}),
-        }
-        : null);
+    const pendingModelInfo = effectiveProvider === 'auto'
+      ? activeAutoSelection
+      : {
+        provider: effectiveProvider,
+        model: manualReasoning?.model || effectiveModel,
+        ...(manualReasoning?.explanation
+          ? { explanation: manualReasoning.explanation }
+          : reasoningEnabled
+            ? { explanation: 'Reasoning 모드 활성화' }
+            : {}),
+        ...(manualReasoning?.reasoning ? { reasoning: manualReasoning.reasoning } : {}),
+      };
 
-    const userMessage = {
-      id: userId,
-      role: 'user',
-      content: question,
-      text: question,
-      timestamp,
-      attachments: hasAttachments ? sanitizedAttachments : undefined,
-    };
+    let userMessage;
+    let assistantMessage;
+    let assistantId;
 
-    const assistantMessage = {
-      id: assistantId,
-      role: 'assistant',
-      text: '',
-      status: 'pending',
-      modelInfo: pendingModelInfo || undefined,
-      timestamp: timestamp + 1,
-    };
+    if (isRetryFlow) {
+      userMessage = { ...lastUser };
+      assistantMessage = {
+        ...retryMessage,
+        text: '',
+        status: 'pending',
+        modelInfo: pendingModelInfo || retryMessage.modelInfo,
+        timestamp: Date.now(),
+      };
+      assistantId = assistantMessage.id;
+    } else {
+      const userId = `${timestamp}-user`;
+      assistantId = `${timestamp}-assistant`;
+      userMessage = {
+        id: userId,
+        role: 'user',
+        content: question,
+        text: question,
+        timestamp,
+        attachments: hasAttachments ? sanitizedAttachments : undefined,
+      };
 
-    setMessages((prev) => [
-      ...prev,
-      userMessage,
-      assistantMessage,
-    ]);
+      assistantMessage = {
+        id: assistantId,
+        role: 'assistant',
+        text: '',
+        status: 'pending',
+        modelInfo: pendingModelInfo || undefined,
+        timestamp: timestamp + 1,
+      };
+
+      setMessages((prev) => [
+        ...prev,
+        userMessage,
+        assistantMessage,
+      ]);
+    }
 
     if (pendingModelInfo) {
       setLastAutoSelection(pendingModelInfo);
@@ -1178,6 +1165,33 @@ const LibraryQAPanel = ({
       ? selectedNode.status === 'placeholder' || Boolean(selectedNode.placeholder)
       : false;
     const hasUserConversation = previousMessages.some((msg) => msg.role === 'user');
+    const useExistingNode = Boolean(selectedNode)
+      && (reuseCurrentNode || (isPlaceholderNode && !hasUserConversation));
+
+    const conversationSnapshot = (() => {
+      if (isRetryFlow) {
+        return previousMessages.map((msg) =>
+          msg.id === assistantMessage.id
+            ? assistantMessage
+            : msg,
+        );
+      }
+      if (useExistingNode && selectedNode) {
+        return [...previousMessages, userMessage, assistantMessage];
+      }
+      return [userMessage, assistantMessage];
+    })();
+
+    setMessages(conversationSnapshot);
+
+    const requestMessages = conversationSnapshot
+      .filter((msg) => msg.id !== assistantId)
+      .map(mapToOpenAIMessage)
+      .filter(Boolean);
+
+    if (requestMessages.length === 0 && question) {
+      requestMessages.push({ role: 'user', content: question });
+    }
 
     if (process.env.NODE_ENV === 'development') {
       // eslint-disable-next-line no-console
@@ -1191,19 +1205,11 @@ const LibraryQAPanel = ({
       });
     }
 
-    if (isPlaceholderNode && !hasUserConversation && selectedNode) {
-      const pendingMessages = [...previousMessages, userMessage, assistantMessage];
-      setMessages(pendingMessages);
-
-      const openaiMessages = pendingMessages
-        .filter((msg) => msg.id !== assistantId)
-        .map(mapToOpenAIMessage)
-        .filter(Boolean);
-
+    if (useExistingNode && selectedNode) {
       const pendingNode = {
         ...selectedNode,
         question: selectedNode.question || question,
-        conversation: pendingMessages,
+        conversation: conversationSnapshot,
         status: 'asking',
         updatedAt: timestamp,
         answer: '',
@@ -1222,12 +1228,14 @@ const LibraryQAPanel = ({
       try {
         const response = await withTimeout(
           invokeAgent('askRoot', {
-            messages: openaiMessages,
+            messages: requestMessages,
             attachments: hasAttachments ? sanitizedAttachments : undefined,
-            autoSelectionHint: selectedProvider === 'auto' ? activeAutoSelection : undefined,
+            autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
             reasoningConfig: appliedReasoningConfig || undefined,
             reasoningEnabled,
             question,
+            provider: effectiveProvider,
+            model: manualReasoning?.model || effectiveModel,
           }),
           AGENT_RESPONSE_TIMEOUT_MS,
         );
@@ -1256,7 +1264,7 @@ const LibraryQAPanel = ({
         });
 
         const finalModelInfo = response.autoSelection || activeAutoSelection || pendingModelInfo;
-        const updatedMessages = pendingMessages.map((msg) => {
+        const updatedMessages = conversationSnapshot.map((msg) => {
           if (msg.id !== assistantId) {
             return msg;
           }
@@ -1318,11 +1326,68 @@ const LibraryQAPanel = ({
         console.error('질문 처리 실패:', error);
         const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
-        setComposerValue(question);
-        if (hasAttachments) {
-          setAttachments(sanitizedAttachments);
+        if (!isOverride) {
+          setComposerValue(question);
+          if (hasAttachments) {
+            setAttachments(sanitizedAttachments);
+          }
         }
 
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? { ...msg, text: `오류: ${errorMessage}`, status: 'error' }
+              : msg,
+          ),
+        );
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
+    if (isRetryFlow && !selectedNode) {
+      try {
+        const response = await withTimeout(
+          invokeAgent('askRoot', {
+            messages: requestMessages,
+            attachments: hasAttachments ? sanitizedAttachments : undefined,
+            autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
+            reasoningConfig: appliedReasoningConfig || undefined,
+            reasoningEnabled,
+            question,
+            provider: effectiveProvider,
+            model: manualReasoning?.model || effectiveModel,
+          }),
+          AGENT_RESPONSE_TIMEOUT_MS,
+        );
+
+        if (response?.success === false && response?.error?.message) {
+          throw new Error(response.error.message);
+        }
+
+        const answerText = response?.answer
+          || response?.data?.answer
+          || response?.result?.answer
+          || response?.message?.answer
+          || '';
+
+        if (!answerText) {
+          throw new Error('답변을 받지 못했습니다.');
+        }
+
+        animateAssistantResponse(assistantId, answerText, {
+          provider: response.provider,
+          model: response.model,
+          reasoning: response.reasoning || appliedReasoningConfig,
+          autoSelection: response.autoSelection || activeAutoSelection,
+          usage: response.usage,
+          latencyMs: response.latencyMs,
+        });
+      } catch (error) {
+        console.error('질문 처리 실패:', error);
+        const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
+        setError(errorMessage);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantId
@@ -1359,8 +1424,6 @@ const LibraryQAPanel = ({
       newNode.modelInfo = pendingModelInfo;
     }
 
-    setMessages([userMessage, assistantMessage]);
-
     if (onNewNodeCreated) {
       onNewNodeCreated(newNode, {
         source: newNode.parentId,
@@ -1374,20 +1437,18 @@ const LibraryQAPanel = ({
     }
 
     try {
-      const openaiMessages = [...messages, userMessage]
-        .map(mapToOpenAIMessage)
-        .filter(Boolean);
-
-      console.log('변환된 OpenAI 메시지:', openaiMessages);
+      console.log('변환된 OpenAI 메시지:', requestMessages);
 
       const response = await withTimeout(
         invokeAgent('askRoot', {
-          messages: openaiMessages,
+          messages: requestMessages,
           attachments: hasAttachments ? sanitizedAttachments : undefined,
-          autoSelectionHint: selectedProvider === 'auto' ? activeAutoSelection : undefined,
+          autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
           reasoningConfig: appliedReasoningConfig || undefined,
           reasoningEnabled,
           question,
+          provider: effectiveProvider,
+          model: manualReasoning?.model || effectiveModel,
         }),
         AGENT_RESPONSE_TIMEOUT_MS,
       );
@@ -1470,9 +1531,11 @@ const LibraryQAPanel = ({
       console.error('질문 처리 실패:', error);
       const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
       setError(errorMessage);
-      setComposerValue(question);
-      if (hasAttachments) {
-        setAttachments(sanitizedAttachments);
+      if (!isOverride) {
+        setComposerValue(question);
+        if (hasAttachments) {
+          setAttachments(sanitizedAttachments);
+        }
       }
 
       setMessages((prev) =>
@@ -1492,18 +1555,107 @@ const LibraryQAPanel = ({
     composerValue,
     createPlaceholderNodes,
     disableHighlightMode,
+    fastResponseEnabled,
     invokeAgent,
     isMultiQuestionMode,
     isProcessing,
     isLibraryIntroActive,
+    isApiAvailable,
     messages,
     onNewNodeCreated,
     onNodeUpdate,
     onLibraryIntroComplete,
+    reasoningEnabled,
     selectedNode,
+    selectedProvider,
+    selectedModel,
     selectedTree,
+    setAttachments,
+    setError,
+    setHighlightNotice,
+    setLastAutoSelection,
+    setSlowResponseNotice,
+    resolveModelForProvider,
     user,
+    webSearchEnabled,
   ]);
+
+  const handleRetryMessage = useCallback((message) => {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const question = lastUser?.text || selectedNode?.question || selectedNode?.keyword || '';
+    if (!question) return;
+
+    const attachmentsOverride = Array.isArray(lastUser?.attachments) ? lastUser.attachments : undefined;
+    if (message?.id) {
+      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    }
+
+    const modelOverride = selectedProvider === 'auto'
+      ? undefined
+      : resolveModelForProvider(selectedProvider, fastResponseEnabled);
+
+    Promise.resolve(handleSendMessage(question, {
+      attachmentsOverride,
+      providerOverride: selectedProvider,
+      modelOverride,
+      retryMessage: message,
+      reuseCurrentNode: true,
+    }))
+      .catch(() => undefined)
+      .finally(() => {
+        if (message?.id) {
+          const clearSpinner = () => {
+            setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
+          };
+          if (typeof window !== 'undefined') {
+            window.setTimeout(clearSpinner, 900);
+          } else {
+            clearSpinner();
+          }
+        }
+      });
+  }, [fastResponseEnabled, handleSendMessage, messages, selectedNode, selectedProvider, resolveModelForProvider]);
+
+  const handleRetryWithModel = useCallback((message, providerId) => {
+    const normalizedProvider = typeof providerId === 'string' ? providerId.toLowerCase() : '';
+    const providerOption = PRIMARY_MODEL_OPTIONS.find((option) => option.id === normalizedProvider);
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const question = lastUser?.text || selectedNode?.question || selectedNode?.keyword || '';
+    if (!question || !providerOption) return;
+
+    const attachmentsOverride = Array.isArray(lastUser?.attachments) ? lastUser.attachments : undefined;
+    const nextProvider = providerOption.id;
+    const nextModel = nextProvider === 'auto'
+      ? undefined
+      : resolveModelForProvider(nextProvider, fastResponseEnabled);
+
+    if (message?.id) {
+      setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
+    }
+
+    setSelectedProvider(nextProvider);
+
+    Promise.resolve(handleSendMessage(question, {
+      attachmentsOverride,
+      providerOverride: nextProvider,
+      modelOverride: nextModel,
+      retryMessage: message,
+      reuseCurrentNode: true,
+    }))
+      .catch(() => undefined)
+      .finally(() => {
+        if (message?.id) {
+          const clearSpinner = () => {
+            setSpinningMap((prev) => ({ ...prev, [message.id]: false }));
+          };
+          if (typeof window !== 'undefined') {
+            window.setTimeout(clearSpinner, 900);
+          } else {
+            clearSpinner();
+          }
+        }
+      });
+  }, [fastResponseEnabled, handleSendMessage, messages, selectedNode, setSelectedProvider, resolveModelForProvider]);
 
   // 다중 질문 모드에서 전역 키보드 이벤트 감지
   useEffect(() => {

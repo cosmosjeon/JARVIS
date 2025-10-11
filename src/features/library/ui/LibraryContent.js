@@ -93,6 +93,7 @@ const LibraryContent = ({
       return (
         <TreeCanvas
           selectedMemo={selectedTree}
+          selectedNode={selectedNode}
           onNodeSelect={onNodeSelect}
           onNodeRemove={onNodeRemove}
           onNodeUpdate={onNodeUpdate}
@@ -107,6 +108,7 @@ const LibraryContent = ({
         <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 bg-background">
           <TreeCanvas
             selectedMemo={selectedTree}
+            selectedNode={selectedNode}
             onNodeSelect={onNodeSelect}
             onNodeRemove={onNodeRemove}
             onNodeUpdate={onNodeUpdate}

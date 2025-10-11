@@ -244,6 +244,7 @@ const TidyTreeView = ({
   const backgroundClickTimerRef = useRef(null);
   const recentDragEndRef = useRef(false);
   const hasDragMovedRef = useRef(false);
+  const prevSelectedNodeIdRef = useRef(null);
 
   // 컨텍스트 메뉴 상태
   const [contextMenu, setContextMenu] = useState({ open: false, node: null, x: 0, y: 0 });
@@ -663,14 +664,14 @@ const TidyTreeView = ({
         if (dragStateManager.isDragging()) return false;
 
         if (event.type === 'wheel') {
-          // 모든 모드에서 트랙패드 스타일 동작 적용 - 노드 위에서도 패닝 유지
-          if (typeof event.preventDefault === 'function') {
-            event.preventDefault();
-          }
-          if (typeof event.stopPropagation === 'function') {
-            event.stopPropagation();
-          }
-          if (!event.ctrlKey && !event.metaKey) {
+          const isPanGesture = !event.ctrlKey && !event.metaKey;
+          if (isTrackpadMode && isPanGesture) {
+            if (typeof event.preventDefault === 'function') {
+              event.preventDefault();
+            }
+            if (typeof event.stopPropagation === 'function') {
+              event.stopPropagation();
+            }
             applyUnifiedPan(event);
             return false;
           }
@@ -700,9 +701,10 @@ const TidyTreeView = ({
       })
       .scaleExtent([MIN_SCALE, MAX_SCALE])
       .wheelDelta((event) => {
-        if (!(event.ctrlKey || event.metaKey)) {
+        if (isTrackpadMode && !(event.ctrlKey || event.metaKey)) {
           return 0;
         }
+
         if (typeof event.preventDefault === 'function') {
           event.preventDefault();
         }
@@ -807,6 +809,30 @@ const TidyTreeView = ({
       });
     }
   }, [focusNodeById, onNodeClick, zoomOnClickEnabled]);
+
+  useEffect(() => {
+    if (selectedNodeId === undefined) {
+      return;
+    }
+
+    if (selectedNodeId === null) {
+      if (prevSelectedNodeIdRef.current !== null) {
+        setInternalSelectedNodeId(null);
+        setClickedNodeId(null);
+        prevSelectedNodeIdRef.current = null;
+      }
+      return;
+    }
+
+    if (prevSelectedNodeIdRef.current === selectedNodeId) {
+      return;
+    }
+
+    prevSelectedNodeIdRef.current = selectedNodeId;
+    setInternalSelectedNodeId(selectedNodeId);
+    setClickedNodeId(selectedNodeId);
+    focusNodeById(selectedNodeId, { duration: 520 });
+  }, [focusNodeById, selectedNodeId]);
 
   // 드래그 시작
   const beginDrag = (event, node) => {
@@ -1117,7 +1143,8 @@ const TidyTreeView = ({
               const hasChildren = Array.isArray(node.children) && node.children.length > 0;
               const isRootNode = node.depth === 0;
               const isSelected = effectiveSelectedNodeId && node.data.id === effectiveSelectedNodeId;
-              const isHovered = hoveredNodeId === node.data.id;
+              // 클릭된 노드도 호버 효과 유지
+              const isHovered = hoveredNodeId === node.data.id || clickedNodeId === node.data.id;
               const isNodeHighlighted = node.data.id ? highlightedAncestorIds.has(node.data.id) : false;
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
@@ -1159,9 +1186,8 @@ const TidyTreeView = ({
                       return;
                     }
 
-                    // 싱글 클릭으로 채팅창 열기/전환
+                    // 싱글 클릭으로 채팅창 열기/전환 (클릭 효과만 설정)
                     setClickedNodeId(node.data.id);
-                    setHoveredNodeId(node.data.id);
                     handleNodeActivate(node);
                   }}
                   onContextMenu={(event) => {
@@ -1190,10 +1216,8 @@ const TidyTreeView = ({
                     if (dragPreview?.active) {
                       return;
                     }
-                    // 클릭된 노드는 호버 효과 유지
-                    if (clickedNodeId !== node.data.id) {
-                      setHoveredNodeId((current) => (current === node.data.id ? null : current));
-                    }
+                    // 호버 상태는 항상 해제 (클릭 효과는 clickedNodeId로 유지됨)
+                    setHoveredNodeId((current) => (current === node.data.id ? null : current));
                   }}
                   style={{
                     cursor: onNodeClick ? "pointer" : "default",

@@ -236,9 +236,9 @@ const LibrarySettingsDialog = ({
                   )}
                 </div>
                 <div className="flex-1">
-                  <p className="text-base font-medium text-foreground">마우스 모드</p>
-                  <p className="text-sm text-muted-foreground">좌클릭 드래그, 마우스 휠 확대/축소</p>
-                </div>
+                      <p className="text-base font-medium text-foreground">마우스 모드</p>
+                      <p className="text-sm text-muted-foreground">좌클릭 드래그, 마우스 휠 확대/축소</p>
+                    </div>
               </button>
 
               <button

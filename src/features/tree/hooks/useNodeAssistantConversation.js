@@ -240,7 +240,6 @@ export const useNodeAssistantConversation = ({
       ]);
     } else {
       if (shouldCreateChild && onSecondQuestion) {
-        onCloseNode?.();
         await onSecondQuestion(node.id, question, '', {});
         return;
       }
