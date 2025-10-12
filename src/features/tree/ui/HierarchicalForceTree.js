@@ -16,7 +16,7 @@ import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from 'shared/components/library/ThemeProvider';
 import { useSettings } from 'shared/hooks/SettingsContext';
-import { Sun, Moon, Sparkles, Settings, FolderTree } from 'lucide-react';
+import { Sun, Moon, Sparkles, Settings, FolderTree, ChevronDown, Network } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger } from 'shared/ui/select';
 import { useTreeViewport } from 'features/tree/hooks/useTreeViewport';
 import { useTreePersistence } from 'features/tree/hooks/useTreePersistence';
@@ -60,9 +60,9 @@ const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
 const TIDY_ASSISTANT_PANEL_GAP = 0;
 const TIDY_CANVAS_MIN_WIDTH = 320;
 
-const COMPACT_WIDGET_WIDTH = 540;
+const COMPACT_WIDGET_WIDTH = 440;
 const COMPACT_DEFAULT_HEIGHT = 130;
-const COMPACT_DROPDOWN_HEIGHT = 240;
+const COMPACT_DROPDOWN_HEIGHT = 320;
 const COMPACT_RESIZE_BUFFER_MS = 60;
 
 const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
@@ -2988,17 +2988,19 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
             onOpenChange={handleTreeDropdownOpenChange}
           >
             <SelectTrigger 
-              className="inline-flex items-center justify-center whitespace-nowrap transition-colors focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 h-9 rounded-lg px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground border-0 shadow-none outline-none"
-              icon={FolderTree}
+              className="inline-flex items-center justify-center whitespace-nowrap transition-colors focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 h-9 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground border-0 shadow-none outline-none"
+              icon={ChevronDown}
               iconClassName={cn(
-                "h-3.5 w-3.5 transition-colors",
+                "ml-1 h-3 w-3 opacity-70",
                 isTreeDropdownOpen ? "text-primary" : "text-muted-foreground/70"
               )}
-              iconProps={{ strokeWidth: 1.75 }}
+              iconProps={{ strokeWidth: 2 }}
               style={{
                 WebkitAppRegion: 'no-drag',
                 outline: 'none',
                 boxShadow: 'none',
+                paddingTop: 0,
+                paddingBottom: 10,
               }}
             >
               <span className="truncate max-w-[150px]">
@@ -3009,7 +3011,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
               </span>
             </SelectTrigger>
             <SelectContent 
-              className="max-h-[300px] overflow-y-auto -mt-3"
+              className="max-h-[252px] overflow-y-auto -mt-3 min-w-[160px]"
               style={{
                 WebkitAppRegion: 'no-drag',
               }}
@@ -3021,7 +3023,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
                   className="cursor-pointer text-xs leading-tight py-1"
                 >
                   <div className="flex items-center gap-2">
-                    <FolderTree className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Network className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" strokeWidth={2} />
                     <span className="truncate">{tree.title || '제목 없음'}</span>
                   </div>
                 </SelectItem>

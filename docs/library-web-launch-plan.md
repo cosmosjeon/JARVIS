@@ -16,7 +16,8 @@
 ### 2.1 MVP 필수 범위
 - URL 파라미터 미지정 또는 비정상 값일 때 `src/App.js`에서 `mode=library`로 리다이렉트하고 허용 모드 화이트리스트를 적용
 - `src/shared/utils/platform.js`(신규)에서 `REACT_APP_PLATFORM`과 런타임 감지를 통합한 `getPlatform()`/`isElectron()` 유틸 제공
-- 웹 전용 헤더·사이드바 레이아웃 정비, 최소 1024px/768px 두 구간 반응형 대응, Electron 전용 UI는 조건부 처리
+- 웹 전용 헤더·사이드바 레이아웃 정비, 최소 1024px/768px 두 구간 반응형 대응, Electron/위젯 전용 UI는 웹에서 조건부 처리
+- Library 모드(web)에서는 위젯 관련 메뉴·패널·CTA가 렌더되지 않도록 분기 적용
 - 파일 접근, 클립보드 등 OS 의존 기능의 대체 UI/메시지 정책 정의와 라이브러리 기능 세트 명시
 - `package.json`에 `npm run build:web`, `npm run preview:web`, `npm run check:env` 등 웹 파이프라인 스크립트 추가
 - Supabase OAuth 리다이렉트 URL과 환경 변수 매트릭스(`.env.production`, `.env.electron`, `.env.local`) 분리 및 검증 체크리스트 작성
@@ -38,6 +39,7 @@
 ### 3.2 웹 전용 UI/UX 커스터마이징
 - `LibraryWindowTitleBar`를 `isElectron()` 기반 조건부 렌더링으로 변경하고, 웹에서는 드래그 존과 `WebkitAppRegion` 스타일을 제거
 - `LibrarySidebar`, `LibraryContent`, `ThemeProvider`에서 `mode` 값을 전달받아 웹 전용 레이아웃/테마 토글(1024px/768px 브레이크포인트)을 구현
+- `LibraryApp` 전역과 주요 액션 패널에서 `widget` 전용 메뉴·CTA·단축키를 web 모드일 때 완전히 감추고, 공유 훅·서비스에서도 web 모드 호출 시 early return 처리
 - 파일 시스템·클립보드·창 제어 등 Electron 의존 기능에는 버튼 비활성화, 대체 메시지, 가이드 모달을 제공하고 QA 체크리스트에 포함
 - Tailwind 유틸 클래스 재사용을 유지하면서, 라이브러리 전용 색상/타이포그래피 토큰을 정리해 추후 디자인 토큰화 기반 마련
 
@@ -78,6 +80,7 @@
 ### 5.2 UI/UX 커스터마이징 (MVP)
 - [ ] `LibraryWindowTitleBar` 조건부 렌더링 및 웹 전용 헤더/드래그 존 제거
 - [ ] `LibrarySidebar`, `LibraryContent`, `ThemeProvider`에 웹 전용 브레이크포인트/테마 토글 반영
+- [ ] `LibraryApp`/툴바/사이드바에서 위젯 전용 메뉴·CTA·단축키를 web 모드에서는 렌더하지 않도록 가드 처리
 - [ ] 파일 시스템·클립보드·창 제어 등 미지원 기능에 비활성화/대체 메시지 처리 및 QA 항목 추가
 - [ ] `<Helmet>` 기반 타이틀/메타 태그 구성, 키보드 네비게이션·포커스 이동 점검
 
@@ -96,6 +99,7 @@
 ### 5.5 QA & 운영 (MVP)
 - [ ] `docs/qa/library-smoke-checklist.md` 수동 QA 템플릿 작성 및 저장소 위치 명시
 - [ ] Electron/Web smoke 테스트 실행 후 결과 기록(스크린샷/로그 포함) 공용 위치에 저장
+- [ ] 웹 모드에서 위젯 메뉴/패널/CTA가 노출되지 않는지 QA 체크리스트에 항목 추가 및 스모크 단계에서 검증
 - [ ] `docs/ops/library-web-runbook.md` 운영 가이드(장애 대응, 롤백, 연락체계) 초안 작성
 
 ### 5.6 후속 과제 (포스트 MVP)
