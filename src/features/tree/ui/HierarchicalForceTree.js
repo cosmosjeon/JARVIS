@@ -63,6 +63,7 @@ const TIDY_CANVAS_MIN_WIDTH = 320;
 const COMPACT_WIDGET_WIDTH = 440;
 const COMPACT_DEFAULT_HEIGHT = 130;
 const COMPACT_DROPDOWN_HEIGHT = 320;
+const COMPACT_PROVIDER_DROPDOWN_HEIGHT = 200;
 const COMPACT_RESIZE_BUFFER_MS = 60;
 
 const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
@@ -1552,8 +1553,11 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     }, Math.max(0, durationMs));
   }, []);
 
-  const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
-    const { blockClose = false } = options;
+const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
+    const {
+      blockClose = false,
+      openHeight = COMPACT_DROPDOWN_HEIGHT,
+    } = options;
     if (!isBootstrapCompact) {
       return;
     }
@@ -1570,10 +1574,10 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       resizeTimeoutRef.current = null;
     }
 
-    const targetHeight = isOpen ? COMPACT_DROPDOWN_HEIGHT : COMPACT_DEFAULT_HEIGHT;
+    const targetHeight = isOpen ? openHeight : COMPACT_DEFAULT_HEIGHT;
 
     if (isOpen) {
-      if (currentHeightRef.current === COMPACT_DROPDOWN_HEIGHT || isResizingRef.current) {
+      if (currentHeightRef.current === openHeight || isResizingRef.current) {
         if (!blockClose) {
           preventDropdownCloseRef.current = false;
         }
@@ -1691,12 +1695,12 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
 
     setIsTreeDropdownOpen(isOpen);
     isDropdownOpenRef.current = isOpen;
-    resizeCompactWindowForDropdown(isOpen, { blockClose: true });
+    resizeCompactWindowForDropdown(isOpen, { blockClose: true, openHeight: COMPACT_DROPDOWN_HEIGHT });
   }, [isBootstrapCompact, resizeCompactWindowForDropdown]);
 
   const handleCompactProviderDropdownOpenChange = useCallback((isOpen) => {
     isDropdownOpenRef.current = isOpen;
-    resizeCompactWindowForDropdown(isOpen, { blockClose: false });
+    resizeCompactWindowForDropdown(isOpen, { blockClose: false, openHeight: COMPACT_PROVIDER_DROPDOWN_HEIGHT });
   }, [resizeCompactWindowForDropdown]);
 
   useEffect(() => {
