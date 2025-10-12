@@ -65,6 +65,8 @@ const COMPACT_DEFAULT_HEIGHT = 130;
 const COMPACT_DROPDOWN_HEIGHT = 320;
 const COMPACT_PROVIDER_DROPDOWN_HEIGHT = 200;
 const COMPACT_RESIZE_BUFFER_MS = 60;
+const DEFAULT_WIDGET_MIN_WIDTH = 320;
+const DEFAULT_WIDGET_MIN_HEIGHT = 240;
 
 const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const { user } = useSupabaseAuth();
@@ -425,6 +427,47 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       onBootstrapCompactChange(isBootstrapCompact);
     }
   }, [isBootstrapCompact, onBootstrapCompactChange]);
+
+  useEffect(() => {
+    const controls = treeBridge?.windowControls;
+    if (!controls?.setResizable) {
+      return;
+    }
+
+    const currentWidth = typeof window !== 'undefined' ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH)) : COMPACT_WIDGET_WIDTH;
+    const currentHeight = typeof window !== 'undefined' ? Math.max(100, Math.floor(window.innerHeight || COMPACT_DEFAULT_HEIGHT)) : COMPACT_DEFAULT_HEIGHT;
+
+    const sizeOptions = isBootstrapCompact
+      ? {
+          minWidth: currentWidth,
+          minHeight: currentHeight,
+          maxWidth: currentWidth,
+          maxHeight: currentHeight,
+        }
+      : {
+          minWidth: DEFAULT_WIDGET_MIN_WIDTH,
+          minHeight: DEFAULT_WIDGET_MIN_HEIGHT,
+          maxWidth: 0,
+          maxHeight: 0,
+        };
+
+    try {
+      const maybePromise = controls.setResizable(!isBootstrapCompact, sizeOptions);
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch((error) => {
+          if (process.env.NODE_ENV === 'development') {
+            // eslint-disable-next-line no-console
+            console.warn('[HierarchicalForceTree] setResizable failed', error);
+          }
+        });
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.warn('[HierarchicalForceTree] setResizable threw', error);
+      }
+    }
+  }, [isBootstrapCompact, treeBridge]);
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
   const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
   const [isTidyPanelResizing, setIsTidyPanelResizing] = useState(false);
@@ -860,7 +903,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     const maxWidth = Math.max(minWidth, Math.min(TIDY_ASSISTANT_PANEL_MAX_WIDTH, viewportAllowance));
     return Math.max(minWidth, Math.min(safeRaw, maxWidth));
   }, [viewportWidth]);
-  const tidyAssistantPanelVisible = Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
+  const tidyAssistantPanelVisible = !isBootstrapCompact && Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
   const tidyAssistantDefaultWidth = useMemo(() => {
     const referenceWidth = viewportWidth && viewportWidth > 0
       ? viewportWidth * TIDY_ASSISTANT_PANEL_RATIO
@@ -1557,6 +1600,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     const {
       blockClose = false,
       openHeight = COMPACT_DROPDOWN_HEIGHT,
+      animate = false,
     } = options;
     if (!isBootstrapCompact) {
       return;
@@ -1586,7 +1630,9 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
 
       const scheduleResize = () => {
         resizeTimeoutRef.current = null;
-        const duration = estimateResizeDuration(currentHeightRef.current, targetHeight) + COMPACT_RESIZE_BUFFER_MS;
+        const duration = animate
+          ? estimateResizeDuration(currentHeightRef.current, targetHeight) + COMPACT_RESIZE_BUFFER_MS
+          : 50;
         const finalize = () => finalizeWindowResize(targetHeight, duration, blockClose);
 
         if (blockClose) {
@@ -1603,7 +1649,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
           const resizeResult = window.jarvisAPI.windowControls.resize(
             COMPACT_WIDGET_WIDTH,
             targetHeight,
-            true,
+            animate,
           );
 
           if (resizeResult && typeof resizeResult.then === 'function') {
@@ -1639,7 +1685,9 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
 
     const scheduleCollapse = () => {
       resizeTimeoutRef.current = null;
-      const duration = estimateResizeDuration(currentHeightRef.current, targetHeight) + COMPACT_RESIZE_BUFFER_MS;
+      const duration = animate
+        ? estimateResizeDuration(currentHeightRef.current, targetHeight) + COMPACT_RESIZE_BUFFER_MS
+        : 50;
       const finalize = () => finalizeWindowResize(targetHeight, duration, blockClose && preventDropdownCloseRef.current);
 
       if (!blockClose) {
@@ -1656,7 +1704,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         const resizeResult = window.jarvisAPI.windowControls.resize(
           COMPACT_WIDGET_WIDTH,
           targetHeight,
-          true,
+          animate,
         );
 
         if (resizeResult && typeof resizeResult.then === 'function') {
@@ -1695,12 +1743,20 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
 
     setIsTreeDropdownOpen(isOpen);
     isDropdownOpenRef.current = isOpen;
-    resizeCompactWindowForDropdown(isOpen, { blockClose: true, openHeight: COMPACT_DROPDOWN_HEIGHT });
+    resizeCompactWindowForDropdown(isOpen, {
+      blockClose: true,
+      openHeight: COMPACT_DROPDOWN_HEIGHT,
+      animate: false,
+    });
   }, [isBootstrapCompact, resizeCompactWindowForDropdown]);
 
   const handleCompactProviderDropdownOpenChange = useCallback((isOpen) => {
     isDropdownOpenRef.current = isOpen;
-    resizeCompactWindowForDropdown(isOpen, { blockClose: false, openHeight: COMPACT_PROVIDER_DROPDOWN_HEIGHT });
+    resizeCompactWindowForDropdown(isOpen, {
+      blockClose: false,
+      openHeight: COMPACT_PROVIDER_DROPDOWN_HEIGHT,
+      animate: false,
+    });
   }, [resizeCompactWindowForDropdown]);
 
   useEffect(() => {

@@ -54,6 +54,10 @@ export const createTreeWidgetBridge = (bridge = ensureRendererBridge()) => {
         const controls = resolveWindowControls();
         return safeInvoke(controls?.maximize);
       },
+      setResizable: (resizable, options) => {
+        const controls = resolveWindowControls();
+        return safeInvoke(controls?.setResizable, resizable, options);
+      },
       toggleFullScreen: () => {
         const controls = resolveWindowControls();
         return safeInvoke(controls?.toggleFullScreen);

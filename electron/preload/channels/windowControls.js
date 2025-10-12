@@ -15,6 +15,14 @@ module.exports = (ipcRenderer) => {
     close: () => ipcRenderer.invoke('window:control', 'close'),
     getState: () => ipcRenderer.invoke('window:getState'),
     resize: (width, height, animate = true) => ipcRenderer.invoke('window:resize', { width, height, animate }),
+    setResizable: (resizable, options = {}) => {
+      const payload = { resizable };
+      if (typeof options.minWidth === 'number') payload.minWidth = options.minWidth;
+      if (typeof options.minHeight === 'number') payload.minHeight = options.minHeight;
+      if (typeof options.maxWidth === 'number') payload.maxWidth = options.maxWidth;
+      if (typeof options.maxHeight === 'number') payload.maxHeight = options.maxHeight;
+      return ipcRenderer.invoke('window:setResizable', payload);
+    },
     onStateChange: createStateListener('window:state', ipcRenderer),
   };
 

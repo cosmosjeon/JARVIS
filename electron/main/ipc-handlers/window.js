@@ -163,6 +163,51 @@ const registerWindowHandlers = ({
     };
   });
 
+  ipcMain.handle('window:setResizable', (event, payload = {}) => {
+    const currentWindow = resolveBrowserWindowFromSender(event.sender);
+    if (!currentWindow || currentWindow.isDestroyed()) {
+      return { success: false, error: { code: 'no_window', message: 'Current window not available' } };
+    }
+
+    const nextResizable = payload?.resizable !== false;
+    const minWidth = typeof payload?.minWidth === 'number' ? payload.minWidth : undefined;
+    const minHeight = typeof payload?.minHeight === 'number' ? payload.minHeight : undefined;
+    const maxWidth = typeof payload?.maxWidth === 'number' ? payload.maxWidth : undefined;
+    const maxHeight = typeof payload?.maxHeight === 'number' ? payload.maxHeight : undefined;
+
+    try {
+      currentWindow.setResizable(nextResizable);
+
+      if (typeof minWidth === 'number' || typeof minHeight === 'number') {
+        const currentBounds = currentWindow.getBounds();
+        const nextMinWidth = typeof minWidth === 'number'
+          ? Math.max(0, Math.floor(minWidth))
+          : currentBounds?.width ?? 320;
+        const nextMinHeight = typeof minHeight === 'number'
+          ? Math.max(0, Math.floor(minHeight))
+          : currentBounds?.height ?? 240;
+        currentWindow.setMinimumSize(nextMinWidth, nextMinHeight);
+      }
+
+      if (typeof maxWidth === 'number' || typeof maxHeight === 'number') {
+        const resolvedMaxWidth = typeof maxWidth === 'number' ? Math.max(0, Math.floor(maxWidth)) : 0;
+        const resolvedMaxHeight = typeof maxHeight === 'number' ? Math.max(0, Math.floor(maxHeight)) : 0;
+        currentWindow.setMaximumSize(resolvedMaxWidth, resolvedMaxHeight);
+      }
+
+      return { success: true, resizable: nextResizable };
+    } catch (error) {
+      logger?.error?.('window_set_resizable_failed', { message: error?.message });
+      return {
+        success: false,
+        error: {
+          code: 'set_resizable_failed',
+          message: error?.message || 'Failed to update resizable state',
+        },
+      };
+    }
+  });
+
   ipcMain.handle('window:setMousePassthrough', (_event, payload = {}) => {
     const mainWindow = getMainWindow();
     if (!mainWindow) {

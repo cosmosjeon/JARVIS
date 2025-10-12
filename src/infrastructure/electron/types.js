@@ -16,6 +16,7 @@
  *   현재 활성 트리 정보를 메인 프로세스에 전달합니다.
  * @property {{
  *   maximize: () => Promise<unknown>|unknown,
+*   setResizable: (resizable: boolean, options?: { minWidth?: number, minHeight?: number, maxWidth?: number, maxHeight?: number }) => Promise<{ success?: boolean, resizable?: boolean }> | null,
  *   toggleFullScreen: () => Promise<unknown>|unknown,
  *   close: () => Promise<unknown>|unknown,
  * }} windowControls
@@ -47,7 +48,9 @@
  * @property {() => Promise<unknown>|unknown} minimize
  *   창을 최소화합니다.
  * @property {() => Promise<unknown>|unknown} restore
- *   창을 복원합니다.
+  *   창을 복원합니다.
+* @property {(resizable: boolean, options?: { minWidth?: number, minHeight?: number, maxWidth?: number, maxHeight?: number }) => Promise<{ success?: boolean, resizable?: boolean }>|null} setResizable
+ *   창의 사용자가 크기를 조절할 수 있는지 여부를 제어합니다.
  * @property {() => Promise<unknown>|unknown} close
  *   창을 닫습니다.
  * @property {() => Promise<unknown>|unknown} toggleWindow
