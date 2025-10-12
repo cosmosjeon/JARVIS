@@ -10,4 +10,7 @@ const createEventListener = (channel, ipcRenderer) => (handler) => {
 module.exports = (ipcRenderer) => ({
   onPassThroughToggle: createEventListener('pass-through:toggle', ipcRenderer),
   onWidgetSetActiveTree: createEventListener('widget:set-active-tree', ipcRenderer),
+  notifyActiveTree: (treeId) => ipcRenderer.invoke('widget:updateActiveTree', {
+    treeId: typeof treeId === 'string' ? treeId : null,
+  }),
 });

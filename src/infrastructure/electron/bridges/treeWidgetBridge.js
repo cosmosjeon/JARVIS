@@ -71,6 +71,10 @@ export const createTreeWidgetBridge = (bridge = ensureRendererBridge()) => {
       const target = resolveBridge();
       return safeInvoke(target?.toggleWindow);
     },
+    notifyActiveTree: (treeId) => {
+      const target = resolveBridge();
+      return safeInvoke(target?.notifyActiveTree, treeId);
+    },
   };
 };
 

@@ -36,6 +36,22 @@ const start = () => {
       pendingOAuthCallbacks.push(url);
     }
   };
+  let lastOpenedTreeId = null;
+
+  const setLastOpenedTreeId = (treeId, context = {}) => {
+    if (typeof treeId !== 'string') {
+      return;
+    }
+    const normalized = treeId.trim();
+    if (!normalized) {
+      return;
+    }
+    lastOpenedTreeId = normalized;
+    logger?.debug?.('last_tree_updated', {
+      treeId: normalized,
+      source: context?.source || 'unknown',
+    });
+  };
 
   const settingsManager = createSettingsManager({
     getLogger: () => logger,
@@ -172,12 +188,13 @@ const start = () => {
       applyWindowConfigTo,
       createLibraryWindow,
       getLibraryWindow,
+      onWidgetOpened: ({ treeId, source }) => setLastOpenedTreeId(treeId, { source }),
     });
 
-    // 전역 단축키 등록: 플랫폼별 새 위젯 생성
+    // 전역 단축키 등록
     const isMac = process.platform === 'darwin';
-    const widgetShortcut = isMac ? 'Command+`' : 'Alt+`';
-    const registered = globalShortcut.register(widgetShortcut, () => {
+    const createWidgetShortcut = isMac ? 'Command+`' : 'Alt+`';
+    const createWidgetShortcutRegistered = globalShortcut.register(createWidgetShortcut, () => {
       try {
         const { window: widgetWindow } = createWidgetWindow({
           logger,
@@ -195,13 +212,61 @@ const start = () => {
       }
     });
 
-    if (registered) {
+    if (createWidgetShortcutRegistered) {
       logger?.info?.('global_shortcut_registered', {
-        shortcut: widgetShortcut,
+        shortcut: createWidgetShortcut,
         action: 'create_widget',
       });
     } else {
-      logger?.warn?.('global_shortcut_registration_failed', { shortcut: widgetShortcut });
+      logger?.warn?.('global_shortcut_registration_failed', { shortcut: createWidgetShortcut });
+    }
+
+    const openRecentTreeWidget = () => {
+      const recentTreeId = lastOpenedTreeId;
+      if (!recentTreeId) {
+        logger?.warn?.('recent_widget_shortcut_missing_tree');
+        return;
+      }
+
+      try {
+        const settings = settingsManager.getSettings();
+        const { window: primaryWindow } = createMainWindow({
+          logger,
+          settings,
+          treeId: recentTreeId,
+          fresh: false,
+          isDev,
+        });
+
+        if (!primaryWindow || primaryWindow.isDestroyed()) {
+          logger?.warn?.('recent_widget_launch_failed', {
+            treeId: recentTreeId,
+            reason: 'window_unavailable',
+          });
+          return;
+        }
+
+        ensureMainWindowFocus();
+        primaryWindow.webContents.send('widget:set-active-tree', { treeId: recentTreeId });
+        setLastOpenedTreeId(recentTreeId, { source: 'shortcut:recent' });
+      } catch (error) {
+        logger?.error?.('recent_widget_launch_failed', {
+          message: error?.message,
+          treeId: recentTreeId,
+        });
+      }
+    };
+
+    const recentTreeShortcut = isMac ? 'Command+1' : 'Alt+1';
+    const recentTreeShortcutRegistered = globalShortcut.register(recentTreeShortcut, openRecentTreeWidget);
+
+    if (recentTreeShortcutRegistered) {
+      logger?.info?.('global_shortcut_registered', {
+        shortcut: recentTreeShortcut,
+        action: 'open_recent_tree',
+      });
+    } else {
+      logger?.warn?.('global_shortcut_registration_failed', { shortcut: recentTreeShortcut });
     }
 
     app.on('activate', () => {

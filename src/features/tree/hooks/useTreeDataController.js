@@ -94,6 +94,7 @@ const useTreeDataController = ({
 
         setActiveTreeId(targetTree.id);
         writeSessionTreeId(targetTree.id);
+        treeBridge?.notifyActiveTree?.(targetTree.id);
 
         if (typeof window !== 'undefined') {
           try {
@@ -126,6 +127,7 @@ const useTreeDataController = ({
     setInitializingTree,
     readSessionTreeId,
     treeLibrarySyncRef,
+    treeBridge,
   ]);
 
   useEffect(() => {

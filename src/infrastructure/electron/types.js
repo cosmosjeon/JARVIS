@@ -12,6 +12,8 @@
  *   질문 텍스트에서 대표 키워드를 추출합니다.
  * @property {(level: 'info'|'warn'|'error', event: string, context?: Record<string, unknown>) => void} log
  *   로깅 브리지를 통해 이벤트를 전송합니다.
+ * @property {(treeId: string) => Promise<{ success?: boolean }>|null} notifyActiveTree
+ *   현재 활성 트리 정보를 메인 프로세스에 전달합니다.
  * @property {{
  *   maximize: () => Promise<unknown>|unknown,
  *   toggleFullScreen: () => Promise<unknown>|unknown,

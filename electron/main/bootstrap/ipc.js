@@ -28,6 +28,7 @@ const registerIpcHandlers = ({
   applyWindowConfigTo,
   createLibraryWindow,
   getLibraryWindow,
+  onWidgetOpened,
 }) => {
   registerSystemHandlers({ ipcMain, accessibility });
 
@@ -66,6 +67,7 @@ const registerIpcHandlers = ({
     windowConfig,
     applyWindowConfigTo,
     getSettings: () => settingsManager.getSettings(),
+    onWidgetOpened,
   });
 
   registerLibraryHandlers({

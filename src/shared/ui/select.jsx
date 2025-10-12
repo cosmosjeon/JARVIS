@@ -8,7 +8,17 @@ const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 
-const SelectTrigger = React.forwardRef(({ className, children, ...props }, ref) => (
+const SelectTrigger = React.forwardRef((
+  {
+    className,
+    children,
+    icon: IconComponent = ChevronDown,
+    iconClassName,
+    iconProps = {},
+    ...props
+  },
+  ref,
+) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
@@ -19,7 +29,10 @@ const SelectTrigger = React.forwardRef(({ className, children, ...props }, ref) 
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50" />
+      <IconComponent
+        {...iconProps}
+        className={cn("h-4 w-4 opacity-50", iconClassName, iconProps.className)}
+      />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));

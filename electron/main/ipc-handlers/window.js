@@ -14,14 +14,37 @@ const registerWindowHandlers = ({
   windowConfig,
   applyWindowConfigTo,
   getSettings,
+  onWidgetOpened,
 }) => {
   if (!ipcMain || !toggleWidgetVisibility || !createMainWindow || !createWidgetWindow || !getMainWindow) {
     throw new Error('[ipc-handlers/window] Missing required dependencies');
   }
 
+  const notifyWidgetOpened = (payload = {}) => {
+    const normalizedTreeId = typeof payload.treeId === 'string' && payload.treeId.trim()
+      ? payload.treeId.trim()
+      : null;
+    if (!normalizedTreeId || typeof onWidgetOpened !== 'function') {
+      return;
+    }
+    onWidgetOpened({
+      ...payload,
+      treeId: normalizedTreeId,
+    });
+  };
+
   ipcMain.handle('window:toggleVisibility', () => {
     const visible = toggleWidgetVisibility(logger);
     return { success: true, visible };
+  });
+
+  ipcMain.handle('widget:updateActiveTree', (_event, payload = {}) => {
+    const treeId = typeof payload?.treeId === 'string' ? payload.treeId : null;
+    notifyWidgetOpened({
+      treeId,
+      source: 'renderer:updateActiveTree',
+    });
+    return { success: Boolean(treeId && treeId.trim()) };
   });
 
   ipcMain.handle('window:openWidget', (_event, payload = {}) => {
@@ -46,6 +69,13 @@ const registerWindowHandlers = ({
         if (requestedTreeId) {
           primaryWindow.webContents.send('widget:set-active-tree', { treeId: requestedTreeId });
         }
+        notifyWidgetOpened({
+          treeId: requestedTreeId,
+          reusedPrimary: true,
+          windowId: primaryWindow.id,
+          sessionId: getWidgetSession(primaryWindow.id) || null,
+          source: 'ipc:openWidget',
+        });
 
         return {
           success: true,
@@ -62,6 +92,14 @@ const registerWindowHandlers = ({
       treeId: requestedTreeId || null,
       fresh: forceFresh,
       isDev,
+    });
+
+    notifyWidgetOpened({
+      treeId: requestedTreeId,
+      reusedPrimary: false,
+      windowId: newWindow.id,
+      sessionId,
+      source: 'ipc:openWidget',
     });
 
     return {

@@ -13,11 +13,11 @@ import QuestionService from 'features/tree/services/QuestionService';
 import { markNewLinks } from 'shared/utils/linkAnimationUtils';
 import NodeAssistantPanel from 'features/tree/ui/components/NodeAssistantPanel';
 import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
-import TreeTabBar from 'features/tree/ui/components/TreeTabBar';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useTheme } from 'shared/components/library/ThemeProvider';
 import { useSettings } from 'shared/hooks/SettingsContext';
-import { Sun, Moon, Sparkles, Settings } from 'lucide-react';
+import { Sun, Moon, Sparkles, Settings, FolderTree } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger } from 'shared/ui/select';
 import { useTreeViewport } from 'features/tree/hooks/useTreeViewport';
 import { useTreePersistence } from 'features/tree/hooks/useTreePersistence';
 import useTreeDataController from 'features/tree/hooks/useTreeDataController';
@@ -33,6 +33,7 @@ import AgentClient from 'infrastructure/ai/agentClient';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import { useTreeState } from 'features/tree/state/useTreeState';
+import { cn } from 'shared/utils';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from 'features/tree/services/treeCreation';
 import {
   forwardPanZoomGesture as applyPanZoomGesture,
@@ -58,6 +59,11 @@ const TIDY_ASSISTANT_PANEL_MIN_WIDTH = 360;
 const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
 const TIDY_ASSISTANT_PANEL_GAP = 0;
 const TIDY_CANVAS_MIN_WIDTH = 320;
+
+const COMPACT_WIDGET_WIDTH = 540;
+const COMPACT_DEFAULT_HEIGHT = 130;
+const COMPACT_DROPDOWN_HEIGHT = 240;
+const COMPACT_RESIZE_BUFFER_MS = 60;
 
 const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const { user } = useSupabaseAuth();
@@ -108,6 +114,8 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const [links, setLinks] = useState([]);
   const [sessionTabs, setSessionTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
+  const [availableTrees, setAvailableTrees] = useState([]);
+  const [isTreeDropdownOpen, setIsTreeDropdownOpen] = useState(false);
   const isTidyView = true;
 
   const closeHandleMenu = useCallback(() => {
@@ -194,6 +202,26 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       isInitialLoadRef.current = false;
     }
   }, [activeTreeId]);
+
+  // 트리 목록 로드
+  useEffect(() => {
+    if (!user) {
+      setAvailableTrees([]);
+      return;
+    }
+
+    const fetchTrees = async () => {
+      try {
+        const trees = await loadTrees();
+        setAvailableTrees(Array.isArray(trees) ? trees : []);
+      } catch (error) {
+        console.error('[Jarvis] Failed to load trees for selector', error);
+        setAvailableTrees([]);
+      }
+    };
+
+    fetchTrees();
+  }, [user, loadTrees]);
 
   // 키보드 탭(→ 다음 탭), Shift+Tab(← 이전 탭)으로 탭 전환 (Ref를 통해 안전 호출)
   useEffect(() => {
@@ -387,6 +415,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const [bootstrapChatHeight, setBootstrapChatHeight] = useState(100); // 초기 100px (입력창), 확장 후 600
   const [bootstrapChatTop, setBootstrapChatTop] = useState('50%'); // 초기 50% (화면 중앙)
   const [isBootstrapCompact, setIsBootstrapCompact] = useState(true); // 컴팩트 모드 상태
+  
   
   // 컴팩트 모드 상태 변화를 부모 컴포넌트에 전달
   useEffect(() => {
@@ -1012,7 +1041,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       setIsBootstrapCompact(true);
       
       // 리사이즈 관련 ref 초기화
-      currentHeightRef.current = 130;
+      currentHeightRef.current = COMPACT_DEFAULT_HEIGHT;
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
@@ -1020,7 +1049,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       
       // 컴팩트 모드에 맞는 작은 창 크기로 설정 (입력창에 딱 맞게)
       if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
-        window.jarvisAPI.windowControls.resize(540, 130, true)
+        window.jarvisAPI.windowControls.resize(COMPACT_WIDGET_WIDTH, COMPACT_DEFAULT_HEIGHT, true)
           .then(result => {
             console.log('✅ Window resized to compact mode for new tree:', result);
           })
@@ -1045,11 +1074,49 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       
       ensureBootstrap();
     } else {
-      // 노드가 있는 트리
-      setIsBootstrapCompact(false);
+      // 노드가 있는 트리 -> 전체 레이아웃 확장
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+        resizeTimeoutRef.current = null;
+      }
+      isResizingRef.current = false;
+      const shouldUpdateCompactState = isBootstrapCompact;
+
+      if (shouldUpdateCompactState) {
+        setIsBootstrapCompact(false);
+      }
       clearBootstrap();
+
+      const TARGET_WIDTH = 1024;
+      const TARGET_HEIGHT = 720;
+
+      const alreadyAtTargetHeight = currentHeightRef.current === TARGET_HEIGHT;
+
+      currentHeightRef.current = TARGET_HEIGHT;
+      lastTextareaHeightRef.current = TARGET_HEIGHT;
+      setBootstrapChatHeight(600);
+      setBootstrapChatTop('50%');
+
+      if (!alreadyAtTargetHeight && typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
+        try {
+          const resizeResult = window.jarvisAPI.windowControls.resize(TARGET_WIDTH, TARGET_HEIGHT, true);
+          if (resizeResult && typeof resizeResult.then === 'function') {
+            resizeResult
+              .then((result) => {
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('✅ Window resized to normal size after data load:', result);
+                }
+              })
+              .catch((err) => {
+                console.error('❌ Window resize failed:', err);
+              });
+          }
+        } catch (error) {
+          console.error('❌ Window resize threw synchronously:', error);
+        }
+      }
     }
-  }, [data.nodes, ensureBootstrap, clearBootstrap]);
+  }, [data.nodes, ensureBootstrap, clearBootstrap, isBootstrapCompact, setBootstrapChatHeight, setBootstrapChatTop]);
 
   const clearPendingExpansion = useCallback(() => {
     pendingFocusNodeIdRef.current = null;
@@ -1451,67 +1518,211 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
 
   // 드롭다운 열림/닫힘에 따른 창 크기 제어 (최적화: 디바운싱 + 중복 방지)
   const resizeTimeoutRef = useRef(null);
-  const currentHeightRef = useRef(130); // 현재 창 높이 추적
+  const resizeFinalizeTimeoutRef = useRef(null);
+  const textareaResizeTimeoutRef = useRef(null);
+  const currentHeightRef = useRef(COMPACT_DEFAULT_HEIGHT); // 현재 창 높이 추적
+  const lastTextareaHeightRef = useRef(COMPACT_DEFAULT_HEIGHT); // textarea 높이 추적
   const isResizingRef = useRef(false); // 리사이즈 진행 중 플래그
-  
-  const handleDropdownOpenChange = useCallback((isOpen) => {
-    if (!isBootstrapCompact) return; // 컴팩트 모드가 아닐 때는 무시
-    
-    // 드롭다운 상태 업데이트
-    isDropdownOpenRef.current = isOpen;
-    
-    const newHeight = isOpen ? 240 : 130;
-    
-    // 이미 같은 높이이거나 리사이즈 중이면 스킵
-    if (currentHeightRef.current === newHeight || isResizingRef.current) {
+  const preventDropdownCloseRef = useRef(false);
+  const isDropdownOpenRef = useRef(false);
+  const isTextareaResizingRef = useRef(false);
+  const estimateResizeDuration = useCallback((fromHeight, toHeight) => {
+    const from = typeof fromHeight === 'number' ? fromHeight : 0;
+    const to = typeof toHeight === 'number' ? toHeight : 0;
+    const delta = Math.abs(to - from);
+    return Math.min(300, Math.max(150, delta * 1.5));
+  }, []);
+
+  const finalizeWindowResize = useCallback((targetHeight, durationMs, releaseCloseGuard = false) => {
+    const clearTimer = typeof window !== 'undefined' ? window.clearTimeout : clearTimeout;
+    const schedule = typeof window !== 'undefined' ? window.setTimeout : setTimeout;
+
+    if (resizeFinalizeTimeoutRef.current) {
+      clearTimer(resizeFinalizeTimeoutRef.current);
+    }
+
+    resizeFinalizeTimeoutRef.current = schedule(() => {
+      currentHeightRef.current = targetHeight;
+      lastTextareaHeightRef.current = targetHeight;
+      if (releaseCloseGuard) {
+        preventDropdownCloseRef.current = false;
+      }
+      isResizingRef.current = false;
+      resizeFinalizeTimeoutRef.current = null;
+    }, Math.max(0, durationMs));
+  }, []);
+
+  const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
+    const { blockClose = false } = options;
+    if (!isBootstrapCompact) {
       return;
     }
-    
-    // 이전 타임아웃 취소
-    if (resizeTimeoutRef.current) {
-      clearTimeout(resizeTimeoutRef.current);
+
+    if (!isOpen && blockClose && preventDropdownCloseRef.current) {
+      return;
     }
-    
-    // 디바운싱: 50ms 후에 실행
-    resizeTimeoutRef.current = setTimeout(() => {
-      if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
-        isResizingRef.current = true;
-        
-        window.jarvisAPI.windowControls.resize(540, newHeight, true)
-          .then(result => {
-            currentHeightRef.current = newHeight;
-            lastTextareaHeightRef.current = newHeight; // textarea ref도 업데이트
-            isResizingRef.current = false;
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`✅ Window resized for dropdown ${isOpen ? 'open' : 'close'}:`, result);
-            }
-          })
-          .catch(err => {
-            isResizingRef.current = false;
-            console.error('❌ Window resize failed:', err);
-          });
+
+    const clearTimeoutFn = typeof window !== 'undefined' ? window.clearTimeout : clearTimeout;
+    const scheduleTimeout = typeof window !== 'undefined' ? window.setTimeout : setTimeout;
+
+    if (resizeTimeoutRef.current) {
+      clearTimeoutFn(resizeTimeoutRef.current);
+      resizeTimeoutRef.current = null;
+    }
+
+    const targetHeight = isOpen ? COMPACT_DROPDOWN_HEIGHT : COMPACT_DEFAULT_HEIGHT;
+
+    if (isOpen) {
+      if (currentHeightRef.current === COMPACT_DROPDOWN_HEIGHT || isResizingRef.current) {
+        if (!blockClose) {
+          preventDropdownCloseRef.current = false;
+        }
+        return;
       }
-    }, 50);
+
+      const scheduleResize = () => {
+        resizeTimeoutRef.current = null;
+        const duration = estimateResizeDuration(currentHeightRef.current, targetHeight) + COMPACT_RESIZE_BUFFER_MS;
+        const finalize = () => finalizeWindowResize(targetHeight, duration, blockClose);
+
+        if (blockClose) {
+          preventDropdownCloseRef.current = true;
+        }
+        isResizingRef.current = true;
+
+        if (typeof window === 'undefined' || !window.jarvisAPI?.windowControls?.resize) {
+          finalize();
+          return;
+        }
+
+        try {
+          const resizeResult = window.jarvisAPI.windowControls.resize(
+            COMPACT_WIDGET_WIDTH,
+            targetHeight,
+            true,
+          );
+
+          if (resizeResult && typeof resizeResult.then === 'function') {
+            resizeResult
+              .then((result) => {
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('✅ Window resized for dropdown open:', result);
+                }
+              })
+              .catch((error) => {
+                console.error('❌ Window resize failed:', error);
+              })
+              .finally(finalize);
+          } else {
+            finalize();
+          }
+        } catch (error) {
+          console.error('❌ Window resize threw synchronously:', error);
+          finalize();
+        }
+      };
+
+      resizeTimeoutRef.current = scheduleTimeout(scheduleResize, 50);
+      return;
+    }
+
+    if (isResizingRef.current || currentHeightRef.current === COMPACT_DEFAULT_HEIGHT) {
+      if (!blockClose) {
+        preventDropdownCloseRef.current = false;
+      }
+      return;
+    }
+
+    const scheduleCollapse = () => {
+      resizeTimeoutRef.current = null;
+      const duration = estimateResizeDuration(currentHeightRef.current, targetHeight) + COMPACT_RESIZE_BUFFER_MS;
+      const finalize = () => finalizeWindowResize(targetHeight, duration, blockClose && preventDropdownCloseRef.current);
+
+      if (!blockClose) {
+        preventDropdownCloseRef.current = false;
+      }
+      isResizingRef.current = true;
+
+      if (typeof window === 'undefined' || !window.jarvisAPI?.windowControls?.resize) {
+        finalize();
+        return;
+      }
+
+      try {
+        const resizeResult = window.jarvisAPI.windowControls.resize(
+          COMPACT_WIDGET_WIDTH,
+          targetHeight,
+          true,
+        );
+
+        if (resizeResult && typeof resizeResult.then === 'function') {
+          resizeResult
+            .then((result) => {
+              if (process.env.NODE_ENV === 'development') {
+                console.log('✅ Window resized for dropdown close:', result);
+              }
+            })
+            .catch((error) => {
+              console.error('❌ Window resize failed:', error);
+            })
+            .finally(finalize);
+        } else {
+          finalize();
+        }
+      } catch (error) {
+        console.error('❌ Window resize threw synchronously:', error);
+        finalize();
+      }
+    };
+
+    resizeTimeoutRef.current = scheduleTimeout(scheduleCollapse, 50);
+  }, [estimateResizeDuration, finalizeWindowResize, isBootstrapCompact]);
+
+  const handleTreeDropdownOpenChange = useCallback((isOpen) => {
+    if (!isBootstrapCompact) {
+      setIsTreeDropdownOpen(isOpen);
+      return;
+    }
+
+    if (!isOpen && preventDropdownCloseRef.current) {
+      setIsTreeDropdownOpen(true);
+      return;
+    }
+
+    setIsTreeDropdownOpen(isOpen);
+    isDropdownOpenRef.current = isOpen;
+    resizeCompactWindowForDropdown(isOpen, { blockClose: true });
+  }, [isBootstrapCompact, resizeCompactWindowForDropdown]);
+
+  const handleCompactProviderDropdownOpenChange = useCallback((isOpen) => {
+    isDropdownOpenRef.current = isOpen;
+    resizeCompactWindowForDropdown(isOpen, { blockClose: false });
+  }, [resizeCompactWindowForDropdown]);
+
+  useEffect(() => {
+    if (!isBootstrapCompact) {
+      setIsTreeDropdownOpen(false);
+      isDropdownOpenRef.current = false;
+      preventDropdownCloseRef.current = false;
+    }
   }, [isBootstrapCompact]);
   
   // 컴포넌트 언마운트 시 타임아웃 정리
   useEffect(() => {
     return () => {
+      const clearTimer = typeof window !== 'undefined' ? window.clearTimeout : clearTimeout;
       if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
+        clearTimer(resizeTimeoutRef.current);
       }
       if (textareaResizeTimeoutRef.current) {
-        clearTimeout(textareaResizeTimeoutRef.current);
+        clearTimer(textareaResizeTimeoutRef.current);
+      }
+      if (resizeFinalizeTimeoutRef.current) {
+        clearTimer(resizeFinalizeTimeoutRef.current);
       }
     };
   }, []);
 
-  // Textarea 높이 변화에 따른 창 크기 제어 (컴팩트 모드 - 최적화)
-  const textareaResizeTimeoutRef = useRef(null);
-  const lastTextareaHeightRef = useRef(130); // 초기값을 130으로 설정하여 초기 리사이즈 방지
-  const isDropdownOpenRef = useRef(false);
-  const isTextareaResizingRef = useRef(false);
-  
   const handleTextareaHeightChange = useCallback((textareaHeight) => {
     if (!isBootstrapCompact) return;
     
@@ -1525,10 +1736,11 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     
     // 디바운싱: 150ms 후에 실행 (더 긴 지연으로 렉 방지)
     textareaResizeTimeoutRef.current = setTimeout(() => {
+      textareaResizeTimeoutRef.current = null;
       if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
         // 기본 높이 계산
         const baseHeight = 25 + 24 + 8 + 70 + 16;
-        const newHeight = Math.max(130, Math.min(baseHeight + textareaHeight, 400));
+        const newHeight = Math.max(COMPACT_DEFAULT_HEIGHT, Math.min(baseHeight + textareaHeight, 400));
         
         // 높이가 변경되었을 때 리사이즈 (증가/감소 모두 처리)
         // 감소할 때는 임계값을 낮춰서 더 민감하게 반응
@@ -1539,7 +1751,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
           lastTextareaHeightRef.current = newHeight;
           isTextareaResizingRef.current = true;
           
-          window.jarvisAPI.windowControls.resize(540, newHeight, true)
+          window.jarvisAPI.windowControls.resize(COMPACT_WIDGET_WIDTH, newHeight, true)
             .then(result => {
               isTextareaResizingRef.current = false;
               if (process.env.NODE_ENV === 'development') {
@@ -2738,20 +2950,84 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
               onMouseDown={(e) => e.stopPropagation()}
             >
               <svg
-                className="h-2.5 w-2.5 text-white/80 hover:text-white"
+                width="8"
+                height="8"
+                viewBox="0 0 8 8"
                 fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
               >
                 <path
+                  d="M1 1L7 7M7 1L1 7"
+                  stroke="white"
+                  strokeWidth="1.5"
                   strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
                 />
               </svg>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* 컴팩트 모드용 트리 선택 드롭다운 - 오른쪽 */}
+      {isBootstrapCompact && availableTrees.length > 0 && (
+        <div
+          className="absolute top-2 right-2 z-[1300]"
+          style={{
+            WebkitAppRegion: 'no-drag',
+            pointerEvents: 'auto',
+          }}
+        >
+          <Select 
+            value={activeTreeId || ''} 
+            open={isTreeDropdownOpen}
+            onValueChange={(treeId) => {
+              if (treeId && treeId !== activeTreeId) {
+                loadActiveTreeRef.current?.({ treeId });
+              }
+            }}
+            onOpenChange={handleTreeDropdownOpenChange}
+          >
+            <SelectTrigger 
+              className="inline-flex items-center justify-center whitespace-nowrap transition-colors focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 h-9 rounded-lg px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground border-0 shadow-none outline-none"
+              icon={FolderTree}
+              iconClassName={cn(
+                "h-3.5 w-3.5 transition-colors",
+                isTreeDropdownOpen ? "text-primary" : "text-muted-foreground/70"
+              )}
+              iconProps={{ strokeWidth: 1.75 }}
+              style={{
+                WebkitAppRegion: 'no-drag',
+                outline: 'none',
+                boxShadow: 'none',
+              }}
+            >
+              <span className="truncate max-w-[150px]">
+                {(() => {
+                  const currentTree = availableTrees.find(t => t.id === activeTreeId);
+                  return currentTree?.title || '트리 선택';
+                })()}
+              </span>
+            </SelectTrigger>
+            <SelectContent 
+              className="max-h-[300px] overflow-y-auto -mt-3"
+              style={{
+                WebkitAppRegion: 'no-drag',
+              }}
+            >
+              {availableTrees.map((tree) => (
+                <SelectItem 
+                  key={tree.id} 
+                  value={tree.id}
+                  className="cursor-pointer text-xs leading-tight py-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <FolderTree className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate">{tree.title || '제목 없음'}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -2968,69 +3244,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
         </div>
       )}
 
-      {/* 트리 탭 바: 드래그 핸들 위치에 따라 조정 */}
-      <div
-        className="absolute z-[1250] transition-all duration-300"
-        style={{
-          top: isBootstrapCompact ? '0.5rem' : '2.75rem',
-          left: tidyAssistantPanelVisible
-            ? `${Math.max(140, (viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 800)) / 2 - tidyAssistantPanelWidth / 2)}px`
-            : '50%',
-          transform: 'translateX(-50%)',
-        }}
-      >
-        <TreeTabBar
-          theme={theme}
-          activeTreeId={activeTreeId}
-          activeTabId={activeTabId}
-          tabs={sessionTabs}
-          onTabChange={(tab) => {
-            if (tab?.treeId) {
-              // 기존 탭 클릭이 아닌 경우에만 새 탭 추가
-              if (!tab.isExistingTab) {
-                setSessionTabs((prev) => {
-                  // 새 트리 선택 시 항상 새 탭으로 추가 (같은 트리를 여러 탭에서 열 수 있음)
-                  const newTabId = `${tab.treeId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                  setActiveTabId(newTabId);
-                  return [...prev, {
-                    id: newTabId,
-                    treeId: tab.treeId,
-                    title: tab.title || `트리 ${prev.length + 1}`
-                  }];
-                });
-              } else {
-                // 기존 탭 클릭 시 해당 탭의 ID로 설정
-                setActiveTabId(tab.tabId);
-              }
-              // 모든 탭에서 같은 treeId를 공유하므로 단순히 treeId로 로드
-              loadActiveTree({ treeId: tab.treeId });
-            } else {
-              // 새 트리 생성
-              loadActiveTree({ treeId: undefined });
-            }
-          }}
-          onTabDelete={(tabId) => {
-            // 삭제 전에 남은 탭 확인
-            const remaining = sessionTabs.filter(tab => tab.id !== tabId);
-
-            // 세션 탭 목록에서 제거
-            setSessionTabs(remaining);
-
-            // 삭제한 탭이 현재 활성 탭이면 다른 탭으로 전환
-            if (tabId === activeTabId) {
-              if (remaining.length > 0) {
-                const nextTab = remaining[0];
-                setActiveTabId(nextTab.id);
-                loadActiveTree({ treeId: nextTab.treeId });
-              } else {
-                setActiveTabId(null);
-                loadActiveTree({ treeId: undefined });
-              }
-            }
-          }}
-        />
-      </div>
-
       {isTreeSyncing && !initializingTree ? (
         <div className="pointer-events-none absolute bottom-6 right-6 z-[1200] rounded-full bg-slate-900/80 px-3 py-1 text-[11px] font-medium text-slate-100 shadow-lg">
           자동 저장 중...
@@ -3071,7 +3284,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
               nodeScaleFactor={nodeScaleFactor}
               attachments={pendingAttachmentsByNode['__bootstrap__'] || []}
               onAttachmentsChange={(next) => setAttachmentsForNode('__bootstrap__', next)}
-              onDropdownOpenChange={handleDropdownOpenChange}
+              onDropdownOpenChange={handleCompactProviderDropdownOpenChange}
               onTextareaHeightChange={handleTextareaHeightChange}
             />
           </div>
