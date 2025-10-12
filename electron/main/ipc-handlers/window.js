@@ -215,9 +215,10 @@ const registerWindowHandlers = ({
       const isNewTreeMode = currentUrl.includes('fresh=1');
       
       const newWidth = Math.max(width, isNewTreeMode ? 320 : 320);
-      // 새 트리 모드에서는 130px~400px 사이 허용
+      // 새 트리 모드: 130px(컴팩트)~720px(확장) 허용
+      // 일반 모드: 240px~1080px 허용
       const minHeight = isNewTreeMode ? 130 : 240;
-      const maxHeight = isNewTreeMode ? 400 : 1080;
+      const maxHeight = isNewTreeMode ? 720 : 1080;
       const newHeight = Math.max(minHeight, Math.min(height, maxHeight));
 
       // 좌상단 위치 고정, 오른쪽 아래로만 확장

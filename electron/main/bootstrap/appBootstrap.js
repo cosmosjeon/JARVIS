@@ -174,20 +174,34 @@ const start = () => {
       getLibraryWindow,
     });
 
-    // 전역 단축키 등록: Alt+1로 위젯 토글
-    const toggleShortcut = 'Alt+1';
-    const registered = globalShortcut.register(toggleShortcut, () => {
+    // 전역 단축키 등록: 플랫폼별 새 위젯 생성
+    const isMac = process.platform === 'darwin';
+    const widgetShortcut = isMac ? 'Command+`' : 'Alt+`';
+    const registered = globalShortcut.register(widgetShortcut, () => {
       try {
-        toggleWidgetVisibility();
+        const { window: widgetWindow } = createWidgetWindow({
+          logger,
+          settings: settingsManager.getSettings(),
+          fresh: true,
+          isDev,
+        });
+
+        if (widgetWindow && !widgetWindow.isDestroyed()) {
+          widgetWindow.show();
+          widgetWindow.focus();
+        }
       } catch (error) {
-        logger?.error?.('shortcut_toggle_failed', { message: error?.message });
+        logger?.error?.('shortcut_widget_launch_failed', { message: error?.message });
       }
     });
 
     if (registered) {
-      logger?.info?.('global_shortcut_registered', { shortcut: toggleShortcut });
+      logger?.info?.('global_shortcut_registered', {
+        shortcut: widgetShortcut,
+        action: 'create_widget',
+      });
     } else {
-      logger?.warn?.('global_shortcut_registration_failed', { shortcut: toggleShortcut });
+      logger?.warn?.('global_shortcut_registration_failed', { shortcut: widgetShortcut });
     }
 
     app.on('activate', () => {
