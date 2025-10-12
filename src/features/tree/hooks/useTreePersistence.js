@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react';
+import {
+  getTreeTitlePreference,
+  markTreeTitleAuto,
+  markTreeTitleManual,
+} from 'features/tree/utils/treeTitlePreferences';
 
 const TREE_SAVE_DEBOUNCE_MS = 800;
+
+const sanitizeTitle = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const mapError = (error) => {
   if (error instanceof Error) {
@@ -95,8 +102,8 @@ export const useTreePersistence = ({
 
       const rootNodeId = getRootNodeId();
       const rootNode = data.nodes.find((node) => node.id === rootNodeId) || data.nodes[0];
-      const title = rootNode?.keyword
-        || rootNode?.questionData?.question
+      const rootTitleCandidate = sanitizeTitle(rootNode?.keyword)
+        || sanitizeTitle(rootNode?.questionData?.question)
         || '새 지식 트리';
 
       let workingTreeId = activeTreeId || pendingTreeIdRef.current;
@@ -107,10 +114,30 @@ export const useTreePersistence = ({
         pendingTreeIdRef.current = workingTreeId;
       }
 
+      const preference = getTreeTitlePreference(workingTreeId);
+      const manualPreferenceTitle = sanitizeTitle(preference.title);
+      let manualOverrideActive = preference.manual === true
+        && Boolean(manualPreferenceTitle)
+        && manualPreferenceTitle !== rootTitleCandidate;
+
+      const effectiveTitle = manualOverrideActive ? manualPreferenceTitle : rootTitleCandidate;
+      const payloadTitle = sanitizeTitle(effectiveTitle) || '새 지식 트리';
+
       const treeRecord = await saveTreeMetadata({
         treeId: workingTreeId,
-        title,
+        title: payloadTitle,
       });
+
+      const persistedTitle = sanitizeTitle(treeRecord?.title) || payloadTitle;
+      if (manualOverrideActive && persistedTitle === rootTitleCandidate) {
+        manualOverrideActive = false;
+      }
+
+      if (manualOverrideActive) {
+        markTreeTitleManual(workingTreeId, persistedTitle);
+      } else {
+        markTreeTitleAuto(workingTreeId, persistedTitle);
+      }
 
       const resolvedTreeId = treeRecord?.id || workingTreeId;
       pendingTreeIdRef.current = resolvedTreeId;
@@ -151,11 +178,13 @@ export const useTreePersistence = ({
             } catch (error) {
               // IPC failures are non-fatal for sync notifications
             }
-            stateMap.set(resolvedTreeId, { lastCount: nextCount, refreshed: true });
+            stateMap.set(resolvedTreeId, { lastCount: nextCount, refreshed: true, manualTitle: manualOverrideActive, lastTitle: persistedTitle });
           } else {
             stateMap.set(resolvedTreeId, {
               lastCount: nextCount,
               refreshed: alreadyRefreshed || nextCount > 0,
+              manualTitle: manualOverrideActive,
+              lastTitle: persistedTitle,
             });
           }
         }

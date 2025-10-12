@@ -17,13 +17,37 @@ const VIRTUAL_ROOT_ID = '__virtual_root__';
 const DEFAULT_TREE_KEY = '__default_tree__';
 const VIEWPORT_STORAGE_PREFIX = 'tidyTreeView.viewTransform';
 const DARK_LIKE_THEMES = new Set(["dark", "glass"]);
+
+// 노드 및 라벨의 시각적 치수 (렌더링과 일관성 유지)
+const NODE_BASE_RADIUS = 4; // 선택 상태를 기준으로 안전하게 설정
+const NODE_INTERACTIVE_PADDING = 3;
+const NODE_LABEL_SPACING = 8;
+const NODE_HITBOX_VERTICAL_PADDING = 6;
+const LABEL_EXTRA_PADDING = 2;
+
+const logViewportDebug = (label, payload) => {
+  if (typeof console === "undefined" || process.env.NODE_ENV === "production") {
+    return;
+  }
+  try {
+    if (typeof console.groupCollapsed === "function") {
+      console.groupCollapsed(`\uD83D\uDDFA [TidyTreeView] ${label}`);
+      console.log(payload);
+      console.groupEnd();
+    } else {
+      console.log(`\uD83D\uDDFA [TidyTreeView] ${label}`, payload);
+    }
+  } catch (error) {
+    // ignore logging errors
+  }
+};
+
 const normalizeThemeKey = (value) => {
   if (typeof value !== "string") {
     return "light";
   }
   return value.trim().toLowerCase();
 };
-
 
 const INPUT_MODES = Object.freeze({
   MOUSE: 'mouse',
@@ -109,43 +133,119 @@ const toZoomTransform = (rawTransform) => {
   return d3.zoomIdentity.translate(rawTransform.x, rawTransform.y).scale(rawTransform.k);
 };
 
-// Calculate a zoom transform that fits the entire hierarchy snugly inside the viewport
-// while keeping the tree centered.
-const computeDefaultTransform = (layout, viewportDimensions) => {
+const approximateLabelWidth = (label) => {
+  if (typeof label !== "string") {
+    return 48;
+  }
+  const length = label.trim().length;
+  if (length === 0) {
+    return 48;
+  }
+  return Math.min(240, Math.max(48, length * 6.8)) + LABEL_EXTRA_PADDING;
+};
+
+const resolveNodeLabelText = (node) => {
+  if (typeof node?.data?.name === "string") {
+    return node.data.name;
+  }
+  return "";
+};
+
+const calculateLayoutVisualBounds = (layout, options = {}) => {
   if (!layout || !Array.isArray(layout.nodes) || layout.nodes.length === 0) {
     return null;
   }
 
-  const nodes = layout.nodes.filter((node) => {
-    if (!node) return false;
-    const nodeId = node.data?.id;
-    if (nodeId === VIRTUAL_ROOT_ID) {
-      return false;
-    }
-    return true;
-  });
-  if (nodes.length === 0) {
-    return null;
-  }
+  const measureLabel = typeof options.measureLabel === "function"
+    ? options.measureLabel
+    : approximateLabelWidth;
 
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
 
-  nodes.forEach((node) => {
-    const { x, y } = node;
-    if (Number.isFinite(x)) {
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
+  layout.nodes.forEach((node) => {
+    if (!node || node.data?.id === VIRTUAL_ROOT_ID) {
+      return;
     }
-    if (Number.isFinite(y)) {
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-    }
+
+    const nodeCenterX = Number.isFinite(node.y) ? node.y : 0; // y축이 화면의 X 좌표를 의미
+    const nodeCenterY = Number.isFinite(node.x) ? node.x : 0;
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+
+    const labelText = resolveNodeLabelText(node);
+    const measuredWidth = measureLabel(labelText);
+    const labelWidth = Number.isFinite(measuredWidth) ? Math.max(0, measuredWidth) : 0;
+    const interactiveRadius = NODE_BASE_RADIUS + NODE_INTERACTIVE_PADDING;
+
+    const leftExtent = hasChildren
+      ? -(labelWidth + NODE_LABEL_SPACING + interactiveRadius)
+      : -interactiveRadius;
+    const rightExtent = hasChildren
+      ? interactiveRadius
+      : labelWidth + NODE_LABEL_SPACING + interactiveRadius;
+
+    const topExtent = -(NODE_BASE_RADIUS + NODE_HITBOX_VERTICAL_PADDING);
+    const bottomExtent = NODE_BASE_RADIUS + NODE_HITBOX_VERTICAL_PADDING;
+
+    minX = Math.min(minX, nodeCenterX + leftExtent);
+    maxX = Math.max(maxX, nodeCenterX + rightExtent);
+    minY = Math.min(minY, nodeCenterY + topExtent);
+    maxY = Math.max(maxY, nodeCenterY + bottomExtent);
   });
 
   if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    return null;
+  }
+
+  const horizontalMargin = Number.isFinite(options.horizontalMargin)
+    ? Math.max(0, options.horizontalMargin)
+    : Math.max(12, Number.isFinite(layout?.dy) ? layout.dy * 0.3 : 12);
+  const verticalMargin = Number.isFinite(options.verticalMargin)
+    ? Math.max(0, options.verticalMargin)
+    : Math.max(12, Number.isFinite(layout?.dx) ? layout.dx * 0.75 : 12);
+
+  return {
+    minX: minX - horizontalMargin,
+    maxX: maxX + horizontalMargin,
+    minY: minY - verticalMargin,
+    maxY: maxY + verticalMargin,
+  };
+};
+
+const isTransformWithinViewport = (transform, bounds, viewportDimensions, tolerance = 24) => {
+  if (!transform || !bounds || !viewportDimensions) {
+    return false;
+  }
+
+  const { x, y, k } = transform;
+  if (!Number.isFinite(k) || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return false;
+  }
+
+  const viewportWidth = Number.isFinite(viewportDimensions.width) ? viewportDimensions.width : 0;
+  const viewportHeight = Number.isFinite(viewportDimensions.height) ? viewportDimensions.height : 0;
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return false;
+  }
+
+  const left = bounds.minX * k + x;
+  const right = bounds.maxX * k + x;
+  const top = bounds.minY * k + y;
+  const bottom = bounds.maxY * k + y;
+
+  const horizontalOk = left <= tolerance && right >= viewportWidth - tolerance;
+  const verticalOk = top <= tolerance && bottom >= viewportHeight - tolerance;
+
+  return horizontalOk && verticalOk;
+};
+
+// Calculate a zoom transform that fits the entire hierarchy snugly inside the viewport
+// while keeping the tree centered.
+const computeDefaultTransform = (layout, viewportDimensions, options = {}) => {
+  const bounds = options?.bounds || calculateLayoutVisualBounds(layout, options);
+  if (!bounds) {
     return null;
   }
 
@@ -160,31 +260,127 @@ const computeDefaultTransform = (layout, viewportDimensions) => {
     return null;
   }
 
-  // 실제 컨텐츠의 너비/높이 계산 (패딩 제외)
-  const actualContentWidth = Math.max(1, maxY - minY);
-  const actualContentHeight = Math.max(1, maxX - minX);
+  // 실제 노드 개수 계산 (가상 루트 제외)
+  const actualNodeCount = Array.isArray(layout?.nodes)
+    ? layout.nodes.filter(n => n?.data?.id !== VIRTUAL_ROOT_ID).length
+    : 0;
+  const isSingleNode = actualNodeCount === 1;
 
-  // 패딩을 고려한 스케일 계산
-  const horizontalPadding = Number.isFinite(layout?.dy) ? layout.dy * 1.2 : 80;
-  const verticalPadding = Number.isFinite(layout?.dx) ? layout.dx * 1.2 : 80;
+  // 트리의 최대 깊이 계산 (가상 루트 제외)
+  const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
 
-  const scaleX = (viewportWidth - horizontalPadding * 2) / actualContentWidth;
-  const scaleY = (viewportHeight - verticalPadding * 2) / actualContentHeight;
-  const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleX, scaleY)));
+  let targetScale;
+  let translateX;
+  let translateY;
+  let scaledWidth;
+  let scaledHeight;
 
-  // 실제 컨텐츠 중심을 화면 중앙에 배치
-  const contentCenterX = (minY + maxY) / 2;
-  const contentCenterY = (minX + maxX) / 2;
+  if (isSingleNode) {
+    const fitScale = Math.min(viewportWidth / contentWidth, viewportHeight / contentHeight);
+    targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fitScale));
+    scaledWidth = contentWidth * targetScale;
+    scaledHeight = contentHeight * targetScale;
+    const nodeCenterX = (bounds.minX + bounds.maxX) / 2;
+    const nodeCenterY = (bounds.minY + bounds.maxY) / 2;
+    translateX = viewportWidth / 2 - nodeCenterX * targetScale;
+    translateY = viewportHeight / 2 - nodeCenterY * targetScale;
+  } else {
+    const scaleX = viewportWidth / contentWidth;
+    const scaleY = viewportHeight / contentHeight;
+    const computedScale = Math.min(scaleX, scaleY);
+    targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, computedScale));
+    scaledWidth = contentWidth * targetScale;
+    scaledHeight = contentHeight * targetScale;
 
-  // 수직 오프셋: 트리를 위쪽으로 이동 (화면 높이의 비율로 계산)
-  const verticalOffset = -viewportHeight * 0.5;
+    translateX = -bounds.minX * targetScale;
+    if (scaledWidth < viewportWidth) {
+      translateX += (viewportWidth - scaledWidth) / 2;
+    }
 
-  const translateX = viewportWidth / 2 - contentCenterX * targetScale;
-  const translateY = viewportHeight / 2 - contentCenterY * targetScale + verticalOffset;
+    translateY = -bounds.minY * targetScale;
+    if (scaledHeight < viewportHeight) {
+      translateY += (viewportHeight - scaledHeight) / 2;
+    }
+  }
 
   if (!Number.isFinite(translateX) || !Number.isFinite(translateY) || !Number.isFinite(targetScale)) {
     return null;
   }
+
+  // 보정: 중앙 정렬 확인 후 미세 오차 수정
+  if (!isSingleNode) {
+    const left = bounds.minX * targetScale + translateX;
+    const right = bounds.maxX * targetScale + translateX;
+    const top = bounds.minY * targetScale + translateY;
+    const bottom = bounds.maxY * targetScale + translateY;
+
+    const idealHorizontalCenter = viewportWidth / 2;
+    const actualCenterX = (left + right) / 2;
+    const horizontalDelta = idealHorizontalCenter - actualCenterX;
+    translateX += horizontalDelta;
+
+    const idealVerticalCenter = viewportHeight / 2;
+    const actualCenterY = (top + bottom) / 2;
+    const verticalDelta = idealVerticalCenter - actualCenterY;
+    translateY += verticalDelta;
+
+    if (scaledHeight > viewportHeight) {
+      const minTranslateY = viewportHeight - scaledHeight;
+      translateY = Math.min(translateY, 0);
+      translateY = Math.max(translateY, minTranslateY);
+    }
+
+    if (scaledWidth > viewportWidth) {
+      const minTranslateX = viewportWidth - scaledWidth;
+      translateX = Math.min(translateX, 0);
+      translateX = Math.max(translateX, minTranslateX);
+    }
+  }
+
+  if (isSingleNode) {
+    const left = bounds.minX * targetScale + translateX;
+    const right = bounds.maxX * targetScale + translateX;
+    const top = bounds.minY * targetScale + translateY;
+    const bottom = bounds.maxY * targetScale + translateY;
+
+    const idealCenterX = viewportWidth / 2;
+    const actualCenterX = (left + right) / 2;
+    translateX += (idealCenterX - actualCenterX);
+
+    const idealCenterY = viewportHeight / 2;
+    const actualCenterY = (top + bottom) / 2;
+    translateY += (idealCenterY - actualCenterY);
+
+    const paddingX = viewportWidth * 0.05;
+    const paddingY = viewportHeight * 0.05;
+    translateX = Math.min(translateX, viewportWidth - paddingX);
+    translateX = Math.max(translateX, paddingX - scaledWidth);
+    translateY = Math.min(translateY, viewportHeight - paddingY);
+    translateY = Math.max(translateY, paddingY - scaledHeight);
+  }
+
+  logViewportDebug('computeDefaultTransform', {
+    viewport: viewportDimensions,
+    bounds,
+    contentSize: {
+      width: contentWidth,
+      height: contentHeight,
+    },
+    targetScale,
+    translateX,
+    translateY,
+    scaledSize: {
+      width: scaledWidth,
+      height: scaledHeight,
+    },
+    nodeCount: actualNodeCount,
+    isSingleNode,
+    sizeRatio: {
+      width: contentWidth / viewportWidth,
+      height: contentHeight / viewportHeight,
+    },
+  });
 
   return d3.zoomIdentity.translate(translateX, translateY).scale(targetScale);
 };
@@ -197,7 +393,7 @@ const estimateLabelWidth = (label) => {
   if (length === 0) {
     return 48;
   }
-  return Math.min(240, Math.max(48, length * 6.8));
+  return Math.min(240, Math.max(48, length * 6.8)) + LABEL_EXTRA_PADDING;
 };
 
 const TidyTreeView = ({
@@ -244,7 +440,6 @@ const TidyTreeView = ({
   const [clickedNodeId, setClickedNodeId] = useState(null);
   const [internalSelectedNodeId, setInternalSelectedNodeId] = useState(null);
   const clickTimerRef = useRef(null);
-  const backgroundClickTimerRef = useRef(null);
   const recentDragEndRef = useRef(false);
   const hasDragMovedRef = useRef(false);
   const prevSelectedNodeIdRef = useRef(null);
@@ -259,7 +454,7 @@ const TidyTreeView = ({
     : internalSelectedNodeId;
 
   // Measure text width using canvas (size/weight aware for accurate hitbox)
-  const getTextWidth = (text, { fontSize = 11, fontWeight = 400 } = {}) => {
+  const getTextWidth = useCallback((text, { fontSize = 11, fontWeight = 400 } = {}) => {
     if (typeof text !== "string") {
       return 0;
     }
@@ -282,7 +477,14 @@ const TidyTreeView = ({
     const measured = Math.ceil(ctx.measureText(text).width);
     cache.set(cacheKey, measured);
     return measured;
-  };
+  }, []);
+
+  const measureLabelForLayout = useCallback((text) => {
+    if (typeof text !== "string") {
+      return NODE_BASE_RADIUS * 2;
+    }
+    return getTextWidth(text, { fontSize: 11, fontWeight: 400 }) + LABEL_EXTRA_PADDING;
+  }, [getTextWidth]);
 
   const normalizedData = useMemo(
     () => ({
@@ -300,6 +502,30 @@ const TidyTreeView = ({
       }),
     [normalizedData, dimensions?.width],
   );
+
+  const boundsOptions = useMemo(() => {
+    if (!layout) {
+      return {
+        measureLabel: measureLabelForLayout,
+        horizontalMargin: 20,
+        verticalMargin: 20,
+      };
+    }
+    const horizontalMargin = Number.isFinite(layout?.dy) ? layout.dy * 0.24 : 20;
+    const verticalMargin = Number.isFinite(layout?.dx) ? layout.dx * 0.6 : 20;
+    return {
+      measureLabel: measureLabelForLayout,
+      horizontalMargin,
+      verticalMargin,
+    };
+  }, [layout, measureLabelForLayout]);
+
+  const visualBounds = useMemo(() => {
+    if (!layout) {
+      return null;
+    }
+    return calculateLayoutVisualBounds(layout, boundsOptions);
+  }, [layout, boundsOptions]);
 
   const linkGenerator = useMemo(
     () => d3.linkHorizontal().x((point) => point.y).y((point) => point.x),
@@ -619,22 +845,49 @@ const TidyTreeView = ({
   }, [layout, linkGenerator, dragPreview]);
 
   // 기본 뷰포트로 복원하는 함수 (트리 전체를 화면에 맞춤)
-  const resetToDefaultView = useCallback(() => {
+  const resetToDefaultView = useCallback((contextLabel = 'reset', { animate = true } = {}) => {
     const svgElement = svgRef.current;
     const zoom = zoomBehaviorRef.current;
 
     if (!svgElement || !zoom || !layout) {
+      logViewportDebug(`${contextLabel}:resetToDefaultView:skip`, {
+        hasSvg: Boolean(svgElement),
+        hasZoom: Boolean(zoom),
+        hasLayout: Boolean(layout),
+      });
       return;
     }
 
-    const defaultTransform = computeDefaultTransform(layout, viewportDimensions) || d3.zoomIdentity;
+    const defaultTransform = computeDefaultTransform(layout, viewportDimensions, {
+      ...boundsOptions,
+      bounds: visualBounds,
+    }) || d3.zoomIdentity;
 
-    d3.select(svgElement)
-      .transition()
-      .duration(600)
-      .ease(d3.easeCubicInOut)
-      .call(zoom.transform, defaultTransform);
-  }, [layout, viewportDimensions]);
+    logViewportDebug(`${contextLabel}:resetToDefaultView:transform`, {
+      transform: defaultTransform,
+      viewport: viewportDimensions,
+    });
+
+    const applyTransform = () => {
+      const selection = d3.select(svgElement);
+      selection.interrupt();
+      if (animate) {
+        selection
+          .transition()
+          .duration(600)
+          .ease(d3.easeCubicInOut)
+          .call(zoom.transform, defaultTransform);
+      } else {
+        selection.call(zoom.transform, defaultTransform);
+      }
+    };
+
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(applyTransform);
+    } else {
+      applyTransform();
+    }
+  }, [layout, viewportDimensions, boundsOptions, visualBounds]);
 
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
@@ -737,23 +990,49 @@ const TidyTreeView = ({
     storageKeyRef.current = storageKey;
 
     // 트리 전체를 화면에 맞추는 기본 transform 계산
-    const defaultTransform = computeDefaultTransform(layout, viewportDimensions) || d3.zoomIdentity;
+    const defaultTransform = computeDefaultTransform(layout, viewportDimensions, {
+      ...boundsOptions,
+      bounds: visualBounds,
+    }) || d3.zoomIdentity;
     const storedTransform = readStoredTransform(storageKey);
     const storedZoom = toZoomTransform(storedTransform);
-    
+    const storedIsValid = storedZoom && visualBounds
+      ? isTransformWithinViewport(storedZoom, visualBounds, viewportDimensions)
+      : false;
+
     const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
     
     // 처음 트리를 열 때는 항상 전체가 보이도록 설정 (저장된 뷰 무시)
-    const initialTransform = shouldApplyInitial ? defaultTransform : (storedZoom || lastViewTransformRef.current || defaultTransform);
+    const initialTransform = shouldApplyInitial
+      ? defaultTransform
+      : ((storedIsValid ? storedZoom : null) || lastViewTransformRef.current || defaultTransform);
     lastViewTransformRef.current = initialTransform;
+
+    logViewportDebug('initial-setup:transform-selection', {
+      defaultTransform,
+      storedTransform,
+      storedZoom,
+      storedIsValid,
+      lastViewTransform: lastViewTransformRef.current,
+      shouldApplyInitial,
+      treeKey,
+      viewport: viewportDimensions,
+    });
 
     zoomBehaviorRef.current = zoom;
 
     if (shouldApplyInitial) {
       selection.call(zoom.transform, initialTransform);
+      logViewportDebug('initial-setup:apply-transform', {
+        appliedTransform: initialTransform,
+        treeKey,
+        shouldApplyInitial,
+      });
       lastAppliedTreeIdRef.current = treeKey;
       isInitialMountRef.current = false;
       if (!storedZoom && storageKey) {
+        persistTransform(storageKey, initialTransform);
+      } else if (!storedIsValid && storageKey) {
         persistTransform(storageKey, initialTransform);
       }
     }
@@ -762,7 +1041,30 @@ const TidyTreeView = ({
       selection.on(".zoom", null);
       zoomBehaviorRef.current = null;
     };
-  }, [layout, dragStateManager, activeTreeId, dimensions?.width, dimensions?.height, isTrackpadMode]);
+  }, [layout, dragStateManager, activeTreeId, viewportDimensions?.width, viewportDimensions?.height, isTrackpadMode, boundsOptions, visualBounds]);
+
+  const previousViewportRef = useRef(viewportDimensions);
+
+  useEffect(() => {
+    const prev = previousViewportRef.current;
+    previousViewportRef.current = viewportDimensions;
+
+    if (!layout || !visualBounds || isInitialMountRef.current) {
+      return;
+    }
+
+    const prevWidth = Number.isFinite(prev?.width) ? prev.width : 0;
+    const prevHeight = Number.isFinite(prev?.height) ? prev.height : 0;
+    const nextWidth = Number.isFinite(viewportDimensions?.width) ? viewportDimensions.width : 0;
+    const nextHeight = Number.isFinite(viewportDimensions?.height) ? viewportDimensions.height : 0;
+
+    const widthChanged = Math.abs(nextWidth - prevWidth) > 1;
+    const heightChanged = Math.abs(nextHeight - prevHeight) > 1;
+
+    if (widthChanged || heightChanged) {
+      resetToDefaultView('viewport-resize', { animate: false });
+    }
+  }, [viewportDimensions, layout, visualBounds, resetToDefaultView]);
 
   const isDarkTheme = theme === "dark";
   const isGlassTheme = theme === "glass";
@@ -1032,42 +1334,17 @@ const TidyTreeView = ({
           touchAction: "none",
         }}
         onClick={(event) => {
-          // SVG 배경 클릭 (노드나 링크가 아닌 경우)
           const target = event.target;
           if (target === svgRef.current || target.tagName === 'g') {
-            // 하이라이트 즉시 해제
-            const hasHighlight = clickedNodeId !== null;
+            const hadHighlight = clickedNodeId !== null;
             setClickedNodeId(null);
             setHoveredNodeId(null);
 
-            // 더블 클릭 타이머가 있으면 더블 클릭으로 처리
-            if (backgroundClickTimerRef.current) {
-              clearTimeout(backgroundClickTimerRef.current);
-              backgroundClickTimerRef.current = null;
-
-              if (isChatPanelOpen) {
-                // 채팅창이 열려있으면: 채팅창만 닫기 (줌 유지)
-                setInternalSelectedNodeId(null);
-                if (typeof onBackgroundClick === "function") {
-                  onBackgroundClick();
-                }
-              } else {
-                // 채팅창이 닫혀있으면: 줌 초기화
-                resetToDefaultView();
+            if (!hadHighlight) {
+              setInternalSelectedNodeId(null);
+              if (typeof onBackgroundClick === "function") {
+                onBackgroundClick();
               }
-            } else {
-              // 싱글 클릭: 타이머 시작
-              backgroundClickTimerRef.current = setTimeout(() => {
-                if (!hasHighlight) {
-                  // 하이라이트가 없었으면 채팅창 닫기
-                  setInternalSelectedNodeId(null);
-                  if (typeof onBackgroundClick === "function") {
-                    onBackgroundClick();
-                  }
-                }
-                // 하이라이트가 있었으면 하이라이트만 해제 (이미 위에서 처리됨)
-                backgroundClickTimerRef.current = null;
-              }, 250);
             }
           }
         }}
@@ -1155,7 +1432,7 @@ const TidyTreeView = ({
               const nodeOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.18) : 1;
               const textOpacity = isHighlightMode ? (isNodeHighlighted ? 1 : 0.22) : 1;
 
-              const labelText = typeof node.data?.name === "string" ? node.data.name : "";
+              const labelText = resolveNodeLabelText(node);
               // Measure width according to current visual style to avoid overflow
               const currentFontSize = isHovered ? 13 : 11;
               const currentFontWeight = isHovered ? 700 : 400;

@@ -15,6 +15,7 @@ import {
   isTrackingEmptyTree,
   stopTrackingEmptyTree,
 } from 'features/tree/services/treeCreation';
+import { markTreeTitleManual } from 'features/tree/utils/treeTitlePreferences';
 import { DEFAULT_TREE_CREATION_MODE, TREE_CREATION_MODES } from 'features/library/constants/creationModes';
 import { createLibraryBridge, createLoggerBridge } from 'infrastructure/electron/bridges';
 import {
@@ -56,6 +57,7 @@ const createTreeMoveExecutor = ({ assignTree, saveMetadata, userId }) => async (
       await assignTree({ treeId: move.id, folderId: move.nextFolderId, userId });
       if (move.renamed) {
         await saveMetadata({ treeId: move.id, title: move.nextTitle, userId });
+        markTreeTitleManual(move.id, move.nextTitle);
       }
       successIds.push(move.id);
     } catch (error) {
@@ -206,12 +208,18 @@ export const useLibraryData = ({
   }, [clearTreeSelection, refreshLibrary, selectedTreeId, setError, setLoading, user]);
 
   const handleTreeRename = useCallback(async (treeId, newTitle) => {
-    if (!user || !treeId || !newTitle?.trim()) {
+    if (!user || !treeId) {
+      return false;
+    }
+
+    const trimmed = typeof newTitle === 'string' ? newTitle.trim() : '';
+    if (!trimmed) {
       return false;
     }
 
     try {
-      await saveTreeMetadata({ treeId, title: newTitle.trim(), userId: user.id });
+      await saveTreeMetadata({ treeId, title: trimmed, userId: user.id });
+      markTreeTitleManual(treeId, trimmed);
       await refreshLibrary();
       return true;
     } catch (err) {

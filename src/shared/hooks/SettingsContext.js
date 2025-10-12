@@ -1,10 +1,23 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   createLoggerBridge,
   createSettingsBridge,
   createSystemBridge,
   createTrayBridge,
 } from 'infrastructure/electron/bridges';
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
+import {
+  fetchUserSettings,
+  upsertUserSettings,
+} from 'infrastructure/supabase/services/settingsService';
 
 const SettingsContext = createContext({
   trayEnabled: true,
@@ -14,6 +27,8 @@ const SettingsContext = createContext({
   requestAccessibility: () => Promise.resolve(),
   zoomOnClickEnabled: true,
   setZoomOnClickEnabled: () => { },
+  autoPasteEnabled: true,
+  setAutoPasteEnabled: () => { },
   inputMode: 'mouse',
   setInputMode: () => { },
 });
@@ -30,16 +45,59 @@ const normalizeInputMode = (value, fallback = INPUT_MODE_FALLBACK) => (
   isValidInputMode(value) ? value : fallback
 );
 
+const sanitizePreferencesValue = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value;
+};
+
+const DEFAULT_SETTINGS = Object.freeze({
+  trayEnabled: true,
+  zoomOnClickEnabled: true,
+  autoPasteEnabled: true,
+  inputMode: INPUT_MODE_FALLBACK,
+  preferences: {},
+});
+
+const sanitizeSettings = (raw = {}) => ({
+  trayEnabled: normalizeBoolean(raw.trayEnabled, DEFAULT_SETTINGS.trayEnabled),
+  zoomOnClickEnabled: normalizeBoolean(raw.zoomOnClickEnabled, DEFAULT_SETTINGS.zoomOnClickEnabled),
+  autoPasteEnabled: normalizeBoolean(raw.autoPasteEnabled, DEFAULT_SETTINGS.autoPasteEnabled),
+  inputMode: normalizeInputMode(raw.inputMode, DEFAULT_SETTINGS.inputMode),
+  preferences: sanitizePreferencesValue(raw.preferences ?? DEFAULT_SETTINGS.preferences),
+});
+
 export const SettingsProvider = ({ children }) => {
+  const { user } = useSupabaseAuth();
   const [trayEnabled, setTrayEnabledState] = useState(true);
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
   const [zoomOnClickEnabled, setZoomOnClickEnabledState] = useState(true);
+  const [autoPasteEnabled, setAutoPasteEnabledState] = useState(true);
   const [inputMode, setInputModeState] = useState(INPUT_MODE_FALLBACK);
+  const settingsSnapshotRef = useRef(sanitizeSettings(DEFAULT_SETTINGS));
 
   const settingsBridge = useMemo(() => createSettingsBridge(), []);
   const loggerBridge = useMemo(() => createLoggerBridge(), []);
   const systemBridge = useMemo(() => createSystemBridge(), []);
   const trayBridge = useMemo(() => createTrayBridge(), []);
+
+  const applySettingsState = useCallback((incoming = {}) => {
+    const preservedPreferences = settingsSnapshotRef.current?.preferences;
+    const mergedSource = {
+      ...incoming,
+    };
+    if (typeof mergedSource.preferences === 'undefined' && preservedPreferences) {
+      mergedSource.preferences = preservedPreferences;
+    }
+    const sanitized = sanitizeSettings(mergedSource);
+    setTrayEnabledState(sanitized.trayEnabled);
+    setZoomOnClickEnabledState(sanitized.zoomOnClickEnabled);
+    setAutoPasteEnabledState(sanitized.autoPasteEnabled);
+    setInputModeState(sanitized.inputMode);
+    settingsSnapshotRef.current = sanitized;
+    return sanitized;
+  }, []);
 
   const refreshAccessibilityStatus = useCallback(async () => {
     try {
@@ -55,11 +113,11 @@ export const SettingsProvider = ({ children }) => {
   useEffect(() => {
     let mounted = true;
 
-    const applySettings = (next = {}) => {
-      if (!mounted) return;
-      setTrayEnabledState(normalizeBoolean(next.trayEnabled, true));
-      setZoomOnClickEnabledState(normalizeBoolean(next.zoomOnClickEnabled, true));
-      setInputModeState(normalizeInputMode(next.inputMode, INPUT_MODE_FALLBACK));
+    const applyFromPayload = (next = {}) => {
+      if (!mounted) {
+        return;
+      }
+      applySettingsState(next);
     };
 
     const load = async () => {
@@ -67,7 +125,7 @@ export const SettingsProvider = ({ children }) => {
         const result = await settingsBridge.getSettings?.();
         const payload = result?.settings || result;
         if (payload) {
-          applySettings(payload);
+          applyFromPayload(payload);
         }
       } catch (error) {
         loggerBridge.log?.('warn', 'settings_load_failed', { message: error?.message });
@@ -78,36 +136,95 @@ export const SettingsProvider = ({ children }) => {
     };
 
     load();
-    const unsubscribe = settingsBridge.onSettings?.((payload) => applySettings(payload));
+    const unsubscribe = settingsBridge.onSettings?.((payload) => applyFromPayload(payload));
 
     return () => {
       mounted = false;
       unsubscribe?.();
     };
-  }, [loggerBridge, refreshAccessibilityStatus, settingsBridge]);
+  }, [applySettingsState, loggerBridge, refreshAccessibilityStatus, settingsBridge]);
 
-  const updateSettings = useCallback((partial) => {
+  const syncSettingsRemote = useCallback(async (snapshot) => {
+    if (!user) {
+      return;
+    }
+    try {
+      await upsertUserSettings({ userId: user.id, settings: snapshot });
+    } catch (error) {
+      loggerBridge.log?.('warn', 'settings_remote_sync_failed', { message: error?.message });
+    }
+  }, [loggerBridge, user]);
+
+  const persistSettingsChange = useCallback((partial) => {
+    const nextSnapshot = sanitizeSettings({
+      ...settingsSnapshotRef.current,
+      ...partial,
+    });
+    settingsSnapshotRef.current = nextSnapshot;
+
     settingsBridge.updateSettings?.(partial);
-  }, [settingsBridge]);
+    syncSettingsRemote(nextSnapshot);
+  }, [settingsBridge, syncSettingsRemote]);
 
   const setTrayEnabled = useCallback((next) => {
-    setTrayEnabledState(next);
-    updateSettings({ trayEnabled: next });
-    loggerBridge.log?.('info', 'settings_tray_changed', { enabled: next });
-  }, [loggerBridge, updateSettings]);
+    const normalized = normalizeBoolean(next, true);
+    setTrayEnabledState(normalized);
+    persistSettingsChange({ trayEnabled: normalized });
+    loggerBridge.log?.('info', 'settings_tray_changed', { enabled: normalized });
+  }, [loggerBridge, persistSettingsChange]);
 
   const setZoomOnClickEnabled = useCallback((next) => {
-    setZoomOnClickEnabledState(next);
-    updateSettings({ zoomOnClickEnabled: next });
-    loggerBridge.log?.('info', 'settings_zoom_on_click_changed', { enabled: next });
-  }, [loggerBridge, updateSettings]);
+    const normalized = normalizeBoolean(next, true);
+    setZoomOnClickEnabledState(normalized);
+    persistSettingsChange({ zoomOnClickEnabled: normalized });
+    loggerBridge.log?.('info', 'settings_zoom_on_click_changed', { enabled: normalized });
+  }, [loggerBridge, persistSettingsChange]);
+
+  const setAutoPasteEnabled = useCallback((next) => {
+    const normalized = normalizeBoolean(next, true);
+    setAutoPasteEnabledState(normalized);
+    persistSettingsChange({ autoPasteEnabled: normalized });
+    loggerBridge.log?.('info', 'settings_autopaste_changed', { enabled: normalized });
+  }, [loggerBridge, persistSettingsChange]);
 
   const setInputMode = useCallback((next) => {
     const normalized = normalizeInputMode(next, INPUT_MODE_FALLBACK);
     setInputModeState(normalized);
-    updateSettings({ inputMode: normalized });
+    persistSettingsChange({ inputMode: normalized });
     loggerBridge.log?.('info', 'settings_input_mode_changed', { mode: normalized });
-  }, [loggerBridge, updateSettings]);
+  }, [loggerBridge, persistSettingsChange]);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadRemoteSettings = async () => {
+      try {
+        const remote = await fetchUserSettings({ userId: user.id });
+        if (cancelled) {
+          return;
+        }
+
+        if (remote) {
+          const sanitized = applySettingsState(remote);
+          settingsBridge.updateSettings?.(sanitized);
+        } else {
+          await syncSettingsRemote(settingsSnapshotRef.current);
+        }
+      } catch (error) {
+        loggerBridge.log?.('warn', 'settings_remote_load_failed', { message: error?.message });
+      }
+    };
+
+    loadRemoteSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applySettingsState, loggerBridge, settingsBridge, syncSettingsRemote, user]);
 
   const requestAccessibility = useCallback(async () => {
     const result = await systemBridge.requestAccessibilityPermission?.();
@@ -139,6 +256,8 @@ export const SettingsProvider = ({ children }) => {
     requestAccessibility,
     zoomOnClickEnabled,
     setZoomOnClickEnabled,
+    autoPasteEnabled,
+    setAutoPasteEnabled,
     inputMode,
     setInputMode,
   }), [
@@ -149,6 +268,8 @@ export const SettingsProvider = ({ children }) => {
     requestAccessibility,
     zoomOnClickEnabled,
     setZoomOnClickEnabled,
+    autoPasteEnabled,
+    setAutoPasteEnabled,
     inputMode,
     setInputMode,
   ]);

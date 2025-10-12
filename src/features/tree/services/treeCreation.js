@@ -1,5 +1,6 @@
 import { generateTreeId, upsertTreeMetadata } from 'infrastructure/supabase/services/treeService';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges';
+import { markTreeTitleAuto } from 'features/tree/utils/treeTitlePreferences';
 
 const DEFAULT_TITLE = '새 지식 트리';
 
@@ -84,6 +85,7 @@ export const createTreeForUser = async ({ userId, title = DEFAULT_TITLE } = {}) 
   const now = Date.now();
 
   await upsertTreeMetadata({ treeId, title, userId });
+  markTreeTitleAuto(treeId, title);
 
   // 새 트리 생성 시 빈 트리 추적 시작
   trackEmptyTree(treeId);

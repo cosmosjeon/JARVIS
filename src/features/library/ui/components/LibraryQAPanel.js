@@ -125,7 +125,9 @@ const LibraryQAPanel = ({
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [globalProcessing, setGlobalProcessing] = useState(false);
+  const processingMapRef = useRef(new Map());
+  const [processingVersion, setProcessingVersion] = useState(0);
   const [error, setError] = useState(null);
   const [isMultiQuestionMode, setIsMultiQuestionMode] = useState(() => {
     console.log('🎬 [상태 초기화] isMultiQuestionMode 초기값: false');
@@ -144,6 +146,11 @@ const LibraryQAPanel = ({
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const [highlightNotice, setHighlightNotice] = useState(null);
+  const latestSelectedNodeRef = useRef(selectedNode);
+
+  useEffect(() => {
+    latestSelectedNodeRef.current = selectedNode;
+  }, [selectedNode]);
 
 
   const handleRegisterMessageContainer = useCallback((element) => {
@@ -159,6 +166,53 @@ const LibraryQAPanel = ({
   }, []);
 
   const availableModels = useMemo(() => [...PRIMARY_MODEL_OPTIONS], []);
+
+  const resolveProcessingKey = useCallback((nodeId, introActive) => {
+    if (nodeId) {
+      return `node:${nodeId}`;
+    }
+    if (introActive) {
+      return '__intro__';
+    }
+    return '__panel__';
+  }, []);
+
+  const startNodeProcessing = useCallback((key) => {
+    if (!key) {
+      return;
+    }
+    const map = processingMapRef.current;
+    const nextCount = (map.get(key) || 0) + 1;
+    map.set(key, nextCount);
+    setProcessingVersion((prev) => prev + 1);
+  }, []);
+
+  const stopNodeProcessing = useCallback((key) => {
+    if (!key) {
+      return;
+    }
+    const map = processingMapRef.current;
+    if (!map.has(key)) {
+      return;
+    }
+    const nextCount = map.get(key) - 1;
+    if (nextCount <= 0) {
+      map.delete(key);
+    } else {
+      map.set(key, nextCount);
+    }
+    setProcessingVersion((prev) => prev + 1);
+  }, []);
+
+  const activeProcessingKey = useMemo(
+    () => resolveProcessingKey(selectedNode?.id, isLibraryIntroActive),
+    [resolveProcessingKey, selectedNode?.id, isLibraryIntroActive],
+  );
+
+  const isProcessing = useMemo(
+    () => globalProcessing || (activeProcessingKey ? processingMapRef.current.has(activeProcessingKey) : false),
+    [activeProcessingKey, globalProcessing, processingVersion],
+  );
 
   const isEditableTitleActive = useCallback(() => {
     if (typeof document === 'undefined') {
@@ -826,7 +880,6 @@ const LibraryQAPanel = ({
             : msg,
         ),
       );
-      setIsProcessing(false);
       if (context.autoSelection || context.model || context.provider) {
         setLastAutoSelection(context.autoSelection || finalModelInfo || {
           provider: context.provider,
@@ -871,7 +924,6 @@ const LibraryQAPanel = ({
       );
 
       if (isComplete) {
-        setIsProcessing(false);
         if (context.autoSelection || context.model || context.provider) {
           setLastAutoSelection(context.autoSelection || finalModelInfo || {
             provider: context.provider,
@@ -886,7 +938,7 @@ const LibraryQAPanel = ({
     };
 
     typeNextWord();
-  }, [clearTypingTimers, setIsProcessing, setLastAutoSelection]);
+  }, [clearTypingTimers, setLastAutoSelection]);
 
   // 질문 전송 처리
   const handleSendMessage = useCallback(async (overrideQuestion, options = {}) => {
@@ -947,7 +999,7 @@ const LibraryQAPanel = ({
       console.log('✅ 플레이스홀더 생성 시작...');
       setComposerValue('');
       setSlowResponseNotice(null);
-      setIsProcessing(true);
+      setGlobalProcessing(true);
       try {
         await createPlaceholderNodes(highlightTexts);
         console.log('✅ 플레이스홀더 생성 완료');
@@ -958,7 +1010,7 @@ const LibraryQAPanel = ({
         setError(message);
         setHighlightNotice({ type: 'warning', message });
       } finally {
-        setIsProcessing(false);
+        setGlobalProcessing(false);
         disableHighlightMode();
         setIsMultiQuestionMode(false);
         highlightStoreRef.current.clear();
@@ -985,7 +1037,8 @@ const LibraryQAPanel = ({
     }
     setError(null);
     setSlowResponseNotice(null);
-    setIsProcessing(true);
+    const processingKey = resolveProcessingKey(selectedNode?.id, isLibraryIntroActive);
+    startNodeProcessing(processingKey);
 
     const timestamp = Date.now();
 
@@ -1206,14 +1259,14 @@ const LibraryQAPanel = ({
     }
 
     if (useExistingNode && selectedNode) {
-      const pendingNode = {
-        ...selectedNode,
-        question: selectedNode.question || question,
-        conversation: pendingMessages,
-        status: 'asking',
-        updatedAt: timestamp,
-        answer: '',
-      };
+    const pendingNode = {
+      ...selectedNode,
+      question: selectedNode.question || question,
+      conversation: pendingMessages,
+      status: 'asking',
+      updatedAt: timestamp,
+      answer: '',
+    };
 
       if (hasAttachments) {
         pendingNode.attachments = sanitizedAttachments;
@@ -1222,8 +1275,12 @@ const LibraryQAPanel = ({
         pendingNode.modelInfo = pendingModelInfo;
       }
 
-      onNodeUpdate?.(pendingNode);
+    onNodeUpdate?.(pendingNode);
+    const pendingNodeId = pendingNode.id;
+    const maintainFocusDuringRequest = latestSelectedNodeRef.current?.id === pendingNodeId;
+    if (maintainFocusDuringRequest) {
       onNodeSelect?.(pendingNode);
+    }
 
       try {
         const response = await withTimeout(
@@ -1321,7 +1378,10 @@ const LibraryQAPanel = ({
         });
 
         onNodeUpdate?.(answeredNode);
-        onNodeSelect?.(answeredNode);
+        const shouldRestoreFocus = latestSelectedNodeRef.current?.id === pendingNodeId;
+        if (shouldRestoreFocus) {
+          onNodeSelect?.(answeredNode);
+        }
       } catch (error) {
         console.error('질문 처리 실패:', error);
         const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
@@ -1341,7 +1401,7 @@ const LibraryQAPanel = ({
           ),
         );
       } finally {
-        setIsProcessing(false);
+        stopNodeProcessing(processingKey);
       }
       return;
     }
@@ -1396,7 +1456,7 @@ const LibraryQAPanel = ({
           ),
         );
       } finally {
-        setIsProcessing(false);
+        stopNodeProcessing(processingKey);
       }
       return;
     }
@@ -1435,6 +1495,7 @@ const LibraryQAPanel = ({
     if (isLibraryIntroActive && onLibraryIntroComplete) {
       onLibraryIntroComplete(selectedTree.id);
     }
+    const shouldAutoSelectNewNode = !latestSelectedNodeRef.current;
 
     try {
       console.log('변환된 OpenAI 메시지:', requestMessages);
@@ -1526,7 +1587,8 @@ const LibraryQAPanel = ({
       if (onNodeUpdate) {
         onNodeUpdate(updatedNode);
       }
-      if (onNodeSelect) {
+      const shouldSelectUpdated = shouldAutoSelectNewNode || latestSelectedNodeRef.current?.id === newNodeId;
+      if (shouldSelectUpdated && onNodeSelect) {
         onNodeSelect(updatedNode);
       }
     } catch (error) {
@@ -1548,7 +1610,7 @@ const LibraryQAPanel = ({
         ),
       );
     } finally {
-      setIsProcessing(false);
+      stopNodeProcessing(processingKey);
     }
   }, [
     animateAssistantResponse,
@@ -1577,6 +1639,10 @@ const LibraryQAPanel = ({
     setHighlightNotice,
     setLastAutoSelection,
     setSlowResponseNotice,
+    setGlobalProcessing,
+    resolveProcessingKey,
+    startNodeProcessing,
+    stopNodeProcessing,
     resolveModelForProvider,
     user,
     webSearchEnabled,

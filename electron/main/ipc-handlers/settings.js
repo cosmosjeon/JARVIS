@@ -28,6 +28,11 @@ const registerSettingsHandlers = ({
       changed = true;
     }
 
+    if (typeof payload.autoPasteEnabled === 'boolean' && payload.autoPasteEnabled !== nextSettings.autoPasteEnabled) {
+      nextSettings.autoPasteEnabled = payload.autoPasteEnabled;
+      changed = true;
+    }
+
     if (typeof payload.inputMode === 'string' && payload.inputMode !== nextSettings.inputMode) {
       nextSettings.inputMode = payload.inputMode;
       changed = true;

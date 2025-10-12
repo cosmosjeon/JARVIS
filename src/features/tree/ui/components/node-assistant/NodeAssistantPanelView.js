@@ -373,10 +373,10 @@ const NodeAssistantPanelView = ({
                         variant="ghost"
                         disabled={isAttachmentUploading || isStreaming}
                         className={cn(
-                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          'rounded-full p-2 text-muted-foreground hover:text-foreground relative z-10 transition-all duration-200',
                           reasoningEnabled 
-                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
-                            : 'text-gray-500 hover:bg-gray-100',
+                            ? '!text-blue-600 !bg-blue-50 border border-blue-200 shadow-sm' 
+                            : '',
                         )}
                         aria-label="Reasoning 모드 토글"
                       >
@@ -396,10 +396,10 @@ const NodeAssistantPanelView = ({
                         variant="ghost"
                         disabled={isAttachmentUploading || isStreaming}
                         className={cn(
-                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          'rounded-full p-2 text-muted-foreground hover:text-foreground relative z-10 transition-all duration-200',
                           fastResponseEnabled
-                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm'
-                            : 'text-gray-500 hover:bg-gray-100',
+                            ? '!text-blue-600 !bg-blue-50 border border-blue-200 shadow-sm'
+                            : '',
                         )}
                         aria-label="빠른 대답 모드 토글"
                       >
@@ -419,10 +419,10 @@ const NodeAssistantPanelView = ({
                         variant="ghost"
                         disabled={isAttachmentUploading || isStreaming}
                         className={cn(
-                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
+                          'rounded-full p-2 text-muted-foreground hover:text-foreground relative z-10 transition-all duration-200',
                           webSearchEnabled 
-                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
-                            : 'text-gray-500 hover:bg-gray-100',
+                            ? '!text-blue-600 !bg-blue-50 border border-blue-200 shadow-sm' 
+                            : '',
                         )}
                         aria-label="웹 검색 토글"
                       >
@@ -441,7 +441,7 @@ const NodeAssistantPanelView = ({
                         onClick={handleAttachmentButtonClick}
                         disabled={isAttachmentUploading || isStreaming}
                         variant="ghost"
-                        className="rounded-full p-2 hover:bg-gray-100 text-gray-500 relative z-10"
+                        className="rounded-full p-2 text-muted-foreground hover:text-foreground relative z-10 transition-all duration-200"
                         aria-label="이미지 첨부"
                       >
                         <Paperclip className="h-4 w-4" />
