@@ -67,6 +67,7 @@ const COMPACT_PROVIDER_DROPDOWN_HEIGHT = 200;
 const COMPACT_RESIZE_BUFFER_MS = 60;
 const DEFAULT_WIDGET_MIN_WIDTH = 320;
 const DEFAULT_WIDGET_MIN_HEIGHT = 240;
+const COMPACT_TEXTAREA_MAX_HEIGHT = 560;
 
 const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const { user } = useSupabaseAuth();
@@ -1817,35 +1818,67 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     // 디바운싱: 150ms 후에 실행 (더 긴 지연으로 렉 방지)
     textareaResizeTimeoutRef.current = setTimeout(() => {
       textareaResizeTimeoutRef.current = null;
-      if (typeof window !== 'undefined' && window.jarvisAPI?.windowControls?.resize) {
-        // 기본 높이 계산
-        const baseHeight = 25 + 24 + 8 + 70 + 16;
-        const newHeight = Math.max(COMPACT_DEFAULT_HEIGHT, Math.min(baseHeight + textareaHeight, 400));
-        
-        // 높이가 변경되었을 때 리사이즈 (증가/감소 모두 처리)
-        // 감소할 때는 임계값을 낮춰서 더 민감하게 반응
-        const isDecreasing = newHeight < lastTextareaHeightRef.current;
-        const threshold = isDecreasing ? 5 : 10; // 감소 시 5px, 증가 시 10px
-        
-        if (Math.abs(newHeight - lastTextareaHeightRef.current) > threshold) {
-          lastTextareaHeightRef.current = newHeight;
-          isTextareaResizingRef.current = true;
-          
-          window.jarvisAPI.windowControls.resize(COMPACT_WIDGET_WIDTH, newHeight, true)
-            .then(result => {
-              isTextareaResizingRef.current = false;
+
+      const resizeApi = typeof window !== 'undefined' ? window.jarvisAPI?.windowControls?.resize : null;
+      if (!resizeApi) {
+        return;
+      }
+
+      const baseHeight = 25 + 24 + 8 + 70 + 16;
+      const targetHeight = Math.max(
+        COMPACT_DEFAULT_HEIGHT,
+        Math.min(baseHeight + textareaHeight, COMPACT_TEXTAREA_MAX_HEIGHT),
+      );
+
+      const isDecreasing = targetHeight < lastTextareaHeightRef.current;
+      const threshold = isDecreasing ? 4 : 9;
+
+      if (Math.abs(targetHeight - lastTextareaHeightRef.current) <= threshold) {
+        return;
+      }
+
+      lastTextareaHeightRef.current = targetHeight;
+      isTextareaResizingRef.current = true;
+
+      const currentWidth = typeof window !== 'undefined'
+        ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH))
+        : COMPACT_WIDGET_WIDTH;
+
+      applyWindowConstraints(true, {
+        minWidth: currentWidth,
+        minHeight: targetHeight,
+        maxWidth: currentWidth,
+        maxHeight: targetHeight,
+      });
+
+      const handleResizeResult = () => {
+        currentHeightRef.current = targetHeight;
+        isTextareaResizingRef.current = false;
+      };
+
+      try {
+        const resizeResult = resizeApi(COMPACT_WIDGET_WIDTH, targetHeight, false);
+        if (resizeResult && typeof resizeResult.then === 'function') {
+          resizeResult
+            .then((result) => {
+              handleResizeResult();
               if (process.env.NODE_ENV === 'development') {
-                console.log(`✅ Window resized for textarea height (${textareaHeight}px -> ${newHeight}px):`, result);
+                console.log(`✅ Window resized for textarea height (${textareaHeight}px -> ${targetHeight}px):`, result);
               }
             })
-            .catch(err => {
-              isTextareaResizingRef.current = false;
-              console.error('❌ Window resize failed:', err);
+            .catch((error) => {
+              handleResizeResult();
+              console.error('❌ Window resize failed:', error);
             });
+        } else {
+          handleResizeResult();
         }
+      } catch (error) {
+        handleResizeResult();
+        console.error('❌ Window resize threw synchronously:', error);
       }
-    }, 150);
-  }, [isBootstrapCompact]);
+    }, 130);
+  }, [applyWindowConstraints, isBootstrapCompact]);
 
   // 2번째 질문 처리 함수
   const handleSecondQuestion = useCallback(async (parentNodeId, question, answerFromLLM, metadata = {}) => {
