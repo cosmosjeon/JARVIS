@@ -56,6 +56,10 @@ export const PromptInputTextarea = React.forwardRef(({
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
+      if (e.isComposing || (e.nativeEvent && e.nativeEvent.isComposing)) {
+        // IME 조합 중에는 제출을 트리거하지 않는다
+        return;
+      }
       if (e.shiftKey) {
         // Allow newline
         return;

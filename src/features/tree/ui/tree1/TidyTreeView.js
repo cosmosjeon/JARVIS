@@ -425,6 +425,7 @@ const TidyTreeView = ({
   const lastViewTransformRef = useRef(null);
   const lastAppliedTreeIdRef = useRef(null);
   const storageKeyRef = useRef(null);
+  const skipNextResizeResetRef = useRef(false);
 
   // 드래그 관련 서비스 인스턴스
   const dragStateManager = useRef(new DragStateManager()).current;
@@ -1002,11 +1003,11 @@ const TidyTreeView = ({
 
     const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
     
-    // 처음 트리를 열 때는 항상 전체가 보이도록 설정 (저장된 뷰 무시)
     const initialTransform = shouldApplyInitial
-      ? defaultTransform
+      ? ((storedIsValid ? storedZoom : null) || defaultTransform)
       : ((storedIsValid ? storedZoom : null) || lastViewTransformRef.current || defaultTransform);
     lastViewTransformRef.current = initialTransform;
+    skipNextResizeResetRef.current = shouldApplyInitial && storedIsValid;
 
     logViewportDebug('initial-setup:transform-selection', {
       defaultTransform,
@@ -1030,9 +1031,7 @@ const TidyTreeView = ({
       });
       lastAppliedTreeIdRef.current = treeKey;
       isInitialMountRef.current = false;
-      if (!storedZoom && storageKey) {
-        persistTransform(storageKey, initialTransform);
-      } else if (!storedIsValid && storageKey) {
+      if (!storedIsValid && storageKey) {
         persistTransform(storageKey, initialTransform);
       }
     }
@@ -1050,6 +1049,11 @@ const TidyTreeView = ({
     previousViewportRef.current = viewportDimensions;
 
     if (!layout || !visualBounds || isInitialMountRef.current) {
+      return;
+    }
+
+    if (skipNextResizeResetRef.current) {
+      skipNextResizeResetRef.current = false;
       return;
     }
 

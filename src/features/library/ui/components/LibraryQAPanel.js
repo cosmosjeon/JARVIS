@@ -549,7 +549,7 @@ const LibraryQAPanel = ({
       return {
         id,
         keyword: label,
-        question: label,
+        question: '',
         answer: '',
         status: 'placeholder',
         createdAt: timestamp + index,
