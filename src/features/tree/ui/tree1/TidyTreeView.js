@@ -176,8 +176,11 @@ const computeDefaultTransform = (layout, viewportDimensions) => {
   const contentCenterX = (minY + maxY) / 2;
   const contentCenterY = (minX + maxX) / 2;
 
+  // 수직 오프셋: 트리를 위쪽으로 이동 (화면 높이의 비율로 계산)
+  const verticalOffset = -viewportHeight * 0.5;
+
   const translateX = viewportWidth / 2 - contentCenterX * targetScale;
-  const translateY = viewportHeight / 2 - contentCenterY * targetScale;
+  const translateY = viewportHeight / 2 - contentCenterY * targetScale + verticalOffset;
 
   if (!Number.isFinite(translateX) || !Number.isFinite(translateY) || !Number.isFinite(targetScale)) {
     return null;
@@ -396,15 +399,12 @@ const TidyTreeView = ({
       k: Number.isFinite(baseTransform?.k) ? baseTransform.k : viewTransform.k,
     };
 
-    const DEFAULT_TIDY_SCALE = 2.6;
+    const DEFAULT_TIDY_SCALE = 1.5;
     const requestedScale = Number.isFinite(options.scale) ? options.scale : DEFAULT_TIDY_SCALE;
     const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, requestedScale));
 
-    const baseOffset = viewportDimensions.height
-      ? viewportDimensions.height * 0.52
-      : 300;
-    const clampedOffset = Math.min(Math.max(baseOffset, 260), 620);
-    const verticalOffset = -clampedOffset;
+    const horizontalOffset = -80;
+    const verticalOffset = -400;
 
     if (process.env.NODE_ENV !== "production") {
       const debugNode = layoutNode?.data ?? null;
@@ -417,7 +417,7 @@ const TidyTreeView = ({
         requestedScale: options.scale,
         appliedScale: targetScale,
         nodeKeyword: debugNode?.keyword ?? debugNode?.name ?? null,
-        offset: { x: 0, y: verticalOffset },
+        offset: { x: horizontalOffset, y: verticalOffset },
         viewport: viewportDimensions,
       };
 
@@ -467,7 +467,7 @@ const TidyTreeView = ({
       setViewTransform,
       duration: Number.isFinite(options.duration) ? options.duration : FOCUS_ANIMATION_DURATION,
       scale: Number.isFinite(options.scale) ? options.scale : targetScale,
-      offset: { x: 0, y: verticalOffset },
+      offset: { x: horizontalOffset, y: verticalOffset },
       allowScaleOverride: false,
     }).catch(() => undefined);
   }, [
@@ -618,7 +618,7 @@ const TidyTreeView = ({
     previousLayoutRef.current = layout;
   }, [layout, linkGenerator, dragPreview]);
 
-  // 기본 뷰포트로 복원하는 함수 (viewBox가 이미 중앙 정렬되어 있으므로 identity transform으로 리셋)
+  // 기본 뷰포트로 복원하는 함수 (트리 전체를 화면에 맞춤)
   const resetToDefaultView = useCallback(() => {
     const svgElement = svgRef.current;
     const zoom = zoomBehaviorRef.current;
@@ -627,12 +627,14 @@ const TidyTreeView = ({
       return;
     }
 
+    const defaultTransform = computeDefaultTransform(layout, viewportDimensions) || d3.zoomIdentity;
+
     d3.select(svgElement)
       .transition()
       .duration(600)
       .ease(d3.easeCubicInOut)
-      .call(zoom.transform, d3.zoomIdentity);
-  }, [layout]);
+      .call(zoom.transform, defaultTransform);
+  }, [layout, viewportDimensions]);
 
   // Zoom behavior 초기화 및 관리
   useEffect(() => {
@@ -734,16 +736,18 @@ const TidyTreeView = ({
     const storageKey = buildTransformStorageKey(treeKey);
     storageKeyRef.current = storageKey;
 
-    // viewBox가 이미 중앙 정렬되어 있으므로 기본 transform은 identity
-    const defaultTransform = d3.zoomIdentity;
+    // 트리 전체를 화면에 맞추는 기본 transform 계산
+    const defaultTransform = computeDefaultTransform(layout, viewportDimensions) || d3.zoomIdentity;
     const storedTransform = readStoredTransform(storageKey);
     const storedZoom = toZoomTransform(storedTransform);
-    const initialTransform = storedZoom || lastViewTransformRef.current || defaultTransform;
+    
+    const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
+    
+    // 처음 트리를 열 때는 항상 전체가 보이도록 설정 (저장된 뷰 무시)
+    const initialTransform = shouldApplyInitial ? defaultTransform : (storedZoom || lastViewTransformRef.current || defaultTransform);
     lastViewTransformRef.current = initialTransform;
 
     zoomBehaviorRef.current = zoom;
-
-    const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
 
     if (shouldApplyInitial) {
       selection.call(zoom.transform, initialTransform);
