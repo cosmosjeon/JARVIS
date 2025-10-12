@@ -60,7 +60,7 @@ const TIDY_ASSISTANT_PANEL_MAX_WIDTH = 640;
 const TIDY_ASSISTANT_PANEL_GAP = 0;
 const TIDY_CANVAS_MIN_WIDTH = 320;
 
-const COMPACT_WIDGET_WIDTH = 440;
+const COMPACT_WIDGET_WIDTH = 430;
 const COMPACT_DEFAULT_HEIGHT = 130;
 const COMPACT_DROPDOWN_HEIGHT = 320;
 const COMPACT_PROVIDER_DROPDOWN_HEIGHT = 200;
@@ -77,6 +77,29 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     removeTree,
   } = useTreeDataSource();
   const treeBridge = useMemo(() => createTreeWidgetBridge(), []);
+  const applyWindowConstraints = useCallback((resizable, sizeOptions = {}) => {
+    const controls = treeBridge?.windowControls;
+    if (!controls?.setResizable) {
+      return;
+    }
+
+    try {
+      const maybePromise = controls.setResizable(resizable, sizeOptions);
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch((error) => {
+          if (process.env.NODE_ENV === 'development') {
+            // eslint-disable-next-line no-console
+            console.warn('[HierarchicalForceTree] setResizable failed', error);
+          }
+        });
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.warn('[HierarchicalForceTree] setResizable threw', error);
+      }
+    }
+  }, [treeBridge]);
   const { theme, setTheme, mode } = useTheme();
   const { zoomOnClickEnabled, setZoomOnClickEnabled } = useSettings();
   const {
@@ -429,45 +452,30 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   }, [isBootstrapCompact, onBootstrapCompactChange]);
 
   useEffect(() => {
-    const controls = treeBridge?.windowControls;
-    if (!controls?.setResizable) {
+    const currentWidth = typeof window !== 'undefined'
+      ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH))
+      : COMPACT_WIDGET_WIDTH;
+    const currentHeight = typeof window !== 'undefined'
+      ? Math.max(100, Math.floor(window.innerHeight || COMPACT_DEFAULT_HEIGHT))
+      : COMPACT_DEFAULT_HEIGHT;
+
+    if (isBootstrapCompact) {
+      applyWindowConstraints(true, {
+        minWidth: currentWidth,
+        minHeight: currentHeight,
+        maxWidth: currentWidth,
+        maxHeight: currentHeight,
+      });
       return;
     }
 
-    const currentWidth = typeof window !== 'undefined' ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH)) : COMPACT_WIDGET_WIDTH;
-    const currentHeight = typeof window !== 'undefined' ? Math.max(100, Math.floor(window.innerHeight || COMPACT_DEFAULT_HEIGHT)) : COMPACT_DEFAULT_HEIGHT;
-
-    const sizeOptions = isBootstrapCompact
-      ? {
-          minWidth: currentWidth,
-          minHeight: currentHeight,
-          maxWidth: currentWidth,
-          maxHeight: currentHeight,
-        }
-      : {
-          minWidth: DEFAULT_WIDGET_MIN_WIDTH,
-          minHeight: DEFAULT_WIDGET_MIN_HEIGHT,
-          maxWidth: 0,
-          maxHeight: 0,
-        };
-
-    try {
-      const maybePromise = controls.setResizable(!isBootstrapCompact, sizeOptions);
-      if (maybePromise && typeof maybePromise.catch === 'function') {
-        maybePromise.catch((error) => {
-          if (process.env.NODE_ENV === 'development') {
-            // eslint-disable-next-line no-console
-            console.warn('[HierarchicalForceTree] setResizable failed', error);
-          }
-        });
-      }
-    } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        // eslint-disable-next-line no-console
-        console.warn('[HierarchicalForceTree] setResizable threw', error);
-      }
-    }
-  }, [isBootstrapCompact, treeBridge]);
+    applyWindowConstraints(true, {
+      minWidth: DEFAULT_WIDGET_MIN_WIDTH,
+      minHeight: DEFAULT_WIDGET_MIN_HEIGHT,
+      maxWidth: 0,
+      maxHeight: 0,
+    });
+  }, [applyWindowConstraints, isBootstrapCompact]);
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
   const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
   const [isTidyPanelResizing, setIsTidyPanelResizing] = useState(false);
@@ -1619,6 +1627,18 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     }
 
     const targetHeight = isOpen ? openHeight : COMPACT_DEFAULT_HEIGHT;
+    const currentWidth = typeof window !== 'undefined'
+      ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH))
+      : COMPACT_WIDGET_WIDTH;
+
+    if (isBootstrapCompact) {
+      applyWindowConstraints(true, {
+        minWidth: currentWidth,
+        minHeight: targetHeight,
+        maxWidth: currentWidth,
+        maxHeight: targetHeight,
+      });
+    }
 
     if (isOpen) {
       if (currentHeightRef.current === openHeight || isResizingRef.current) {
@@ -1728,7 +1748,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     };
 
     resizeTimeoutRef.current = scheduleTimeout(scheduleCollapse, 50);
-  }, [estimateResizeDuration, finalizeWindowResize, isBootstrapCompact]);
+  }, [estimateResizeDuration, finalizeWindowResize, isBootstrapCompact, applyWindowConstraints]);
 
   const handleTreeDropdownOpenChange = useCallback((isOpen) => {
     if (!isBootstrapCompact) {
@@ -3071,7 +3091,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
               </span>
             </SelectTrigger>
             <SelectContent 
-              className="max-h-[252px] overflow-y-auto -mt-3 min-w-[160px]"
+              className="max-h-[252px] overflow-y-auto -mt-3 min-w-[160px] shadow-[0_18px_45px_rgba(15,23,42,0.24)] border border-white/30 bg-white/95 backdrop-blur-xl"
               style={{
                 WebkitAppRegion: 'no-drag',
               }}

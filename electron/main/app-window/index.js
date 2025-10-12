@@ -158,7 +158,7 @@ const createMainWindow = ({
 
   // fresh=true (새 트리)인 경우 작은 크기로 시작
   const isNewTree = fresh === true;
-  const initialWidth = isNewTree ? 540 : 1024;
+  const initialWidth = isNewTree ? 430 : 1024;
   const initialHeight = isNewTree ? 130 : 720;
 
   const window = new BrowserWindow({
@@ -230,7 +230,7 @@ const createWidgetWindow = ({
 
   // fresh=true (새 트리)인 경우 작은 크기로 시작
   const isNewTree = fresh === true;
-  const initialWidth = isNewTree ? 540 : 1024;
+  const initialWidth = isNewTree ? 430 : 1024;
   const initialHeight = isNewTree ? 130 : 720;
 
   const window = new BrowserWindow({
