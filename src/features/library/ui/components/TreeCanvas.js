@@ -14,6 +14,7 @@ const TreeCanvas = ({
   onNodeUpdate,
   onNewNodeCreated,
   onTreeRename,
+  isQAPanelVisible = false,
 }) => {
   const { theme } = useTheme();
   const treeBackground = useMemo(() => resolveTreeBackground(theme), [theme]);
@@ -110,6 +111,12 @@ const TreeCanvas = ({
     onNodeSelect(resolved ?? null);
   }, [onNodeSelect, resolveNodeCandidate]);
 
+  const handleBackgroundClick = useCallback(() => {
+    if (onNodeSelect) {
+      onNodeSelect(null);
+    }
+  }, [onNodeSelect]);
+
   const activeSelectedNodeId = selectedNode?.id ?? null;
 
   if (!selectedMemo) {
@@ -166,8 +173,9 @@ const TreeCanvas = ({
               onNodeClick={handleNodeSelect}
               selectedNodeId={activeSelectedNodeId}
               activeTreeId={selectedMemo.id}
-              onBackgroundClick={() => {}}
+              onBackgroundClick={handleBackgroundClick}
               onReorderSiblings={() => {}}
+              isChatPanelOpen={isQAPanelVisible}
             />
           </div>
         ) : (

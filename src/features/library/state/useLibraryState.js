@@ -212,7 +212,10 @@ const buildActions = (dispatch) => {
     setQAPanelVisible((previous) => !previous);
   };
 
-  const hideQAPanel = () => setQAPanelVisible(false);
+  const hideQAPanel = () => {
+    setQAPanelVisible(false);
+    setSelectedNode(null);
+  };
   const showQAPanel = () => setQAPanelVisible(true);
 
   const startLibraryIntro = (treeId) => {

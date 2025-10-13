@@ -99,6 +99,7 @@ const LibraryContent = ({
           onNodeUpdate={onNodeUpdate}
           onNewNodeCreated={onNewNodeCreated}
           onTreeRename={onTreeRename}
+          isQAPanelVisible={false}
         />
       );
     }
@@ -114,6 +115,7 @@ const LibraryContent = ({
             onNodeUpdate={onNodeUpdate}
             onNewNodeCreated={onNewNodeCreated}
             onTreeRename={onTreeRename}
+            isQAPanelVisible={true}
           />
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-border/80 hover:bg-border" />

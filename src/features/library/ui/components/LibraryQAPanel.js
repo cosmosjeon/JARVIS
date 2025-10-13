@@ -167,12 +167,15 @@ const LibraryQAPanel = ({
 
   const availableModels = useMemo(() => [...PRIMARY_MODEL_OPTIONS], []);
 
-  const resolveProcessingKey = useCallback((nodeId, introActive) => {
+  const resolveProcessingKey = useCallback((nodeId, introActive, treeId) => {
     if (nodeId) {
       return `node:${nodeId}`;
     }
     if (introActive) {
       return '__intro__';
+    }
+    if (treeId) {
+      return `tree:${treeId}`;
     }
     return '__panel__';
   }, []);
@@ -205,12 +208,21 @@ const LibraryQAPanel = ({
   }, []);
 
   const activeProcessingKey = useMemo(
-    () => resolveProcessingKey(selectedNode?.id, isLibraryIntroActive),
-    [resolveProcessingKey, selectedNode?.id, isLibraryIntroActive],
+    () => resolveProcessingKey(selectedNode?.id, isLibraryIntroActive, selectedTree?.id),
+    [resolveProcessingKey, selectedNode?.id, selectedTree?.id, isLibraryIntroActive],
   );
 
   const isProcessing = useMemo(
-    () => globalProcessing || (activeProcessingKey ? processingMapRef.current.has(activeProcessingKey) : false),
+    () => {
+      if (globalProcessing) {
+        return true;
+      }
+      if (!activeProcessingKey) {
+        return false;
+      }
+      const count = processingMapRef.current.get(activeProcessingKey);
+      return typeof count === 'number' && count > 0;
+    },
     [activeProcessingKey, globalProcessing, processingVersion],
   );
 
@@ -1037,7 +1049,17 @@ const LibraryQAPanel = ({
     }
     setError(null);
     setSlowResponseNotice(null);
-    const processingKey = resolveProcessingKey(selectedNode?.id, isLibraryIntroActive);
+
+    let processingKey = resolveProcessingKey(selectedNode?.id, isLibraryIntroActive, selectedTree?.id);
+    const switchProcessingKey = (nextKey) => {
+      if (!nextKey || nextKey === processingKey) {
+        return;
+      }
+      stopNodeProcessing(processingKey);
+      processingKey = nextKey;
+      startNodeProcessing(processingKey);
+    };
+
     startNodeProcessing(processingKey);
 
     const timestamp = Date.now();
@@ -1096,6 +1118,14 @@ const LibraryQAPanel = ({
             : {}),
         ...(manualReasoning?.reasoning ? { reasoning: manualReasoning.reasoning } : {}),
       };
+
+    const previousMessages = Array.isArray(messages) ? messages : [];
+    const isPlaceholderNode = selectedNode
+      ? selectedNode.status === 'placeholder' || Boolean(selectedNode.placeholder)
+      : false;
+    const hasUserConversation = previousMessages.some((msg) => msg.role === 'user');
+    const useExistingNode = Boolean(selectedNode)
+      && (reuseCurrentNode || (isPlaceholderNode && !hasUserConversation));
 
     let userMessage;
     let assistantMessage;
@@ -1212,14 +1242,6 @@ const LibraryQAPanel = ({
 
       return { role, content: contentParts };
     };
-
-    const previousMessages = Array.isArray(messages) ? messages : [];
-    const isPlaceholderNode = selectedNode
-      ? selectedNode.status === 'placeholder' || Boolean(selectedNode.placeholder)
-      : false;
-    const hasUserConversation = previousMessages.some((msg) => msg.role === 'user');
-    const useExistingNode = Boolean(selectedNode)
-      && (reuseCurrentNode || (isPlaceholderNode && !hasUserConversation));
 
     let pendingMessages;
     if (isRetryFlow) {
@@ -1466,6 +1488,8 @@ const LibraryQAPanel = ({
     const keyword = question.split(' ').slice(0, 3).join(' ') || 'Q';
     const parentId = selectedNode?.id ?? null;
     const level = selectedNode ? (selectedNode.level || 0) + 1 : 0;
+
+    switchProcessingKey(resolveProcessingKey(newNodeId, false, selectedTree?.id));
 
     const newNode = {
       id: newNodeId,

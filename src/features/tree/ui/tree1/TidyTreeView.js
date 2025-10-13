@@ -425,7 +425,6 @@ const TidyTreeView = ({
   const lastViewTransformRef = useRef(null);
   const lastAppliedTreeIdRef = useRef(null);
   const storageKeyRef = useRef(null);
-  const skipNextResizeResetRef = useRef(false);
 
   // 드래그 관련 서비스 인스턴스
   const dragStateManager = useRef(new DragStateManager()).current;
@@ -750,7 +749,12 @@ const TidyTreeView = ({
 
     const ANIMATION_DURATION = 600;
     const previousLayout = previousLayoutRef.current;
-    const shouldAnimate = previousLayout !== null && !isInitialMountRef.current;
+    // 초기 마운트나 트리 변경 시에는 애니메이션 없음, 노드 추가/삭제 시에만 애니메이션
+    const isSameTree = previousLayout && layout && 
+      previousLayout.nodes.length > 0 && 
+      layout.nodes.length > 0 &&
+      previousLayout.nodes[0]?.data?.id === layout.nodes[0]?.data?.id;
+    const shouldAnimate = isSameTree && previousLayout !== null && !isInitialMountRef.current;
 
     if (shouldAnimate) {
       const previousNodeIds = new Set(previousLayout.nodes.map(n => n.data.id));
@@ -840,13 +844,40 @@ const TidyTreeView = ({
           );
           return link ? linkGenerator(link) : d3.select(this).attr('d');
         });
+    } else {
+      // 애니메이션 없이 즉시 최종 위치로 설정
+      d3.select(nodesGroupRef.current)
+        .selectAll('g[data-node-id]')
+        .style('opacity', 1)
+        .attr('transform', function () {
+          const nodeId = d3.select(this).attr('data-node-id');
+          if (!nodeId) return d3.select(this).attr('transform');
+
+          const node = layout.nodes.find(n => n.data.id === nodeId);
+          if (!node) return d3.select(this).attr('transform');
+
+          return `translate(${node.y},${node.x})`;
+        });
+
+      d3.select(linksGroupRef.current)
+        .selectAll('path')
+        .style('opacity', 1)
+        .attr('d', function () {
+          const key = d3.select(this).attr('data-link-key');
+          if (!key) return d3.select(this).attr('d');
+
+          const link = layout.links.find(l =>
+            `${l.source.data.id}->${l.target.data.id}` === key
+          );
+          return link ? linkGenerator(link) : d3.select(this).attr('d');
+        });
     }
 
     previousLayoutRef.current = layout;
   }, [layout, linkGenerator, dragPreview]);
 
   // 기본 뷰포트로 복원하는 함수 (트리 전체를 화면에 맞춤)
-  const resetToDefaultView = useCallback((contextLabel = 'reset', { animate = true } = {}) => {
+  const resetToDefaultView = useCallback((contextLabel = 'reset', { animate = false } = {}) => {
     const svgElement = svgRef.current;
     const zoom = zoomBehaviorRef.current;
 
@@ -997,23 +1028,19 @@ const TidyTreeView = ({
     }) || d3.zoomIdentity;
     const storedTransform = readStoredTransform(storageKey);
     const storedZoom = toZoomTransform(storedTransform);
-    const storedIsValid = storedZoom && visualBounds
-      ? isTransformWithinViewport(storedZoom, visualBounds, viewportDimensions)
-      : false;
-
+    
+    // 저장된 viewport가 있으면 항상 우선 사용 (검증 없이)
     const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
     
     const initialTransform = shouldApplyInitial
-      ? ((storedIsValid ? storedZoom : null) || defaultTransform)
-      : ((storedIsValid ? storedZoom : null) || lastViewTransformRef.current || defaultTransform);
+      ? (storedZoom || defaultTransform)
+      : (storedZoom || lastViewTransformRef.current || defaultTransform);
     lastViewTransformRef.current = initialTransform;
-    skipNextResizeResetRef.current = shouldApplyInitial && storedIsValid;
 
     logViewportDebug('initial-setup:transform-selection', {
       defaultTransform,
       storedTransform,
       storedZoom,
-      storedIsValid,
       lastViewTransform: lastViewTransformRef.current,
       shouldApplyInitial,
       treeKey,
@@ -1023,7 +1050,8 @@ const TidyTreeView = ({
     zoomBehaviorRef.current = zoom;
 
     if (shouldApplyInitial) {
-      selection.call(zoom.transform, initialTransform);
+      // 애니메이션 없이 즉시 적용
+      selection.interrupt().call(zoom.transform, initialTransform);
       logViewportDebug('initial-setup:apply-transform', {
         appliedTransform: initialTransform,
         treeKey,
@@ -1031,7 +1059,8 @@ const TidyTreeView = ({
       });
       lastAppliedTreeIdRef.current = treeKey;
       isInitialMountRef.current = false;
-      if (!storedIsValid && storageKey) {
+      // 저장된 값이 없을 때만 새로 저장
+      if (!storedZoom && storageKey) {
         persistTransform(storageKey, initialTransform);
       }
     }
@@ -1041,34 +1070,6 @@ const TidyTreeView = ({
       zoomBehaviorRef.current = null;
     };
   }, [layout, dragStateManager, activeTreeId, viewportDimensions?.width, viewportDimensions?.height, isTrackpadMode, boundsOptions, visualBounds]);
-
-  const previousViewportRef = useRef(viewportDimensions);
-
-  useEffect(() => {
-    const prev = previousViewportRef.current;
-    previousViewportRef.current = viewportDimensions;
-
-    if (!layout || !visualBounds || isInitialMountRef.current) {
-      return;
-    }
-
-    if (skipNextResizeResetRef.current) {
-      skipNextResizeResetRef.current = false;
-      return;
-    }
-
-    const prevWidth = Number.isFinite(prev?.width) ? prev.width : 0;
-    const prevHeight = Number.isFinite(prev?.height) ? prev.height : 0;
-    const nextWidth = Number.isFinite(viewportDimensions?.width) ? viewportDimensions.width : 0;
-    const nextHeight = Number.isFinite(viewportDimensions?.height) ? viewportDimensions.height : 0;
-
-    const widthChanged = Math.abs(nextWidth - prevWidth) > 1;
-    const heightChanged = Math.abs(nextHeight - prevHeight) > 1;
-
-    if (widthChanged || heightChanged) {
-      resetToDefaultView('viewport-resize', { animate: false });
-    }
-  }, [viewportDimensions, layout, visualBounds, resetToDefaultView]);
 
   const isDarkTheme = theme === "dark";
   const isGlassTheme = theme === "glass";
@@ -1120,6 +1121,28 @@ const TidyTreeView = ({
     }
   }, [focusNodeById, onNodeClick, zoomOnClickEnabled]);
 
+  // 채팅 패널이 닫힐 때 또는 selectedNode가 제거될 때 포커스 해제
+  const prevChatPanelOpenRef = useRef(isChatPanelOpen);
+  const prevSelectedNodeRef = useRef(selectedNodeId);
+  
+  useEffect(() => {
+    const wasChatPanelOpen = prevChatPanelOpenRef.current;
+    const wasNodeSelected = prevSelectedNodeRef.current !== null && prevSelectedNodeRef.current !== undefined;
+    const isNodeNowUnselected = selectedNodeId === null;
+    
+    prevChatPanelOpenRef.current = isChatPanelOpen;
+    prevSelectedNodeRef.current = selectedNodeId;
+
+    // 패널이 열려있다가 닫힌 경우 OR 노드가 선택되어 있다가 해제된 경우
+    const shouldClearFocus = (wasChatPanelOpen && !isChatPanelOpen) || (wasNodeSelected && isNodeNowUnselected);
+    
+    if (shouldClearFocus) {
+      setClickedNodeId(null);
+      setHoveredNodeId(null);
+      setInternalSelectedNodeId(null);
+    }
+  }, [isChatPanelOpen, selectedNodeId]);
+
   useEffect(() => {
     if (selectedNodeId === undefined) {
       return;
@@ -1141,6 +1164,12 @@ const TidyTreeView = ({
     prevSelectedNodeIdRef.current = selectedNodeId;
     setInternalSelectedNodeId(selectedNodeId);
     setClickedNodeId(selectedNodeId);
+    
+    // 초기 마운트 시에는 자동 포커스하지 않음 (저장된 뷰포트 위치 우선)
+    if (isInitialMountRef.current) {
+      return;
+    }
+    
     if (zoomOnClickEnabled) {
       focusNodeById(selectedNodeId, { duration: 520 });
     }
