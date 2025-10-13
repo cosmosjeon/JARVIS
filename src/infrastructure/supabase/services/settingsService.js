@@ -5,6 +5,8 @@ const DEFAULT_DB_SETTINGS = Object.freeze({
   zoomOnClickEnabled: true,
   autoPasteEnabled: true,
   inputMode: 'mouse',
+  libraryTheme: 'light',
+  widgetTheme: 'glass',
   preferences: {},
 });
 
@@ -25,6 +27,20 @@ const sanitizePreferences = (value) => {
   return value;
 };
 
+const normalizeLibraryTheme = (value, fallback = DEFAULT_DB_SETTINGS.libraryTheme) => {
+  if (value === 'dark') {
+    return 'dark';
+  }
+  return fallback;
+};
+
+const normalizeWidgetTheme = (value, fallback = DEFAULT_DB_SETTINGS.widgetTheme) => {
+  if (value === 'light' || value === 'dark' || value === 'glass') {
+    return value;
+  }
+  return fallback;
+};
+
 const mapRowToSettings = (row) => {
   if (!row) {
     return null;
@@ -35,6 +51,8 @@ const mapRowToSettings = (row) => {
     zoomOnClickEnabled: toBoolean(row.zoom_on_click_enabled, DEFAULT_DB_SETTINGS.zoomOnClickEnabled),
     autoPasteEnabled: toBoolean(row.auto_paste_enabled, DEFAULT_DB_SETTINGS.autoPasteEnabled),
     inputMode: typeof row.input_mode === 'string' ? row.input_mode : DEFAULT_DB_SETTINGS.inputMode,
+    libraryTheme: normalizeLibraryTheme(row.library_theme, DEFAULT_DB_SETTINGS.libraryTheme),
+    widgetTheme: normalizeWidgetTheme(row.widget_theme, DEFAULT_DB_SETTINGS.widgetTheme),
     preferences: sanitizePreferences(row.preferences),
     updatedAt: typeof row.updated_at === 'number' ? row.updated_at : null,
     createdAt: typeof row.created_at === 'number' ? row.created_at : null,
@@ -57,6 +75,8 @@ const buildUpsertPayload = ({ userId, settings }) => {
     zoom_on_click_enabled: toBoolean(merged.zoomOnClickEnabled, DEFAULT_DB_SETTINGS.zoomOnClickEnabled),
     auto_paste_enabled: toBoolean(merged.autoPasteEnabled, DEFAULT_DB_SETTINGS.autoPasteEnabled),
     input_mode: typeof merged.inputMode === 'string' ? merged.inputMode : DEFAULT_DB_SETTINGS.inputMode,
+    library_theme: normalizeLibraryTheme(merged.libraryTheme, DEFAULT_DB_SETTINGS.libraryTheme),
+    widget_theme: normalizeWidgetTheme(merged.widgetTheme, DEFAULT_DB_SETTINGS.widgetTheme),
     preferences: sanitizePreferences(merged.preferences),
   };
 };

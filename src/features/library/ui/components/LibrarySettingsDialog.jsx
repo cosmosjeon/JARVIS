@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useSettings } from 'shared/hooks/SettingsContext';
 import { 
   Palette, 
@@ -77,16 +77,33 @@ const LibrarySettingsDialog = ({
   const userLabel = user?.email || user?.user_metadata?.full_name || '로그인 계정';
   const themeLabel = activeThemeLabel || FALLBACK_THEME_LABEL;
   const canSignOut = Boolean(user);
-  const { 
-    inputMode = 'mouse', 
+  const {
+    inputMode = 'mouse',
     setInputMode,
     zoomOnClickEnabled = true,
-    setZoomOnClickEnabled 
+    setZoomOnClickEnabled,
+    widgetTheme = 'glass',
+    setWidgetThemePreference,
   } = useSettings();
+
+  const widgetThemeOptions = useMemo(() => ([
+    { id: 'glass', label: '반투명', description: '위젯 전용 반투명 테마' },
+    { id: 'light', label: '라이트', description: '밝은 배경으로 가독성 확보' },
+    { id: 'dark', label: '다크', description: '어두운 배경으로 눈부심 감소' },
+  ]), []);
+
+  const currentWidgetThemeOption = useMemo(
+    () => widgetThemeOptions.find((option) => option.id === widgetTheme) || widgetThemeOptions[0],
+    [widgetTheme, widgetThemeOptions],
+  );
 
   const handleThemeSelect = (themeId) => {
     // 테마 변경 로직 (현재는 기존 onCycleTheme 사용)
     onCycleTheme?.();
+  };
+
+  const handleWidgetThemeSelect = (themeId) => {
+    setWidgetThemePreference?.(themeId);
   };
 
   const getCurrentThemeOption = () => {
@@ -198,6 +215,50 @@ const LibrarySettingsDialog = ({
                         </DropdownMenuItem>
                       );
                     })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <div className="p-6 border border-border rounded-xl bg-card shadow-sm">
+                <div className="flex items-center gap-4 mb-4">
+                  <Palette className="h-6 w-6 text-muted-foreground" />
+                  <div>
+                    <p className="text-base font-medium text-foreground">위젯 테마 선택</p>
+                    <p className="text-sm text-muted-foreground">Electron 위젯 모드에서 사용할 테마</p>
+                  </div>
+                </div>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between px-4 py-3 h-auto"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex flex-col text-left">
+                          <p className="text-sm font-medium">{currentWidgetThemeOption.label}</p>
+                          <p className="text-xs text-muted-foreground">위젯 현재 테마</p>
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-full min-w-[200px]">
+                    {widgetThemeOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.id}
+                        onClick={() => handleWidgetThemeSelect(option.id)}
+                        className="flex items-start gap-3 px-3 py-2.5"
+                      >
+                        <div className="flex flex-col">
+                          <p className="text-sm font-medium">{option.label}</p>
+                          <p className="text-xs text-muted-foreground">{option.description}</p>
+                        </div>
+                        {currentWidgetThemeOption.id === option.id && (
+                          <div className="ml-auto h-2 w-2 rounded-full bg-primary" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

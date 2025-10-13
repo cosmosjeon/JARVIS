@@ -38,6 +38,11 @@ const registerSettingsHandlers = ({
       changed = true;
     }
 
+    if (typeof payload.theme === 'string' && payload.theme !== nextSettings.theme) {
+      nextSettings.theme = payload.theme;
+      changed = true;
+    }
+
     if (changed) {
       setSettings(nextSettings);
       if (shouldApplyTray) {

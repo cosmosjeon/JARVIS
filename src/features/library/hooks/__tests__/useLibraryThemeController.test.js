@@ -9,15 +9,15 @@ describe('useLibraryThemeController', () => {
       { initialProps: { theme: 'glass' } },
     );
 
-    expect(result.current.active.value).toBe('glass');
+    expect(result.current.active.value).toBe('light');
 
     act(() => {
       result.current.cycleTheme();
     });
 
-    expect(setTheme).toHaveBeenCalledWith('light');
+    expect(setTheme).toHaveBeenCalledWith('dark');
 
-    rerender({ theme: 'light' });
-    expect(result.current.active.value).toBe('light');
+    rerender({ theme: 'dark' });
+    expect(result.current.active.value).toBe('dark');
   });
 });

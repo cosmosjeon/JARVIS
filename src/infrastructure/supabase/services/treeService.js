@@ -317,96 +317,6 @@ export const deleteFolder = (payload) => repositoryDeleteFolder(payload);
 
 export const moveTreeToFolder = (params) => repositoryMoveTreeToFolder(params);
 
-// ==================== Memos Management ====================
-
-/**
- * 트리의 메모들을 가져옵니다
- */
-export const fetchMemosForTree = async ({ treeId, userId }) => {
-  const supabase = ensureSupabase();
-
-  const { data, error } = await supabase
-    .from('memos')
-    .select('*')
-    .eq('tree_id', treeId)
-    .eq('user_id', userId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  // 데이터 변환 (DB 형식 → 앱 형식)
-  return (data || []).map(memo => ({
-    id: memo.id,
-    nodeId: memo.node_id,
-    content: memo.content,
-    position: {
-      x: memo.position_x || 0,
-      y: memo.position_y || 0,
-    },
-    createdAt: normalizeTimestamp(memo.created_at),
-    updatedAt: normalizeTimestamp(memo.updated_at),
-  }));
-};
-
-/**
- * 메모를 생성하거나 업데이트합니다
- */
-export const upsertMemo = async ({ memo, treeId, userId }) => {
-  const supabase = ensureSupabase();
-  const now = Date.now();
-
-  const payload = {
-    id: memo.id,
-    user_id: userId,
-    tree_id: treeId,
-    node_id: memo.nodeId,
-    content: memo.content,
-    position_x: memo.position?.x || 0,
-    position_y: memo.position?.y || 0,
-    updated_at: now,
-  };
-
-  // 새 메모인 경우 created_at 추가
-  if (!memo.createdAt) {
-    payload.created_at = now;
-  } else {
-    payload.created_at = normalizeTimestamp(memo.createdAt);
-  }
-
-  const { data, error } = await supabase
-    .from('memos')
-    .upsert(payload, { onConflict: 'id' })
-    .select()
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
-};
-
-/**
- * 메모를 삭제합니다 (soft delete)
- */
-export const deleteMemo = async ({ memoId, userId }) => {
-  const supabase = ensureSupabase();
-  const now = Date.now();
-
-  const { error } = await supabase
-    .from('memos')
-    .update({ deleted_at: now })
-    .eq('id', memoId)
-    .eq('user_id', userId);
-
-  if (error) {
-    throw error;
-  }
-};
-
 // ==================== Tree Viewport State Management ====================
 
 /**
@@ -419,6 +329,7 @@ export const deleteMemo = async ({ memoId, userId }) => {
 export const saveTreeViewportState = async ({ treeId, userId, viewportData }) => {
   const supabase = ensureSupabase();
   const now = Date.now();
+  const safeViewportData = (viewportData && typeof viewportData === 'object') ? viewportData : {};
 
   // 기존 뷰포트 상태가 있는지 확인
   const { data: existingState, error: fetchError } = await supabase
@@ -435,7 +346,7 @@ export const saveTreeViewportState = async ({ treeId, userId, viewportData }) =>
   const payload = {
     tree_id: treeId,
     user_id: userId,
-    viewport_data: viewportData,
+    viewport_data: safeViewportData,
     updated_at: now,
   };
 

@@ -39,6 +39,8 @@ function App() {
     return window.location.pathname || '/';
   }, []);
 
+  const defaultTheme = mode === 'widget' ? 'glass' : 'light';
+
   useEffect(() => {
     if (pathname.startsWith('/auth/callback')) {
       document.body.classList.remove('widget-mode');
@@ -53,8 +55,8 @@ function App() {
 
   return (
     <SupabaseProvider>
-      <SettingsProvider>
-        <ThemeProvider defaultTheme="glass" mode={mode}>
+      <ThemeProvider defaultTheme={defaultTheme} mode={mode}>
+        <SettingsProvider>
           <SupabaseAuthGate mode={mode}>
             {mode === 'library' ? (
               <LibraryApp />
@@ -66,8 +68,8 @@ function App() {
               </div>
             )}
           </SupabaseAuthGate>
-        </ThemeProvider>
-      </SettingsProvider>
+        </SettingsProvider>
+      </ThemeProvider>
     </SupabaseProvider>
   );
 }

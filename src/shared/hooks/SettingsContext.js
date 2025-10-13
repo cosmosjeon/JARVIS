@@ -14,6 +14,7 @@ import {
   createTrayBridge,
 } from 'infrastructure/electron/bridges';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
+import { useTheme } from 'shared/components/library/ThemeProvider';
 import {
   fetchUserSettings,
   upsertUserSettings,
@@ -31,6 +32,10 @@ const SettingsContext = createContext({
   setAutoPasteEnabled: () => { },
   inputMode: 'mouse',
   setInputMode: () => { },
+  libraryTheme: 'light',
+  setLibraryThemePreference: () => { },
+  widgetTheme: 'glass',
+  setWidgetThemePreference: () => { },
 });
 
 const normalizeBoolean = (value, fallback = true) => {
@@ -52,11 +57,25 @@ const sanitizePreferencesValue = (value) => {
   return value;
 };
 
+const LIBRARY_THEME_FALLBACK = 'light';
+const isValidLibraryTheme = (value) => value === 'light' || value === 'dark';
+const normalizeLibraryTheme = (value, fallback = LIBRARY_THEME_FALLBACK) => (
+  isValidLibraryTheme(value) ? value : fallback
+);
+
+const WIDGET_THEME_FALLBACK = 'glass';
+const isValidWidgetTheme = (value) => value === 'glass' || value === 'light' || value === 'dark';
+const normalizeWidgetTheme = (value, fallback = WIDGET_THEME_FALLBACK) => (
+  isValidWidgetTheme(value) ? value : fallback
+);
+
 const DEFAULT_SETTINGS = Object.freeze({
   trayEnabled: true,
   zoomOnClickEnabled: true,
   autoPasteEnabled: true,
   inputMode: INPUT_MODE_FALLBACK,
+  libraryTheme: LIBRARY_THEME_FALLBACK,
+  widgetTheme: WIDGET_THEME_FALLBACK,
   preferences: {},
 });
 
@@ -65,6 +84,8 @@ const sanitizeSettings = (raw = {}) => ({
   zoomOnClickEnabled: normalizeBoolean(raw.zoomOnClickEnabled, DEFAULT_SETTINGS.zoomOnClickEnabled),
   autoPasteEnabled: normalizeBoolean(raw.autoPasteEnabled, DEFAULT_SETTINGS.autoPasteEnabled),
   inputMode: normalizeInputMode(raw.inputMode, DEFAULT_SETTINGS.inputMode),
+  libraryTheme: normalizeLibraryTheme(raw.libraryTheme, DEFAULT_SETTINGS.libraryTheme),
+  widgetTheme: normalizeWidgetTheme(raw.widgetTheme, DEFAULT_SETTINGS.widgetTheme),
   preferences: sanitizePreferencesValue(raw.preferences ?? DEFAULT_SETTINGS.preferences),
 });
 
@@ -75,12 +96,15 @@ export const SettingsProvider = ({ children }) => {
   const [zoomOnClickEnabled, setZoomOnClickEnabledState] = useState(true);
   const [autoPasteEnabled, setAutoPasteEnabledState] = useState(true);
   const [inputMode, setInputModeState] = useState(INPUT_MODE_FALLBACK);
+  const [libraryTheme, setLibraryThemeState] = useState(LIBRARY_THEME_FALLBACK);
+  const [widgetTheme, setWidgetThemeState] = useState(WIDGET_THEME_FALLBACK);
   const settingsSnapshotRef = useRef(sanitizeSettings(DEFAULT_SETTINGS));
 
   const settingsBridge = useMemo(() => createSettingsBridge(), []);
   const loggerBridge = useMemo(() => createLoggerBridge(), []);
   const systemBridge = useMemo(() => createSystemBridge(), []);
   const trayBridge = useMemo(() => createTrayBridge(), []);
+  const themeBridge = useTheme();
 
   const applySettingsState = useCallback((incoming = {}) => {
     const preservedPreferences = settingsSnapshotRef.current?.preferences;
@@ -95,9 +119,17 @@ export const SettingsProvider = ({ children }) => {
     setZoomOnClickEnabledState(sanitized.zoomOnClickEnabled);
     setAutoPasteEnabledState(sanitized.autoPasteEnabled);
     setInputModeState(sanitized.inputMode);
+    setLibraryThemeState(sanitized.libraryTheme);
+    setWidgetThemeState(sanitized.widgetTheme);
+    const mode = themeBridge?.mode;
+    if (mode === 'library') {
+      themeBridge?.setTheme?.(sanitized.libraryTheme);
+    } else if (mode === 'widget') {
+      themeBridge?.setTheme?.(sanitized.widgetTheme);
+    }
     settingsSnapshotRef.current = sanitized;
     return sanitized;
-  }, []);
+  }, [themeBridge]);
 
   const refreshAccessibilityStatus = useCallback(async () => {
     try {
@@ -194,6 +226,26 @@ export const SettingsProvider = ({ children }) => {
     loggerBridge.log?.('info', 'settings_input_mode_changed', { mode: normalized });
   }, [loggerBridge, persistSettingsChange]);
 
+  const setLibraryThemePreference = useCallback((next) => {
+    const normalized = normalizeLibraryTheme(next, LIBRARY_THEME_FALLBACK);
+    setLibraryThemeState(normalized);
+    if (themeBridge?.mode === 'library') {
+      themeBridge?.setTheme?.(normalized);
+    }
+    persistSettingsChange({ libraryTheme: normalized });
+    loggerBridge.log?.('info', 'settings_library_theme_changed', { theme: normalized });
+  }, [loggerBridge, persistSettingsChange, themeBridge]);
+
+  const setWidgetThemePreference = useCallback((next) => {
+    const normalized = normalizeWidgetTheme(next, WIDGET_THEME_FALLBACK);
+    setWidgetThemeState(normalized);
+    if (themeBridge?.mode === 'widget') {
+      themeBridge?.setTheme?.(normalized);
+    }
+    persistSettingsChange({ widgetTheme: normalized });
+    loggerBridge.log?.('info', 'settings_widget_theme_changed', { theme: normalized });
+  }, [loggerBridge, persistSettingsChange, themeBridge]);
+
   useEffect(() => {
     if (!user) {
       return undefined;
@@ -260,6 +312,10 @@ export const SettingsProvider = ({ children }) => {
     setAutoPasteEnabled,
     inputMode,
     setInputMode,
+    libraryTheme,
+    setLibraryThemePreference,
+    widgetTheme,
+    setWidgetThemePreference,
   }), [
     trayEnabled,
     accessibilityGranted,
@@ -272,6 +328,10 @@ export const SettingsProvider = ({ children }) => {
     setAutoPasteEnabled,
     inputMode,
     setInputMode,
+    libraryTheme,
+    setLibraryThemePreference,
+    widgetTheme,
+    setWidgetThemePreference,
   ]);
 
   return (

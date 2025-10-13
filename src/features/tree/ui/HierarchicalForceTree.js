@@ -108,7 +108,12 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     }
   }, [treeBridge]);
   const { theme, setTheme, mode } = useTheme();
-  const { zoomOnClickEnabled, setZoomOnClickEnabled } = useSettings();
+  const {
+    zoomOnClickEnabled,
+    setZoomOnClickEnabled,
+    widgetTheme,
+    setWidgetThemePreference,
+  } = useSettings();
   const {
     provider: selectedProvider,
     model: selectedModel,
@@ -133,10 +138,18 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const cycleTheme = useCallback(() => {
     const currentIndex = themeOptions.findIndex(option => option.value === theme);
     const nextIndex = (currentIndex + 1) % themeOptions.length;
-    setTheme(themeOptions[nextIndex].value);
-  }, [theme, themeOptions, setTheme]);
+    const nextTheme = themeOptions[nextIndex].value;
+    setTheme(nextTheme);
+    setWidgetThemePreference?.(nextTheme);
+  }, [theme, themeOptions, setTheme, setWidgetThemePreference]);
 
   const treeBackground = useMemo(() => resolveTreeBackground(theme), [theme]);
+
+  useEffect(() => {
+    if (mode === 'widget' && widgetTheme && widgetTheme !== theme) {
+      setTheme(widgetTheme);
+    }
+  }, [mode, widgetTheme, theme, setTheme]);
 
   const svgRef = useRef(null);
   const { dimensions: baseDimensions, nodeScaleFactor, viewTransform, setViewTransform } = useTreeViewport();

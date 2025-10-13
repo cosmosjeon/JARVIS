@@ -8,6 +8,7 @@ const defaultSettings = {
   trayEnabled: true,
   zoomOnClickEnabled: true,
   inputMode: 'mouse',
+  theme: 'light',
 };
 
 const readSettings = () => {

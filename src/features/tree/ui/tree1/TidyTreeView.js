@@ -9,6 +9,7 @@ import SiblingReorderService from 'features/tree/services/drag/SiblingReorderSer
 import { focusNodeToCenter as focusNodeToCenterUtil } from 'features/tree/ui/d3Renderer';
 import { useSettings } from 'shared/hooks/SettingsContext';
 import NodeContextMenu from 'features/tree/ui/components/NodeContextMenu';
+import useTreeViewportSync from 'features/tree/hooks/useTreeViewportSync';
 
 const MIN_SCALE = 0.18;
 const MAX_SCALE = 4;
@@ -605,6 +606,34 @@ const TidyTreeView = ({
       : (Number.isFinite(layout?.height) ? layout.height : 0),
   }), [dimensions?.width, dimensions?.height, layout?.width, layout?.height]);
 
+  const {
+    scheduleViewportSave,
+    serverTransform: serverViewportTransform,
+    serverUpdatedAt,
+    hasFreshServerViewport,
+    markServerViewportApplied,
+  } = useTreeViewportSync({
+    treeId: activeTreeId,
+    viewportDimensions,
+  });
+
+  const remoteViewport = useMemo(() => {
+    if (!serverViewportTransform || !serverUpdatedAt) {
+      return null;
+    }
+
+    const safeX = Number.isFinite(serverViewportTransform.x) ? serverViewportTransform.x : 0;
+    const safeY = Number.isFinite(serverViewportTransform.y) ? serverViewportTransform.y : 0;
+    const safeK = Number.isFinite(serverViewportTransform.k) && serverViewportTransform.k > 0
+      ? serverViewportTransform.k
+      : 1;
+
+    return {
+      transform: d3.zoomIdentity.translate(safeX, safeY).scale(safeK),
+      updatedAt: serverUpdatedAt,
+    };
+  }, [serverViewportTransform, serverUpdatedAt]);
+
   const focusNodeById = useCallback((nodeId, options = {}) => {
     if (!nodeId) {
       return;
@@ -1007,6 +1036,7 @@ const TidyTreeView = ({
         if (storageKey) {
           persistTransform(storageKey, event.transform);
         }
+        scheduleViewportSave(event.transform);
       })
       .on("end", () => setIsZooming(false));
 
@@ -1028,40 +1058,60 @@ const TidyTreeView = ({
     }) || d3.zoomIdentity;
     const storedTransform = readStoredTransform(storageKey);
     const storedZoom = toZoomTransform(storedTransform);
-    
+    const remoteZoom = remoteViewport?.transform || null;
+    const remoteUpdatedAt = remoteViewport?.updatedAt || null;
+
     // 저장된 viewport가 있으면 항상 우선 사용 (검증 없이)
     const shouldApplyInitial = isInitialMountRef.current || lastAppliedTreeIdRef.current !== treeKey;
-    
-    const initialTransform = shouldApplyInitial
-      ? (storedZoom || defaultTransform)
-      : (storedZoom || lastViewTransformRef.current || defaultTransform);
+
+    const shouldApplyRemote = Boolean(remoteZoom && (hasFreshServerViewport || shouldApplyInitial));
+
+    const initialTransform = (() => {
+      if (shouldApplyRemote) {
+        return remoteZoom;
+      }
+      if (shouldApplyInitial) {
+        return storedZoom || defaultTransform;
+      }
+      return storedZoom || lastViewTransformRef.current || defaultTransform;
+    })();
     lastViewTransformRef.current = initialTransform;
 
     logViewportDebug('initial-setup:transform-selection', {
       defaultTransform,
       storedTransform,
       storedZoom,
+      remoteZoom,
       lastViewTransform: lastViewTransformRef.current,
       shouldApplyInitial,
+      shouldApplyRemote,
       treeKey,
       viewport: viewportDimensions,
     });
 
     zoomBehaviorRef.current = zoom;
 
-    if (shouldApplyInitial) {
+    const shouldApplyTransform = shouldApplyInitial || shouldApplyRemote;
+
+    if (shouldApplyTransform) {
       // 애니메이션 없이 즉시 적용
       selection.interrupt().call(zoom.transform, initialTransform);
       logViewportDebug('initial-setup:apply-transform', {
         appliedTransform: initialTransform,
         treeKey,
         shouldApplyInitial,
+        shouldApplyRemote,
       });
-      lastAppliedTreeIdRef.current = treeKey;
-      isInitialMountRef.current = false;
+      if (shouldApplyInitial) {
+        lastAppliedTreeIdRef.current = treeKey;
+        isInitialMountRef.current = false;
+      }
       // 저장된 값이 없을 때만 새로 저장
-      if (!storedZoom && storageKey) {
+      if (storageKey) {
         persistTransform(storageKey, initialTransform);
+      }
+      if (shouldApplyRemote && remoteUpdatedAt) {
+        markServerViewportApplied(remoteUpdatedAt);
       }
     }
 
@@ -1069,7 +1119,21 @@ const TidyTreeView = ({
       selection.on(".zoom", null);
       zoomBehaviorRef.current = null;
     };
-  }, [layout, dragStateManager, activeTreeId, viewportDimensions?.width, viewportDimensions?.height, isTrackpadMode, boundsOptions, visualBounds]);
+  }, [
+    layout,
+    dragStateManager,
+    activeTreeId,
+    viewportDimensions?.width,
+    viewportDimensions?.height,
+    isTrackpadMode,
+    boundsOptions,
+    visualBounds,
+    scheduleViewportSave,
+    remoteViewport?.transform,
+    remoteViewport?.updatedAt,
+    hasFreshServerViewport,
+    markServerViewportApplied,
+  ]);
 
   const isDarkTheme = theme === "dark";
   const isGlassTheme = theme === "glass";

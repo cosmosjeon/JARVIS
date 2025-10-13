@@ -1478,23 +1478,6 @@ CREATE TABLE IF NOT EXISTS "public"."folders" (
 ALTER TABLE "public"."folders" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."memos" (
-    "id" "text" NOT NULL,
-    "user_id" "uuid" NOT NULL,
-    "tree_id" "text" NOT NULL,
-    "node_id" "text" NOT NULL,
-    "content" "text" NOT NULL,
-    "position_x" real,
-    "position_y" real,
-    "created_at" bigint NOT NULL,
-    "updated_at" bigint NOT NULL,
-    "deleted_at" bigint
-);
-
-
-ALTER TABLE "public"."memos" OWNER TO "postgres";
-
-
 CREATE TABLE IF NOT EXISTS "public"."nodes" (
     "id" "text" NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -1544,6 +1527,38 @@ COMMENT ON TABLE "public"."tree_viewport_states" IS 'Stores Tree2 viewport state
 
 
 COMMENT ON COLUMN "public"."tree_viewport_states"."viewport_data" IS 'JSONB containing: {zoom: {k, x, y}, pan: {x, y}, nodePositions: {nodeId: {x, y}}}';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."user_settings" (
+    "user_id" "uuid" NOT NULL,
+    "tray_enabled" boolean DEFAULT true NOT NULL,
+    "zoom_on_click_enabled" boolean DEFAULT true NOT NULL,
+    "auto_paste_enabled" boolean DEFAULT true NOT NULL,
+    "input_mode" text DEFAULT 'mouse'::text NOT NULL,
+    "preferences" "jsonb" DEFAULT '{}'::jsonb NOT NULL,
+    "created_at" bigint DEFAULT (EXTRACT(epoch FROM "now"()) * (1000)::numeric) NOT NULL,
+    "updated_at" bigint DEFAULT (EXTRACT(epoch FROM "now"()) * (1000)::numeric) NOT NULL,
+    "library_theme" text DEFAULT 'light'::text NOT NULL,
+    "widget_theme" text DEFAULT 'glass'::text NOT NULL,
+    CONSTRAINT "user_settings_input_mode_check" CHECK ("input_mode" = ANY (ARRAY['mouse'::text, 'trackpad'::text])),
+    CONSTRAINT "user_settings_library_theme_check" CHECK ("library_theme" = ANY (ARRAY['light'::text, 'dark'::text])),
+    CONSTRAINT "user_settings_widget_theme_check" CHECK ("widget_theme" = ANY (ARRAY['glass'::text, 'light'::text, 'dark'::text]))
+);
+
+
+ALTER TABLE "public"."user_settings" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."user_settings" IS 'Stores per-user application preferences for cross-device sync.';
+
+
+
+COMMENT ON COLUMN "public"."user_settings"."library_theme" IS 'Library mode theme preference (light|dark).';
+
+
+
+COMMENT ON COLUMN "public"."user_settings"."widget_theme" IS 'Widget mode theme preference (glass|light|dark).';
 
 
 
@@ -1804,11 +1819,6 @@ ALTER TABLE ONLY "public"."folders"
 
 
 
-ALTER TABLE ONLY "public"."memos"
-    ADD CONSTRAINT "memos_pkey" PRIMARY KEY ("id");
-
-
-
 ALTER TABLE ONLY "public"."nodes"
     ADD CONSTRAINT "nodes_pkey" PRIMARY KEY ("id");
 
@@ -1816,6 +1826,16 @@ ALTER TABLE ONLY "public"."nodes"
 
 ALTER TABLE ONLY "public"."tree_viewport_states"
     ADD CONSTRAINT "tree_viewport_states_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."tree_viewport_states"
+    ADD CONSTRAINT "tree_viewport_states_user_tree_key" UNIQUE ("user_id", "tree_id");
+
+
+
+ALTER TABLE ONLY "public"."user_settings"
+    ADD CONSTRAINT "user_settings_pkey" PRIMARY KEY ("user_id");
 
 
 
@@ -2048,19 +2068,8 @@ CREATE INDEX "idx_tree_viewport_states_updated_at" ON "public"."tree_viewport_st
 
 
 
-CREATE INDEX "idx_tree_viewport_states_user_tree" ON "public"."tree_viewport_states" USING "btree" ("user_id", "tree_id");
-
-
-
 CREATE INDEX "idx_trees_folder_id" ON "public"."trees" USING "btree" ("folder_id") WHERE ("deleted_at" IS NULL);
 
-
-
-CREATE INDEX "memos_node_idx" ON "public"."memos" USING "btree" ("node_id");
-
-
-
-CREATE INDEX "memos_user_tree_idx" ON "public"."memos" USING "btree" ("user_id", "tree_id");
 
 
 
@@ -2139,6 +2148,9 @@ CREATE OR REPLACE TRIGGER "prefixes_delete_hierarchy" AFTER DELETE ON "storage".
 CREATE OR REPLACE TRIGGER "update_objects_updated_at" BEFORE UPDATE ON "storage"."objects" FOR EACH ROW EXECUTE FUNCTION "storage"."update_updated_at_column"();
 
 
+CREATE TRIGGER "trg_touch_user_settings" BEFORE UPDATE ON "public"."user_settings" FOR EACH ROW EXECUTE FUNCTION "public"."touch_updated_at"();
+
+
 
 ALTER TABLE ONLY "auth"."identities"
     ADD CONSTRAINT "identities_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
@@ -2204,20 +2216,8 @@ ALTER TABLE ONLY "public"."folders"
     ADD CONSTRAINT "folders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
-
-ALTER TABLE ONLY "public"."memos"
-    ADD CONSTRAINT "memos_node_id_fkey" FOREIGN KEY ("node_id") REFERENCES "public"."nodes"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."memos"
-    ADD CONSTRAINT "memos_tree_id_fkey" FOREIGN KEY ("tree_id") REFERENCES "public"."trees"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."memos"
-    ADD CONSTRAINT "memos_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
-
+ALTER TABLE ONLY "public"."user_settings"
+    ADD CONSTRAINT "user_settings_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 ALTER TABLE ONLY "public"."nodes"
@@ -2328,22 +2328,6 @@ ALTER TABLE "auth"."sso_providers" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "auth"."users" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "Memos are owner readable" ON "public"."memos" FOR SELECT USING (("auth"."uid"() = "user_id"));
-
-
-
-CREATE POLICY "Memos are owner writable" ON "public"."memos" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
-
-
-
-CREATE POLICY "Memos owner delete" ON "public"."memos" FOR DELETE USING (("auth"."uid"() = "user_id"));
-
-
-
-CREATE POLICY "Memos owner update" ON "public"."memos" FOR UPDATE USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
-
-
-
 CREATE POLICY "Nodes are owner readable" ON "public"."nodes" FOR SELECT USING (("auth"."uid"() = "user_id"));
 
 
@@ -2392,6 +2376,22 @@ CREATE POLICY "Users can insert their own tree viewport states" ON "public"."tre
 
 
 
+CREATE POLICY "Users can read their user settings" ON "public"."user_settings" FOR SELECT USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can insert their user settings" ON "public"."user_settings" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can update their user settings" ON "public"."user_settings" FOR UPDATE USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can delete their user settings" ON "public"."user_settings" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+
+
 CREATE POLICY "Users can update their own folders" ON "public"."folders" FOR UPDATE USING (("auth"."uid"() = "user_id"));
 
 
@@ -2411,10 +2411,10 @@ CREATE POLICY "Users can view their own tree viewport states" ON "public"."tree_
 ALTER TABLE "public"."folders" ENABLE ROW LEVEL SECURITY;
 
 
-ALTER TABLE "public"."memos" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."nodes" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."user_settings" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."tree_viewport_states" ENABLE ROW LEVEL SECURITY;
@@ -2596,15 +2596,15 @@ GRANT ALL ON TABLE "public"."folders" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."memos" TO "anon";
-GRANT ALL ON TABLE "public"."memos" TO "authenticated";
-GRANT ALL ON TABLE "public"."memos" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."nodes" TO "anon";
 GRANT ALL ON TABLE "public"."nodes" TO "authenticated";
 GRANT ALL ON TABLE "public"."nodes" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."user_settings" TO "anon";
+GRANT ALL ON TABLE "public"."user_settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."user_settings" TO "service_role";
 
 
 
