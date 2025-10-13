@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from 'shared/ui/card';
 
 const buildJarvisUrl = () => {
   const params = new URLSearchParams(window.location.search);
@@ -34,49 +35,47 @@ const OAuthCallbackPage = () => {
   }, [openJarvis]);
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0f172a, #1e293b)',
-      color: '#e2e8f0',
-      fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-    }}>
-      <div style={{
-        textAlign: 'center',
-        maxWidth: 360,
-        padding: '32px 28px',
-        borderRadius: 16,
-        background: 'rgba(15, 23, 42, 0.75)',
-        boxShadow: '0 24px 60px rgba(15, 23, 42, 0.35)',
-        border: '1px solid rgba(148, 163, 184, 0.18)',
-      }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 12 }}>로그인 정보를 확인했어요</h1>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(226, 232, 240, 0.8)' }}>
-          앱으로 자동으로 돌아갑니다. 잠시 기다려 주세요.
-          창이 닫히지 않으면 아래 버튼을 눌러 VORAN을 다시 열어 주세요.
-        </p>
-        <button
-          type="button"
-          onClick={openJarvis}
-          style={{
-            marginTop: 28,
-            width: '100%',
-            padding: '12px 16px',
-            borderRadius: 12,
-            border: 'none',
-            background: 'linear-gradient(135deg, #38bdf8, #6366f1)',
-            color: '#0f172a',
-            fontSize: 15,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          앱으로 돌아가기
-        </button>
-        <p style={{ marginTop: 16, fontSize: 12, color: 'rgba(148, 163, 184, 0.75)' }}>
-          시도 횟수: {attempts}
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md">
+        <Card className="backdrop-blur-xl bg-card/95 border-border shadow-xl">
+          <CardHeader className="space-y-3 pb-6">
+            <div className="flex items-center justify-center mb-2">
+              <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <svg 
+                  className="h-10 w-10 text-primary" 
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M5 13l4 4L19 7" 
+                  />
+                </svg>
+              </div>
+            </div>
+            <CardTitle className="text-2xl text-center font-bold">
+              로그인이 완료되었습니다
+            </CardTitle>
+            <CardDescription className="text-center leading-relaxed">
+              JARVIS 앱으로 돌아가는 중입니다.
+              <br />
+              브라우저 창은 닫아도 됩니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-2">
+            <div className="mt-4 p-3 rounded-lg bg-muted/50">
+              <p className="text-center text-xs text-muted-foreground">
+                자동으로 앱으로 돌아갑니다...
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          로그인하시면 <span className="text-foreground font-medium">서비스 이용약관</span> 및{' '}
+          <span className="text-foreground font-medium">개인정보처리방침</span>에 동의하는 것으로 간주됩니다.
         </p>
       </div>
     </div>

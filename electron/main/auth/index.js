@@ -39,37 +39,110 @@ const createOAuthServer = ({
           logger?.info('Auth callback received', { url: requestUrl.toString() });
           sendOAuthCallback(requestUrl.toString());
 
+          // URL에서 mode 파라미터 확인
+          const mode = requestUrl.searchParams.get('mode') || 'widget';
+          const isLibraryMode = mode === 'library';
+          
+          // 테마별 CSS 변수 설정
+          const themeVars = isLibraryMode ? {
+            // 라이트 테마 (라이브러리 모드)
+            background: '0 0% 100%',
+            foreground: '220 15% 20%',
+            card: '0 0% 100%',
+            cardForeground: '220 15% 20%',
+            primary: '213 74% 47%',
+            primaryForeground: '210 40% 98%',
+            secondary: '36 20% 90%',
+            secondaryForeground: '30 20% 25%',
+            muted: '45 12% 90%',
+            mutedForeground: '30 9% 45%',
+            border: '40 15% 80%',
+            radius: '0.75rem'
+          } : {
+            // 다크 테마 (위젯 모드)
+            background: '218 22% 12%',
+            foreground: '48 22% 90%',
+            card: '220 18% 16%',
+            cardForeground: '48 22% 90%',
+            primary: '213 70% 62%',
+            primaryForeground: '220 18% 14%',
+            secondary: '220 14% 20%',
+            secondaryForeground: '48 20% 85%',
+            muted: '220 14% 22%',
+            mutedForeground: '45 15% 70%',
+            border: '220 15% 26%',
+            radius: '0.75rem'
+          };
+
           const html = `<!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
     <title>로그인이 완료되었습니다</title>
     <meta name="robots" content="noindex" />
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; }
-      main { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-      .card { background: rgba(15,23,42,0.72); padding: 32px 28px; border-radius: 16px; max-width: 360px; text-align: center; box-shadow: 0 24px 60px rgba(15,23,42,0.35); border: 1px solid rgba(148,163,184,0.18); }
-      h1 { font-size: 20px; font-weight: 600; margin: 0 0 12px; }
-      p { font-size: 14px; line-height: 1.6; color: rgba(226,232,240,0.78); margin: 0 0 20px; }
-      button { width: 100%; padding: 12px 16px; border-radius: 12px; border: none; font-weight: 600; font-size: 15px; cursor: pointer; background: linear-gradient(135deg, #38bdf8, #6366f1); color: #0f172a; }
-      small { display: block; margin-top: 12px; font-size: 12px; color: rgba(148,163,184,0.75); }
+      :root {
+        --background: ${themeVars.background};
+        --foreground: ${themeVars.foreground};
+        --card: ${themeVars.card};
+        --card-foreground: ${themeVars.cardForeground};
+        --primary: ${themeVars.primary};
+        --primary-foreground: ${themeVars.primaryForeground};
+        --secondary: ${themeVars.secondary};
+        --secondary-foreground: ${themeVars.secondaryForeground};
+        --muted: ${themeVars.muted};
+        --muted-foreground: ${themeVars.mutedForeground};
+        --border: ${themeVars.border};
+        --radius: ${themeVars.radius};
+      }
+      
+      body {
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family: "Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      
+      .glass-card {
+        background: ${isLibraryMode ? 'hsl(var(--card))' : 'hsl(var(--card) / 0.95)'};
+        ${isLibraryMode ? '' : 'backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);'}
+        border: 1px solid hsl(var(--border));
+        box-shadow: ${isLibraryMode ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' : '0 22px 48px rgba(0, 0, 0, 0.45)'};
+      }
     </style>
   </head>
-  <body>
-    <main>
-      <div class="card">
-        <h1>로그인이 완료되었습니다</h1>
-        <p>JARVIS 앱으로 돌아가는 중입니다. 브라우저 창은 닫아도 됩니다.</p>
-        <button onclick="finish()">앱으로 돌아가기</button>
-        <small>창이 닫히지 않으면 버튼을 다시 눌러주세요.</small>
+  <body class="min-h-screen flex items-center justify-center px-4">
+    <div class="w-full max-w-md">
+      <div class="glass-card rounded-lg p-6 shadow-xl">
+        <div class="space-y-3 pb-6">
+          <div class="flex items-center justify-center mb-2">
+            <div class="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <svg class="h-10 w-10 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+          <h1 class="text-2xl text-center font-bold">로그인이 완료되었습니다</h1>
+          <p class="text-center leading-relaxed text-muted-foreground">
+            JARVIS 앱으로 돌아가는 중입니다.<br />
+            브라우저 창은 닫아도 됩니다.
+          </p>
+        </div>
+        <div class="space-y-4 pt-2">
+          <div class="mt-4 p-3 rounded-lg bg-muted/50">
+            <p class="text-center text-xs text-muted-foreground">
+              자동으로 앱으로 돌아갑니다...
+            </p>
+          </div>
+        </div>
       </div>
-    </main>
+      <p class="text-center text-xs text-muted-foreground mt-6">
+        로그인하시면 <span class="text-foreground font-medium">서비스 이용약관</span> 및{' '}
+        <span class="text-foreground font-medium">개인정보처리방침</span>에 동의하는 것으로 간주됩니다.
+      </p>
+    </div>
     <script>
-      function finish() {
-        window.close();
-        setTimeout(function () { window.close(); }, 1500);
-      }
-      setTimeout(finish, 500);
+      setTimeout(function () { window.close(); }, 1500);
     </script>
   </body>
 </html>`;

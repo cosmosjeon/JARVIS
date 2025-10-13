@@ -108,11 +108,19 @@ export const SettingsProvider = ({ children }) => {
 
   const applySettingsState = useCallback((incoming = {}) => {
     const preservedPreferences = settingsSnapshotRef.current?.preferences;
+    const preservedLibraryTheme = settingsSnapshotRef.current?.libraryTheme;
+    const preservedWidgetTheme = settingsSnapshotRef.current?.widgetTheme;
     const mergedSource = {
       ...incoming,
     };
     if (typeof mergedSource.preferences === 'undefined' && preservedPreferences) {
       mergedSource.preferences = preservedPreferences;
+    }
+    if (typeof mergedSource.libraryTheme === 'undefined' && preservedLibraryTheme) {
+      mergedSource.libraryTheme = preservedLibraryTheme;
+    }
+    if (typeof mergedSource.widgetTheme === 'undefined' && preservedWidgetTheme) {
+      mergedSource.widgetTheme = preservedWidgetTheme;
     }
     const sanitized = sanitizeSettings(mergedSource);
     setTrayEnabledState(sanitized.trayEnabled);
