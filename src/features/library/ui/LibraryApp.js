@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import PropTypes from 'prop-types';
 import LibrarySidebar from './LibrarySidebar';
 import LibraryContent from './LibraryContent';
 import VoranBoxManager from './components/VoranBoxManager';
 import CreateDialog from './components/CreateDialog';
 import LibraryWindowTitleBar from './components/LibraryWindowTitleBar';
 import LibrarySettingsDialog from './components/LibrarySettingsDialog';
+import LibraryActionToolbar from './LibraryActionToolbar';
 import useLibraryAppViewModel from 'features/library/hooks/useLibraryAppViewModel';
+import { getRuntimeLabel, constants as runtimeConstants } from 'shared/utils/platform';
 
-const LibraryApp = () => {
+const LibraryApp = ({ runtime }) => {
   const {
     user,
     signOut,
@@ -18,25 +21,41 @@ const LibraryApp = () => {
     dialog,
   } = useLibraryAppViewModel();
 
+  const runtimeLabel = useMemo(() => runtime || getRuntimeLabel(), [runtime]);
+  const isElectronRuntime = runtimeLabel === runtimeConstants.RUNTIME_ELECTRON;
   const sidebarWidth = state.isSidebarCollapsed ? 60 : 240;
-  // QA Panel이 열려있으면 드래그 존을 짧게, 아니면 길게
   const dragZoneHeight = state.isQAPanelVisible !== false ? '20px' : '80px';
 
   return (
     <div className="relative flex flex-col h-screen bg-background text-foreground overflow-hidden">
-      {/* 상단 드래그 존 - 사이드바 제외 */}
-      <div
-        className="absolute right-0 top-0 z-[9999]"
-        style={{
-          left: `${sidebarWidth}px`,
-          height: dragZoneHeight,
-          WebkitAppRegion: 'drag',
-          pointerEvents: 'auto',
-        }}
-      />
-      <LibraryWindowTitleBar />
+      {isElectronRuntime ? (
+        <>
+          <div
+            className="absolute right-0 top-0 z-[9999]"
+            style={{
+              left: `${sidebarWidth}px`,
+              height: dragZoneHeight,
+              WebkitAppRegion: 'drag',
+              pointerEvents: 'auto',
+            }}
+          />
+          <LibraryWindowTitleBar />
+        </>
+      ) : (
+        <LibraryActionToolbar
+          user={user}
+          ActiveThemeIcon={theme.active.icon}
+          activeThemeLabel={theme.active.label}
+          onCycleTheme={theme.cycle}
+          onRefresh={handlers.refreshLibrary}
+          onSignOut={signOut}
+          isRefreshing={status.loading}
+          onOpenSettings={handlers.showSettingsDialog}
+        />
+      )}
       <div className="flex flex-1 overflow-hidden">
         <LibrarySidebar
+          isElectron={isElectronRuntime}
           collapsed={state.isSidebarCollapsed}
           folders={state.folders}
           trees={state.trees}
@@ -48,9 +67,9 @@ const LibraryApp = () => {
           draggedTreeIds={state.draggedTreeIds}
           dragOverFolderId={state.dragOverFolderId}
           dragOverVoranBox={state.dragOverVoranBox}
-          onManageVoranBox={handlers.showVoranBox}
+          onManageVoranBox={isElectronRuntime ? handlers.showVoranBox : undefined}
           onCreateFolder={() => handlers.openCreateDialog('folder')}
-          onCreateTreeWidget={handlers.createTreeWidget}
+          onCreateTreeWidget={isElectronRuntime ? handlers.createTreeWidget : undefined}
           onCreateTreeInApp={handlers.createTreeInApp}
           onCycleTheme={theme.cycle}
           onRefresh={handlers.refreshLibrary}
@@ -102,25 +121,27 @@ const LibraryApp = () => {
         </main>
       </div>
 
-      <VoranBoxManager
-        isVisible={dialog.showVoranBoxManager}
-        onClose={handlers.hideVoranBox}
-        trees={state.trees}
-        folders={state.folders}
-        onTreeSelect={(tree) => {
-          handlers.sidebarTreeSelect(tree.id, { folderId: tree.folderId ?? null });
-          handlers.hideVoranBox();
-        }}
-        onTreeMoveToFolder={handlers.moveTreesToFolder}
-        onTreeOpen={handlers.openTree}
-        onTreeRename={handlers.renameTree}
-        onTreeDelete={handlers.deleteTree}
-        onFolderCreate={(name, parentId) => handlers.folderCreate({ name, parentId })}
-        onFolderSelect={handlers.folderSelect}
-        selectedTreeId={state.selectedTreeId}
-        selectedFolderId={state.selectedFolderId}
-        loading={status.loading || status.foldersLoading}
-      />
+      {isElectronRuntime ? (
+        <VoranBoxManager
+          isVisible={dialog.showVoranBoxManager}
+          onClose={handlers.hideVoranBox}
+          trees={state.trees}
+          folders={state.folders}
+          onTreeSelect={(tree) => {
+            handlers.sidebarTreeSelect(tree.id, { folderId: tree.folderId ?? null });
+            handlers.hideVoranBox();
+          }}
+          onTreeMoveToFolder={handlers.moveTreesToFolder}
+          onTreeOpen={handlers.openTree}
+          onTreeRename={handlers.renameTree}
+          onTreeDelete={handlers.deleteTree}
+          onFolderCreate={(name, parentId) => handlers.folderCreate({ name, parentId })}
+          onFolderSelect={handlers.folderSelect}
+          selectedTreeId={state.selectedTreeId}
+          selectedFolderId={state.selectedFolderId}
+          loading={status.loading || status.foldersLoading}
+        />
+      ) : null}
 
       <CreateDialog
         open={dialog.showCreateDialog}
@@ -146,3 +167,7 @@ const LibraryApp = () => {
 };
 
 export default LibraryApp;
+
+LibraryApp.propTypes = {
+  runtime: PropTypes.string,
+};

@@ -19,6 +19,7 @@ import {
   fetchUserSettings,
   upsertUserSettings,
 } from 'infrastructure/supabase/services/settingsService';
+import { getRuntimeLabel, constants as runtimeConstants } from 'shared/utils/platform';
 
 const SettingsContext = createContext({
   trayEnabled: true,
@@ -91,6 +92,8 @@ const sanitizeSettings = (raw = {}) => ({
 
 export const SettingsProvider = ({ children }) => {
   const { user } = useSupabaseAuth();
+  const runtimeLabel = useMemo(() => getRuntimeLabel(), []);
+  const isElectronRuntime = runtimeLabel === runtimeConstants.RUNTIME_ELECTRON;
   const [trayEnabled, setTrayEnabledState] = useState(true);
   const [accessibilityGranted, setAccessibilityGranted] = useState(null);
   const [zoomOnClickEnabled, setZoomOnClickEnabledState] = useState(true);
@@ -100,10 +103,34 @@ export const SettingsProvider = ({ children }) => {
   const [widgetTheme, setWidgetThemeState] = useState(WIDGET_THEME_FALLBACK);
   const settingsSnapshotRef = useRef(sanitizeSettings(DEFAULT_SETTINGS));
 
-  const settingsBridge = useMemo(() => createSettingsBridge(), []);
-  const loggerBridge = useMemo(() => createLoggerBridge(), []);
-  const systemBridge = useMemo(() => createSystemBridge(), []);
-  const trayBridge = useMemo(() => createTrayBridge(), []);
+  const settingsBridge = useMemo(
+    () => (isElectronRuntime ? createSettingsBridge() : {}),
+    [isElectronRuntime],
+  );
+  const loggerBridge = useMemo(() => {
+    if (isElectronRuntime) {
+      return createLoggerBridge();
+    }
+    return {
+      log: (level, message, metadata) => {
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console[level === 'warn' ? 'warn' : 'log']?.(
+            `[settings] ${message}`,
+            metadata,
+          );
+        }
+      },
+    };
+  }, [isElectronRuntime]);
+  const systemBridge = useMemo(
+    () => (isElectronRuntime ? createSystemBridge() : {}),
+    [isElectronRuntime],
+  );
+  const trayBridge = useMemo(
+    () => (isElectronRuntime ? createTrayBridge() : {}),
+    [isElectronRuntime],
+  );
   const themeBridge = useTheme();
 
   const applySettingsState = useCallback((incoming = {}) => {
@@ -140,6 +167,10 @@ export const SettingsProvider = ({ children }) => {
   }, [themeBridge]);
 
   const refreshAccessibilityStatus = useCallback(async () => {
+    if (!isElectronRuntime) {
+      setAccessibilityGranted(null);
+      return;
+    }
     try {
       const result = await systemBridge.checkAccessibilityPermission?.();
       if (result && typeof result.granted === 'boolean') {
@@ -148,7 +179,7 @@ export const SettingsProvider = ({ children }) => {
     } catch (error) {
       loggerBridge.log?.('warn', 'accessibility_status_failed', { message: error?.message });
     }
-  }, [loggerBridge, systemBridge]);
+  }, [isElectronRuntime, loggerBridge, systemBridge]);
 
   useEffect(() => {
     let mounted = true;
@@ -160,7 +191,7 @@ export const SettingsProvider = ({ children }) => {
       applySettingsState(next);
     };
 
-    const load = async () => {
+    const loadElectronSettings = async () => {
       try {
         const result = await settingsBridge.getSettings?.();
         const payload = result?.settings || result;
@@ -175,14 +206,47 @@ export const SettingsProvider = ({ children }) => {
       }
     };
 
-    load();
-    const unsubscribe = settingsBridge.onSettings?.((payload) => applyFromPayload(payload));
+    const loadWebSettings = async () => {
+      if (!user?.id) {
+        applyFromPayload(DEFAULT_SETTINGS);
+        return;
+      }
+      try {
+        const remoteSettings = await fetchUserSettings({ userId: user.id });
+        if (remoteSettings) {
+          applyFromPayload(remoteSettings);
+        } else {
+          applyFromPayload(DEFAULT_SETTINGS);
+        }
+      } catch (error) {
+        loggerBridge.log?.('warn', 'settings_remote_load_failed', { message: error?.message });
+        applyFromPayload(DEFAULT_SETTINGS);
+      }
+    };
+
+    if (isElectronRuntime) {
+      loadElectronSettings();
+      const unsubscribe = settingsBridge.onSettings?.((payload) => applyFromPayload(payload));
+
+      return () => {
+        mounted = false;
+        unsubscribe?.();
+      };
+    }
+
+    loadWebSettings();
 
     return () => {
       mounted = false;
-      unsubscribe?.();
     };
-  }, [applySettingsState, loggerBridge, refreshAccessibilityStatus, settingsBridge]);
+  }, [
+    applySettingsState,
+    isElectronRuntime,
+    loggerBridge,
+    refreshAccessibilityStatus,
+    settingsBridge,
+    user?.id,
+  ]);
 
   const syncSettingsRemote = useCallback(async (snapshot) => {
     if (!user) {
@@ -287,13 +351,16 @@ export const SettingsProvider = ({ children }) => {
   }, [applySettingsState, loggerBridge, settingsBridge, syncSettingsRemote, user]);
 
   const requestAccessibility = useCallback(async () => {
+    if (!isElectronRuntime) {
+      return { granted: null };
+    }
     const result = await systemBridge.requestAccessibilityPermission?.();
     refreshAccessibilityStatus();
     return result;
-  }, [refreshAccessibilityStatus, systemBridge]);
+  }, [isElectronRuntime, refreshAccessibilityStatus, systemBridge]);
 
   useEffect(() => {
-    if (!trayBridge.onTrayCommand) {
+    if (!isElectronRuntime || !trayBridge.onTrayCommand) {
       return undefined;
     }
     const unsubscribe = trayBridge.onTrayCommand(async (payload = {}) => {
@@ -306,7 +373,7 @@ export const SettingsProvider = ({ children }) => {
       }
     });
     return () => unsubscribe?.();
-  }, [refreshAccessibilityStatus, requestAccessibility, trayBridge]);
+  }, [isElectronRuntime, refreshAccessibilityStatus, requestAccessibility, trayBridge]);
 
   const value = useMemo(() => ({
     trayEnabled,

@@ -1,13 +1,39 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase as rawClient, ensureSupabase } from 'shared/lib/supabaseClient';
 import { createOAuthBridge } from 'infrastructure/electron/bridges';
+import { isElectron } from 'shared/utils/platform';
 
 const isElectronRenderer = () => {
-  if (typeof window === 'undefined') {
-    return false;
+  return isElectron();
+};
+
+const resolveDeployEnvironment = () => {
+  const env =
+    process.env.REACT_APP_DEPLOY_ENV
+    || process.env.REACT_APP_RUNTIME_ENV
+    || process.env.NODE_ENV
+    || 'development';
+  return env.toLowerCase();
+};
+
+const resolveWebRedirectBase = () => {
+  const env = resolveDeployEnvironment().toUpperCase();
+  const specificKey = `REACT_APP_SUPABASE_REDIRECT_URL_${env}`;
+  if (process.env[specificKey]) {
+    return process.env[specificKey];
   }
-  const ua = window.navigator?.userAgent || '';
-  return /Electron/i.test(ua) || Boolean(window.process?.versions?.electron);
+  if (process.env.REACT_APP_SUPABASE_REDIRECT_URL) {
+    return process.env.REACT_APP_SUPABASE_REDIRECT_URL;
+  }
+  if (process.env.REACT_APP_WEB_BASE_URL) {
+    const base = process.env.REACT_APP_WEB_BASE_URL.replace(/\/$/, '');
+    return `${base}/auth/callback`;
+  }
+
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  return `${window.location.origin}/auth/callback`;
 };
 
 const buildRedirectUrl = (mode) => {
@@ -18,14 +44,16 @@ const buildRedirectUrl = (mode) => {
     }
     params.set('from_oauth', '1');
     const query = params.toString();
-    return `http://localhost:3000/auth/callback${query ? `?${query}` : ''}`;
+    const base = process.env.ELECTRON_SUPABASE_REDIRECT_URL || 'http://localhost:3000/auth/callback';
+    return `${base}${query ? `?${query}` : ''}`;
   }
 
-  if (typeof window === 'undefined') {
+  const base = resolveWebRedirectBase();
+  if (!base) {
     return undefined;
   }
 
-  const url = new URL(window.location.href);
+  const url = new URL(base);
   if (mode) {
     url.searchParams.set('mode', mode);
   }
@@ -50,10 +78,12 @@ export const SupabaseProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [supabaseClient, setSupabaseClient] = useState(rawClient);
-  const oauthBridge = useMemo(() => createOAuthBridge(), []);
+  const oauthBridge = useMemo(() => (isElectronRenderer() ? createOAuthBridge() : {}), []);
 
   useEffect(() => {
+    console.log('[useSupabaseAuth] Effect starting', { hasRawClient: !!rawClient });
     if (!rawClient) {
+      console.error('[useSupabaseAuth] No Supabase client - missing environment variables');
       setError(new Error('Supabase 환경변수가 설정되지 않았습니다. REACT_APP_SUPABASE_URL과 REACT_APP_SUPABASE_ANON_KEY를 확인하세요.'));
       setLoading(false);
       return;
@@ -123,13 +153,19 @@ export const SupabaseProvider = ({ children }) => {
     };
 
     const init = async () => {
-      if (await handleOAuthCallbackIfNeeded()) {
+      console.log('[useSupabaseAuth] init() started');
+      const handledOAuth = await handleOAuthCallbackIfNeeded();
+      console.log('[useSupabaseAuth] OAuth callback handled:', handledOAuth);
+      if (handledOAuth) {
         return;
       }
 
       try {
+        console.log('[useSupabaseAuth] Getting session...');
         const { data, error: sessionError } = await rawClient.auth.getSession();
+        console.log('[useSupabaseAuth] Session result:', { hasSession: !!data?.session, error: sessionError });
         if (!isMounted) {
+          console.log('[useSupabaseAuth] Component unmounted, aborting');
           return;
         }
         if (sessionError) {
@@ -137,12 +173,14 @@ export const SupabaseProvider = ({ children }) => {
         }
         setSession(data?.session ?? null);
       } catch (err) {
+        console.error('[useSupabaseAuth] Error getting session:', err);
         if (!isMounted) {
           return;
         }
         setError(err);
       } finally {
         if (isMounted) {
+          console.log('[useSupabaseAuth] Setting loading to false');
           setLoading(false);
         }
       }

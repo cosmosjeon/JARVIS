@@ -47,7 +47,7 @@
 ### 3.4 인증 & 환경 구성
 - `useSupabaseAuth`에서 플랫폼 유틸을 사용해 Electron OAuth 브릿지를 조건부 초기화하고, 웹에서는 Supabase 호스티드 리다이렉트를 사용한다.
 - `buildRedirectUrl`을 환경 행렬 기반으로 재작성해 `local`/`preview`/`production` URL을 명시적으로 선택한다.
-- `.env.web.example`, `.env.electron.example`, `docs/env/supabase-matrix.md`를 작성해 환경 변수 관리와 검증 절차를 문서화한다.
+- `.env.web.example`, `.env.electron.example`, `.env.local` 템플릿과 `docs/env/supabase-matrix.md`를 작성해 환경 변수 관리와 검증 절차를 문서화한다.
 - `npm run check:env` 스크립트를 도입해 필수 환경 변수 미설정 시 CI를 중단한다.
 
 ### 3.5 빌드 & 배포 파이프라인

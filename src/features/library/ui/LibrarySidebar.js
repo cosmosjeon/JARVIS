@@ -39,7 +39,7 @@ const FALLBACK_THEME_LABEL = '테마';
 const LibrarySidebar = ({
   folders,
   trees,
-  voranTrees,
+  voranTrees = [],
   selectedTreeId,
   selectedFolderId,
   expandedFolders,
@@ -74,6 +74,7 @@ const LibrarySidebar = ({
   collapsed = false,
   onToggleCollapsed,
   onOpenSettings,
+  isElectron = true,
 }) => {
   const folderTreeMap = useMemo(() => {
     return folders.reduce((acc, folder) => {
@@ -90,6 +91,9 @@ const LibrarySidebar = ({
   const themeLabel = activeThemeLabel || FALLBACK_THEME_LABEL;
 
   const canSignOut = Boolean(user);
+  const widgetActionsEnabled = isElectron && typeof onCreateTreeWidget === 'function';
+  const voranBoxEnabled = isElectron && typeof onManageVoranBox === 'function';
+  const displayedVoranTrees = isElectron ? voranTrees : [];
 
   // 컨텍스트 메뉴 상태
   const [folderSelectModal, setFolderSelectModal] = useState({
@@ -164,7 +168,7 @@ const LibrarySidebar = ({
           'library-sidebar relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card text-card-foreground transition-[width] duration-300 ease-in-out',
           collapsed ? 'w-[60px]' : 'w-[240px]',
         )}
-        style={{ WebkitAppRegion: 'drag' }}
+        style={isElectron ? { WebkitAppRegion: 'drag' } : undefined}
         aria-expanded={!collapsed}
       >
         {collapsed ? (
@@ -194,26 +198,28 @@ const LibrarySidebar = ({
                       <p>새 트리</p>
                     </TooltipContent>
                   </Tooltip>
-                  <DropdownMenuContent 
-                    align="start" 
-                    side="right" 
+                  <DropdownMenuContent
+                    align="start"
+                    side="right"
                     className="w-48 z-[9999]"
                     style={{ WebkitAppRegion: 'no-drag' }}
                   >
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        onCreateTreeWidget?.();
-                      }}
-                      disabled={!canCreateTree || isLoading}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <Monitor className="h-3.5 w-3.5" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">위젯으로 생성</span>
-                        <span className="text-[11px] text-muted-foreground">독립 위젯에서 시작</span>
-                      </div>
-                    </DropdownMenuItem>
+                    {widgetActionsEnabled ? (
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          onCreateTreeWidget?.();
+                        }}
+                        disabled={!canCreateTree || isLoading}
+                        className="flex items-center gap-2 text-xs"
+                      >
+                        <Monitor className="h-3.5 w-3.5" />
+                        <div className="flex flex-col">
+                          <span className="font-medium text-foreground">위젯으로 생성</span>
+                          <span className="text-[11px] text-muted-foreground">독립 위젯에서 시작</span>
+                        </div>
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault();
@@ -337,7 +343,7 @@ const LibrarySidebar = ({
 
                 <div className="w-full border-t border-border my-2" />
 
-                {voranTrees.map((tree) => {
+                {displayedVoranTrees.map((tree) => {
                   const isActiveTree = tree.id === selectedTreeId;
                   const isDragging = draggedTreeIds.includes(tree.id);
 
@@ -424,19 +430,25 @@ const LibrarySidebar = ({
         ) : (
           <>
             <div className="flex items-center gap-2 border-b border-border px-3 pt-8 pb-4">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
-                onClick={onManageVoranBox}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Box className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="truncate">BOX</span>
-                </span>
-                <span className="text-[10px] text-muted-foreground flex-shrink-0">관리</span>
-              </Button>
-              {renderToggleButton(false, 'ml-4 flex-shrink-0')}
+              {voranBoxEnabled ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
+                  onClick={onManageVoranBox}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Box className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate">BOX</span>
+                  </span>
+                  <span className="text-[10px] text-muted-foreground flex-shrink-0">관리</span>
+                </Button>
+              ) : (
+                <div className="flex-1 min-w-0 truncate text-xs font-medium text-muted-foreground/80">
+                  라이브러리
+                </div>
+              )}
+              {renderToggleButton(false, 'ml-auto flex-shrink-0')}
             </div>
 
           <ScrollArea className="flex-1">
@@ -470,20 +482,22 @@ const LibrarySidebar = ({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-48">
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        onCreateTreeWidget?.();
-                      }}
-                      disabled={!canCreateTree || isLoading}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <Monitor className="h-3.5 w-3.5" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">위젯으로 생성</span>
-                        <span className="text-[11px] text-muted-foreground">현재처럼 독립 위젯에서 시작</span>
-                      </div>
-                    </DropdownMenuItem>
+                    {widgetActionsEnabled ? (
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          onCreateTreeWidget?.();
+                        }}
+                        disabled={!canCreateTree || isLoading}
+                        className="flex items-center gap-2 text-xs"
+                      >
+                        <Monitor className="h-3.5 w-3.5" />
+                        <div className="flex flex-col">
+                          <span className="font-medium text-foreground">위젯으로 생성</span>
+                          <span className="text-[11px] text-muted-foreground">현재처럼 독립 위젯에서 시작</span>
+                        </div>
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault();
@@ -601,91 +615,93 @@ const LibrarySidebar = ({
                 );
               })}
 
-              <div className="space-y-1.5 pt-2">
-                <div
-                  className={cn(
-                    'flex items-center justify-between rounded-xl border border-dashed border-border/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground transition',
-                    dragOverVoranBox && 'border-primary/60 bg-primary/10 text-primary-foreground',
-                  )}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    onVoranDragOver();
-                  }}
-                  onDragLeave={onVoranDragLeave}
-                  onDrop={(event) => {
-                    onVoranDragLeave();
-                    onDropToVoran(event);
-                  }}
-                >
-                  <span className="flex items-center gap-2">
-                    <Box className="h-4 w-4 text-muted-foreground" />
-                    BOX
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className="rounded-full border-border/70 px-2 py-0 text-[11px] font-medium text-muted-foreground/80"
+              {isElectron ? (
+                <div className="space-y-1.5 pt-2">
+                  <div
+                    className={cn(
+                      'flex items-center justify-between rounded-xl border border-dashed border-border/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground transition',
+                      dragOverVoranBox && 'border-primary/60 bg-primary/10 text-primary-foreground',
+                    )}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      onVoranDragOver();
+                    }}
+                    onDragLeave={onVoranDragLeave}
+                    onDrop={(event) => {
+                      onVoranDragLeave();
+                      onDropToVoran(event);
+                    }}
                   >
-                    {voranTrees.length}
-                  </Badge>
-                </div>
+                    <span className="flex items-center gap-2">
+                      <Box className="h-4 w-4 text-muted-foreground" />
+                      BOX
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="rounded-full border-border/70 px-2 py-0 text-[11px] font-medium text-muted-foreground/80"
+                    >
+                      {displayedVoranTrees.length}
+                    </Badge>
+                  </div>
 
-                {voranTrees.length > 0 ? (
-                  voranTrees.map((tree) => {
-                    const isActiveTree = tree.id === selectedTreeId;
-                    const isSelectedInNav = navSelectedIds.includes(tree.id);
-                    const isDragging = draggedTreeIds.includes(tree.id);
+                  {displayedVoranTrees.length > 0 ? (
+                    displayedVoranTrees.map((tree) => {
+                      const isActiveTree = tree.id === selectedTreeId;
+                      const isSelectedInNav = navSelectedIds.includes(tree.id);
+                      const isDragging = draggedTreeIds.includes(tree.id);
 
-                    return (
-                      <ContextMenu
-                        key={tree.id}
-                        items={[
-                          {
-                            label: '옮기기',
-                            icon: <Move className="h-4 w-4" />,
-                            onClick: () => handleMoveTree(tree.id, tree.title),
-                          },
-                          {
-                            label: '삭제',
-                            icon: <Trash2 className="h-4 w-4" />,
-                            onClick: () => handleDeleteTree(tree.id),
-                            danger: true,
-                          },
-                        ]}
-                      >
-                        <button
-                          type="button"
-                          tabIndex={-1}
-                          draggable
-                          onClick={() => onSelectTree(tree.id)}
-                          onDoubleClick={() => onOpenTree(tree.id)}
-                          onDragStart={(event) => onDragStart(event, tree.id)}
-                          onDragEnd={onDragEnd}
-                          className={cn(
-                            'group flex w-full items-center gap-1.5 rounded-md border border-transparent bg-card px-1.5 py-1.5 text-left text-xs shadow-sm transition-colors',
-                            isActiveTree && 'border-primary/60 bg-primary/10 text-foreground',
-                            !isActiveTree && 'text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
-                            !isActiveTree && isSelectedInNav && 'border-primary/40 text-foreground/90',
-                            isDragging && 'opacity-60',
-                          )}
+                      return (
+                        <ContextMenu
+                          key={tree.id}
+                          items={[
+                            {
+                              label: '옮기기',
+                              icon: <Move className="h-4 w-4" />,
+                              onClick: () => handleMoveTree(tree.id, tree.title),
+                            },
+                            {
+                              label: '삭제',
+                              icon: <Trash2 className="h-4 w-4" />,
+                              onClick: () => handleDeleteTree(tree.id),
+                              danger: true,
+                            },
+                          ]}
                         >
-                          <Network
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            draggable
+                            onClick={() => onSelectTree(tree.id)}
+                            onDoubleClick={() => onOpenTree(tree.id)}
+                            onDragStart={(event) => onDragStart(event, tree.id)}
+                            onDragEnd={onDragEnd}
                             className={cn(
-                              'h-3.5 w-3.5 text-muted-foreground transition-colors',
-                              (isActiveTree || isSelectedInNav) && 'text-primary',
-                              'group-hover:text-primary',
+                              'group flex w-full items-center gap-1.5 rounded-md border border-transparent bg-card px-1.5 py-1.5 text-left text-xs shadow-sm transition-colors',
+                              isActiveTree && 'border-primary/60 bg-primary/10 text-foreground',
+                              !isActiveTree && 'text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
+                              !isActiveTree && isSelectedInNav && 'border-primary/40 text-foreground/90',
+                              isDragging && 'opacity-60',
                             )}
-                          />
-                          <span className="flex-1 truncate text-xs">{tree.title}</span>
-                        </button>
-                      </ContextMenu>
-                    );
-                  })
-                ) : (
-                  <p className="px-1.5 py-1.5 text-[11px] text-muted-foreground/70">
-                    폴더 밖에 있는 트리가 없습니다.
-                  </p>
-                )}
-              </div>
+                          >
+                            <Network
+                              className={cn(
+                                'h-3.5 w-3.5 text-muted-foreground transition-colors',
+                                (isActiveTree || isSelectedInNav) && 'text-primary',
+                                'group-hover:text-primary',
+                              )}
+                            />
+                            <span className="flex-1 truncate text-xs">{tree.title}</span>
+                          </button>
+                        </ContextMenu>
+                      );
+                    })
+                  ) : (
+                    <p className="px-1.5 py-1.5 text-[11px] text-muted-foreground/70">
+                      폴더 밖에 있는 트리가 없습니다.
+                    </p>
+                  )}
+                </div>
+              ) : null}
             </div>
           </ScrollArea>
 

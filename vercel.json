@@ -1,0 +1,19 @@
+{
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/?mode=library",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/auth/callback",
+      "destination": "/auth/callback"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ]
+}
