@@ -109,7 +109,7 @@ const buildHttpBridgeHeaders = () => {
   return headers;
 };
 
-const callHttpAgentBridge = async (channel, payload = {}) => {
+const callHttpAgentBridge = async (channel, payload = {}, options = {}) => {
   if (!isAgentHttpBridgeAvailable()) {
     return null;
   }
@@ -119,10 +119,13 @@ const callHttpAgentBridge = async (channel, payload = {}) => {
     return null;
   }
 
+  const { signal } = options || {};
+  const { abortSignal, onStreamChunk, ...bridgePayload } = payload || {};
+
   const requestPayload = {
     channel,
-    payload,
-    ...payload,
+    payload: bridgePayload,
+    ...bridgePayload,
   };
 
   let response;
@@ -131,6 +134,7 @@ const callHttpAgentBridge = async (channel, payload = {}) => {
       method: 'POST',
       headers: buildHttpBridgeHeaders(),
       body: JSON.stringify(requestPayload),
+      signal,
     });
   } catch (networkError) {
     throw buildRequestFailedError({
@@ -225,9 +229,14 @@ const buildMissingBridgeError = (provider) => {
 export class AgentClient {
   static async request(channel, payload = {}, bridgeOverride) {
     const normalizedProvider = normalizeProvider(payload?.provider);
-    const requestPayload = { ...payload, provider: normalizedProvider };
+    const basePayload = { ...payload, provider: normalizedProvider };
+    const {
+      abortSignal,
+      onStreamChunk,
+      ...forwardPayload
+    } = basePayload;
 
-    const effectiveProvider = requestPayload.provider;
+    const effectiveProvider = forwardPayload.provider;
     const startedAt = Date.now();
 
     const bridge = resolveAgentBridge(bridgeOverride);
@@ -235,46 +244,75 @@ export class AgentClient {
     const hasBridge = typeof bridgeMethod === 'function';
     const bridgeAvailable = Boolean(bridge);
 
-    let response = null;
-
     const timeoutContext = { channel, provider: effectiveProvider };
 
-    if (hasBridge) {
-      const result = await executeWithTimeout(
-        () => bridgeMethod(requestPayload),
-        timeoutContext,
-      );
-      if (result !== null && result !== undefined) {
-        if (!result?.success) {
+    const tasks = [];
+
+    const registerTask = (label, executor) => {
+      tasks.push(async () => {
+        const result = await executor();
+        if (result === null || result === undefined) {
+          throw buildRequestFailedError({
+            error: {
+              code: 'AGENT_BRIDGE_EMPTY',
+              message: `${label} 응답이 비어 있습니다.`,
+            },
+          });
+        }
+        if (result?.success === false) {
           throw buildRequestFailedError(result);
         }
-        response = result;
-      }
-    }
+        return { label, result };
+      });
+    };
 
-    if (!response && isAgentHttpBridgeAvailable()) {
-      const httpResult = await executeWithTimeout(
-        () => callHttpAgentBridge(channel, requestPayload),
-        timeoutContext,
+    if (hasBridge) {
+      registerTask('rendererBridge', () =>
+        executeWithTimeout(() => bridgeMethod(forwardPayload), timeoutContext),
       );
-      if (httpResult) {
-        response = httpResult;
-      }
     }
 
-    if (!response) {
-      if (channel === 'askRoot' || channel === 'askChild') {
-        if (canUseFallback(effectiveProvider)) {
-          response = await executeWithTimeout(
-            () => callProvider(requestPayload),
-            timeoutContext,
-          );
-        }
-      } else if (channel === 'extractKeyword' && canUseFallback(PROVIDERS.OPENAI)) {
-        response = await executeWithTimeout(
-          () => extractKeywordWithProvider(requestPayload),
+    if (isAgentHttpBridgeAvailable()) {
+      registerTask('httpBridge', () =>
+        executeWithTimeout(() => callHttpAgentBridge(channel, forwardPayload, { signal: abortSignal }), timeoutContext),
+      );
+    }
+
+    const canDirectAgentCall = (channel === 'askRoot' || channel === 'askChild') && canUseFallback(effectiveProvider);
+    if (canDirectAgentCall) {
+      registerTask('directProvider', () =>
+        executeWithTimeout(
+          () => callProvider({
+            ...forwardPayload,
+            signal: abortSignal,
+            onStreamChunk,
+          }),
+          timeoutContext,
+        ),
+      );
+    } else if (channel === 'extractKeyword' && canUseFallback(PROVIDERS.OPENAI)) {
+      registerTask('directKeyword', () =>
+        executeWithTimeout(
+          () => extractKeywordWithProvider({
+            ...forwardPayload,
+            signal: abortSignal,
+          }),
           { channel, provider: PROVIDERS.OPENAI },
-        );
+        ),
+      );
+    }
+
+    let response = null;
+
+    if (tasks.length) {
+      try {
+        const { result } = await Promise.any(tasks.map((task) => task()));
+        response = result;
+      } catch (aggregateError) {
+        if (aggregateError instanceof AggregateError && Array.isArray(aggregateError.errors) && aggregateError.errors.length) {
+          throw aggregateError.errors[aggregateError.errors.length - 1];
+        }
+        throw aggregateError;
       }
     }
 
@@ -292,8 +330,8 @@ export class AgentClient {
     if (!response.provider) {
       response.provider = effectiveProvider;
     }
-    if (!response.model && requestPayload.model) {
-      response.model = requestPayload.model;
+    if (!response.model && forwardPayload.model) {
+      response.model = forwardPayload.model;
     }
     if (response.latencyMs === undefined) {
       response.latencyMs = Date.now() - startedAt;
@@ -302,12 +340,12 @@ export class AgentClient {
     return response;
   }
 
-  static async askRoot({ messages, model, temperature, maxTokens, provider } = {}) {
-    return AgentClient.request('askRoot', { messages, model, temperature, maxTokens, provider });
+  static async askRoot({ messages, model, temperature, maxTokens, provider, abortSignal, onStreamChunk } = {}) {
+    return AgentClient.request('askRoot', { messages, model, temperature, maxTokens, provider, abortSignal, onStreamChunk });
   }
 
-  static async askChild({ messages, model, temperature, maxTokens, provider } = {}) {
-    return AgentClient.request('askChild', { messages, model, temperature, maxTokens, provider });
+  static async askChild({ messages, model, temperature, maxTokens, provider, abortSignal, onStreamChunk } = {}) {
+    return AgentClient.request('askChild', { messages, model, temperature, maxTokens, provider, abortSignal, onStreamChunk });
   }
 
   static isHttpBridgeAvailable() {

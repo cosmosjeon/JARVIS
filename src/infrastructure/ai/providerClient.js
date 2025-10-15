@@ -482,7 +482,10 @@ const callOpenAIChat = async ({
   model,
   temperature,
   maxTokens,
+  signal,
+  onStreamChunk,
 }) => {
+  const invocationStartedAt = Date.now();
   console.log('[callOpenAIChat] 함수 시작:', {
     messagesCount: messages?.length,
     model,
@@ -554,6 +557,10 @@ const callOpenAIChat = async ({
     if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
       body.max_output_tokens = maxTokens;
     }
+
+    if (typeof onStreamChunk === 'function') {
+      body.stream = true;
+    }
   } else {
     const openaiMessages = mapToOpenAIRequest(normalizedMessages);
     body = {
@@ -568,6 +575,10 @@ const callOpenAIChat = async ({
     if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
       body.max_tokens = maxTokens;
     }
+
+    if (typeof onStreamChunk === 'function') {
+      body.stream = true;
+    }
   }
 
   const performRequest = async () => {
@@ -578,10 +589,336 @@ const callOpenAIChat = async ({
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
+      signal,
     });
 
     const errorPayload = response.ok ? null : await response.json().catch(() => ({}));
     return { response, errorPayload };
+  };
+
+  const emitStreamUpdate = (update) => {
+    if (typeof onStreamChunk !== 'function' || !update) {
+      return;
+    }
+    try {
+      onStreamChunk(update);
+    } catch (streamError) {
+      console.warn('[callOpenAIChat] 스트리밍 업데이트 알림 실패', streamError);
+    }
+  };
+
+  const extractCitations = (output = []) => {
+    if (!Array.isArray(output)) {
+      return [];
+    }
+    return output.flatMap((item) => {
+      if (!item || typeof item !== 'object' || !Array.isArray(item.content)) {
+        return [];
+      }
+      return item.content.filter((part) => part?.type === 'citation');
+    }).filter(Boolean);
+  };
+
+  const processStreamingResponse = async (streamingResponse) => {
+    if (!streamingResponse.body || typeof streamingResponse.body.getReader !== 'function') {
+      const fallbackJson = await streamingResponse.json().catch(() => null);
+      const fallbackAnswer = fallbackJson?.output_text ?? '';
+      if (typeof fallbackAnswer === 'string' && fallbackAnswer.trim()) {
+        const trimmed = fallbackAnswer.trim();
+        emitStreamUpdate({
+          text: trimmed,
+          delta: trimmed,
+          isFinal: true,
+          provider: PROVIDERS.OPENAI,
+          model: fallbackJson?.model || effectiveModel,
+          usage: fallbackJson?.usage || null,
+          latencyMs: Date.now() - invocationStartedAt,
+        });
+        return {
+          success: true,
+          answer: trimmed,
+          usage: fallbackJson?.usage || null,
+          finishReason: fallbackJson?.output?.[0]?.stop_reason || null,
+          provider: PROVIDERS.OPENAI,
+          model: fallbackJson?.model || effectiveModel,
+        };
+      }
+      throw buildRequestFailedError({ error: { message: 'OpenAI 스트리밍 응답을 처리할 수 없습니다.' } });
+    }
+
+    const decoder = new TextDecoder('utf-8');
+    const reader = streamingResponse.body.getReader();
+    let buffer = '';
+    let aggregatedText = '';
+    let finalResponse = null;
+    let reasoningText = '';
+
+    const appendDelta = (deltaText) => {
+      if (!deltaText) {
+        return;
+      }
+      aggregatedText += deltaText;
+      emitStreamUpdate({
+        text: aggregatedText,
+        delta: deltaText,
+        isFinal: false,
+        provider: PROVIDERS.OPENAI,
+        model: effectiveModel,
+      });
+    };
+
+    const handleParsedChunk = (payload) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+      switch (payload.type) {
+        case 'response.delta':
+          if (Array.isArray(payload.delta?.output)) {
+            payload.delta.output.forEach((output) => {
+              if (!Array.isArray(output?.content)) {
+                return;
+              }
+              output.content.forEach((part) => {
+                if (part?.type === 'output_text.delta' && typeof part.text === 'string') {
+                  appendDelta(part.text);
+                } else if (part?.type === 'reasoning_delta' && typeof part.text === 'string') {
+                  reasoningText += part.text;
+                }
+              });
+            });
+          }
+          if (payload.response) {
+            finalResponse = payload.response;
+          }
+          break;
+        case 'response.output_text.delta':
+          if (typeof payload.delta?.text === 'string') {
+            appendDelta(payload.delta.text);
+          }
+          break;
+        case 'response.completed':
+          if (payload.response) {
+            finalResponse = payload.response;
+          }
+          break;
+        case 'response.error':
+          throw buildRequestFailedError({
+            error: {
+              message: payload.error?.message || 'OpenAI 스트리밍 중 오류가 발생했습니다.',
+              code: payload.error?.code || 'openai_stream_error',
+            },
+          });
+        default:
+          break;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) {
+          return;
+        }
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === '[DONE]') {
+          return;
+        }
+        try {
+          const parsed = JSON.parse(payload);
+          handleParsedChunk(parsed);
+        } catch (parseError) {
+          console.warn('[callOpenAIChat] 스트리밍 청크 파싱 실패', { payload: payload.slice(0, 120), parseError });
+        }
+      });
+    }
+
+    const finalAnswer = aggregatedText.trim();
+    if (!finalAnswer) {
+      throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });
+    }
+
+    const finalModel = finalResponse?.model || effectiveModel;
+    const finalUsage = finalResponse?.usage || null;
+    const finalFinishReason = finalResponse?.output?.[0]?.stop_reason
+      || finalResponse?.output?.[0]?.finish_reason
+      || null;
+    const citationList = extractCitations(finalResponse?.output);
+    const reasoning = reasoningText || finalResponse?.response_metadata?.reasoning || null;
+    const latencyMs = Date.now() - invocationStartedAt;
+
+    emitStreamUpdate({
+      text: finalAnswer,
+      delta: '',
+      isFinal: true,
+      provider: PROVIDERS.OPENAI,
+      model: finalModel,
+      usage: finalUsage,
+      latencyMs,
+      citations: citationList.length ? citationList : undefined,
+      reasoning,
+    });
+
+    return {
+      success: true,
+      answer: finalAnswer,
+      usage: finalUsage,
+      finishReason: finalFinishReason,
+      provider: PROVIDERS.OPENAI,
+      model: finalModel,
+      citations: citationList.length ? citationList : null,
+      reasoning,
+    };
+  };
+
+  const processChatCompletionsStream = async (streamingResponse) => {
+    if (!streamingResponse.body || typeof streamingResponse.body.getReader !== 'function') {
+      const fallbackJson = await streamingResponse.json().catch(() => null);
+      const fallbackAnswer = fallbackJson?.choices?.[0]?.message?.content;
+      if (typeof fallbackAnswer === 'string' && fallbackAnswer.trim()) {
+        const trimmed = fallbackAnswer.trim();
+        emitStreamUpdate({
+          text: trimmed,
+          delta: trimmed,
+          isFinal: true,
+          provider: PROVIDERS.OPENAI,
+          model: fallbackJson?.model || effectiveModel,
+          usage: fallbackJson?.usage || null,
+          latencyMs: Date.now() - invocationStartedAt,
+        });
+        return {
+          success: true,
+          answer: trimmed,
+          usage: fallbackJson?.usage || null,
+          finishReason: fallbackJson?.choices?.[0]?.finish_reason || null,
+          provider: PROVIDERS.OPENAI,
+          model: fallbackJson?.model || effectiveModel,
+        };
+      }
+      throw buildRequestFailedError({ error: { message: 'OpenAI 스트리밍 응답을 처리할 수 없습니다.' } });
+    }
+
+    const decoder = new TextDecoder('utf-8');
+    const reader = streamingResponse.body.getReader();
+    let buffer = '';
+    let aggregatedText = '';
+    let finalModel = effectiveModel;
+    let finishReason = null;
+
+    const appendDelta = (deltaText) => {
+      if (!deltaText) {
+        return;
+      }
+      aggregatedText += deltaText;
+      emitStreamUpdate({
+        text: aggregatedText,
+        delta: deltaText,
+        isFinal: false,
+        provider: PROVIDERS.OPENAI,
+        model: finalModel,
+      });
+    };
+
+    const extractDeltaText = (delta) => {
+      if (!delta) {
+        return '';
+      }
+      if (typeof delta.content === 'string') {
+        return delta.content;
+      }
+      if (Array.isArray(delta.content)) {
+        return delta.content
+          .map((part) => {
+            if (typeof part === 'string') {
+              return part;
+            }
+            if (typeof part?.text === 'string') {
+              return part.text;
+            }
+            return '';
+          })
+          .filter(Boolean)
+          .join('');
+      }
+      if (typeof delta.content?.text === 'string') {
+        return delta.content.text;
+      }
+      if (typeof delta.content?.value === 'string') {
+        return delta.content.value;
+      }
+      return '';
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) {
+          return;
+        }
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === '[DONE]') {
+          return;
+        }
+        try {
+          const parsed = JSON.parse(payload);
+          if (parsed.model) {
+            finalModel = parsed.model;
+          }
+          if (Array.isArray(parsed.choices)) {
+            parsed.choices.forEach((choice) => {
+              if (choice.finish_reason) {
+                finishReason = choice.finish_reason;
+              }
+              const delta = choice.delta || {};
+              const deltaText = extractDeltaText(delta);
+              appendDelta(deltaText);
+            });
+          }
+        } catch (parseError) {
+          console.warn('[callOpenAIChat] chat completions 스트리밍 파싱 실패', { payload: payload.slice(0, 120), parseError });
+        }
+      });
+    }
+
+    const finalAnswer = aggregatedText.trim();
+    if (!finalAnswer) {
+      throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });
+    }
+
+    const latencyMs = Date.now() - invocationStartedAt;
+    emitStreamUpdate({
+      text: finalAnswer,
+      delta: '',
+      isFinal: true,
+      provider: PROVIDERS.OPENAI,
+      model: finalModel,
+      usage: null,
+      latencyMs,
+      citations: undefined,
+      reasoning: undefined,
+    });
+
+    return {
+      success: true,
+      answer: finalAnswer,
+      usage: null,
+      finishReason,
+      provider: PROVIDERS.OPENAI,
+      model: finalModel,
+    };
   };
 
   let { response, errorPayload } = await performRequest();
@@ -603,6 +940,14 @@ const callOpenAIChat = async ({
     const message = errorPayload?.error?.message || response.statusText || 'OpenAI 요청에 실패했습니다.';
     const code = errorPayload?.error?.type || `http_${response.status}`;
     throw buildRequestFailedError({ error: { message, code } });
+  }
+
+  if (useResponsesApi && typeof onStreamChunk === 'function') {
+    return processStreamingResponse(response);
+  }
+
+  if (!useResponsesApi && body.stream === true && typeof onStreamChunk === 'function') {
+    return processChatCompletionsStream(response);
   }
 
   const data = await response.json();
@@ -637,6 +982,9 @@ const callOpenAIChat = async ({
       throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });
     }
 
+    const citations = extractCitations(data.output);
+    const reasoning = data.response_metadata?.reasoning || null;
+
     return {
       success: true,
       answer,
@@ -644,6 +992,8 @@ const callOpenAIChat = async ({
       finishReason: data.output?.[0]?.stop_reason || null,
       provider: PROVIDERS.OPENAI,
       model: data.model || effectiveModel,
+      citations: citations.length ? citations : null,
+      reasoning,
     };
   }
 
@@ -690,7 +1040,10 @@ const callGeminiChat = async ({
   model,
   temperature,
   maxTokens,
+  signal,
+  onStreamChunk,
 }) => {
+  const invocationStartedAt = Date.now();
   console.log('[callGeminiChat] 함수 시작:', {
     messagesCount: messages?.length,
     model,
@@ -742,6 +1095,7 @@ const callGeminiChat = async ({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     });
     const errorPayload = response.ok ? null : await response.json().catch(() => ({}));
     return { response, errorPayload };
@@ -764,7 +1118,14 @@ const callGeminiChat = async ({
   }
 
   if (!meta.response.ok && isOverloadedError(meta.response, meta.errorPayload) && getFallbackApiKey(PROVIDERS.OPENAI)) {
-    const fallback = await callOpenAIChat({ messages, model: undefined, temperature, maxTokens });
+    const fallback = await callOpenAIChat({
+      messages,
+      model: undefined,
+      temperature,
+      maxTokens,
+      signal,
+      onStreamChunk,
+    });
     fallback.provider = PROVIDERS.OPENAI;
     fallback.fallbackFrom = PROVIDERS.GEMINI;
     return fallback;
@@ -798,6 +1159,22 @@ const callGeminiChat = async ({
     throw buildRequestFailedError({ error: { message: 'Gemini 응답이 비어 있습니다.' } });
   }
 
+  if (typeof onStreamChunk === 'function') {
+    try {
+      onStreamChunk({
+        text: answer,
+        delta: answer,
+        isFinal: true,
+        provider: PROVIDERS.GEMINI,
+        model: data.modelVersion || body.model,
+        usage: data.usageMetadata || null,
+        latencyMs: Date.now() - invocationStartedAt,
+      });
+    } catch (streamError) {
+      console.warn('[callGeminiChat] 스트리밍 콜백 처리 중 오류', streamError);
+    }
+  }
+
   return {
     success: true,
     answer,
@@ -813,7 +1190,10 @@ const callClaudeChat = async ({
   model,
   temperature,
   maxTokens,
+  signal,
+  onStreamChunk,
 }) => {
+  const invocationStartedAt = Date.now();
   console.log('[callClaudeChat] 함수 시작:', {
     messagesCount: messages?.length,
     model,
@@ -862,6 +1242,7 @@ const callClaudeChat = async ({
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -900,6 +1281,22 @@ const callClaudeChat = async ({
 
   if (!answer) {
     throw buildRequestFailedError({ error: { message: 'Claude 응답이 비어 있습니다.' } });
+  }
+
+  if (typeof onStreamChunk === 'function') {
+    try {
+      onStreamChunk({
+        text: answer,
+        delta: answer,
+        isFinal: true,
+        provider: PROVIDERS.CLAUDE,
+        model: data.model || body.model,
+        usage: data.usage || null,
+        latencyMs: Date.now() - invocationStartedAt,
+      });
+    } catch (streamError) {
+      console.warn('[callClaudeChat] 스트리밍 콜백 처리 중 오류', streamError);
+    }
   }
 
   return {
@@ -956,6 +1353,7 @@ export const extractKeywordWithProvider = async (payload = {}) => {
     model: payload.model || FALLBACK_CONFIG[PROVIDERS.OPENAI].defaultModel,
     temperature: typeof payload.temperature === 'number' ? payload.temperature : 0,
     maxTokens: payload.maxTokens ?? 8,
+    signal: payload.signal || payload.abortSignal,
   });
 
   const keyword = response.answer.split(/\s+/).find(Boolean) || '';

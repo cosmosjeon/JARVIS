@@ -32,7 +32,9 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 import collectAncestorConversationMessages from 'features/tree/utils/assistantContext';
 
-const TYPING_INTERVAL_MS = 18;
+const TYPING_INTERVAL_MS = 16;
+const MAX_TYPING_DURATION_MS = 1200;
+const MAX_TYPING_WORD_COUNT = 400;
 const AGENT_RESPONSE_TIMEOUT_MS = DEFAULT_AGENT_RESPONSE_TIMEOUT_MS;
 const SLOW_RESPONSE_FIRST_HINT = 'AI가 답변을 준비 중입니다. 잠시만 기다려 주세요.';
 const SLOW_RESPONSE_SECOND_HINT = '아직 계산 중이에요. 최대 2분 정도 더 걸릴 수 있습니다.';
@@ -74,25 +76,38 @@ const formatProviderLabel = (value) => {
   return value.replace(/^[a-z]/, (char) => char.toUpperCase());
 };
 
-const withTimeout = (promise, timeoutMs = 0, timeoutMessage = TIMEOUT_MESSAGE) => {
+const withTimeout = (promise, timeoutMs = 0, timeoutMessage = TIMEOUT_MESSAGE, abortController) => {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || typeof window === 'undefined') {
     return promise;
   }
 
   return new Promise((resolve, reject) => {
+    let settled = false;
     const timer = window.setTimeout(() => {
+      if (abortController && typeof abortController.abort === 'function' && !abortController.signal?.aborted) {
+        abortController.abort();
+      }
       const error = new Error(timeoutMessage);
       error.code = 'AGENT_TIMEOUT';
+      settled = true;
       reject(error);
     }, timeoutMs);
 
     promise
       .then((value) => {
+        if (settled) {
+          return;
+        }
         window.clearTimeout(timer);
+        settled = true;
         resolve(value);
       })
       .catch((error) => {
+        if (settled) {
+          return;
+        }
         window.clearTimeout(timer);
+        settled = true;
         reject(error);
       });
   });
@@ -142,11 +157,35 @@ const LibraryQAPanel = ({
   const textareaRef = useRef(null);
   const [highlightNotice, setHighlightNotice] = useState(null);
   const latestSelectedNodeRef = useRef(selectedNode);
+  const requestAbortControllerRef = useRef(null);
+  const streamingStateRef = useRef({ assistantId: null, hasStreamed: false });
+  const typingTimersRef = useRef([]);
+
+  const clearTypingTimers = useCallback(() => {
+    typingTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+    typingTimersRef.current = [];
+  }, []);
+
+  const shouldAnimateTyping = useCallback((answerText) => {
+    if (streamingStateRef.current.hasStreamed) {
+      return false;
+    }
+    const trimmed = typeof answerText === 'string' ? answerText.trim() : '';
+    if (!trimmed) {
+      return false;
+    }
+    const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+    if (wordCount === 0 || wordCount > MAX_TYPING_WORD_COUNT) {
+      return false;
+    }
+    return true;
+  }, []);
 
   useEffect(() => {
     latestSelectedNodeRef.current = selectedNode;
   }, [selectedNode]);
 
+  useEffect(() => () => clearTypingTimers(), [clearTypingTimers]);
 
   const handleRegisterMessageContainer = useCallback((element) => {
     messageContainerRef.current = element;
@@ -610,7 +649,6 @@ const LibraryQAPanel = ({
   }, [disableHighlightMode, enableHighlightMode, isMultiQuestionMode]);
 
   const questionServiceRef = useRef(new QuestionService());
-  const typingTimers = useRef([]);
   const messagesEndRef = useRef(null);
 
   const isApiAvailable = useMemo(() => {
@@ -691,17 +729,6 @@ const LibraryQAPanel = ({
     }
   }, [isComposing, isEditableTitleActive, isProcessing, selectedNode]);
 
-  // 타이핑 애니메이션을 위한 타이머 정리
-  const clearTypingTimers = useCallback(() => {
-    typingTimers.current.forEach(timer => clearTimeout(timer));
-    typingTimers.current = [];
-  }, []);
-
-  // 컴포넌트 언마운트 시 타이머 정리
-  useEffect(() => {
-    return () => clearTypingTimers();
-  }, [clearTypingTimers]);
-
   // 상태 변경 감지
   useEffect(() => {
     console.log('📊 [상태 변경] isMultiQuestionMode:', isMultiQuestionMode);
@@ -738,6 +765,8 @@ const LibraryQAPanel = ({
     const {
       provider: providerOverride,
       model: modelOverride,
+      abortSignal,
+      onStreamChunk,
       ...restPayload
     } = payload;
 
@@ -757,6 +786,14 @@ const LibraryQAPanel = ({
       requestPayload.autoSelectionHint = restPayload.autoSelectionHint;
     }
 
+    if (abortSignal) {
+      requestPayload.abortSignal = abortSignal;
+    }
+
+    if (typeof onStreamChunk === 'function') {
+      requestPayload.onStreamChunk = onStreamChunk;
+    }
+
     const hasPreferredTemperature = typeof preferredTemperature === 'number' && Number.isFinite(preferredTemperature);
     if ((!Number.isFinite(requestPayload.temperature)) && hasPreferredTemperature) {
       requestPayload.temperature = preferredTemperature;
@@ -767,7 +804,7 @@ const LibraryQAPanel = ({
     throw new Error(`지원하지 않는 채널: ${channel}`);
   }, [preferredTemperature, selectedModel, selectedProvider]);
 
-  // 답변 생성 및 타이핑 애니메이션
+  // 답변 생성 처리(타이핑 애니메이션 포함)
   const animateAssistantResponse = useCallback((assistantId, answerText, context = {}) => {
     clearTypingTimers();
 
@@ -813,16 +850,50 @@ const LibraryQAPanel = ({
       }
       return next;
     };
+    const safeAnswer = typeof answerText === 'string' ? answerText : '';
+    const shouldAnimate = shouldAnimateTyping(safeAnswer);
 
-    const words = typeof answerText === 'string' && answerText.trim().length > 0
-      ? answerText.split(' ')
-      : [];
+    if (!shouldAnimate) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId
+            ? applyFinalContext(msg, safeAnswer, 'complete')
+            : msg,
+        ),
+      );
 
+      if (context.autoSelection || context.model || context.provider) {
+        setLastAutoSelection(context.autoSelection || finalModelInfo || {
+          provider: context.provider,
+          model: context.model,
+          explanation: context.autoSelection?.explanation,
+        });
+      }
+      return;
+    }
+
+    const words = safeAnswer.trim().split(/\s+/).filter(Boolean);
     if (!words.length) {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantId
             ? applyFinalContext(msg, '', 'complete')
+            : msg,
+        ),
+      );
+      return;
+    }
+
+    const maxSteps = Math.max(1, Math.floor(MAX_TYPING_DURATION_MS / TYPING_INTERVAL_MS));
+    const chunkSize = Math.max(1, Math.ceil(words.length / maxSteps));
+    let currentText = '';
+    let wordIndex = 0;
+
+    if (typeof window === 'undefined') {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId
+            ? applyFinalContext(msg, safeAnswer, 'complete')
             : msg,
         ),
       );
@@ -836,9 +907,6 @@ const LibraryQAPanel = ({
       return;
     }
 
-    let currentText = '';
-    let wordIndex = 0;
-
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === assistantId
@@ -847,9 +915,11 @@ const LibraryQAPanel = ({
       ),
     );
 
-    const typeNextWord = () => {
-      currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex];
-      wordIndex += 1;
+    const typeNextChunk = () => {
+      const chunkWords = words.slice(wordIndex, wordIndex + chunkSize);
+      const chunkText = chunkWords.join(' ');
+      currentText = currentText ? `${currentText} ${chunkText}` : chunkText;
+      wordIndex += chunkSize;
 
       const isComplete = wordIndex >= words.length;
 
@@ -877,14 +947,177 @@ const LibraryQAPanel = ({
             explanation: context.autoSelection?.explanation,
           });
         }
-      } else {
-        const timer = setTimeout(typeNextWord, TYPING_INTERVAL_MS);
-        typingTimers.current.push(timer);
+        return;
       }
+
+      const timerId = window.setTimeout(typeNextChunk, TYPING_INTERVAL_MS);
+      typingTimersRef.current.push(timerId);
     };
 
-    typeNextWord();
-  }, [clearTypingTimers, setLastAutoSelection]);
+    const timerId = window.setTimeout(typeNextChunk, TYPING_INTERVAL_MS);
+    typingTimersRef.current.push(timerId);
+  }, [clearTypingTimers, setLastAutoSelection, shouldAnimateTyping]);
+
+  const updateAssistantMessage = useCallback((assistantId, transformer) => {
+    if (typeof transformer !== 'function') {
+      return;
+    }
+    setMessages((prev) =>
+      prev.map((message) => (message.id === assistantId ? transformer(message) : message)),
+    );
+  }, []);
+
+  const handleStreamingChunk = useCallback((assistantId, chunk) => {
+    if (!assistantId || !chunk) {
+      return;
+    }
+
+    if (!streamingStateRef.current.hasStreamed) {
+      clearTypingTimers();
+    }
+
+    const {
+      text = '',
+      delta = '',
+      isFinal = false,
+      provider,
+      model,
+      autoSelection,
+      usage,
+      latencyMs,
+      citations,
+      reasoning,
+    } = chunk;
+
+    streamingStateRef.current = {
+      assistantId,
+      hasStreamed: true,
+      finalChunk: isFinal ? chunk : streamingStateRef.current.finalChunk,
+    };
+
+    updateAssistantMessage(assistantId, (message) => {
+      const next = {
+        ...message,
+        text,
+        status: isFinal ? 'complete' : 'streaming',
+      };
+
+      const baseInfo = {
+        ...(message.modelInfo || {}),
+        ...(autoSelection || {}),
+      };
+
+      if (provider) {
+        baseInfo.provider = provider;
+      }
+      if (model) {
+        baseInfo.model = model;
+      }
+      if (autoSelection?.explanation) {
+        baseInfo.explanation = autoSelection.explanation;
+      }
+
+      if (Object.keys(baseInfo).length > 0) {
+        next.modelInfo = baseInfo;
+      }
+
+      if (isFinal) {
+        if (usage) {
+          next.usage = usage;
+        }
+        if (latencyMs !== undefined) {
+          next.latencyMs = latencyMs;
+        }
+        if (citations) {
+          next.citations = citations;
+        }
+        if (reasoning) {
+          next.reasoning = reasoning;
+        }
+      }
+
+      if (!isFinal && message.usage) {
+        next.usage = message.usage;
+      }
+
+      return next;
+    });
+
+    if (isFinal && (autoSelection || provider || model)) {
+      setLastAutoSelection(autoSelection || {
+        provider,
+        model,
+        explanation: autoSelection?.explanation,
+      });
+    }
+
+    if (delta && process.env.NODE_ENV === 'development') {
+      console.debug('[LibraryQAPanel] streaming delta', { assistantId, delta });
+    }
+  }, [clearTypingTimers, setLastAutoSelection, updateAssistantMessage]);
+
+  const pickAnswerText = useCallback((payload) => {
+    if (!payload || typeof payload !== 'object') {
+      return '';
+    }
+    const candidates = [
+      payload.answer,
+      payload.data?.answer,
+      payload.result?.answer,
+      payload.message?.answer,
+    ];
+    const resolved = candidates.find((text) => typeof text === 'string' && text.trim().length > 0);
+    return resolved ? resolved.trim() : '';
+  }, []);
+
+  const captureStreamingSnapshot = useCallback((assistantId) => {
+    const snapshot = streamingStateRef.current;
+    if (!snapshot || snapshot.assistantId !== assistantId || !snapshot.hasStreamed) {
+      return { hasStreamed: false, finalChunk: null };
+    }
+    return {
+      hasStreamed: true,
+      finalChunk: snapshot.finalChunk || null,
+    };
+  }, []);
+
+  const resetStreamingState = useCallback(() => {
+    streamingStateRef.current = { assistantId: null, hasStreamed: false, finalChunk: null };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      requestAbortControllerRef.current?.abort();
+      resetStreamingState();
+    };
+  }, [resetStreamingState]);
+
+  const executeAgentCall = useCallback(async (channel, assistantId, payload = {}) => {
+    requestAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortControllerRef.current = controller;
+    streamingStateRef.current = { assistantId, hasStreamed: false, finalChunk: null };
+
+    const invocationPayload = {
+      ...payload,
+      abortSignal: controller.signal,
+      onStreamChunk: (chunk) => handleStreamingChunk(assistantId, chunk),
+    };
+
+    try {
+      const response = await withTimeout(
+        invokeAgent(channel, invocationPayload),
+        AGENT_RESPONSE_TIMEOUT_MS,
+        TIMEOUT_MESSAGE,
+        controller,
+      );
+      return response;
+    } finally {
+      if (requestAbortControllerRef.current === controller) {
+        requestAbortControllerRef.current = null;
+      }
+    }
+  }, [handleStreamingChunk, invokeAgent]);
 
   // 질문 전송 처리
   const handleSendMessage = useCallback(async (overrideQuestion, options = {}) => {
@@ -1256,42 +1489,96 @@ const LibraryQAPanel = ({
     }
 
       try {
-        const response = await withTimeout(
-          invokeAgent('askRoot', {
-            messages: requestMessages,
-            attachments: hasAttachments ? sanitizedAttachments : undefined,
-            autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
-            question,
-            provider: effectiveProvider,
-            model: effectiveModel,
-          }),
-          AGENT_RESPONSE_TIMEOUT_MS,
-        );
+        const response = await executeAgentCall('askRoot', assistantId, {
+          messages: requestMessages,
+          attachments: hasAttachments ? sanitizedAttachments : undefined,
+          autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
+          question,
+          provider: effectiveProvider,
+          model: effectiveModel,
+        });
 
         if (response?.success === false && response?.error?.message) {
           throw new Error(response.error.message);
         }
 
-        const answerText = response?.answer
-          || response?.data?.answer
-          || response?.result?.answer
-          || response?.message?.answer
-          || '';
+        const streamingSnapshot = captureStreamingSnapshot(assistantId);
+        const finalChunk = streamingSnapshot.finalChunk;
+        const answerText = finalChunk?.text?.trim()
+          ? finalChunk.text.trim()
+          : pickAnswerText(response);
 
         if (!answerText) {
           throw new Error('답변을 받지 못했습니다.');
         }
 
-        animateAssistantResponse(assistantId, answerText, {
-          provider: response.provider,
-          model: response.model,
-          autoSelection: response.autoSelection || activeAutoSelection,
-          usage: response.usage,
-          latencyMs: response.latencyMs,
-          citations: response.citations,
-        });
+        const providerFromResponse = finalChunk?.provider || response?.provider;
+        const modelFromResponse = finalChunk?.model || response?.model;
+        const autoSelectionFromResponse = finalChunk?.autoSelection
+          || response?.autoSelection
+          || activeAutoSelection;
+        const usageFromResponse = finalChunk?.usage || response?.usage;
+        const latencyFromResponse = finalChunk?.latencyMs ?? response?.latencyMs;
+        const citationsFromResponse = finalChunk?.citations || response?.citations;
+        const reasoningFromResponse = finalChunk?.reasoning || response?.reasoning;
 
-        const finalModelInfo = response.autoSelection || activeAutoSelection || pendingModelInfo;
+        if (!streamingSnapshot.hasStreamed) {
+          animateAssistantResponse(assistantId, answerText, {
+            provider: providerFromResponse,
+            model: modelFromResponse,
+            autoSelection: autoSelectionFromResponse,
+            usage: usageFromResponse,
+            latencyMs: latencyFromResponse,
+            citations: citationsFromResponse,
+            reasoning: reasoningFromResponse,
+          });
+        } else {
+          updateAssistantMessage(assistantId, (message) => {
+            const baseInfo = {
+              ...(message.modelInfo || {}),
+              ...(autoSelectionFromResponse || {}),
+            };
+            if (providerFromResponse) {
+              baseInfo.provider = providerFromResponse;
+            }
+            if (modelFromResponse) {
+              baseInfo.model = modelFromResponse;
+            }
+            if (autoSelectionFromResponse?.explanation) {
+              baseInfo.explanation = autoSelectionFromResponse.explanation;
+            }
+            const next = {
+              ...message,
+              text: answerText,
+              status: 'complete',
+            };
+            if (Object.keys(baseInfo).length > 0) {
+              next.modelInfo = baseInfo;
+            }
+            if (usageFromResponse) {
+              next.usage = usageFromResponse;
+            }
+            if (latencyFromResponse !== undefined) {
+              next.latencyMs = latencyFromResponse;
+            }
+            if (citationsFromResponse) {
+              next.citations = citationsFromResponse;
+            }
+            if (reasoningFromResponse) {
+              next.reasoning = reasoningFromResponse;
+            }
+            return next;
+          });
+          if (autoSelectionFromResponse || providerFromResponse || modelFromResponse) {
+            setLastAutoSelection(autoSelectionFromResponse || {
+              provider: providerFromResponse,
+              model: modelFromResponse,
+              explanation: autoSelectionFromResponse?.explanation,
+            });
+          }
+        }
+
+        const finalModelInfo = autoSelectionFromResponse || pendingModelInfo;
         const updatedMessages = pendingMessages.map((msg) => {
           if (msg.id !== assistantId) {
             return msg;
@@ -1300,8 +1587,8 @@ const LibraryQAPanel = ({
             ? {
               ...(msg.modelInfo || {}),
               ...finalModelInfo,
-              provider: response.provider || finalModelInfo.provider,
-              model: response.model || finalModelInfo.model,
+              provider: providerFromResponse || finalModelInfo.provider,
+              model: modelFromResponse || finalModelInfo.model,
               explanation: finalModelInfo.explanation || msg.modelInfo?.explanation,
             }
             : msg.modelInfo;
@@ -1313,11 +1600,17 @@ const LibraryQAPanel = ({
           if (mergedModel) {
             next.modelInfo = mergedModel;
           }
-          if (response.usage) {
-            next.usage = response.usage;
+          if (usageFromResponse) {
+            next.usage = usageFromResponse;
           }
-          if (response.latencyMs !== undefined) {
-            next.latencyMs = response.latencyMs;
+          if (latencyFromResponse !== undefined) {
+            next.latencyMs = latencyFromResponse;
+          }
+          if (citationsFromResponse) {
+            next.citations = citationsFromResponse;
+          }
+          if (reasoningFromResponse) {
+            next.reasoning = reasoningFromResponse;
           }
           return next;
         });
@@ -1332,11 +1625,11 @@ const LibraryQAPanel = ({
         if (finalModelInfo) {
           answeredNode.modelInfo = finalModelInfo;
         }
-        if (response.reasoning) {
-          answeredNode.reasoning = response.reasoning;
+        if (reasoningFromResponse) {
+          answeredNode.reasoning = reasoningFromResponse;
         }
-        if (response.usage) {
-          answeredNode.usage = response.usage;
+        if (usageFromResponse) {
+          answeredNode.usage = usageFromResponse;
         }
 
         await upsertTreeNodes({
@@ -1351,8 +1644,14 @@ const LibraryQAPanel = ({
           onNodeSelect?.(answeredNode);
         }
       } catch (error) {
+        if (error?.name === 'AbortError') {
+          console.info('[LibraryQAPanel] LLM 요청이 취소되었습니다.', error);
+          return;
+        }
         console.error('질문 처리 실패:', error);
-        const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
+        const errorMessage = error?.code === 'AGENT_TIMEOUT'
+          ? TIMEOUT_MESSAGE
+          : error?.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
         if (!isOverride) {
           setComposerValue(question);
@@ -1369,6 +1668,7 @@ const LibraryQAPanel = ({
           ),
         );
       } finally {
+        resetStreamingState();
         stopNodeProcessing(originalProcessingKey);
         if (currentProcessingKey !== originalProcessingKey) {
           stopNodeProcessing(currentProcessingKey);
@@ -1379,43 +1679,103 @@ const LibraryQAPanel = ({
 
     if (isRetryFlow && !selectedNode) {
       try {
-        const response = await withTimeout(
-          invokeAgent('askRoot', {
-            messages: requestMessages,
-            attachments: hasAttachments ? sanitizedAttachments : undefined,
-            autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
-            question,
-            provider: effectiveProvider,
-            model: effectiveModel,
-          }),
-          AGENT_RESPONSE_TIMEOUT_MS,
-        );
+        const response = await executeAgentCall('askRoot', assistantId, {
+          messages: requestMessages,
+          attachments: hasAttachments ? sanitizedAttachments : undefined,
+          autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
+          question,
+          provider: effectiveProvider,
+          model: effectiveModel,
+        });
 
         if (response?.success === false && response?.error?.message) {
           throw new Error(response.error.message);
         }
 
-        const answerText = response?.answer
-          || response?.data?.answer
-          || response?.result?.answer
-          || response?.message?.answer
-          || '';
+        const streamingSnapshot = captureStreamingSnapshot(assistantId);
+        const finalChunk = streamingSnapshot.finalChunk;
+        const answerText = finalChunk?.text?.trim()
+          ? finalChunk.text.trim()
+          : pickAnswerText(response);
 
         if (!answerText) {
           throw new Error('답변을 받지 못했습니다.');
         }
 
-        animateAssistantResponse(assistantId, answerText, {
-          provider: response.provider,
-          model: response.model,
-          autoSelection: response.autoSelection || activeAutoSelection,
-          usage: response.usage,
-          latencyMs: response.latencyMs,
-          citations: response.citations,
-        });
+        const providerFromResponse = finalChunk?.provider || response?.provider;
+        const modelFromResponse = finalChunk?.model || response?.model;
+        const autoSelectionFromResponse = finalChunk?.autoSelection
+          || response?.autoSelection
+          || activeAutoSelection;
+        const usageFromResponse = finalChunk?.usage || response?.usage;
+        const latencyFromResponse = finalChunk?.latencyMs ?? response?.latencyMs;
+        const citationsFromResponse = finalChunk?.citations || response?.citations;
+        const reasoningFromResponse = finalChunk?.reasoning || response?.reasoning;
+
+        if (!streamingSnapshot.hasStreamed) {
+          animateAssistantResponse(assistantId, answerText, {
+            provider: providerFromResponse,
+            model: modelFromResponse,
+            autoSelection: autoSelectionFromResponse,
+            usage: usageFromResponse,
+            latencyMs: latencyFromResponse,
+            citations: citationsFromResponse,
+            reasoning: reasoningFromResponse,
+          });
+        } else {
+          updateAssistantMessage(assistantId, (message) => {
+            const baseInfo = {
+              ...(message.modelInfo || {}),
+              ...(autoSelectionFromResponse || {}),
+            };
+            if (providerFromResponse) {
+              baseInfo.provider = providerFromResponse;
+            }
+            if (modelFromResponse) {
+              baseInfo.model = modelFromResponse;
+            }
+            if (autoSelectionFromResponse?.explanation) {
+              baseInfo.explanation = autoSelectionFromResponse.explanation;
+            }
+            const next = {
+              ...message,
+              text: answerText,
+              status: 'complete',
+            };
+            if (Object.keys(baseInfo).length > 0) {
+              next.modelInfo = baseInfo;
+            }
+            if (usageFromResponse) {
+              next.usage = usageFromResponse;
+            }
+            if (latencyFromResponse !== undefined) {
+              next.latencyMs = latencyFromResponse;
+            }
+            if (citationsFromResponse) {
+              next.citations = citationsFromResponse;
+            }
+            if (reasoningFromResponse) {
+              next.reasoning = reasoningFromResponse;
+            }
+            return next;
+          });
+          if (autoSelectionFromResponse || providerFromResponse || modelFromResponse) {
+            setLastAutoSelection(autoSelectionFromResponse || {
+              provider: providerFromResponse,
+              model: modelFromResponse,
+              explanation: autoSelectionFromResponse?.explanation,
+            });
+          }
+        }
       } catch (error) {
+        if (error?.name === 'AbortError') {
+          console.info('[LibraryQAPanel] LLM 요청이 취소되었습니다.', error);
+          return;
+        }
         console.error('질문 처리 실패:', error);
-        const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
+        const errorMessage = error?.code === 'AGENT_TIMEOUT'
+          ? TIMEOUT_MESSAGE
+          : error?.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
         setMessages((prev) =>
           prev.map((msg) =>
@@ -1425,6 +1785,7 @@ const LibraryQAPanel = ({
           ),
         );
       } finally {
+        resetStreamingState();
         stopNodeProcessing(originalProcessingKey);
         if (currentProcessingKey !== originalProcessingKey) {
           stopNodeProcessing(currentProcessingKey);

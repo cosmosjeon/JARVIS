@@ -41,6 +41,64 @@ const MAX_BODY_BYTES = Number.parseInt(process.env.AGENT_PROXY_MAX_BODY_BYTES, 1
 
 const allowedChannels = new Set(['askRoot', 'askChild', 'extractKeyword']);
 
+const metrics = {
+  totalRequests: 0,
+  successCount: 0,
+  failureCount: 0,
+  latencyTotalMs: 0,
+  perChannel: new Map(),
+};
+
+const recordMetrics = ({ channel, success, latencyMs }) => {
+  if (typeof channel !== 'string') {
+    return;
+  }
+  metrics.totalRequests += 1;
+  if (success) {
+    metrics.successCount += 1;
+  } else {
+    metrics.failureCount += 1;
+  }
+  if (Number.isFinite(latencyMs)) {
+    metrics.latencyTotalMs += latencyMs;
+  }
+  if (!metrics.perChannel.has(channel)) {
+    metrics.perChannel.set(channel, { total: 0, success: 0, failure: 0, latencyMsTotal: 0 });
+  }
+  const entry = metrics.perChannel.get(channel);
+  entry.total += 1;
+  if (success) {
+    entry.success += 1;
+  } else {
+    entry.failure += 1;
+  }
+  if (Number.isFinite(latencyMs)) {
+    entry.latencyMsTotal += latencyMs;
+  }
+};
+
+const renderMetrics = () => {
+  const avgLatency = metrics.totalRequests > 0
+    ? metrics.latencyTotalMs / metrics.totalRequests
+    : 0;
+  let output = '';
+  output += `agent_requests_total ${metrics.totalRequests}\n`;
+  output += `agent_requests_success_total ${metrics.successCount}\n`;
+  output += `agent_requests_failure_total ${metrics.failureCount}\n`;
+  output += `agent_requests_latency_ms_average ${avgLatency.toFixed(2)}\n`;
+
+  metrics.perChannel.forEach((entry, channel) => {
+    const label = `channel="${channel}"`;
+    const channelAvg = entry.total > 0 ? entry.latencyMsTotal / entry.total : 0;
+    output += `agent_channel_requests_total{${label}} ${entry.total}\n`;
+    output += `agent_channel_requests_success_total{${label}} ${entry.success}\n`;
+    output += `agent_channel_requests_failure_total{${label}} ${entry.failure}\n`;
+    output += `agent_channel_latency_ms_average{${label}} ${channelAvg.toFixed(2)}\n`;
+  });
+
+  return output;
+};
+
 const buildCorsHeaders = () => {
   const headers = new Set(['content-type', 'authorization']);
   headers.add(AUTH_HEADER);
@@ -199,6 +257,20 @@ const handleAgentRequest = async (channel, payload) => {
 };
 
 const server = http.createServer(async (req, res) => {
+  const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const { pathname } = requestUrl;
+
+  if (req.method === 'GET' && pathname === '/metrics') {
+    const metricsBody = renderMetrics();
+    res.writeHead(200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Length': Buffer.byteLength(metricsBody),
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
+    res.end(metricsBody);
+    return;
+  }
+
   if (req.method === 'OPTIONS') {
     sendEmpty(res, 204);
     return;
@@ -223,7 +295,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const { pathname } = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const channel = resolveChannelFromPath(pathname);
 
   if (!channel || !allowedChannels.has(channel)) {
@@ -234,10 +305,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const startedAt = Date.now();
+
   try {
     const rawBody = await readRequestBody(req);
     const payload = mergePayload(rawBody);
-    const startedAt = Date.now();
 
     if (!payload.provider || payload.provider === PROVIDERS.AUTO) {
       payload.provider = PROVIDERS.OPENAI;
@@ -291,10 +363,21 @@ const server = http.createServer(async (req, res) => {
       responsePayload.model = payload.model;
     }
 
+    recordMetrics({
+      channel,
+      success: responsePayload.success !== false,
+      latencyMs: responsePayload.latencyMs,
+    });
+
     sendJson(res, 200, responsePayload);
   } catch (error) {
     const normalizedError = normalizeErrorResponse(error);
     const status = statusFromErrorCode(normalizedError.code);
+    recordMetrics({
+      channel,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+    });
     sendJson(res, status, { success: false, error: normalizedError });
   }
 });
