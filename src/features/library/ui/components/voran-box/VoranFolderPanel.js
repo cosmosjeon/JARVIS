@@ -59,7 +59,7 @@ const VoranFolderPanel = ({
   return (
     <div className="flex-1 bg-card/40 flex flex-col">
     <div className="px-4 pt-3 pb-0">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
         <h3 className="text-lg font-semibold text-card-foreground">폴더 관리</h3>
         <Button
           variant="ghost"

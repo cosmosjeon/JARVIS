@@ -1,8 +1,7 @@
 import React from 'react';
-import { Box, ChevronDown, ChevronUp, FolderTree as TreeIcon, X } from 'lucide-react';
+import { Box, ChevronDown, ChevronUp, FolderTree as TreeIcon } from 'lucide-react';
 import { Button } from 'shared/ui/button';
 import { cn } from 'shared/utils';
-import { DialogClose } from 'shared/ui/dialog';
 import VoranTreeListItem from './VoranTreeListItem';
 
 const VoranTreeListPanel = ({
@@ -75,15 +74,6 @@ const VoranTreeListPanel = ({
           >
             <ChevronDown className="h-3 w-3" />
           </Button>
-          <DialogClose asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 text-muted-foreground hover:text-card-foreground"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </DialogClose>
         </div>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">저장된 트리들을 관리하세요</p>

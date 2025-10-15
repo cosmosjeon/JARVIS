@@ -24,6 +24,18 @@ import {
   DEFAULT_CHAT_THEME,
   isLightLikeChatTheme,
 } from 'features/chat/constants/panelStyles';
+import {
+  InlineCitation,
+  InlineCitationText,
+  InlineCitationCard,
+  InlineCitationCardTrigger,
+  InlineCitationCardBody,
+  InlineCitationCarousel,
+  InlineCitationCarouselHeader,
+  InlineCitationCarouselContent,
+  InlineCitationCarouselItem,
+  InlineCitationSource,
+} from 'shared/ui/shadcn-io/ai/inline-citation';
 
 const USER_ROLE = 'user';
 const SYSTEM_ROLE = 'system';
@@ -122,6 +134,41 @@ const renderReasoning = (reasoning, status) => {
         ) : null}
       </ReasoningContent>
     </Reasoning>
+  );
+};
+
+const renderCitations = (citations) => {
+  if (!Array.isArray(citations) || citations.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4">
+      <InlineCitation>
+        <div className="text-sm text-muted-foreground mb-2 flex items-center gap-2">
+          <span>출처</span>
+          <InlineCitationCard>
+            <InlineCitationCardTrigger sources={citations.map((c) => c.url)} />
+            <InlineCitationCardBody>
+              <InlineCitationCarousel>
+                <InlineCitationCarouselHeader />
+                <InlineCitationCarouselContent>
+                  {citations.map((citation, index) => (
+                    <InlineCitationCarouselItem key={`citation-${index}`}>
+                      <InlineCitationSource
+                        title={citation.title}
+                        url={citation.url}
+                        description={citation.text || citation.description}
+                      />
+                    </InlineCitationCarouselItem>
+                  ))}
+                </InlineCitationCarouselContent>
+              </InlineCitationCarousel>
+            </InlineCitationCardBody>
+          </InlineCitationCard>
+        </div>
+      </InlineCitation>
+    </div>
   );
 };
 
@@ -336,6 +383,7 @@ export default function ChatMessageList({
         const isAssistantPending = status === 'pending' || status === 'typing';
         const shouldShowThinking = isAssistantPending && (!message.text || message.text.trim().length === 0);
         const reasoningNode = renderReasoning(message.reasoning, status);
+        const citationsNode = renderCitations(message.citations);
 
         return (
           <div key={key} className="flex justify-start" data-role="assistant" data-status={status}>
@@ -350,6 +398,7 @@ export default function ChatMessageList({
                   >
                     {message.text}
                   </Response>
+                  {citationsNode}
                   {showActions && (
                     <Actions className="mt-1 relative z-10">
                   {(onRetry || onRetryWithModel) && (

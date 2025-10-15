@@ -452,6 +452,13 @@ const callOpenAIChat = async ({
       ...(budgetTokens ? { budget_tokens: budgetTokens } : {}),
       ...(includeThoughts ? { include_thoughts: true } : {}),
     };
+
+    console.log('[callOpenAIChat] Reasoning 설정:', {
+      effort,
+      budgetTokens,
+      includeThoughts,
+      appliedReasoning: body.reasoning
+    });
   }
 
   if (webSearchEnabled) {
@@ -461,6 +468,10 @@ const callOpenAIChat = async ({
         web_search: { enable: true },
       },
     ];
+
+    console.log('[callOpenAIChat] 웹 검색 활성화:', {
+      tools: body.tools
+    });
   }
 
   const performRequest = async () => {
@@ -541,6 +552,25 @@ const callOpenAIChat = async ({
     return null;
   })();
 
+  // 웹 검색 Citations 추출
+  const citations = [];
+  if (webSearchEnabled && data.choices?.[0]?.message?.annotations) {
+    data.choices[0].message.annotations.forEach((annotation) => {
+      if (annotation.type === 'url_citation' && annotation.url) {
+        citations.push({
+          url: annotation.url,
+          title: annotation.title || new URL(annotation.url).hostname,
+          text: annotation.text || annotation.cited_text,
+        });
+      }
+    });
+  }
+
+  console.log('[callOpenAIChat] Citations 추출:', {
+    citationsCount: citations.length,
+    citations
+  });
+
   return {
     success: true,
     answer,
@@ -549,6 +579,7 @@ const callOpenAIChat = async ({
     provider: PROVIDERS.OPENAI,
     model: data.model || effectiveModel,
     reasoning: reasoningPayload,
+    citations: citations.length > 0 ? citations : undefined,
   };
 };
 
@@ -601,17 +632,19 @@ const callGeminiChat = async ({
 
   if (reasoning && typeof reasoning === 'object') {
     const budgetTokens = toLimitedNumber(reasoning.budgetTokens, { min: 1, max: 32000, fallback: null });
-    const effort = typeof reasoning.effort === 'string' ? reasoning.effort.toLowerCase() : 'medium';
-    const includeThoughts = Boolean(reasoning.includeThoughts);
 
     body.generationConfig = {
       ...body.generationConfig,
-      reasoningConfig: {
-        effort,
-        ...(budgetTokens ? { budgetTokens } : {}),
-        ...(includeThoughts ? { outputThoughts: true } : {}),
+      thinkingConfig: {
+        thinkingBudget: budgetTokens || -1,  // -1 = auto, 0 = disabled
       },
     };
+
+    console.log('[callGeminiChat] Reasoning 설정:', {
+      originalBudgetTokens: reasoning.budgetTokens,
+      appliedThinkingBudget: budgetTokens || -1,
+      thinkingConfig: body.generationConfig.thinkingConfig
+    });
   }
 
   if (webSearchEnabled) {
@@ -625,6 +658,10 @@ const callGeminiChat = async ({
         },
       },
     ];
+
+    console.log('[callGeminiChat] 웹 검색 활성화:', {
+      tools: body.tools
+    });
   }
 
   const baseUrl = config.baseUrl.replace(/\/+$/, '');
@@ -704,6 +741,30 @@ const callGeminiChat = async ({
     return null;
   })();
 
+  // 웹 검색 Citations 추출 (Gemini는 groundingMetadata에 포함)
+  const citations = [];
+  if (webSearchEnabled && data.candidates?.[0]?.groundingMetadata) {
+    const groundingMetadata = data.candidates[0].groundingMetadata;
+    if (Array.isArray(groundingMetadata.webSearchQueries)) {
+      console.log('[callGeminiChat] Web search queries:', groundingMetadata.webSearchQueries);
+    }
+    if (Array.isArray(groundingMetadata.groundingChunks)) {
+      groundingMetadata.groundingChunks.forEach((chunk) => {
+        if (chunk.web && chunk.web.uri) {
+          citations.push({
+            url: chunk.web.uri,
+            title: chunk.web.title || new URL(chunk.web.uri).hostname,
+          });
+        }
+      });
+    }
+  }
+
+  console.log('[callGeminiChat] Citations 추출:', {
+    citationsCount: citations.length,
+    citations
+  });
+
   return {
     success: true,
     answer,
@@ -712,6 +773,7 @@ const callGeminiChat = async ({
     provider: PROVIDERS.GEMINI,
     model: data.modelVersion || body.model,
     reasoning: reasoningPayload,
+    citations: citations.length > 0 ? citations : undefined,
   };
 };
 
@@ -766,6 +828,10 @@ const callClaudeChat = async ({
         max_uses: 5,
       },
     ];
+
+    console.log('[callClaudeChat] 웹 검색 활성화:', {
+      tools: body.tools
+    });
   }
 
   if (reasoning && typeof reasoning === 'object') {
@@ -777,12 +843,16 @@ const callClaudeChat = async ({
     if (Number.isFinite(budget) && budget > 0) {
       body.thinking = {
         type: 'enabled',
-        budget_tokens: Math.max(1000, Math.min(12000, budget)),
+        budget_tokens: Math.max(1024, Math.min(12000, budget)),  // 최소 1024 토큰
       };
-      if (typeof reasoning.includeThoughts === 'boolean') {
-        body.thinking.include_thoughts = reasoning.includeThoughts;
-      }
     }
+
+    console.log('[callClaudeChat] Extended Thinking 설정:', {
+      originalBudgetTokens: reasoning.budgetTokens,
+      calculatedBudget: budget,
+      appliedBudgetTokens: body.thinking?.budget_tokens,
+      thinkingEnabled: !!body.thinking
+    });
   }
 
   const response = await fetch(config.baseUrl, {
@@ -838,6 +908,33 @@ const callClaudeChat = async ({
     return null;
   })();
 
+  // 웹 검색 Citations 추출 (Claude는 tool_use 결과에 포함)
+  const citations = [];
+  if (webSearchEnabled && Array.isArray(data.content)) {
+    data.content.forEach((block) => {
+      if (block.type === 'tool_use' && block.name === 'web_search') {
+        // tool_result에서 검색 결과 추출
+        const toolResult = block.content || block.input;
+        if (toolResult && Array.isArray(toolResult.results)) {
+          toolResult.results.forEach((result) => {
+            if (result.url) {
+              citations.push({
+                url: result.url,
+                title: result.title || new URL(result.url).hostname,
+                text: result.content || result.snippet,
+              });
+            }
+          });
+        }
+      }
+    });
+  }
+
+  console.log('[callClaudeChat] Citations 추출:', {
+    citationsCount: citations.length,
+    citations
+  });
+
   return {
     success: true,
     answer,
@@ -846,6 +943,7 @@ const callClaudeChat = async ({
     model: data.model || body.model,
     provider: PROVIDERS.CLAUDE,
     reasoning: reasoningPayload,
+    citations: citations.length > 0 ? citations : undefined,
   };
 };
 

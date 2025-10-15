@@ -109,27 +109,25 @@ const LibraryApp = ({ runtime }) => {
         </main>
       </div>
 
-      {isElectronRuntime ? (
-        <VoranBoxManager
-          isVisible={dialog.showVoranBoxManager}
-          onClose={handlers.hideVoranBox}
-          trees={state.trees}
-          folders={state.folders}
-          onTreeSelect={(tree) => {
-            handlers.sidebarTreeSelect(tree.id, { folderId: tree.folderId ?? null });
-            handlers.hideVoranBox();
-          }}
-          onTreeMoveToFolder={handlers.moveTreesToFolder}
-          onTreeOpen={handlers.openTree}
-          onTreeRename={handlers.renameTree}
-          onTreeDelete={handlers.deleteTree}
-          onFolderCreate={(name, parentId) => handlers.folderCreate({ name, parentId })}
-          onFolderSelect={handlers.folderSelect}
-          selectedTreeId={state.selectedTreeId}
-          selectedFolderId={state.selectedFolderId}
-          loading={status.loading || status.foldersLoading}
-        />
-      ) : null}
+      <VoranBoxManager
+        isVisible={dialog.showVoranBoxManager}
+        onClose={handlers.hideVoranBox}
+        trees={state.trees}
+        folders={state.folders}
+        onTreeSelect={(tree) => {
+          handlers.sidebarTreeSelect(tree.id, { folderId: tree.folderId ?? null });
+          handlers.hideVoranBox();
+        }}
+        onTreeMoveToFolder={handlers.moveTreesToFolder}
+        onTreeOpen={handlers.openTree}
+        onTreeRename={handlers.renameTree}
+        onTreeDelete={handlers.deleteTree}
+        onFolderCreate={(name, parentId) => handlers.folderCreate({ name, parentId })}
+        onFolderSelect={handlers.folderSelect}
+        selectedTreeId={state.selectedTreeId}
+        selectedFolderId={state.selectedFolderId}
+        loading={status.loading || status.foldersLoading}
+      />
 
       <CreateDialog
         open={dialog.showCreateDialog}

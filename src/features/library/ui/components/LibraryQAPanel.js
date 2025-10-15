@@ -879,6 +879,9 @@ const LibraryQAPanel = ({
       if (context.latencyMs !== undefined) {
         next.latencyMs = context.latencyMs;
       }
+      if (context.citations) {
+        next.citations = context.citations;
+      }
       return next;
     };
 
@@ -1382,6 +1385,7 @@ const LibraryQAPanel = ({
           autoSelection: response.autoSelection || activeAutoSelection,
           usage: response.usage,
           latencyMs: response.latencyMs,
+          citations: response.citations,
         });
 
         const finalModelInfo = response.autoSelection || activeAutoSelection || pendingModelInfo;
@@ -1510,6 +1514,7 @@ const LibraryQAPanel = ({
           autoSelection: response.autoSelection || activeAutoSelection,
           usage: response.usage,
           latencyMs: response.latencyMs,
+          citations: response.citations,
         });
       } catch (error) {
         console.error('질문 처리 실패:', error);
