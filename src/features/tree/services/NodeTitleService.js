@@ -49,7 +49,6 @@ export const generateNodeTitle = async ({
       ],
       temperature: 0.1,
       maxTokens: 32,
-      webSearchEnabled: false,
     });
 
     const rawAnswer = toTrimmed(response?.answer);

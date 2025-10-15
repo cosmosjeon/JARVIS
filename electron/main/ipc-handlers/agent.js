@@ -11,7 +11,6 @@ const registerAgentHandlers = ({ ipcMain, llmService, logger }) => {
         temperature,
         maxTokens,
         provider,
-        webSearchEnabled,
       } = payload;
 
       const sanitizedMessages = Array.isArray(messages) ? messages : [];
@@ -22,7 +21,6 @@ const registerAgentHandlers = ({ ipcMain, llmService, logger }) => {
         temperature,
         maxTokens,
         provider,
-        webSearchEnabled,
       });
 
       return { success: true, ...result };
@@ -88,7 +86,6 @@ const registerAgentHandlers = ({ ipcMain, llmService, logger }) => {
         temperature: typeof payload.temperature === 'number' ? payload.temperature : 0,
         maxTokens: payload.maxTokens ?? 8,
         provider: payload.provider,
-        webSearchEnabled: payload.webSearchEnabled,
       });
 
       const keyword = normalizeKeyword(result?.answer || '');

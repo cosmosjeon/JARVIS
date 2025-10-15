@@ -31,7 +31,6 @@ import { useTreeDataSource } from 'features/tree/services/useTreeDataSource';
 import { createTreeWidgetBridge } from 'infrastructure/electron/bridges/treeWidgetBridge';
 import AgentClient from 'infrastructure/ai/agentClient';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
-import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import { useTreeState } from 'features/tree/state/useTreeState';
 import { cn } from 'shared/utils';
 import { stopTrackingEmptyTree, isTrackingEmptyTree, cleanupEmptyTrees } from 'features/tree/services/treeCreation';
@@ -118,8 +117,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     provider: selectedProvider,
     model: selectedModel,
     temperature: preferredTemperature,
-    webSearchEnabled,
-    reasoningEnabled,
   } = useAIModelPreference();
 
   // 테마 옵션 정의
@@ -1259,15 +1256,12 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
 
   const invokeAgent = useCallback(async (channel, payload = {}) => {
     const {
-      reasoningConfig,
-      reasoningEnabled: payloadReasoningEnabled,
       ...restPayload
     } = payload;
 
     const requestPayload = {
       ...restPayload,
       provider: selectedProvider,
-      webSearchEnabled,
     };
 
     if (!requestPayload.model) {
@@ -1279,55 +1273,8 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       requestPayload.temperature = preferredTemperature;
     }
 
-    const providerId = (requestPayload.provider || '').toLowerCase();
-    const modelId = typeof requestPayload.model === 'string' ? requestPayload.model.toLowerCase() : '';
-    const shouldEnableReasoning = payloadReasoningEnabled ?? reasoningEnabled;
-    let appliedReasoning = reasoningConfig || null;
-
-    if (shouldEnableReasoning) {
-      if (providerId === 'auto') {
-        requestPayload.reasoningEnabled = true;
-        if (appliedReasoning && !requestPayload.reasoning) {
-          requestPayload.reasoning = appliedReasoning;
-        }
-      } else if (providerId === 'openai' && modelId.startsWith('gpt-5')) {
-        if (!requestPayload.reasoning) {
-          const effort = appliedReasoning?.effort || (modelId.includes('high') ? 'high' : 'medium');
-          requestPayload.reasoning = {
-            provider: 'openai',
-            effort,
-          };
-        }
-        requestPayload.reasoningEnabled = true;
-      } else {
-        const resolved = appliedReasoning
-          ? { model: requestPayload.model, reasoning: appliedReasoning }
-          : resolveReasoningConfig({
-            provider: providerId,
-            model: requestPayload.model,
-            reasoningEnabled: true,
-            inputLength: typeof restPayload.question === 'string' ? restPayload.question.length : 0,
-          });
-
-        if (resolved?.model && resolved.model !== requestPayload.model) {
-          requestPayload.model = resolved.model;
-        }
-
-        if (resolved?.reasoning && !requestPayload.reasoning) {
-          requestPayload.reasoning = resolved.reasoning;
-        }
-
-        if (requestPayload.reasoning) {
-          requestPayload.reasoningEnabled = true;
-        }
-      }
-    } else if (appliedReasoning) {
-      requestPayload.reasoning = appliedReasoning;
-      requestPayload.reasoningEnabled = true;
-    }
-
     return AgentClient.request(channel, requestPayload);
-  }, [preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
+  }, [preferredTemperature, selectedModel, selectedProvider]);
 
   const handleRequestAnswer = useCallback(
     async ({
@@ -1335,8 +1282,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       question,
       isRootNode,
       autoSelectionHint,
-      reasoningEnabled: callReasoningEnabled,
-      reasoningConfig,
     }) => {
       const trimmedQuestion = (question || '').trim();
       if (!trimmedQuestion) {
@@ -1442,13 +1387,11 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       const response = await invokeAgent(isRootNode ? 'askRoot' : 'askChild', {
         ...payload,
         autoSelectionHint,
-        reasoningConfig,
-        reasoningEnabled: callReasoningEnabled ?? reasoningEnabled,
       });
 
       return response;
     },
-    [buildContextMessages, invokeAgent, reasoningEnabled],
+    [buildContextMessages, invokeAgent],
   );
 
   const handleBootstrapSubmit = useCallback(async (text, attachments = []) => {

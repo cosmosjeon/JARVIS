@@ -20,8 +20,7 @@ import {
   LONG_RESPONSE_NOTICE_DELAY_MS,
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
-import { Globe, Paperclip, Lightbulb, Zap } from 'lucide-react';
-import resolveReasoningConfig from 'shared/utils/reasoningConfig';
+import { Paperclip } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 
 const MODEL_LABELS = {
@@ -29,7 +28,8 @@ const MODEL_LABELS = {
   'gpt-5-mini': 'GPT-5 mini',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
-  'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
+  'claude-sonnet-4-5': 'Claude Sonnet 4.5',
+  'claude-haiku-4-5': 'Claude Haiku 4.5',
   'claude-3-5-haiku-latest': 'Claude 3.5 Haiku',
 };
 
@@ -99,14 +99,8 @@ const NodeAssistantPanelView = ({
   showHeaderControls = true,
   selectedProvider,
   selectedModel,
-  providerOptions,
-  setSelectedProvider,
-  webSearchEnabled,
-  setWebSearchEnabled,
-  reasoningEnabled,
-  setReasoningEnabled,
-  fastResponseEnabled,
-  setFastResponseEnabled,
+  modelOptions,
+  setSelectedModel,
   autoSelectionPreview,
   lastAutoSelection,
   onDropdownOpenChange,
@@ -179,18 +173,6 @@ const NodeAssistantPanelView = ({
     }),
     [panelStyles],
   );
-
-  const manualReasoningPreview = useMemo(() => {
-    if (selectedProvider === 'auto') {
-      return null;
-    }
-    return resolveReasoningConfig({
-      provider: selectedProvider,
-      model: selectedModel,
-      reasoningEnabled,
-      inputLength: composerValue?.length || 0,
-    });
-  }, [composerValue?.length, reasoningEnabled, selectedModel, selectedProvider]);
 
   const subtleTextColor = resolvedPanelStyles.subtleTextColor;
   const isDarkTheme = theme === 'dark';
@@ -354,9 +336,9 @@ const NodeAssistantPanelView = ({
         <PromptInputToolbar className="flex items-center justify-between px-1 gap-2">
           <div className="flex items-center gap-2">
             <ProviderDropdown
-              options={providerOptions}
-              value={selectedProvider}
-              onChange={setSelectedProvider}
+              options={modelOptions}
+              value={selectedModel}
+              onChange={setSelectedModel}
               disabled={isAttachmentUploading || isStreaming}
               align="start"
               onOpenChange={handleProviderDropdownOpenChange}
@@ -365,75 +347,6 @@ const NodeAssistantPanelView = ({
           <div className="flex flex-1 items-center justify-end gap-2">
             <TooltipProvider delayDuration={300}>
               <div className="flex items-center gap-2 relative z-10">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="relative z-10">
-                      <PromptInputButton
-                        onClick={() => setReasoningEnabled(!reasoningEnabled)}
-                        variant="ghost"
-                        disabled={isAttachmentUploading || isStreaming}
-                        className={cn(
-                          'rounded-full p-2 text-muted-foreground hover:text-foreground relative z-10 transition-all duration-200',
-                          reasoningEnabled 
-                            ? '!text-blue-600 !bg-blue-50 border border-blue-200 shadow-sm' 
-                            : '',
-                        )}
-                        aria-label="Reasoning 모드 토글"
-                      >
-                        <Lightbulb className="h-4 w-4" />
-                      </PromptInputButton>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>오래 생각하기</p>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="relative z-10">
-                      <PromptInputButton
-                        onClick={() => setFastResponseEnabled(!fastResponseEnabled)}
-                        variant="ghost"
-                        disabled={isAttachmentUploading || isStreaming}
-                        className={cn(
-                          'rounded-full p-2 text-muted-foreground hover:text-foreground relative z-10 transition-all duration-200',
-                          fastResponseEnabled
-                            ? '!text-blue-600 !bg-blue-50 border border-blue-200 shadow-sm'
-                            : '',
-                        )}
-                        aria-label="빠른 대답 모드 토글"
-                      >
-                        <Zap className="h-4 w-4" />
-                      </PromptInputButton>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>빠른대답</p>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="relative z-10">
-                      <PromptInputButton
-                        onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                        variant="ghost"
-                        disabled={isAttachmentUploading || isStreaming}
-                        className={cn(
-                          'rounded-full p-2 text-muted-foreground hover:text-foreground relative z-10 transition-all duration-200',
-                          webSearchEnabled 
-                            ? '!text-blue-600 !bg-blue-50 border border-blue-200 shadow-sm' 
-                            : '',
-                        )}
-                        aria-label="웹 검색 토글"
-                      >
-                        <Globe className="h-4 w-4" />
-                      </PromptInputButton>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>웹검색</p>
-                  </TooltipContent>
-                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="relative z-10">

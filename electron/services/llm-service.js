@@ -304,7 +304,7 @@ class LLMService {
     return true;
   }
 
-  async askOpenAI({ messages, model, temperature, maxTokens, webSearchEnabled }) {
+  async askOpenAI({ messages, model, temperature, maxTokens }) {
     const client = this.ensureOpenAIClient();
     const startedAt = Date.now();
 
@@ -326,14 +326,6 @@ class LLMService {
         requestPayload.max_output_tokens = maxTokens;
       }
 
-      if (webSearchEnabled) {
-        requestPayload.tools = [
-          {
-            type: 'web_search',
-          },
-        ];
-      }
-
       const response = await client.responses.create(requestPayload);
       const answer = typeof response.output_text === 'string' ? response.output_text.trim() : '';
 
@@ -347,7 +339,6 @@ class LLMService {
       this.logInfo('openai_request_succeeded', {
         model: response.model,
         latencyMs,
-        webSearchEnabled: Boolean(webSearchEnabled),
       });
 
       return {
@@ -363,7 +354,7 @@ class LLMService {
     }
   }
 
-  async askGemini({ messages, model, temperature, maxTokens, webSearchEnabled }) {
+  async askGemini({ messages, model, temperature, maxTokens }) {
     const client = this.ensureGeminiClient();
     const startedAt = Date.now();
 
@@ -378,7 +369,6 @@ class LLMService {
       const resolvedModel = model || PROVIDER_DEFAULTS[PROVIDERS.GEMINI].model;
       const generativeModel = client.getGenerativeModel({
         model: resolvedModel,
-        tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
       });
 
       const request = {
@@ -402,10 +392,6 @@ class LLMService {
         request.generationConfig = generationConfig;
       }
 
-      if (webSearchEnabled) {
-        request.tools = [{ googleSearch: {} }];
-      }
-
       const rawResponse = await generativeModel.generateContent(request);
       const response = rawResponse?.response || rawResponse;
       const candidates = response?.candidates || [];
@@ -427,7 +413,6 @@ class LLMService {
       this.logInfo('gemini_request_succeeded', {
         model: response?.model || resolvedModel,
         latencyMs,
-        webSearchEnabled: Boolean(webSearchEnabled),
       });
 
       return {
@@ -443,7 +428,7 @@ class LLMService {
     }
   }
 
-  async askClaude({ messages, model, temperature, maxTokens, webSearchEnabled }) {
+  async askClaude({ messages, model, temperature, maxTokens }) {
     const client = this.ensureClaudeClient();
     const startedAt = Date.now();
 
@@ -471,16 +456,6 @@ class LLMService {
         requestPayload.temperature = PROVIDER_DEFAULTS[PROVIDERS.CLAUDE].temperature;
       }
 
-      if (webSearchEnabled) {
-        requestPayload.tools = [
-          {
-            type: 'web_search_20250305',
-            name: 'web_search',
-            max_uses: 5,
-          },
-        ];
-      }
-
       const response = await client.messages.create(requestPayload);
       const answer = (response.content || [])
         .map((block) => (typeof block?.text === 'string' ? block.text : ''))
@@ -498,7 +473,6 @@ class LLMService {
       this.logInfo('claude_request_succeeded', {
         model: response.model,
         latencyMs,
-        webSearchEnabled: Boolean(webSearchEnabled),
       });
 
       return {
@@ -520,7 +494,6 @@ class LLMService {
     model,
     temperature,
     maxTokens,
-    webSearchEnabled = false,
   } = {}) {
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new Error('messages array is required');
@@ -545,7 +518,6 @@ class LLMService {
           model: model || PROVIDER_DEFAULTS[PROVIDERS.OPENAI].model,
           temperature,
           maxTokens,
-          webSearchEnabled,
         });
       case PROVIDERS.GEMINI:
         return this.askGemini({
@@ -553,7 +525,6 @@ class LLMService {
           model,
           temperature,
           maxTokens,
-          webSearchEnabled,
         });
       case PROVIDERS.CLAUDE:
         return this.askClaude({
@@ -561,7 +532,6 @@ class LLMService {
           model,
           temperature,
           maxTokens,
-          webSearchEnabled,
         });
       default: {
         const error = new Error(`Unsupported provider: ${normalizedProvider}`);

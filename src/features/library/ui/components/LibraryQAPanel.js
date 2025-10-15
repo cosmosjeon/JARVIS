@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Paperclip, Network, Shield, Globe, Lightbulb, Zap } from 'lucide-react';
+import { Loader2, X, Paperclip, Network, Shield } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useFileDropZone } from 'shared/hooks/useFileDropZone';
@@ -22,9 +22,8 @@ import {
   PromptInputSubmit,
   PromptInputToolbar,
 } from 'shared/ui/shadcn-io/ai/prompt-input';
-import { useAIModelPreference, PRIMARY_MODEL_OPTIONS, resolveModelForProvider } from 'shared/hooks/useAIModelPreference';
+import { useAIModelPreference, resolveModelForProvider } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
-import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 import {
   DEFAULT_AGENT_RESPONSE_TIMEOUT_MS,
   LONG_RESPONSE_NOTICE_DELAY_MS,
@@ -44,7 +43,8 @@ const MODEL_LABELS = {
   'gpt-5-mini': 'GPT-5 mini',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
-  'claude-sonnet-4-5': 'Claude 4.5 Sonnet',
+  'claude-sonnet-4-5': 'Claude Sonnet 4.5',
+  'claude-haiku-4-5': 'Claude Haiku 4.5',
   'claude-3-5-haiku-latest': 'Claude 3.5 Haiku',
 };
 
@@ -114,14 +114,8 @@ const LibraryQAPanel = ({
     provider: selectedProvider,
     model: selectedModel,
     temperature: preferredTemperature,
-    providerOptions,
-    setProvider: setSelectedProvider,
-    webSearchEnabled,
-    setWebSearchEnabled,
-    reasoningEnabled,
-    setReasoningEnabled,
-    fastResponseEnabled,
-    setFastResponseEnabled,
+    modelOptions,
+    setModel: setSelectedModel,
   } = useAIModelPreference();
   const [messages, setMessages] = useState([]);
   const [composerValue, setComposerValue] = useState('');
@@ -166,7 +160,6 @@ const LibraryQAPanel = ({
     }
   }, []);
 
-  const availableModels = useMemo(() => [...PRIMARY_MODEL_OPTIONS], []);
 
   const resolveProcessingKey = useCallback((nodeId, introActive, treeId) => {
     if (nodeId) {
@@ -402,22 +395,8 @@ const LibraryQAPanel = ({
     return selectAutoModel({
       question: composerValue,
       attachments,
-      webSearchEnabled,
-      forceReasoning: reasoningEnabled,
     });
-  }, [attachments, composerValue, reasoningEnabled, selectedProvider, webSearchEnabled]);
-
-  const manualReasoningPreview = useMemo(() => {
-    if (selectedProvider === 'auto') {
-      return null;
-    }
-    return resolveReasoningConfig({
-      provider: selectedProvider,
-      model: selectedModel,
-      reasoningEnabled,
-      inputLength: composerValue?.length || 0,
-    });
-  }, [composerValue?.length, reasoningEnabled, selectedModel, selectedProvider]);
+  }, [attachments, composerValue, selectedProvider]);
 
   useEffect(() => {
     if (!isProcessing) {
@@ -757,8 +736,6 @@ const LibraryQAPanel = ({
   // LLM API 호출
   const invokeAgent = useCallback(async (channel, payload = {}) => {
     const {
-      reasoningConfig,
-      reasoningEnabled: payloadReasoningEnabled,
       provider: providerOverride,
       model: modelOverride,
       ...restPayload
@@ -770,7 +747,6 @@ const LibraryQAPanel = ({
     const requestPayload = {
       ...restPayload,
       provider: effectiveProvider,
-      webSearchEnabled,
     };
 
     if (effectiveProvider !== 'auto' && !requestPayload.model) {
@@ -786,57 +762,10 @@ const LibraryQAPanel = ({
       requestPayload.temperature = preferredTemperature;
     }
 
-    const providerId = (requestPayload.provider || '').toLowerCase();
-    const modelId = typeof requestPayload.model === 'string' ? requestPayload.model.toLowerCase() : '';
-    const shouldEnableReasoning = payloadReasoningEnabled ?? reasoningEnabled;
-    let appliedReasoning = reasoningConfig || null;
-
-    if (shouldEnableReasoning) {
-      if (providerId === 'auto') {
-        requestPayload.reasoningEnabled = true;
-        if (appliedReasoning && !requestPayload.reasoning) {
-          requestPayload.reasoning = appliedReasoning;
-        }
-      } else if (providerId === 'openai' && modelId.startsWith('gpt-5')) {
-        if (!requestPayload.reasoning) {
-          const effort = appliedReasoning?.effort || (modelId.includes('high') ? 'high' : 'medium');
-          requestPayload.reasoning = {
-            provider: 'openai',
-            effort,
-          };
-        }
-        requestPayload.reasoningEnabled = true;
-      } else {
-        const resolved = appliedReasoning
-          ? { model: requestPayload.model, reasoning: appliedReasoning }
-          : resolveReasoningConfig({
-            provider: providerId,
-            model: requestPayload.model,
-            reasoningEnabled: true,
-            inputLength: typeof restPayload.question === 'string' ? restPayload.question.length : 0,
-          });
-
-        if (resolved?.model && resolved.model !== requestPayload.model) {
-          requestPayload.model = resolved.model;
-        }
-
-        if (resolved?.reasoning && !requestPayload.reasoning) {
-          requestPayload.reasoning = resolved.reasoning;
-        }
-
-        if (requestPayload.reasoning) {
-          requestPayload.reasoningEnabled = true;
-        }
-      }
-    } else if (appliedReasoning) {
-      requestPayload.reasoning = appliedReasoning;
-      requestPayload.reasoningEnabled = true;
-    }
-
     if (channel === 'askRoot') return AgentClient.askRoot(requestPayload);
     if (channel === 'askChild') return AgentClient.askChild(requestPayload);
     throw new Error(`지원하지 않는 채널: ${channel}`);
-  }, [preferredTemperature, reasoningEnabled, selectedModel, selectedProvider, webSearchEnabled]);
+  }, [preferredTemperature, selectedModel, selectedProvider]);
 
   // 답변 생성 및 타이핑 애니메이션
   const animateAssistantResponse = useCallback((assistantId, answerText, context = {}) => {
@@ -1084,7 +1013,7 @@ const LibraryQAPanel = ({
 
     const effectiveProvider = providerOverride || selectedProvider;
     const effectiveModelBase = providerOverride
-      ? resolveModelForProvider(providerOverride, fastResponseEnabled)
+      ? resolveModelForProvider(providerOverride)
       : selectedModel;
     const effectiveModel = modelOverride || effectiveModelBase;
 
@@ -1092,37 +1021,14 @@ const LibraryQAPanel = ({
       ? selectAutoModel({
         question,
         attachments: sanitizedAttachments,
-        webSearchEnabled,
-        forceReasoning: reasoningEnabled,
       })
       : null;
-
-    const manualReasoning = effectiveProvider !== 'auto'
-      ? resolveReasoningConfig({
-        provider: effectiveProvider,
-        model: effectiveModel,
-        reasoningEnabled,
-        inputLength: question.length,
-      })
-      : null;
-
-    const appliedReasoningConfig = effectiveProvider === 'auto'
-      ? (reasoningEnabled && activeAutoSelection?.reasoning
-        ? { provider: 'openai', ...activeAutoSelection.reasoning }
-        : null)
-      : manualReasoning?.reasoning || null;
 
     const pendingModelInfo = effectiveProvider === 'auto'
       ? activeAutoSelection
       : {
         provider: effectiveProvider,
-        model: manualReasoning?.model || effectiveModel,
-        ...(manualReasoning?.explanation
-          ? { explanation: manualReasoning.explanation }
-          : reasoningEnabled
-            ? { explanation: 'Reasoning 모드 활성화' }
-            : {}),
-        ...(manualReasoning?.reasoning ? { reasoning: manualReasoning.reasoning } : {}),
+        model: effectiveModel,
       };
 
     const previousMessages = Array.isArray(messages) ? messages : [];
@@ -1355,11 +1261,9 @@ const LibraryQAPanel = ({
             messages: requestMessages,
             attachments: hasAttachments ? sanitizedAttachments : undefined,
             autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
-            reasoningConfig: appliedReasoningConfig || undefined,
-            reasoningEnabled,
             question,
             provider: effectiveProvider,
-            model: manualReasoning?.model || effectiveModel,
+            model: effectiveModel,
           }),
           AGENT_RESPONSE_TIMEOUT_MS,
         );
@@ -1381,7 +1285,6 @@ const LibraryQAPanel = ({
         animateAssistantResponse(assistantId, answerText, {
           provider: response.provider,
           model: response.model,
-          reasoning: response.reasoning || appliedReasoningConfig,
           autoSelection: response.autoSelection || activeAutoSelection,
           usage: response.usage,
           latencyMs: response.latencyMs,
@@ -1409,9 +1312,6 @@ const LibraryQAPanel = ({
           };
           if (mergedModel) {
             next.modelInfo = mergedModel;
-          }
-          if (response.reasoning) {
-            next.reasoning = response.reasoning;
           }
           if (response.usage) {
             next.usage = response.usage;
@@ -1484,11 +1384,9 @@ const LibraryQAPanel = ({
             messages: requestMessages,
             attachments: hasAttachments ? sanitizedAttachments : undefined,
             autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
-            reasoningConfig: appliedReasoningConfig || undefined,
-            reasoningEnabled,
             question,
             provider: effectiveProvider,
-            model: manualReasoning?.model || effectiveModel,
+            model: effectiveModel,
           }),
           AGENT_RESPONSE_TIMEOUT_MS,
         );
@@ -1510,7 +1408,6 @@ const LibraryQAPanel = ({
         animateAssistantResponse(assistantId, answerText, {
           provider: response.provider,
           model: response.model,
-          reasoning: response.reasoning || appliedReasoningConfig,
           autoSelection: response.autoSelection || activeAutoSelection,
           usage: response.usage,
           latencyMs: response.latencyMs,
@@ -1582,11 +1479,9 @@ const LibraryQAPanel = ({
           messages: requestMessages,
           attachments: hasAttachments ? sanitizedAttachments : undefined,
           autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
-          reasoningConfig: appliedReasoningConfig || undefined,
-          reasoningEnabled,
           question,
           provider: effectiveProvider,
-          model: manualReasoning?.model || effectiveModel,
+          model: effectiveModel,
         }),
         AGENT_RESPONSE_TIMEOUT_MS,
       );
@@ -1608,7 +1503,6 @@ const LibraryQAPanel = ({
       animateAssistantResponse(assistantId, answerText, {
         provider: response.provider,
         model: response.model,
-        reasoning: response.reasoning || appliedReasoningConfig,
         autoSelection: response.autoSelection || activeAutoSelection,
         usage: response.usage,
         latencyMs: response.latencyMs,
@@ -1699,7 +1593,6 @@ const LibraryQAPanel = ({
     composerValue,
     createPlaceholderNodes,
     disableHighlightMode,
-    fastResponseEnabled,
     invokeAgent,
     isMultiQuestionMode,
     isProcessing,
@@ -1709,7 +1602,6 @@ const LibraryQAPanel = ({
     onNewNodeCreated,
     onNodeUpdate,
     onLibraryIntroComplete,
-    reasoningEnabled,
     selectedNode,
     selectedProvider,
     selectedModel,
@@ -1725,7 +1617,6 @@ const LibraryQAPanel = ({
     stopNodeProcessing,
     resolveModelForProvider,
     user,
-    webSearchEnabled,
   ]);
 
   const handleRetryMessage = useCallback((message) => {
@@ -1740,7 +1631,7 @@ const LibraryQAPanel = ({
 
     const modelOverride = selectedProvider === 'auto'
       ? undefined
-      : resolveModelForProvider(selectedProvider, fastResponseEnabled);
+      : resolveModelForProvider(selectedProvider);
 
     Promise.resolve(handleSendMessage(question, {
       attachmentsOverride,
@@ -1762,26 +1653,24 @@ const LibraryQAPanel = ({
           }
         }
       });
-  }, [fastResponseEnabled, handleSendMessage, messages, selectedNode, selectedProvider, resolveModelForProvider]);
+  }, [handleSendMessage, messages, selectedNode, selectedProvider, resolveModelForProvider]);
 
-  const handleRetryWithModel = useCallback((message, providerId) => {
-    const normalizedProvider = typeof providerId === 'string' ? providerId.toLowerCase() : '';
-    const providerOption = PRIMARY_MODEL_OPTIONS.find((option) => option.id === normalizedProvider);
+  const handleRetryWithModel = useCallback((message, modelId) => {
+    const normalizedModelId = typeof modelId === 'string' ? modelId : '';
+    const modelOption = modelOptions.find((option) => option.id === normalizedModelId);
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const question = lastUser?.text || selectedNode?.question || selectedNode?.keyword || '';
-    if (!question || !providerOption) return;
+    if (!question || !modelOption) return;
 
     const attachmentsOverride = Array.isArray(lastUser?.attachments) ? lastUser.attachments : undefined;
-    const nextProvider = providerOption.id;
-    const nextModel = nextProvider === 'auto'
-      ? undefined
-      : resolveModelForProvider(nextProvider, fastResponseEnabled);
+    const nextModel = modelOption.id;
+    const nextProvider = modelOption.provider;
 
     if (message?.id) {
       setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
     }
 
-    setSelectedProvider(nextProvider);
+    setSelectedModel(nextModel);
 
     Promise.resolve(handleSendMessage(question, {
       attachmentsOverride,
@@ -1803,7 +1692,7 @@ const LibraryQAPanel = ({
           }
         }
       });
-  }, [fastResponseEnabled, handleSendMessage, messages, selectedNode, setSelectedProvider, resolveModelForProvider]);
+  }, [handleSendMessage, messages, modelOptions, selectedNode, setSelectedModel]);
 
   // 다중 질문 모드에서 전역 키보드 이벤트 감지
   useEffect(() => {
@@ -1991,7 +1880,7 @@ const LibraryQAPanel = ({
             onRetry={handleRetryMessage}
             onRetryWithModel={handleRetryWithModel}
             onCopy={handleCopyMessage}
-            availableModels={availableModels}
+            availableModels={modelOptions}
             endRef={messagesEndRef}
             className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
             onContainerRef={handleRegisterMessageContainer}
@@ -2154,83 +2043,15 @@ const LibraryQAPanel = ({
 
           <PromptInputToolbar className="flex items-center justify-between px-1 gap-2">
             <ProviderDropdown
-              options={providerOptions}
-              value={selectedProvider}
-              onChange={setSelectedProvider}
+              options={modelOptions}
+              value={selectedModel}
+              onChange={setSelectedModel}
               disabled={isProcessing}
               align="start"
             />
             <div className="flex flex-1 items-center justify-end gap-2">
               <TooltipProvider delayDuration={300}>
                 <div className="flex items-center gap-1 relative z-10">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="relative z-10">
-                        <PromptInputButton
-                          onClick={() => setReasoningEnabled(!reasoningEnabled)}
-                          variant="ghost"
-                          disabled={isProcessing}
-                          className={cn(
-                            'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
-                            reasoningEnabled 
-                              ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
-                              : 'text-gray-500 hover:bg-gray-100',
-                          )}
-                          aria-label="Reasoning 모드 토글"
-                        >
-                          <Lightbulb className="h-4 w-4" />
-                        </PromptInputButton>
-                      </div>
-                    </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>오래 생각하기</p>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="relative z-10">
-                      <PromptInputButton
-                        onClick={() => setFastResponseEnabled(!fastResponseEnabled)}
-                        variant="ghost"
-                        disabled={isProcessing}
-                        className={cn(
-                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
-                          fastResponseEnabled
-                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm'
-                            : 'text-gray-500 hover:bg-gray-100',
-                        )}
-                        aria-label="빠른 대답 모드 토글"
-                      >
-                        <Zap className="h-4 w-4" />
-                      </PromptInputButton>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>빠른대답</p>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="relative z-10">
-                      <PromptInputButton
-                        onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                          variant="ghost"
-                          disabled={isProcessing}
-                          className={cn(
-                          'rounded-full p-2 hover:bg-gray-100 relative z-10 transition-all duration-200',
-                          webSearchEnabled 
-                            ? 'text-blue-600 bg-blue-50 border border-blue-200 shadow-sm' 
-                            : 'text-gray-500 hover:bg-gray-100',
-                        )}
-                      >
-                        <Globe className="h-4 w-4" />
-                      </PromptInputButton>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      <p>웹검색</p>
-                    </TooltipContent>
-                  </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="relative z-10">

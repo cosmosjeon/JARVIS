@@ -1,5 +1,4 @@
 import { createAgentBridge } from '../electron/bridges';
-import selectAutoModel from 'shared/utils/aiModelSelector';
 import {
   PROVIDERS,
   PROVIDER_LABELS,
@@ -226,42 +225,7 @@ const buildMissingBridgeError = (provider) => {
 export class AgentClient {
   static async request(channel, payload = {}, bridgeOverride) {
     const normalizedProvider = normalizeProvider(payload?.provider);
-    const webSearchEnabled = Boolean(payload?.webSearchEnabled);
-    const requestPayload = { ...payload, provider: normalizedProvider, webSearchEnabled };
-
-    let autoSelection = null;
-    if (requestPayload.provider === PROVIDERS.AUTO) {
-      autoSelection = selectAutoModel({
-        messages: requestPayload.messages,
-        question: payload?.question || payload?.input || '',
-        attachments: requestPayload.attachments,
-        webSearchEnabled,
-        forceReasoning: Boolean(requestPayload.reasoningEnabled),
-      });
-      if (autoSelection && autoSelection.provider) {
-        requestPayload.provider = normalizeProvider(autoSelection.provider);
-        if (!requestPayload.model) {
-          requestPayload.model = autoSelection.model;
-        }
-        if (autoSelection.reasoning && !requestPayload.reasoning) {
-          requestPayload.reasoning = { ...autoSelection.reasoning };
-        }
-      }
-      requestPayload.autoSelection = autoSelection;
-      if (requestPayload.reasoningEnabled && (!autoSelection || !autoSelection.model || !String(autoSelection.model).toLowerCase().startsWith('gpt-5'))) {
-        autoSelection = {
-          provider: PROVIDERS.OPENAI,
-          model: 'gpt-5',
-          reasoning: requestPayload.reasoning || { effort: 'medium' },
-          explanation: autoSelection?.explanation || 'Reasoning 모드가 활성화되어 GPT-5를 선택했습니다.',
-          confidence: autoSelection?.confidence || 'medium',
-        };
-        requestPayload.provider = PROVIDERS.OPENAI;
-        requestPayload.model = 'gpt-5';
-        requestPayload.reasoning = autoSelection.reasoning;
-        requestPayload.autoSelection = autoSelection;
-      }
-    }
+    const requestPayload = { ...payload, provider: normalizedProvider };
 
     const effectiveProvider = requestPayload.provider;
     const startedAt = Date.now();
@@ -325,12 +289,6 @@ export class AgentClient {
       throw buildMissingBridgeError(effectiveProvider);
     }
 
-    if (autoSelection) {
-      response.autoSelection = autoSelection;
-    } else if (requestPayload.autoSelectionHint) {
-      response.autoSelection = requestPayload.autoSelectionHint;
-    }
-
     if (!response.provider) {
       response.provider = effectiveProvider;
     }
@@ -344,12 +302,12 @@ export class AgentClient {
     return response;
   }
 
-  static async askRoot({ messages, model, temperature, maxTokens, provider, webSearchEnabled } = {}) {
-    return AgentClient.request('askRoot', { messages, model, temperature, maxTokens, provider, webSearchEnabled });
+  static async askRoot({ messages, model, temperature, maxTokens, provider } = {}) {
+    return AgentClient.request('askRoot', { messages, model, temperature, maxTokens, provider });
   }
 
-  static async askChild({ messages, model, temperature, maxTokens, provider, webSearchEnabled } = {}) {
-    return AgentClient.request('askChild', { messages, model, temperature, maxTokens, provider, webSearchEnabled });
+  static async askChild({ messages, model, temperature, maxTokens, provider } = {}) {
+    return AgentClient.request('askChild', { messages, model, temperature, maxTokens, provider });
   }
 
   static isHttpBridgeAvailable() {

@@ -38,7 +38,7 @@ const ProviderDropdown = ({
           <ChevronDown className="ml-1 h-3 w-3 opacity-70" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="min-w-[10rem]" data-interactive-zone="true">
+      <DropdownMenuContent align={align} className="min-w-[14rem]" data-interactive-zone="true">
         <DropdownMenuRadioGroup
           value={active ? active.id : options[0]?.id}
           onValueChange={(next) => onChange?.(next)}
@@ -47,9 +47,16 @@ const ProviderDropdown = ({
             <DropdownMenuRadioItem
               key={option.id}
               value={option.id}
-              className="text-sm"
+              className="text-sm py-2"
             >
-              {option.label}
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium">{option.label}</span>
+                {option.description && (
+                  <span className="text-xs text-muted-foreground">
+                    {option.description}
+                  </span>
+                )}
+              </div>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

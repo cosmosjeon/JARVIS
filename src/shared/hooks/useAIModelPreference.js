@@ -2,67 +2,88 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const STORAGE_KEY = 'jarvis.ai.preference';
 
-export const AI_PROVIDERS = [
+const DEFAULT_MODEL = 'gpt-5';
+
+export const AI_MODEL_OPTIONS = [
   {
-    id: 'openai',
-    label: 'GPT',
-    defaultModel: 'gpt-5',
-    models: [
-      { id: 'gpt-5', label: 'GPT-5' },
-    ],
+    id: 'gpt-5',
+    label: 'GPT-5',
+    description: 'OpenAI의 강력한 성능 모델',
+    provider: 'openai',
   },
   {
-    id: 'gemini',
-    label: 'Gemini',
-    defaultModel: 'gemini-2.5-pro',
-    models: [
-      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    ],
+    id: 'gpt-5-mini',
+    label: 'GPT-5 mini',
+    description: 'OpenAI의 빠른 모델',
+    provider: 'openai',
   },
   {
-    id: 'claude',
-    label: 'Claude',
-    defaultModel: 'claude-sonnet-4-5',
-    models: [
-      { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-    ],
+    id: 'gemini-2.5-pro',
+    label: 'Gemini 2.5 Pro',
+    description: 'Google의 강력한 성능 모델',
+    provider: 'gemini',
+  },
+  {
+    id: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+    description: 'Google의 빠른 모델',
+    provider: 'gemini',
+  },
+  {
+    id: 'claude-sonnet-4-5',
+    label: 'Claude Sonnet 4.5',
+    description: 'Anthropic의 강력한 성능 모델',
+    provider: 'claude',
+  },
+  {
+    id: 'claude-haiku-4-5',
+    label: 'Claude Haiku 4.5',
+    description: 'Anthropic의 빠른 모델',
+    provider: 'claude',
   },
 ];
 
-export const PRIMARY_MODEL_OPTIONS = [
-  { id: 'openai', label: 'GPT' },
-  { id: 'gemini', label: 'Gemini' },
-  { id: 'claude', label: 'Claude' },
-];
-
-const PROVIDER_MAP = AI_PROVIDERS.reduce((acc, item) => {
-  acc[item.id] = item;
+const MODEL_MAP = AI_MODEL_OPTIONS.reduce((acc, model) => {
+  acc[model.id] = model;
   return acc;
 }, {});
 
-const FAST_MODEL_BY_PROVIDER = {
-  openai: 'gpt-5-mini',
-  gemini: 'gemini-2.5-flash',
-  claude: 'claude-3-5-haiku-latest',
-};
-
-const DEFAULT_PROVIDER = 'openai';
-
-export const resolveModelForProvider = (providerId, fastResponseEnabled) => {
-  const normalized = PROVIDER_MAP[providerId] ? providerId : DEFAULT_PROVIDER;
-  if (fastResponseEnabled && FAST_MODEL_BY_PROVIDER[normalized]) {
-    return FAST_MODEL_BY_PROVIDER[normalized];
+const PROVIDER_MODELS = AI_MODEL_OPTIONS.reduce((acc, model) => {
+  const key = typeof model.provider === 'string'
+    ? model.provider.toLowerCase()
+    : '';
+  if (!key) {
+    return acc;
   }
-  return PROVIDER_MAP[normalized]?.defaultModel || FAST_MODEL_BY_PROVIDER[normalized] || '';
+  if (!acc[key]) {
+    acc[key] = [];
+  }
+  acc[key].push(model.id);
+  return acc;
+}, {});
+
+export const resolveModelForProvider = (providerId) => {
+  const key = typeof providerId === 'string'
+    ? providerId.toLowerCase()
+    : '';
+  const models = PROVIDER_MODELS[key];
+  if (Array.isArray(models) && models.length > 0) {
+    return models[0];
+  }
+  return DEFAULT_MODEL;
 };
+
+export const resolveProviderForModel = (modelId) => {
+  return MODEL_MAP[modelId]?.provider || 'openai';
+};
+
+// Legacy support - kept for backward compatibility
+export const PRIMARY_MODEL_OPTIONS = AI_MODEL_OPTIONS;
 
 const DEFAULT_STATE = {
-  provider: DEFAULT_PROVIDER,
-  model: resolveModelForProvider(DEFAULT_PROVIDER, false),
+  model: DEFAULT_MODEL,
+  provider: resolveProviderForModel(DEFAULT_MODEL),
   temperature: 0.7,
-  webSearchEnabled: false,
-  reasoningEnabled: false,
-  fastResponseEnabled: false,
 };
 
 const PREFERENCE_EVENT = 'jarvis:ai-preference-change';
@@ -72,40 +93,20 @@ const normalizePreference = (raw) => {
     return { ...DEFAULT_STATE };
   }
 
-  const provider = typeof raw.provider === 'string' && PROVIDER_MAP[raw.provider]
-    ? raw.provider
-    : DEFAULT_PROVIDER;
-
-  const providerConfig = PROVIDER_MAP[provider];
-  const fastResponseEnabled = typeof raw.fastResponseEnabled === 'boolean'
-    ? raw.fastResponseEnabled
-    : DEFAULT_STATE.fastResponseEnabled;
-  const supportedModels = providerConfig.models
-    .map((model) => model.id)
-    .concat(FAST_MODEL_BY_PROVIDER[provider] ? [FAST_MODEL_BY_PROVIDER[provider]] : []);
-
-  const model = typeof raw.model === 'string' && supportedModels.includes(raw.model)
+  const model = typeof raw.model === 'string' && MODEL_MAP[raw.model]
     ? raw.model
-    : resolveModelForProvider(provider, fastResponseEnabled);
+    : DEFAULT_MODEL;
+
+  const provider = resolveProviderForModel(model);
 
   const temperature = typeof raw.temperature === 'number' && Number.isFinite(raw.temperature)
     ? raw.temperature
     : DEFAULT_STATE.temperature;
 
-  const webSearchEnabled = typeof raw.webSearchEnabled === 'boolean'
-    ? raw.webSearchEnabled
-    : DEFAULT_STATE.webSearchEnabled;
-  const reasoningEnabled = typeof raw.reasoningEnabled === 'boolean'
-    ? raw.reasoningEnabled
-    : DEFAULT_STATE.reasoningEnabled;
-
   return {
-    provider,
     model,
+    provider,
     temperature,
-    webSearchEnabled,
-    reasoningEnabled,
-    fastResponseEnabled,
   };
 };
 
@@ -197,26 +198,23 @@ export const useAIModelPreference = () => {
     };
   }, []);
 
-  const providerConfig = useMemo(
-    () => PROVIDER_MAP[preference.provider] ?? PROVIDER_MAP[DEFAULT_STATE.provider],
-    [preference.provider],
+  const modelOptions = useMemo(() => AI_MODEL_OPTIONS, []);
+
+  const currentModelInfo = useMemo(
+    () => MODEL_MAP[preference.model] ?? MODEL_MAP[DEFAULT_MODEL],
+    [preference.model],
   );
 
-  const providerOptions = useMemo(
-    () => AI_PROVIDERS.map(({ id, label }) => ({ id, label })),
-    [],
-  );
-
-  const setProvider = useCallback((providerId) => {
+  const setModel = useCallback((modelId) => {
     setPreference((prev) => {
-      const nextProvider = PROVIDER_MAP[providerId] ? providerId : prev.provider;
-      if (nextProvider === prev.provider) {
+      const nextModel = MODEL_MAP[modelId] ? modelId : prev.model;
+      if (nextModel === prev.model) {
         return prev;
       }
       return {
         ...prev,
-        provider: nextProvider,
-        model: resolveModelForProvider(nextProvider, prev.fastResponseEnabled),
+        model: nextModel,
+        provider: resolveProviderForModel(nextModel),
       };
     });
   }, [setPreference]);
@@ -228,46 +226,15 @@ export const useAIModelPreference = () => {
     }));
   }, [setPreference]);
 
-  const setWebSearchEnabled = useCallback((next) => {
-    setPreference((prev) => ({
-      ...prev,
-      webSearchEnabled: Boolean(next),
-    }));
-  }, [setPreference]);
-
-  const setReasoningEnabled = useCallback((next) => {
-    setPreference((prev) => ({
-      ...prev,
-      reasoningEnabled: Boolean(next),
-    }));
-  }, [setPreference]);
-
-  const setFastResponseEnabled = useCallback((next) => {
-    setPreference((prev) => {
-      const fastEnabled = Boolean(next);
-      return {
-        ...prev,
-        fastResponseEnabled: fastEnabled,
-        model: resolveModelForProvider(prev.provider, fastEnabled),
-      };
-    });
-  }, [setPreference]);
-
   return {
     preference,
     provider: preference.provider,
     model: preference.model,
     temperature: preference.temperature,
-    webSearchEnabled: preference.webSearchEnabled,
-    reasoningEnabled: preference.reasoningEnabled,
-    fastResponseEnabled: preference.fastResponseEnabled,
-    providerOptions,
-    currentProvider: providerConfig,
-    setProvider,
+    modelOptions,
+    currentModelInfo,
+    setModel,
     setTemperature,
-    setWebSearchEnabled,
-    setReasoningEnabled,
-    setFastResponseEnabled,
     setPreference,
   };
 };

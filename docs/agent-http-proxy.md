@@ -51,8 +51,7 @@ REACT_APP_AGENT_HTTP_TOKEN=<AGENT_PROXY_TOKEN과 동일하거나 Bearer 포맷>
   {
     "messages": [...],
     "provider": "openai",
-    "model": "gpt-5",
-    "webSearchEnabled": false
+    "model": "gpt-5"
   }
   ```
 - **응답**

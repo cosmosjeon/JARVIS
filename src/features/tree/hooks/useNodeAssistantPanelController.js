@@ -7,9 +7,8 @@ import { useNodeAssistantConversation } from 'features/tree/hooks/useNodeAssista
 import NodeNavigationService from 'features/tree/services/node-assistant/NodeNavigationService';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
 import { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
-import { useAIModelPreference, PRIMARY_MODEL_OPTIONS } from 'shared/hooks/useAIModelPreference';
+import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
-import resolveReasoningConfig from 'shared/utils/reasoningConfig';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -108,14 +107,8 @@ export const useNodeAssistantPanelController = ({
   const {
     provider: selectedProvider,
     model: selectedModel,
-    providerOptions,
-    setProvider: setSelectedProvider,
-    webSearchEnabled,
-    setWebSearchEnabled,
-    reasoningEnabled,
-    setReasoningEnabled,
-    fastResponseEnabled,
-    setFastResponseEnabled,
+    modelOptions,
+    setModel: setSelectedModel,
   } = useAIModelPreference();
 
   const [spinningMap, setSpinningMap] = useState({});
@@ -448,10 +441,8 @@ export const useNodeAssistantPanelController = ({
     return selectAutoModel({
       question: composerValue,
       attachments: draftAttachments,
-      webSearchEnabled,
-      forceReasoning: reasoningEnabled,
     });
-  }, [composerValue, draftAttachments, reasoningEnabled, selectedProvider, webSearchEnabled]);
+  }, [composerValue, draftAttachments, selectedProvider]);
 
   const handleSend = useCallback(async (textSnapshot, attachmentsSnapshot) => {
     const rawText = typeof textSnapshot === 'string' ? textSnapshot : '';
@@ -467,41 +458,16 @@ export const useNodeAssistantPanelController = ({
     }
 
     let modelInfoHint = null;
-    let reasoningConfig = null;
     if (selectedProvider === 'auto') {
       modelInfoHint = selectAutoModel({
         question: trimmed,
         attachments: sanitizedAttachments,
-        webSearchEnabled,
-        forceReasoning: reasoningEnabled,
       });
-      if (modelInfoHint?.reasoning && reasoningEnabled) {
-        reasoningConfig = {
-          provider: 'openai',
-          ...modelInfoHint.reasoning,
-        };
-      }
     } else {
-      const resolvedReasoning = resolveReasoningConfig({
-        provider: selectedProvider,
-        model: selectedModel,
-        reasoningEnabled,
-        inputLength: trimmed.length,
-      });
-
       modelInfoHint = {
         provider: selectedProvider,
-        model: resolvedReasoning?.model || selectedModel,
+        model: selectedModel,
       };
-
-      if (resolvedReasoning?.explanation) {
-        modelInfoHint.explanation = resolvedReasoning.explanation;
-      }
-
-      if (resolvedReasoning?.reasoning) {
-        modelInfoHint.reasoning = resolvedReasoning.reasoning;
-        reasoningConfig = resolvedReasoning.reasoning;
-      }
     }
 
     const payload = {
@@ -510,8 +476,6 @@ export const useNodeAssistantPanelController = ({
         ? sanitizedAttachments.map((item) => ({ ...item }))
         : undefined,
       modelInfoHint,
-      reasoningEnabled,
-      reasoningConfig,
     };
 
     try {
@@ -523,7 +487,7 @@ export const useNodeAssistantPanelController = ({
       console.error('메시지 전송 오류:', error);
       throw error;
     }
-  }, [clearAttachments, reasoningEnabled, selectedModel, selectedProvider, submitMessage, webSearchEnabled]);
+  }, [clearAttachments, selectedModel, selectedProvider, submitMessage]);
 
   const triggerSend = useCallback(() => {
     const textSnapshot = composerValueRef.current;
@@ -599,16 +563,16 @@ export const useNodeAssistantPanelController = ({
     });
   }, [messages, node?.keyword, sendResponse, summary?.label]);
 
-  const handleRetryWithModel = useCallback((message, providerId) => {
-    const normalizedProvider = typeof providerId === 'string' ? providerId.toLowerCase() : '';
-    const providerOption = PRIMARY_MODEL_OPTIONS.find((option) => option.id === normalizedProvider);
+  const handleRetryWithModel = useCallback((message, modelId) => {
+    const normalizedModelId = typeof modelId === 'string' ? modelId : '';
+    const modelOption = modelOptions.find((option) => option.id === normalizedModelId);
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const question = lastUser?.text || summary.label || node?.keyword || '';
-    if (!question || !providerOption) return;
+    if (!question || !modelOption) return;
     if (message?.id) {
       setSpinningMap((prev) => ({ ...prev, [message.id]: true }));
     }
-    setSelectedProvider(providerOption.id);
+    setSelectedModel(modelOption.id);
     const triggerResend = () => {
       sendResponse(question).finally(() => {
         if (message?.id) {
@@ -623,9 +587,7 @@ export const useNodeAssistantPanelController = ({
     } else {
       triggerResend();
     }
-  }, [messages, node?.keyword, sendResponse, setSelectedProvider, summary?.label]);
-
-  const availableModels = useMemo(() => [...PRIMARY_MODEL_OPTIONS], []);
+  }, [messages, node?.keyword, sendResponse, setSelectedModel, summary?.label, modelOptions]);
 
   const handleKeyDown = useCallback((event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -806,14 +768,8 @@ export const useNodeAssistantPanelController = ({
     isAttachmentUploading,
     selectedProvider,
     selectedModel,
-    providerOptions,
-    setSelectedProvider,
-    webSearchEnabled,
-    setWebSearchEnabled,
-    reasoningEnabled,
-    setReasoningEnabled,
-    fastResponseEnabled,
-    setFastResponseEnabled,
+    modelOptions,
+    setSelectedModel,
     autoSelectionPreview,
     lastAutoSelection,
   };

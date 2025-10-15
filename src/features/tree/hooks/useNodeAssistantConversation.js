@@ -176,14 +176,12 @@ export const useNodeAssistantConversation = ({
     typingTimersRef.current.push(intervalId);
   }, [node.id, onAnswerComplete, setLastAutoSelection]);
 
-  const sendResponse = useCallback(async (question, {
-    skipSecondQuestionCheck = false,
-    overrideAnswerText,
-    attachments = [],
-    modelInfoHint = null,
-    reasoningEnabled = false,
-    reasoningConfig = null,
-  } = {}) => {
+const sendResponse = useCallback(async (question, {
+  skipSecondQuestionCheck = false,
+  overrideAnswerText,
+  attachments = [],
+  modelInfoHint = null,
+} = {}) => {
     clearTypingTimers();
 
     const resolvedIsRootNode = isRootNode;
@@ -271,8 +269,6 @@ export const useNodeAssistantConversation = ({
             isRootNode: resolvedIsRootNode,
             shouldCreateChild: false,
             autoSelectionHint: modelInfoHint,
-            reasoningEnabled,
-            reasoningConfig,
           });
           answerText = result?.answer ?? '';
           metadata = result || {};
@@ -339,9 +335,7 @@ export const useNodeAssistantConversation = ({
     const attachments = Array.isArray(payload.attachments)
       ? payload.attachments.filter((item) => item && typeof item === 'object' && item.id)
       : [];
-    const reasoningEnabledFlag = Boolean(payload.reasoningEnabled);
     const modelInfoHint = payload.modelInfoHint || null;
-    const reasoningConfig = payload.reasoningConfig || null;
 
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) {
@@ -396,8 +390,6 @@ export const useNodeAssistantConversation = ({
     await sendResponse(trimmed, {
       attachments,
       modelInfoHint,
-      reasoningEnabled: reasoningEnabledFlag,
-      reasoningConfig,
     });
   }, [bootstrapMode, messages, onBootstrapFirstSend, sendResponse]);
 

@@ -249,7 +249,21 @@ const server = http.createServer(async (req, res) => {
       payload.messages = Array.isArray(rawBody?.messages) ? rawBody.messages : [];
     }
 
+    console.log(`[agent-proxy] ${channel} 요청:`, {
+      provider: payload.provider,
+      model: payload.model,
+      messagesCount: payload.messages?.length
+    });
+
     const result = await handleAgentRequest(channel, payload);
+
+    console.log(`[agent-proxy] ${channel} 응답:`, {
+      success: result.success,
+      hasAnswer: !!result.answer,
+      hasCitations: !!result.citations,
+      citationsCount: result.citations?.length || 0,
+      latencyMs: Date.now() - startedAt
+    });
 
     if (!result || typeof result !== 'object') {
       throw buildRequestFailedError({

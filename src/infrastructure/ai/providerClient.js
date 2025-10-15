@@ -16,7 +16,7 @@ export const PROVIDER_LABELS = {
 
 export const FALLBACK_CONFIG = {
   [PROVIDERS.OPENAI]: {
-    baseUrl: process.env.REACT_APP_OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions',
+    baseUrl: process.env.REACT_APP_OPENAI_API_URL || 'https://api.openai.com/v1/responses',
     defaultModel: process.env.REACT_APP_OPENAI_MODEL || process.env.OPENAI_MODEL || 'gpt-5',
     apiKeyEnv: ['REACT_APP_OPENAI_API_KEY', 'OPENAI_API_KEY'],
   },
@@ -388,6 +388,82 @@ const mapToOpenAIRequest = (messages = []) => {
   return result;
 };
 
+const buildOpenAIResponseParts = (message) => {
+  const isAssistant = message.role === 'assistant';
+  const textType = isAssistant ? 'output_text' : 'input_text';
+  const imageType = isAssistant ? 'output_image' : 'input_image';
+
+  const parts = [];
+
+  const appendText = (value) => {
+    if (!value) {
+      return;
+    }
+    const text = typeof value === 'string' ? value.trim() : String(value || '').trim();
+    if (text) {
+      parts.push({ type: textType, text });
+    }
+  };
+
+  const appendImage = (value) => {
+    const url = typeof value === 'string' ? value.trim() : '';
+    if (url) {
+      parts.push({ type: imageType, image_url: url });
+    }
+  };
+
+  if (Array.isArray(message.content)) {
+    message.content.forEach((part) => {
+      if (!part) {
+        return;
+      }
+      if (typeof part === 'string') {
+        appendText(part);
+        return;
+      }
+      const type = part.type;
+      if (type === 'text' || type === 'input_text' || type === 'output_text') {
+        appendText(part.text || part.value || '');
+        return;
+      }
+      if (type === 'image_url' || type === 'input_image' || type === 'image') {
+        const imageValue = typeof part.image_url === 'string'
+          ? part.image_url
+          : typeof part.image_url?.url === 'string'
+            ? part.image_url.url
+            : part.url;
+        appendImage(imageValue || part.dataUrl || '');
+      }
+    });
+  } else {
+    appendText(
+      typeof message.content === 'string'
+        ? message.content
+        : message.text,
+    );
+  }
+
+  const attachments = sanitizeAttachmentList(message.attachments);
+  attachments.forEach((attachment) => appendImage(attachment.dataUrl));
+
+  if (!parts.length) {
+    parts.push({ type: textType, text: '' });
+  }
+
+  return parts;
+};
+
+const mapToOpenAIResponseInput = (messages = []) => (
+  Array.isArray(messages)
+    ? messages
+        .map((message) => ({
+          role: message.role || 'user',
+          content: buildOpenAIResponseParts(message),
+        }))
+        .filter((entry) => Array.isArray(entry.content) && entry.content.length > 0)
+    : []
+);
+
 const buildInvalidProviderError = (provider) => {
   const error = new Error(`지원하지 않는 AI 제공자: ${provider || 'unknown'}`);
   error.code = 'AGENT_PROVIDER_INVALID';
@@ -406,9 +482,12 @@ const callOpenAIChat = async ({
   model,
   temperature,
   maxTokens,
-  reasoning,
-  webSearchEnabled,
 }) => {
+  console.log('[callOpenAIChat] 함수 시작:', {
+    messagesCount: messages?.length,
+    model,
+  });
+
   const config = getFallbackConfig(PROVIDERS.OPENAI);
   const apiKey = getFallbackApiKey(PROVIDERS.OPENAI);
   if (!apiKey) {
@@ -425,57 +504,74 @@ const callOpenAIChat = async ({
     throw buildRequestFailedError({ error: { message: '메시지가 비어 있습니다.' } });
   }
 
-  const openaiMessages = mapToOpenAIRequest(normalizedMessages);
   const effectiveModel = model || config.defaultModel;
+  const rawBaseUrl = typeof config.baseUrl === 'string' ? config.baseUrl.trim() : '';
+  const normalizedBaseUrl = rawBaseUrl || 'https://api.openai.com/v1';
+  let trimmedBaseUrl = normalizedBaseUrl.replace(/\/+$/, '');
+  const isChatCompletionsUrl = /\/chat\/completions$/i.test(trimmedBaseUrl);
+  const isResponsesUrl = /\/responses$/i.test(trimmedBaseUrl);
+  const preferResponsesApi = isResponsesUrl || !isChatCompletionsUrl;
 
-  const body = {
-    model: effectiveModel,
-    messages: openaiMessages,
-  };
+  if (preferResponsesApi) {
+    if (isResponsesUrl) {
+      // keep as-is
+    } else if (isChatCompletionsUrl) {
+      trimmedBaseUrl = trimmedBaseUrl.replace(/\/chat\/completions$/i, '/responses');
+    } else {
+      trimmedBaseUrl = `${trimmedBaseUrl}/responses`;
+    }
+  } else if (!isChatCompletionsUrl) {
+    trimmedBaseUrl = `${trimmedBaseUrl}/chat/completions`;
+  }
 
+  let baseUrl;
+  try {
+    baseUrl = new URL(trimmedBaseUrl).toString().replace(/\/+$/, '');
+  } catch (error) {
+    baseUrl = preferResponsesApi
+      ? 'https://api.openai.com/v1/responses'
+      : 'https://api.openai.com/v1/chat/completions';
+  }
+
+  const useResponsesApi = /\/responses$/i.test(baseUrl);
   const includeTemperature = typeof temperature === 'number' && Number.isFinite(temperature);
-  if (includeTemperature) {
-    body.temperature = temperature;
-  }
 
-  if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
-    body.max_tokens = maxTokens;
-  }
-
-  if (reasoning && typeof reasoning === 'object') {
-    const effort = typeof reasoning.effort === 'string' ? reasoning.effort.toLowerCase() : 'medium';
-    const budgetTokens = toLimitedNumber(reasoning.budgetTokens, { min: 1, max: 32000, fallback: null });
-    const includeThoughts = Boolean(reasoning.includeThoughts);
-
-    body.reasoning = {
-      effort,
-      ...(budgetTokens ? { budget_tokens: budgetTokens } : {}),
-      ...(includeThoughts ? { include_thoughts: true } : {}),
+  let body;
+  if (useResponsesApi) {
+    const openaiInput = mapToOpenAIResponseInput(normalizedMessages);
+    if (!openaiInput.length) {
+      throw buildRequestFailedError({ error: { message: '전송할 메시지가 없습니다.' } });
+    }
+    body = {
+      model: effectiveModel,
+      input: openaiInput,
     };
 
-    console.log('[callOpenAIChat] Reasoning 설정:', {
-      effort,
-      budgetTokens,
-      includeThoughts,
-      appliedReasoning: body.reasoning
-    });
-  }
+    if (includeTemperature) {
+      body.temperature = temperature;
+    }
 
-  if (webSearchEnabled) {
-    body.tools = [
-      {
-        type: 'web_search',
-        web_search: { enable: true },
-      },
-    ];
+    if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
+      body.max_output_tokens = maxTokens;
+    }
+  } else {
+    const openaiMessages = mapToOpenAIRequest(normalizedMessages);
+    body = {
+      model: effectiveModel,
+      messages: openaiMessages,
+    };
 
-    console.log('[callOpenAIChat] 웹 검색 활성화:', {
-      tools: body.tools
-    });
+    if (includeTemperature) {
+      body.temperature = temperature;
+    }
+
+    if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
+      body.max_tokens = maxTokens;
+    }
   }
 
   const performRequest = async () => {
-    const response = await fetch(config.baseUrl, {
+    const response = await fetch(baseUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -498,7 +594,7 @@ const callOpenAIChat = async ({
     return message.includes('temperature') && message.includes('does not support');
   };
 
-  if (!response.ok && isTemperatureUnsupportedError()) {
+  if (!response.ok && !useResponsesApi && isTemperatureUnsupportedError()) {
     delete body.temperature;
     ({ response, errorPayload } = await performRequest());
   }
@@ -510,6 +606,47 @@ const callOpenAIChat = async ({
   }
 
   const data = await response.json();
+
+  if (useResponsesApi) {
+    const collectAnswerText = () => {
+      if (typeof data.output_text === 'string') {
+        const trimmed = data.output_text.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+      if (Array.isArray(data.output)) {
+        const segments = [];
+        data.output.forEach((item) => {
+          if (!item || typeof item !== 'object' || !Array.isArray(item.content)) {
+            return;
+          }
+          item.content.forEach((part) => {
+            if (typeof part?.text === 'string') {
+              segments.push(part.text.trim());
+            }
+          });
+        });
+        return segments.filter(Boolean).join('\n').trim();
+      }
+      return '';
+    };
+
+    const answer = collectAnswerText();
+    if (!answer) {
+      throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });
+    }
+
+    return {
+      success: true,
+      answer,
+      usage: data.usage || null,
+      finishReason: data.output?.[0]?.stop_reason || null,
+      provider: PROVIDERS.OPENAI,
+      model: data.model || effectiveModel,
+    };
+  }
+
   const answer = Array.isArray(data.choices)
     ? data.choices
         .map((choice) => {
@@ -538,39 +675,6 @@ const callOpenAIChat = async ({
     throw buildRequestFailedError({ error: { message: 'OpenAI 응답이 비어 있습니다.' } });
   }
 
-  const reasoningPayload = (() => {
-    const reasoningMetadata = data.choices?.[0]?.message?.reasoning;
-    if (reasoningMetadata) {
-      return {
-        config: reasoning || null,
-        thinking: typeof reasoningMetadata?.content === 'string' ? reasoningMetadata.content : null,
-      };
-    }
-    if (reasoning) {
-      return { config: reasoning };
-    }
-    return null;
-  })();
-
-  // 웹 검색 Citations 추출
-  const citations = [];
-  if (webSearchEnabled && data.choices?.[0]?.message?.annotations) {
-    data.choices[0].message.annotations.forEach((annotation) => {
-      if (annotation.type === 'url_citation' && annotation.url) {
-        citations.push({
-          url: annotation.url,
-          title: annotation.title || new URL(annotation.url).hostname,
-          text: annotation.text || annotation.cited_text,
-        });
-      }
-    });
-  }
-
-  console.log('[callOpenAIChat] Citations 추출:', {
-    citationsCount: citations.length,
-    citations
-  });
-
   return {
     success: true,
     answer,
@@ -578,8 +682,6 @@ const callOpenAIChat = async ({
     finishReason: data.choices?.[0]?.finish_reason || null,
     provider: PROVIDERS.OPENAI,
     model: data.model || effectiveModel,
-    reasoning: reasoningPayload,
-    citations: citations.length > 0 ? citations : undefined,
   };
 };
 
@@ -588,9 +690,12 @@ const callGeminiChat = async ({
   model,
   temperature,
   maxTokens,
-  reasoning,
-  webSearchEnabled,
 }) => {
+  console.log('[callGeminiChat] 함수 시작:', {
+    messagesCount: messages?.length,
+    model,
+  });
+
   const config = getFallbackConfig(PROVIDERS.GEMINI);
   const apiKey = getFallbackApiKey(PROVIDERS.GEMINI);
   if (!apiKey) {
@@ -630,40 +735,6 @@ const callGeminiChat = async ({
     };
   }
 
-  if (reasoning && typeof reasoning === 'object') {
-    const budgetTokens = toLimitedNumber(reasoning.budgetTokens, { min: 1, max: 32000, fallback: null });
-
-    body.generationConfig = {
-      ...body.generationConfig,
-      thinkingConfig: {
-        thinkingBudget: budgetTokens || -1,  // -1 = auto, 0 = disabled
-      },
-    };
-
-    console.log('[callGeminiChat] Reasoning 설정:', {
-      originalBudgetTokens: reasoning.budgetTokens,
-      appliedThinkingBudget: budgetTokens || -1,
-      thinkingConfig: body.generationConfig.thinkingConfig
-    });
-  }
-
-  if (webSearchEnabled) {
-    body.tools = [
-      {
-        googleSearchRetrieval: {
-          dynamicRetrievalConfig: {
-            mode: 'dynamic',
-            dynamicThreshold: 0.3,
-          },
-        },
-      },
-    ];
-
-    console.log('[callGeminiChat] 웹 검색 활성화:', {
-      tools: body.tools
-    });
-  }
-
   const baseUrl = config.baseUrl.replace(/\/+$/, '');
 
   const performGeminiRequest = async () => {
@@ -693,7 +764,7 @@ const callGeminiChat = async ({
   }
 
   if (!meta.response.ok && isOverloadedError(meta.response, meta.errorPayload) && getFallbackApiKey(PROVIDERS.OPENAI)) {
-    const fallback = await callOpenAIChat({ messages, model: undefined, temperature, maxTokens, reasoning, webSearchEnabled });
+    const fallback = await callOpenAIChat({ messages, model: undefined, temperature, maxTokens });
     fallback.provider = PROVIDERS.OPENAI;
     fallback.fallbackFrom = PROVIDERS.GEMINI;
     return fallback;
@@ -727,44 +798,6 @@ const callGeminiChat = async ({
     throw buildRequestFailedError({ error: { message: 'Gemini 응답이 비어 있습니다.' } });
   }
 
-  const reasoningPayload = (() => {
-    const candidateReasoning = data.candidates?.[0]?.content?.parts?.find((part) => part && part.reasoning);
-    if (candidateReasoning) {
-      return {
-        config: reasoning || null,
-        thinking: candidateReasoning.reasoning,
-      };
-    }
-    if (reasoning) {
-      return { config: reasoning };
-    }
-    return null;
-  })();
-
-  // 웹 검색 Citations 추출 (Gemini는 groundingMetadata에 포함)
-  const citations = [];
-  if (webSearchEnabled && data.candidates?.[0]?.groundingMetadata) {
-    const groundingMetadata = data.candidates[0].groundingMetadata;
-    if (Array.isArray(groundingMetadata.webSearchQueries)) {
-      console.log('[callGeminiChat] Web search queries:', groundingMetadata.webSearchQueries);
-    }
-    if (Array.isArray(groundingMetadata.groundingChunks)) {
-      groundingMetadata.groundingChunks.forEach((chunk) => {
-        if (chunk.web && chunk.web.uri) {
-          citations.push({
-            url: chunk.web.uri,
-            title: chunk.web.title || new URL(chunk.web.uri).hostname,
-          });
-        }
-      });
-    }
-  }
-
-  console.log('[callGeminiChat] Citations 추출:', {
-    citationsCount: citations.length,
-    citations
-  });
-
   return {
     success: true,
     answer,
@@ -772,8 +805,6 @@ const callGeminiChat = async ({
     finishReason: data.candidates?.[0]?.finishReason || null,
     provider: PROVIDERS.GEMINI,
     model: data.modelVersion || body.model,
-    reasoning: reasoningPayload,
-    citations: citations.length > 0 ? citations : undefined,
   };
 };
 
@@ -782,9 +813,12 @@ const callClaudeChat = async ({
   model,
   temperature,
   maxTokens,
-  reasoning,
-  webSearchEnabled,
 }) => {
+  console.log('[callClaudeChat] 함수 시작:', {
+    messagesCount: messages?.length,
+    model,
+  });
+
   const config = getFallbackConfig(PROVIDERS.CLAUDE);
   const apiKey = getFallbackApiKey(PROVIDERS.CLAUDE);
   if (!apiKey) {
@@ -820,41 +854,6 @@ const callClaudeChat = async ({
     body.temperature = temperature;
   }
 
-  if (webSearchEnabled) {
-    body.tools = [
-      {
-        type: 'web_search_20250305',
-        name: 'web_search',
-        max_uses: 5,
-      },
-    ];
-
-    console.log('[callClaudeChat] 웹 검색 활성화:', {
-      tools: body.tools
-    });
-  }
-
-  if (reasoning && typeof reasoning === 'object') {
-    const budget = Number.isFinite(reasoning.budgetTokens)
-      ? Math.round(reasoning.budgetTokens)
-      : mapEffortToClaudeBudget(
-        typeof reasoning.effort === 'string' ? reasoning.effort.toLowerCase() : 'medium',
-      );
-    if (Number.isFinite(budget) && budget > 0) {
-      body.thinking = {
-        type: 'enabled',
-        budget_tokens: Math.max(1024, Math.min(12000, budget)),  // 최소 1024 토큰
-      };
-    }
-
-    console.log('[callClaudeChat] Extended Thinking 설정:', {
-      originalBudgetTokens: reasoning.budgetTokens,
-      calculatedBudget: budget,
-      appliedBudgetTokens: body.thinking?.budget_tokens,
-      thinkingEnabled: !!body.thinking
-    });
-  }
-
   const response = await fetch(config.baseUrl, {
     method: 'POST',
     headers: {
@@ -876,64 +875,32 @@ const callClaudeChat = async ({
   }
 
   const data = await response.json();
-  const answer = (data.content || [])
-    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-    .filter(Boolean)
-    .join('\n')
-    .trim();
+  const answer = Array.isArray(data.content)
+    ? data.content
+        .map((block) => {
+          if (!block || typeof block !== 'object') {
+            return '';
+          }
+          if (block.type === 'text' && typeof block.text === 'string') {
+            return block.text.trim();
+          }
+          if (block.type === 'message' && Array.isArray(block.content)) {
+            return block.content
+              .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+              .filter(Boolean)
+              .join('\n')
+              .trim();
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n')
+        .trim()
+    : '';
 
   if (!answer) {
     throw buildRequestFailedError({ error: { message: 'Claude 응답이 비어 있습니다.' } });
   }
-
-  const thinkingBlocks = Array.isArray(data.content)
-    ? data.content.filter((block) => block && block.type === 'thinking')
-    : [];
-  const combinedThinking = thinkingBlocks
-    .map((block) => (typeof block.thinking === 'string' ? block.thinking.trim() : ''))
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-
-  const reasoningPayload = (() => {
-    if (combinedThinking) {
-      return {
-        config: reasoning || null,
-        thinking: combinedThinking,
-      };
-    }
-    if (reasoning) {
-      return { config: reasoning };
-    }
-    return null;
-  })();
-
-  // 웹 검색 Citations 추출 (Claude는 tool_use 결과에 포함)
-  const citations = [];
-  if (webSearchEnabled && Array.isArray(data.content)) {
-    data.content.forEach((block) => {
-      if (block.type === 'tool_use' && block.name === 'web_search') {
-        // tool_result에서 검색 결과 추출
-        const toolResult = block.content || block.input;
-        if (toolResult && Array.isArray(toolResult.results)) {
-          toolResult.results.forEach((result) => {
-            if (result.url) {
-              citations.push({
-                url: result.url,
-                title: result.title || new URL(result.url).hostname,
-                text: result.content || result.snippet,
-              });
-            }
-          });
-        }
-      }
-    });
-  }
-
-  console.log('[callClaudeChat] Citations 추출:', {
-    citationsCount: citations.length,
-    citations
-  });
 
   return {
     success: true,
@@ -942,10 +909,8 @@ const callClaudeChat = async ({
     finishReason: data.stop_reason || null,
     model: data.model || body.model,
     provider: PROVIDERS.CLAUDE,
-    reasoning: reasoningPayload,
-    citations: citations.length > 0 ? citations : undefined,
   };
-};
+};;
 
 export const callProvider = async ({ provider, ...payload }) => {
   const normalizedProvider = normalizeProvider(provider);
@@ -991,7 +956,6 @@ export const extractKeywordWithProvider = async (payload = {}) => {
     model: payload.model || FALLBACK_CONFIG[PROVIDERS.OPENAI].defaultModel,
     temperature: typeof payload.temperature === 'number' ? payload.temperature : 0,
     maxTokens: payload.maxTokens ?? 8,
-    webSearchEnabled: false,
   });
 
   const keyword = response.answer.split(/\s+/).find(Boolean) || '';

@@ -199,16 +199,14 @@ test.describe.serial('Electron LLM 통합', () => {
     await stopRendererServer();
   });
 
-  test('OpenAI 빠른 응답 및 웹검색 시나리오', async () => {
+  test('OpenAI 기본 응답', async () => {
     const { electronApp, page } = await launchElectronApp();
 
     try {
-      // 빠른 응답 모드 (gpt-5-mini)
       const fastLogOffset = getLogSize();
       const fastResult = await invokeAskRoot(page, {
         provider: 'openai',
         model: 'gpt-5-mini',
-        webSearchEnabled: false,
         messages: buildMessages('전통적인 김치의 핵심 재료 세 가지와 간단한 설명을 120자 이내로 알려줘.'),
       });
 
@@ -219,27 +217,8 @@ test.describe.serial('Electron LLM 통합', () => {
       await waitForLogEntry(
         'openai_request_succeeded',
         fastLogOffset,
-        [ /model:\s*'gpt-5-mini/, /webSearchEnabled:\s*false/ ],
-      );
-
-      // 웹검색 모드 (gpt-5)
-      const searchLogOffset = getLogSize();
-      const searchResult = await invokeAskRoot(page, {
-        provider: 'openai',
-        model: 'gpt-5',
-        webSearchEnabled: true,
-        messages: buildMessages('2024년 7월 이후의 대한민국 우주 탐사 소식을 요약하고, 가능한 경우 근거 출처를 명시해줘.'),
+        [ /model:\s*'gpt-5-mini/ ],
       });
-
-      expect(searchResult?.success).toBeTruthy();
-      expect(typeof searchResult?.answer).toBe('string');
-      expect(searchResult.answer.trim().length).toBeGreaterThan(0);
-
-      await waitForLogEntry(
-        'openai_request_succeeded',
-        searchLogOffset,
-        [ /model:\s*'gpt-5/, /webSearchEnabled:\s*true/ ],
-      );
     } finally {
       await electronApp.close();
     }
@@ -253,7 +232,6 @@ test.describe.serial('Electron LLM 통합', () => {
       const result = await invokeAskRoot(page, {
         provider: 'gemini',
         model: 'gemini-2.5-pro',
-        webSearchEnabled: false,
         messages: buildMessages('삼국시대 백제의 대표적인 문화유산 두 가지를 소개하고 특징을 요약해줘.'),
       });
 
@@ -264,14 +242,14 @@ test.describe.serial('Electron LLM 통합', () => {
       await waitForLogEntry(
         'gemini_request_succeeded',
         logOffset,
-        [ /model:\s*'gemini-2\.5-/, /webSearchEnabled:\s*false/ ],
+        [ /model:\s*'gemini-2\.5-/ ],
       );
     } finally {
       await electronApp.close();
     }
   });
 
-  test('Anthropic Claude 빠른 응답', async () => {
+  test('Anthropic Claude 기본 응답', async () => {
     const { electronApp, page } = await launchElectronApp();
 
     try {
@@ -279,7 +257,6 @@ test.describe.serial('Electron LLM 통합', () => {
       const result = await invokeAskRoot(page, {
         provider: 'claude',
         model: 'claude-3-5-haiku-latest',
-        webSearchEnabled: false,
         messages: buildMessages('최근 12개월 동안의 인공지능 거버넌스 주요 이슈 세 가지를 간결하게 정리해줘.'),
       });
 
@@ -290,7 +267,7 @@ test.describe.serial('Electron LLM 통합', () => {
       await waitForLogEntry(
         'claude_request_succeeded',
         logOffset,
-        [ /model:\s*'claude-3-5-haiku/, /webSearchEnabled:\s*false/ ],
+        [ /model:\s*'claude-3-5-haiku/ ],
       );
     } finally {
       await electronApp.close();
