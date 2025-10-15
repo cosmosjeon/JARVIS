@@ -39,6 +39,28 @@ const removeExpiredLogs = () => {
   }
 };
 
+const guardConsoleTransport = () => {
+  const transport = log?.transports?.console;
+  if (!transport || typeof transport.writeFn !== 'function' || transport.__epipeGuarded) {
+    return;
+  }
+
+  const write = transport.writeFn.bind(transport);
+  transport.writeFn = (payload) => {
+    try {
+      write(payload);
+    } catch (error) {
+      if (error?.code === 'EPIPE') {
+        transport.level = false;
+        return;
+      }
+      throw error;
+    }
+  };
+
+  transport.__epipeGuarded = true;
+};
+
 const configureTransport = () => {
   ensureLogDirectory();
 
@@ -46,6 +68,7 @@ const configureTransport = () => {
   log.transports.file.maxSize = MAX_LOG_SIZE_BYTES;
   log.transports.file.format = '{y}-{m}-{d} {h}:{i}:{s}.{ms} [{level}] {text}';
   log.transports.console.level = 'info';
+  guardConsoleTransport();
 
   log.transports.file.archiveLog = (oldLogPath) => {
     try {

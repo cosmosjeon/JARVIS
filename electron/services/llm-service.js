@@ -225,6 +225,7 @@ class LLMService {
     }
 
     if (this.openAIClient && this.openAICacheKey === apiKey) {
+      this.logInfo('openai_client_reused', { cached: true });
       return this.openAIClient;
     }
 
@@ -233,6 +234,7 @@ class LLMService {
       timeout: REQUEST_TIMEOUT_MS,
     });
     this.openAICacheKey = apiKey;
+    this.logInfo('openai_client_initialized', { cached: false });
     return this.openAIClient;
   }
 
@@ -246,6 +248,9 @@ class LLMService {
     if (!this.geminiClient || this.geminiClient._apiKey !== apiKey) {
       this.geminiClient = new GoogleGenerativeAI(apiKey);
       this.geminiClient._apiKey = apiKey;
+      this.logInfo('gemini_client_initialized', { cached: false });
+    } else {
+      this.logInfo('gemini_client_reused', { cached: true });
     }
     return this.geminiClient;
   }
@@ -263,6 +268,9 @@ class LLMService {
         timeout: REQUEST_TIMEOUT_MS,
       });
       this.claudeClient._apiKey = apiKey;
+      this.logInfo('claude_client_initialized', { cached: false });
+    } else {
+      this.logInfo('claude_client_reused', { cached: true });
     }
     return this.claudeClient;
   }
@@ -276,6 +284,13 @@ class LLMService {
       code: error.code,
       status: error.status,
     });
+  }
+
+  logInfo(event, payload) {
+    if (!this.logger || typeof this.logger.info !== 'function') {
+      return;
+    }
+    this.logger.info(event, payload);
   }
 
   static isOpenAITemperatureSupported(modelId) {
@@ -328,12 +343,19 @@ class LLMService {
         throw error;
       }
 
+      const latencyMs = Date.now() - startedAt;
+      this.logInfo('openai_request_succeeded', {
+        model: response.model,
+        latencyMs,
+        webSearchEnabled: Boolean(webSearchEnabled),
+      });
+
       return {
         answer,
         usage: response.usage || null,
         finishReason: response.output?.[0]?.stop_reason || null,
         model: response.model,
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
       };
     } catch (error) {
       this.logError('openai', error);
@@ -401,12 +423,19 @@ class LLMService {
         throw error;
       }
 
+      const latencyMs = Date.now() - startedAt;
+      this.logInfo('gemini_request_succeeded', {
+        model: response?.model || resolvedModel,
+        latencyMs,
+        webSearchEnabled: Boolean(webSearchEnabled),
+      });
+
       return {
         answer,
         usage: response?.usageMetadata || null,
         finishReason: candidate?.finishReason || null,
         model: response?.model || resolvedModel,
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
       };
     } catch (error) {
       this.logError('gemini', error);
@@ -465,12 +494,19 @@ class LLMService {
         throw error;
       }
 
+      const latencyMs = Date.now() - startedAt;
+      this.logInfo('claude_request_succeeded', {
+        model: response.model,
+        latencyMs,
+        webSearchEnabled: Boolean(webSearchEnabled),
+      });
+
       return {
         answer,
         usage: response.usage || null,
         finishReason: response.stop_reason || null,
         model: response.model,
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
       };
     } catch (error) {
       this.logError('claude', error);

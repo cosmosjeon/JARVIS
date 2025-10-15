@@ -39,13 +39,20 @@ const createSecondInstanceHandler = ({ getLibraryWindow, ensureMainWindowFocus, 
 };
 
 const prepareSingleInstance = ({ app, ...rest }) => {
-  const gotSingleInstanceLock = app.requestSingleInstanceLock();
-  if (!gotSingleInstanceLock) {
-    app.quit();
+  const allowMultipleInstances = process.env.JARVIS_ALLOW_MULTIPLE_INSTANCES === 'true';
+  let gotSingleInstanceLock = true;
+
+  if (!allowMultipleInstances) {
+    gotSingleInstanceLock = app.requestSingleInstanceLock();
+    if (!gotSingleInstanceLock) {
+      app.quit();
+    }
   }
 
   const secondInstanceHandler = createSecondInstanceHandler(rest);
-  app.on('second-instance', secondInstanceHandler);
+  if (!allowMultipleInstances) {
+    app.on('second-instance', secondInstanceHandler);
+  }
   return secondInstanceHandler;
 };
 
