@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QuestionService from 'features/tree/services/QuestionService';
 
-const TYPING_INTERVAL_MS = 18;
+const TYPING_INTERVAL_MS = 14;
+const MAX_TYPING_DURATION_MS = 3800;
 
 const cloneConversation = (conversation = []) => (
   Array.isArray(conversation)
@@ -128,6 +129,8 @@ export const useNodeAssistantConversation = ({
       return;
     }
 
+    const totalFrames = Math.max(1, Math.floor(MAX_TYPING_DURATION_MS / TYPING_INTERVAL_MS));
+    const step = Math.max(1, Math.ceil(characters.length / totalFrames));
     let index = 0;
     setMessages((prev) =>
       prev.map((message) =>
@@ -138,7 +141,7 @@ export const useNodeAssistantConversation = ({
     );
 
     const intervalId = setInterval(() => {
-      index += 1;
+      index = Math.min(characters.length, index + step);
       const typedText = characters.slice(0, index).join('');
       const isDone = index >= characters.length;
 

@@ -27,11 +27,9 @@ module.exports = (ipcRenderer) => {
   };
 
   return {
-    updateWindowConfig: (config) => ipcRenderer.invoke('window:updateConfig', config),
     toggleWindow: () => ipcRenderer.invoke('window:toggleVisibility'),
     openWidget: (options = {}) => ipcRenderer.invoke('window:openWidget', options),
     setMousePassthrough: (options) => ipcRenderer.invoke('window:setMousePassthrough', options),
-    getCursorPosition: () => ipcRenderer.invoke('cursor:getRelativePosition'),
     windowControls,
   };
 };

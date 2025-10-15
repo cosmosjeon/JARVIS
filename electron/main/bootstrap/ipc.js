@@ -14,7 +14,6 @@ const registerIpcHandlers = ({
   settingsManager,
   trayService,
   createLogBridge,
-  screen,
   isDev,
   toggleWidgetVisibility,
   createMainWindow,
@@ -22,10 +21,7 @@ const registerIpcHandlers = ({
   ensureMainWindowFocus,
   getWidgetSession,
   getMainWindow,
-  getAllWidgetWindows,
   resolveBrowserWindowFromSender,
-  windowConfig,
-  applyWindowConfigTo,
   createLibraryWindow,
   getLibraryWindow,
   onWidgetOpened,
@@ -53,7 +49,6 @@ const registerIpcHandlers = ({
 
   registerWindowHandlers({
     ipcMain,
-    screen,
     logger,
     isDev,
     toggleWidgetVisibility,
@@ -62,10 +57,7 @@ const registerIpcHandlers = ({
     ensureMainWindowFocus,
     getWidgetSession,
     getMainWindow,
-    getAllWidgetWindows,
     resolveBrowserWindowFromSender,
-    windowConfig,
-    applyWindowConfigTo,
     getSettings: () => settingsManager.getSettings(),
     onWidgetOpened,
   });

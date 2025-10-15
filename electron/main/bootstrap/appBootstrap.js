@@ -15,7 +15,6 @@ const {
   getWidgetSession,
   resolveBrowserWindowFromSender,
 } = require('../app-window');
-const { windowConfig, applyWindowConfigTo } = require('../bootstrap/window-state');
 const { createLibraryWindow, getLibraryWindow } = require('../library-window');
 const { createSettingsManager } = require('../settingsManager');
 const { registerDeepLinkScheme, prepareSingleInstance } = require('./deepLink');
@@ -182,10 +181,7 @@ const start = () => {
       ensureMainWindowFocus,
       getWidgetSession,
       getMainWindow,
-      getAllWidgetWindows,
       resolveBrowserWindowFromSender,
-      windowConfig,
-      applyWindowConfigTo,
       createLibraryWindow,
       getLibraryWindow,
       onWidgetOpened: ({ treeId, source }) => setLastOpenedTreeId(treeId, { source }),

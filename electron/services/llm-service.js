@@ -526,9 +526,17 @@ class LLMService {
       throw new Error('messages array is required');
     }
 
-    const normalizedProvider = Object.values(PROVIDERS).includes(provider)
-      ? provider
-      : PROVIDERS.OPENAI;
+    const requestedProvider = typeof provider === 'string'
+      ? provider.toLowerCase()
+      : provider;
+    const normalizedProvider = requestedProvider || PROVIDERS.OPENAI;
+
+    if (!Object.values(PROVIDERS).includes(normalizedProvider)) {
+      const error = new Error(`Unsupported provider: ${requestedProvider || provider}`);
+      error.code = 'PROVIDER_UNSUPPORTED';
+      error.provider = provider;
+      throw error;
+    }
 
     switch (normalizedProvider) {
       case PROVIDERS.OPENAI:
@@ -556,9 +564,9 @@ class LLMService {
           webSearchEnabled,
         });
       default: {
-        const error = new Error(`Unsupported provider: ${provider}`);
+        const error = new Error(`Unsupported provider: ${normalizedProvider}`);
         error.code = 'PROVIDER_UNSUPPORTED';
-        error.provider = provider;
+        error.provider = normalizedProvider;
         throw error;
       }
     }

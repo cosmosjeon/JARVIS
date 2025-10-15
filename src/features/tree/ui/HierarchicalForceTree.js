@@ -67,7 +67,7 @@ const TIDY_ASSISTANT_PANEL_GAP = 0;
 const TIDY_CANVAS_MIN_WIDTH = 320;
 
 const COMPACT_WIDGET_WIDTH = 430;
-const COMPACT_DEFAULT_HEIGHT = 130;
+const COMPACT_DEFAULT_HEIGHT = 40;
 const COMPACT_DROPDOWN_HEIGHT = 320;
 const COMPACT_PROVIDER_DROPDOWN_HEIGHT = 200;
 const COMPACT_RESIZE_BUFFER_MS = 60;
@@ -472,30 +472,13 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   }, [isBootstrapCompact, onBootstrapCompactChange]);
 
   useEffect(() => {
-    const currentWidth = typeof window !== 'undefined'
-      ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH))
-      : COMPACT_WIDGET_WIDTH;
-    const currentHeight = typeof window !== 'undefined'
-      ? Math.max(100, Math.floor(window.innerHeight || COMPACT_DEFAULT_HEIGHT))
-      : COMPACT_DEFAULT_HEIGHT;
-
-    if (isBootstrapCompact) {
-      applyWindowConstraints(true, {
-        minWidth: currentWidth,
-        minHeight: currentHeight,
-        maxWidth: currentWidth,
-        maxHeight: currentHeight,
-      });
-      return;
-    }
-
     applyWindowConstraints(true, {
       minWidth: DEFAULT_WIDGET_MIN_WIDTH,
       minHeight: DEFAULT_WIDGET_MIN_HEIGHT,
       maxWidth: 0,
       maxHeight: 0,
     });
-  }, [applyWindowConstraints, isBootstrapCompact]);
+  }, [applyWindowConstraints]);
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
   const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
   const [isTidyPanelResizing, setIsTidyPanelResizing] = useState(false);
@@ -1652,18 +1635,6 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     }
 
     const targetHeight = isOpen ? openHeight : COMPACT_DEFAULT_HEIGHT;
-    const currentWidth = typeof window !== 'undefined'
-      ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH))
-      : COMPACT_WIDGET_WIDTH;
-
-    if (isBootstrapCompact) {
-      applyWindowConstraints(true, {
-        minWidth: currentWidth,
-        minHeight: targetHeight,
-        maxWidth: currentWidth,
-        maxHeight: targetHeight,
-      });
-    }
 
     if (isOpen) {
       if (currentHeightRef.current === openHeight || isResizingRef.current) {
@@ -1848,7 +1819,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         return;
       }
 
-      const baseHeight = 25 + 24 + 8 + 70 + 16;
+      const baseHeight = 20 + 20 + 4 + 30 + 4;
       const targetHeight = Math.max(
         COMPACT_DEFAULT_HEIGHT,
         Math.min(baseHeight + textareaHeight, COMPACT_TEXTAREA_MAX_HEIGHT),
@@ -1863,17 +1834,6 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
 
       lastTextareaHeightRef.current = targetHeight;
       isTextareaResizingRef.current = true;
-
-      const currentWidth = typeof window !== 'undefined'
-        ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH))
-        : COMPACT_WIDGET_WIDTH;
-
-      applyWindowConstraints(true, {
-        minWidth: currentWidth,
-        minHeight: targetHeight,
-        maxWidth: currentWidth,
-        maxHeight: targetHeight,
-      });
 
       const handleResizeResult = () => {
         currentHeightRef.current = targetHeight;

@@ -1,4 +1,14 @@
 const DEFAULT_MAX_MESSAGES = 12;
+const MAX_DYNAMIC_MESSAGES = 36;
+const MIN_DYNAMIC_MESSAGES = 12;
+
+const resolveMessageLimit = (maxMessages, depth) => {
+  if (typeof maxMessages === 'number' && Number.isFinite(maxMessages)) {
+    return Math.max(1, Math.floor(maxMessages));
+  }
+  const dynamicBase = MIN_DYNAMIC_MESSAGES + Math.max(0, depth - 1) * 4;
+  return Math.min(MAX_DYNAMIC_MESSAGES, dynamicBase);
+};
 
 const resolveParentId = (parentByChild, nodeId) => {
   if (!parentByChild || !nodeId) {
@@ -67,9 +77,10 @@ export const collectAncestorConversationMessages = ({
     });
   });
 
-  if (typeof maxMessages === 'number' && Number.isFinite(maxMessages) && maxMessages > 0) {
-    return collected.length > maxMessages
-      ? collected.slice(collected.length - maxMessages)
+  const limit = resolveMessageLimit(maxMessages, chain.length);
+  if (limit > 0) {
+    return collected.length > limit
+      ? collected.slice(collected.length - limit)
       : collected;
   }
 

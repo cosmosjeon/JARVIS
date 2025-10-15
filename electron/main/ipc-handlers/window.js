@@ -1,6 +1,5 @@
 const registerWindowHandlers = ({
   ipcMain,
-  screen,
   logger,
   isDev,
   toggleWidgetVisibility,
@@ -9,10 +8,7 @@ const registerWindowHandlers = ({
   ensureMainWindowFocus,
   getWidgetSession,
   getMainWindow,
-  getAllWidgetWindows,
   resolveBrowserWindowFromSender,
-  windowConfig,
-  applyWindowConfigTo,
   getSettings,
   onWidgetOpened,
 }) => {
@@ -232,50 +228,6 @@ const registerWindowHandlers = ({
         },
       };
     }
-  });
-
-  ipcMain.handle('cursor:getRelativePosition', () => {
-    const mainWindow = getMainWindow();
-    if (!mainWindow) {
-      return { success: false, inside: false };
-    }
-
-    try {
-      const cursorPoint = screen.getCursorScreenPoint();
-      const bounds = mainWindow.getBounds();
-      const inside = cursorPoint.x >= bounds.x
-        && cursorPoint.x <= bounds.x + bounds.width
-        && cursorPoint.y >= bounds.y
-        && cursorPoint.y <= bounds.y + bounds.height;
-
-      if (!inside) {
-        return { success: true, inside: false };
-      }
-
-      return {
-        success: true,
-        inside: true,
-        x: cursorPoint.x - bounds.x,
-        y: cursorPoint.y - bounds.y,
-      };
-    } catch (error) {
-      logger?.warn?.('cursor_position_failed', { message: error?.message });
-      return { success: false, inside: false };
-    }
-  });
-
-  ipcMain.handle('window:updateConfig', (_event, config = {}) => {
-    Object.assign(windowConfig, {
-      frameless: Boolean(config.frameless),
-      transparent: Boolean(config.transparent),
-      alwaysOnTop: Boolean(config.alwaysOnTop),
-      skipTaskbar: Boolean(config.skipTaskbar),
-    });
-
-    getAllWidgetWindows().forEach((win) => applyWindowConfigTo(win));
-
-    logger?.info?.('Window config updated', windowConfig);
-    return windowConfig;
   });
 
   ipcMain.handle('window:resize', (event, payload = {}) => {

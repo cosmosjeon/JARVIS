@@ -66,6 +66,47 @@ const canUseFallback = (provider) => {
   return Boolean(getFallbackApiKey(provider));
 };
 
+const REQUEST_TIMEOUT_MS = Number.parseInt(
+  process.env.REACT_APP_AGENT_REQUEST_TIMEOUT_MS,
+  10,
+) || 45000;
+
+const buildRequestTimeoutError = ({ channel, provider }) => {
+  const timeoutSeconds = Math.round(REQUEST_TIMEOUT_MS / 1000);
+  const readableChannel = channel || 'agent request';
+  const readableProvider = provider ? PROVIDER_LABELS[normalizeProvider(provider)] || provider : 'AI';
+  const error = new Error(
+    `${readableProvider} ${readableChannel}가 ${timeoutSeconds}초 내에 완료되지 않았습니다. 잠시 후 다시 시도해주세요.`,
+  );
+  error.code = 'AGENT_REQUEST_TIMEOUT';
+  error.channel = readableChannel;
+  error.provider = provider || null;
+  return error;
+};
+
+const executeWithTimeout = async (executor, context) => {
+  const timeoutMs = REQUEST_TIMEOUT_MS;
+  if (!timeoutMs || timeoutMs <= 0 || typeof executor !== 'function') {
+    return executor?.();
+  }
+
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(buildRequestTimeoutError(context || {}));
+    }, timeoutMs);
+  });
+
+  try {
+    const taskPromise = Promise.resolve().then(executor);
+    return await Promise.race([taskPromise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
+
 const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const normalizeContentPart = (part) => {
@@ -882,8 +923,13 @@ export class AgentClient {
 
     let response = null;
 
+    const timeoutContext = { channel, provider: effectiveProvider };
+
     if (hasBridge) {
-      const result = await bridgeMethod(requestPayload);
+      const result = await executeWithTimeout(
+        () => bridgeMethod(requestPayload),
+        timeoutContext,
+      );
       if (result !== null && result !== undefined) {
         if (!result?.success) {
           throw buildRequestFailedError(result);
@@ -895,10 +941,16 @@ export class AgentClient {
     if (!response) {
       if (channel === 'askRoot' || channel === 'askChild') {
         if (canUseFallback(effectiveProvider)) {
-          response = await fallbackAsk(requestPayload);
+          response = await executeWithTimeout(
+            () => fallbackAsk(requestPayload),
+            timeoutContext,
+          );
         }
       } else if (channel === 'extractKeyword' && canUseFallback(PROVIDERS.OPENAI)) {
-        response = await fallbackExtractKeyword(requestPayload);
+        response = await executeWithTimeout(
+          () => fallbackExtractKeyword(requestPayload),
+          { channel, provider: PROVIDERS.OPENAI },
+        );
       }
     }
 
