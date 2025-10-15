@@ -92,8 +92,8 @@ const LibrarySidebar = ({
 
   const canSignOut = Boolean(user);
   const widgetActionsEnabled = isElectron && typeof onCreateTreeWidget === 'function';
-  const voranBoxEnabled = isElectron && typeof onManageVoranBox === 'function';
-  const displayedVoranTrees = isElectron ? voranTrees : [];
+  const voranBoxEnabled = typeof onManageVoranBox === 'function';
+  const displayedVoranTrees = voranTrees;
 
   // 컨텍스트 메뉴 상태
   const [folderSelectModal, setFolderSelectModal] = useState({
@@ -429,7 +429,7 @@ const LibrarySidebar = ({
           </>
         ) : (
           <>
-            <div className="flex items-center gap-2 border-b border-border px-3 py-4">
+            <div className={`flex items-center gap-2 border-b border-border px-3 ${isElectron ? 'pt-8 pb-4' : 'py-4'}`}>
               {voranBoxEnabled ? (
                 <Button
                   type="button"
@@ -615,8 +615,7 @@ const LibrarySidebar = ({
                 );
               })}
 
-              {isElectron ? (
-                <div className="space-y-1.5 pt-2">
+              <div className="space-y-1.5 pt-2">
                   <div
                     className={cn(
                       'flex items-center justify-between rounded-xl border border-dashed border-border/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground transition',
@@ -701,7 +700,6 @@ const LibrarySidebar = ({
                     </p>
                   )}
                 </div>
-              ) : null}
             </div>
           </ScrollArea>
 

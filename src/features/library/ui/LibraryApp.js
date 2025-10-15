@@ -55,7 +55,7 @@ const LibraryApp = ({ runtime }) => {
           draggedTreeIds={state.draggedTreeIds}
           dragOverFolderId={state.dragOverFolderId}
           dragOverVoranBox={state.dragOverVoranBox}
-          onManageVoranBox={isElectronRuntime ? handlers.showVoranBox : undefined}
+          onManageVoranBox={handlers.showVoranBox}
           onCreateFolder={() => handlers.openCreateDialog('folder')}
           onCreateTreeWidget={isElectronRuntime ? handlers.createTreeWidget : undefined}
           onCreateTreeInApp={handlers.createTreeInApp}
