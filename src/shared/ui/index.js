@@ -18,4 +18,3 @@ export * from './textarea';
 export * from './tooltip';
 export * from './ai/ChainOfThought';
 export * from './ai/Reasoning';
-export * from './ai/ThinkingIndicator';

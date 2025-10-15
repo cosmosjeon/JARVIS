@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Paperclip, Network, Shield } from 'lucide-react';
+import { Loader2, X, Paperclip, Network, Shield, Maximize, Minimize } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useFileDropZone } from 'shared/hooks/useFileDropZone';
@@ -24,11 +24,7 @@ import {
 } from 'shared/ui/shadcn-io/ai/prompt-input';
 import { useAIModelPreference, resolveModelForProvider } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
-import {
-  DEFAULT_AGENT_RESPONSE_TIMEOUT_MS,
-  LONG_RESPONSE_NOTICE_DELAY_MS,
-  LONG_RESPONSE_REMINDER_DELAY_MS,
-} from 'shared/constants/agentTimeouts';
+import { DEFAULT_AGENT_RESPONSE_TIMEOUT_MS } from 'shared/constants/agentTimeouts';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 import collectAncestorConversationMessages from 'features/tree/utils/assistantContext';
 
@@ -36,9 +32,16 @@ const TYPING_INTERVAL_MS = 16;
 const MAX_TYPING_DURATION_MS = 1200;
 const MAX_TYPING_WORD_COUNT = 400;
 const AGENT_RESPONSE_TIMEOUT_MS = DEFAULT_AGENT_RESPONSE_TIMEOUT_MS;
-const SLOW_RESPONSE_FIRST_HINT = 'AI가 답변을 준비 중입니다. 잠시만 기다려 주세요.';
-const SLOW_RESPONSE_SECOND_HINT = '아직 계산 중이에요. 최대 2분 정도 더 걸릴 수 있습니다.';
 const TIMEOUT_MESSAGE = 'AI 응답이 지연되고 있습니다. 잠시 후 다시 시도하거나 다른 모델을 선택해 주세요.';
+
+const LOADING_MESSAGES = [
+  '답변을 생성하고 있습니다...',
+  '앞선 문맥을 읽고 있습니다...',
+  '더 좋은 답변을 위해 생각중입니다...',
+  '관련 정보를 수집하고 있습니다...',
+  '답변을 정리하고 있습니다...',
+];
+const LOADING_MESSAGE_INTERVAL_MS = 2000;
 
 const MODEL_LABELS = {
   'gpt-5': 'GPT-5',
@@ -120,8 +123,10 @@ const LibraryQAPanel = ({
   onNewNodeCreated,
   onNodeSelect,
   onClose,
+  onFullscreenToggle,
   isLibraryIntroActive = false,
   onLibraryIntroComplete,
+  isFullscreen = false,
 }) => {
   const { user } = useSupabaseAuth();
   const { theme } = useTheme();
@@ -146,7 +151,6 @@ const LibraryQAPanel = ({
   const [attachments, setAttachments] = useState([]);
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
   const [lastAutoSelection, setLastAutoSelection] = useState(null);
-  const [slowResponseNotice, setSlowResponseNotice] = useState(null);
   const [spinningMap, setSpinningMap] = useState({});
 
   const messageContainerRef = useRef(null);
@@ -160,11 +164,41 @@ const LibraryQAPanel = ({
   const requestAbortControllerRef = useRef(null);
   const streamingStateRef = useRef({ assistantId: null, hasStreamed: false });
   const typingTimersRef = useRef([]);
+  const loadingMessageIndexRef = useRef(0);
+  const loadingMessageTimerRef = useRef(null);
+  const [currentLoadingMessage, setCurrentLoadingMessage] = useState(LOADING_MESSAGES[0]);
 
   const clearTypingTimers = useCallback(() => {
     typingTimersRef.current.forEach((timerId) => clearTimeout(timerId));
     typingTimersRef.current = [];
   }, []);
+
+  const clearLoadingMessageTimer = useCallback(() => {
+    if (loadingMessageTimerRef.current) {
+      clearTimeout(loadingMessageTimerRef.current);
+      loadingMessageTimerRef.current = null;
+    }
+  }, []);
+
+  const startLoadingMessageRotation = useCallback(() => {
+    clearLoadingMessageTimer();
+    if (typeof window === 'undefined') return;
+    
+    const rotateMessage = () => {
+      loadingMessageIndexRef.current = (loadingMessageIndexRef.current + 1) % LOADING_MESSAGES.length;
+      setCurrentLoadingMessage(LOADING_MESSAGES[loadingMessageIndexRef.current]);
+      loadingMessageTimerRef.current = window.setTimeout(rotateMessage, LOADING_MESSAGE_INTERVAL_MS);
+    };
+    
+    loadingMessageTimerRef.current = window.setTimeout(rotateMessage, LOADING_MESSAGE_INTERVAL_MS);
+  }, [clearLoadingMessageTimer]);
+
+  const stopLoadingMessageRotation = useCallback(() => {
+    clearLoadingMessageTimer();
+    loadingMessageIndexRef.current = 0;
+    setCurrentLoadingMessage(LOADING_MESSAGES[0]);
+  }, [clearLoadingMessageTimer]);
+
 
   const shouldAnimateTyping = useCallback((answerText) => {
     if (streamingStateRef.current.hasStreamed) {
@@ -181,11 +215,17 @@ const LibraryQAPanel = ({
     return true;
   }, []);
 
+
   useEffect(() => {
     latestSelectedNodeRef.current = selectedNode;
   }, [selectedNode]);
 
-  useEffect(() => () => clearTypingTimers(), [clearTypingTimers]);
+  useEffect(() => {
+    return () => {
+      clearTypingTimers();
+      clearLoadingMessageTimer();
+    };
+  }, [clearTypingTimers, clearLoadingMessageTimer]);
 
   const handleRegisterMessageContainer = useCallback((element) => {
     messageContainerRef.current = element;
@@ -258,6 +298,20 @@ const LibraryQAPanel = ({
     },
     [activeProcessingKey, globalProcessing, processingVersion],
   );
+
+  // 로딩 메시지 로테이션 관리
+  useEffect(() => {
+    if (isProcessing) {
+      startLoadingMessageRotation();
+    } else {
+      stopLoadingMessageRotation();
+    }
+    
+    return () => {
+      stopLoadingMessageRotation();
+    };
+  }, [isProcessing, startLoadingMessageRotation, stopLoadingMessageRotation]);
+
 
   const isEditableTitleActive = useCallback(() => {
     if (typeof document === 'undefined') {
@@ -436,38 +490,6 @@ const LibraryQAPanel = ({
       attachments,
     });
   }, [attachments, composerValue, selectedProvider]);
-
-  useEffect(() => {
-    if (!isProcessing) {
-      setSlowResponseNotice(null);
-      return undefined;
-    }
-
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    const timers = [];
-    timers.push(
-      window.setTimeout(
-        () => setSlowResponseNotice(SLOW_RESPONSE_FIRST_HINT),
-        LONG_RESPONSE_NOTICE_DELAY_MS,
-      ),
-    );
-
-    if (LONG_RESPONSE_REMINDER_DELAY_MS > LONG_RESPONSE_NOTICE_DELAY_MS) {
-      timers.push(
-        window.setTimeout(
-          () => setSlowResponseNotice(SLOW_RESPONSE_SECOND_HINT),
-          LONG_RESPONSE_REMINDER_DELAY_MS,
-        ),
-      );
-    }
-
-    return () => {
-      timers.forEach((timerId) => window.clearTimeout(timerId));
-    };
-  }, [isProcessing]);
 
   const handleAttachmentRemove = useCallback((attachmentId) => {
     setAttachments((prev) => prev.filter((item) => item && item.id !== attachmentId));
@@ -1177,7 +1199,6 @@ const LibraryQAPanel = ({
     if (!isOverride && highlightTexts.length > 0 && !question) {
       console.log('✅ 플레이스홀더 생성 시작...');
       setComposerValue('');
-      setSlowResponseNotice(null);
       setGlobalProcessing(true);
       try {
         await createPlaceholderNodes(highlightTexts);
@@ -1215,7 +1236,6 @@ const LibraryQAPanel = ({
       clearAttachments();
     }
     setError(null);
-    setSlowResponseNotice(null);
 
     const originalProcessingKey = resolveProcessingKey(selectedNode?.id, isLibraryIntroActive, selectedTree?.id);
     let currentProcessingKey = originalProcessingKey;
@@ -1653,6 +1673,8 @@ const LibraryQAPanel = ({
           ? TIMEOUT_MESSAGE
           : error?.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
+        clearStatusTimers();
+        setStatusVisibleCount(0);
         if (!isOverride) {
           setComposerValue(question);
           if (hasAttachments) {
@@ -1777,6 +1799,8 @@ const LibraryQAPanel = ({
           ? TIMEOUT_MESSAGE
           : error?.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
+        clearStatusTimers();
+        setStatusVisibleCount(0);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantId
@@ -1927,6 +1951,8 @@ const LibraryQAPanel = ({
       console.error('질문 처리 실패:', error);
       const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
       setError(errorMessage);
+      clearStatusTimers();
+      setStatusVisibleCount(0);
       if (!isOverride) {
         setComposerValue(question);
         if (hasAttachments) {
@@ -1971,7 +1997,6 @@ const LibraryQAPanel = ({
     setError,
     setHighlightNotice,
     setLastAutoSelection,
-    setSlowResponseNotice,
     setGlobalProcessing,
     resolveProcessingKey,
     startNodeProcessing,
@@ -2111,17 +2136,39 @@ const LibraryQAPanel = ({
               노드를 선택하면 질문 답변을 시작할 수 있습니다.
             </p>
           </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
-              style={{ color: chatPanelStyles.textColor }}
-              aria-label="AI 패널 닫기"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {onFullscreenToggle && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={onFullscreenToggle}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+                      style={{ color: chatPanelStyles.textColor }}
+                      aria-label={isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}
+                    >
+                      {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+                style={{ color: chatPanelStyles.textColor }}
+                aria-label="AI 패널 닫기"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2206,50 +2253,78 @@ const LibraryQAPanel = ({
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs font-medium" style={{ color: subtleTextColor }}>
-            {isProcessing && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-black/5 px-2 py-1">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                처리 중…
-              </span>
-            )}
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
-                style={{ color: chatPanelStyles.textColor }}
-                aria-label="AI 패널 닫기"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            )}
+            <div className="flex items-center gap-1">
+              {onFullscreenToggle && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={onFullscreenToggle}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+                        style={{ color: chatPanelStyles.textColor }}
+                        aria-label={isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}
+                      >
+                        {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+                  style={{ color: chatPanelStyles.textColor }}
+                  aria-label="AI 패널 닫기"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {!isLibraryIntroActive && (
-        messages.length === 0 ? (
+        messages.length === 0 && !isProcessing ? (
           <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
             <div className="py-8 text-center text-sm" style={{ color: subtleTextColor }}>
               질문을 입력해보세요.
             </div>
           </div>
         ) : (
-          <ChatMessageList
-            title="Assistant"
-            messages={messages}
-            onRetry={handleRetryMessage}
-            onRetryWithModel={handleRetryWithModel}
-            onCopy={handleCopyMessage}
-            availableModels={modelOptions}
-            endRef={messagesEndRef}
-            className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1"
-            onContainerRef={handleRegisterMessageContainer}
-            isScrollable={false}
-            theme={theme}
-            panelStyles={chatPanelStyles}
-            retryingMessageMap={spinningMap}
-          />
+          <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+            {messages.length > 0 && (
+              <ChatMessageList
+                title="Assistant"
+                messages={messages}
+                onRetry={handleRetryMessage}
+                onRetryWithModel={handleRetryWithModel}
+                onCopy={handleCopyMessage}
+                availableModels={modelOptions}
+                endRef={messagesEndRef}
+                className=""
+                onContainerRef={handleRegisterMessageContainer}
+                isScrollable={false}
+                theme={theme}
+                panelStyles={chatPanelStyles}
+                retryingMessageMap={spinningMap}
+              />
+            )}
+            {isProcessing && (
+              <div className="flex justify-center items-center py-8">
+                <div className="flex items-center gap-3 text-sm" style={{ color: subtleTextColor }}>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{currentLoadingMessage}</span>
+                </div>
+              </div>
+            )}
+          </div>
         )
       )}
 
@@ -2267,11 +2342,6 @@ const LibraryQAPanel = ({
         isDarkTheme={isDarkTheme}
       />
 
-      {slowResponseNotice && (
-        <div className="rounded-lg border border-amber-200/60 bg-amber-50/90 px-3 py-2 text-xs text-amber-700 shadow-sm">
-          {slowResponseNotice}
-        </div>
-      )}
 
       {!isLibraryIntroActive && (
         <div

@@ -21,6 +21,7 @@ const ACTIONS = {
   SET_CREATE_TYPE: 'setCreateType',
   SET_SIDEBAR_COLLAPSED: 'setSidebarCollapsed',
   SET_QA_PANEL_VISIBLE: 'setQAPanelVisible',
+  SET_QA_PANEL_FULLSCREEN: 'setQAPanelFullscreen',
   SET_LIBRARY_INTRO_TREE_ID: 'setLibraryIntroTreeId',
   SET_SHOW_SETTINGS_DIALOG: 'setShowSettingsDialog',
 };
@@ -43,6 +44,7 @@ const BASE_STATE = {
   createType: 'folder',
   isSidebarCollapsed: false,
   isQAPanelVisible: false,
+  isQAPanelFullscreen: false,
   libraryIntroTreeId: null,
   showSettingsDialog: false,
 };
@@ -112,6 +114,8 @@ const reducer = (state, action) => {
       return { ...state, isSidebarCollapsed: resolveNext(action.payload, state.isSidebarCollapsed) };
     case ACTIONS.SET_QA_PANEL_VISIBLE:
       return { ...state, isQAPanelVisible: resolveNext(action.payload, state.isQAPanelVisible) };
+    case ACTIONS.SET_QA_PANEL_FULLSCREEN:
+      return { ...state, isQAPanelFullscreen: resolveNext(action.payload, state.isQAPanelFullscreen) };
     case ACTIONS.SET_LIBRARY_INTRO_TREE_ID:
       return { ...state, libraryIntroTreeId: resolveNext(action.payload, state.libraryIntroTreeId) };
     case ACTIONS.SET_SHOW_SETTINGS_DIALOG:
@@ -142,6 +146,7 @@ const buildActions = (dispatch) => {
   const setCreateType = dispatchAction(ACTIONS.SET_CREATE_TYPE);
   const setSidebarCollapsed = dispatchAction(ACTIONS.SET_SIDEBAR_COLLAPSED);
   const setQAPanelVisible = dispatchAction(ACTIONS.SET_QA_PANEL_VISIBLE);
+  const setQAPanelFullscreen = dispatchAction(ACTIONS.SET_QA_PANEL_FULLSCREEN);
   const setLibraryIntroTreeId = dispatchAction(ACTIONS.SET_LIBRARY_INTRO_TREE_ID);
   const setShowSettingsDialog = dispatchAction(ACTIONS.SET_SHOW_SETTINGS_DIALOG);
 
@@ -214,9 +219,19 @@ const buildActions = (dispatch) => {
 
   const hideQAPanel = () => {
     setQAPanelVisible(false);
+    setQAPanelFullscreen(false);
     setSelectedNode(null);
   };
+  
   const showQAPanel = () => setQAPanelVisible(true);
+
+  const toggleQAPanelFullscreen = () => {
+    setQAPanelFullscreen((previous) => !previous);
+  };
+
+  const exitQAPanelFullscreen = () => {
+    setQAPanelFullscreen(false);
+  };
 
   const startLibraryIntro = (treeId) => {
     if (!treeId) {
@@ -282,6 +297,9 @@ const buildActions = (dispatch) => {
       toggleSidebar,
       setQAPanelVisible,
       toggleQAPanel,
+      setQAPanelFullscreen,
+      toggleQAPanelFullscreen,
+      exitQAPanelFullscreen,
       hideQAPanel,
       showQAPanel,
     },

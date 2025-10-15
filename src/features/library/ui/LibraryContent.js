@@ -26,6 +26,7 @@ const LibraryContent = ({
   folders,
   selectedNode,
   isQAPanelVisible,
+  isQAPanelFullscreen,
   libraryIntroTreeId,
   isLibraryIntroActive,
   onLibraryIntroComplete,
@@ -35,6 +36,7 @@ const LibraryContent = ({
   onNewNodeCreated,
   onTreeRename,
   onQAPanelClose,
+  onQAPanelFullscreenToggle,
 }) => {
   if (loading) {
     return renderContent(
@@ -104,6 +106,24 @@ const LibraryContent = ({
       );
     }
 
+    // 전체화면 모드일 때 QA 패널만 전체 영역에 표시
+    if (isQAPanelFullscreen) {
+      return (
+        <LibraryQAPanel
+          selectedNode={selectedNode}
+          selectedTree={selectedTree}
+          onNodeUpdate={onNodeUpdate}
+          onNewNodeCreated={onNewNodeCreated}
+          onNodeSelect={onNodeSelect}
+          onClose={onQAPanelClose}
+          onFullscreenToggle={onQAPanelFullscreenToggle}
+          isLibraryIntroActive={false}
+          onLibraryIntroComplete={onLibraryIntroComplete}
+          isFullscreen={true}
+        />
+      );
+    }
+
     return (
       <ResizablePanelGroup direction="horizontal" className="h-full overflow-hidden">
         <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 bg-background">
@@ -127,8 +147,10 @@ const LibraryContent = ({
             onNewNodeCreated={onNewNodeCreated}
             onNodeSelect={onNodeSelect}
             onClose={onQAPanelClose}
+            onFullscreenToggle={onQAPanelFullscreenToggle}
             isLibraryIntroActive={false}
             onLibraryIntroComplete={onLibraryIntroComplete}
+            isFullscreen={false}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

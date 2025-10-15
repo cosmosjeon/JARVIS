@@ -11,7 +11,6 @@ import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
-  ThinkingIndicator,
 } from 'shared/ui';
 import {
   DropdownMenu,
@@ -334,16 +333,12 @@ export default function ChatMessageList({
           resolvedTheme,
           resolvedPanelStyles,
         );
-        const isAssistantPending = status === 'pending' || status === 'typing';
-        const shouldShowThinking = isAssistantPending && (!message.text || message.text.trim().length === 0);
         const reasoningNode = renderReasoning(message.reasoning, status);
 
         return (
           <div key={key} className="flex justify-start" data-role="assistant" data-status={status}>
             <div className="w-full" style={{ maxWidth: assistantMessageMaxWidth }}>
-              {shouldShowThinking ? (
-                <ThinkingIndicator modelInfo={message.modelInfo} />
-              ) : message.text ? (
+              {message.text ? (
                 <div className="w-full">
                   <Response
                     className="w-full text-base leading-7"

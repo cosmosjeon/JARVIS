@@ -95,6 +95,7 @@ const LibraryApp = ({ runtime }) => {
               folders={state.folders}
               selectedNode={state.selectedNode}
               isQAPanelVisible={state.isQAPanelVisible}
+              isQAPanelFullscreen={state.isQAPanelFullscreen}
               libraryIntroTreeId={state.libraryIntroTreeId}
               isLibraryIntroActive={state.isLibraryIntroActive}
               onLibraryIntroComplete={handlers.completeLibraryIntro}
@@ -104,6 +105,7 @@ const LibraryApp = ({ runtime }) => {
               onNewNodeCreated={handlers.nodeAdd}
               onTreeRename={handlers.renameTree}
               onQAPanelClose={handlers.hideQAPanel}
+              onQAPanelFullscreenToggle={handlers.toggleQAPanelFullscreen}
             />
           </div>
         </main>

@@ -69,6 +69,7 @@ export const useLibraryAppViewModel = () => {
     voranTrees: selectors.voranTrees,
     isSidebarCollapsed: state.isSidebarCollapsed,
     isQAPanelVisible: state.isQAPanelVisible,
+    isQAPanelFullscreen: state.isQAPanelFullscreen,
     libraryIntroTreeId: selectors.libraryIntroTreeId,
     isLibraryIntroActive: selectors.isLibraryIntroActive,
     showSettingsDialog: state.showSettingsDialog,
@@ -89,6 +90,7 @@ export const useLibraryAppViewModel = () => {
     state.trees,
     state.isSidebarCollapsed,
     state.isQAPanelVisible,
+    state.isQAPanelFullscreen,
     state.showSettingsDialog,
   ]);
 

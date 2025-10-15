@@ -101,6 +101,8 @@ export const useLibraryHandlers = ({
     hideQAPanel: actions.layout.hideQAPanel,
     showQAPanel: actions.layout.showQAPanel,
     toggleQAPanel: actions.layout.toggleQAPanel,
+    toggleQAPanelFullscreen: actions.layout.toggleQAPanelFullscreen,
+    exitQAPanelFullscreen: actions.layout.exitQAPanelFullscreen,
     moveTreesToFolder: dataApi.moveTreesToFolder,
     startLibraryIntro: actions.flow.startLibraryIntro,
     completeLibraryIntro: actions.flow.clearLibraryIntro,
