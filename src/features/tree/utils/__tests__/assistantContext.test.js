@@ -130,4 +130,39 @@ describe('collectAncestorConversationMessages', () => {
       }),
     ).toEqual([]);
   });
+
+  it('fallbackParentResolver를 사용해 부모 체인을 복원한다', () => {
+    const parentByChild = new Map();
+
+    const conversations = {
+      root: [
+        { role: 'user', text: 'root question' },
+        { role: 'assistant', text: 'root answer' },
+      ],
+      child: [
+        { role: 'user', text: 'child question' },
+      ],
+    };
+
+    const fallbackParentResolver = jest.fn((nodeId) => {
+      if (nodeId === 'child') {
+        return 'root';
+      }
+      return null;
+    });
+
+    const result = collectAncestorConversationMessages({
+      nodeId: 'child',
+      parentByChild,
+      getConversation: (id) => conversations[id],
+      fallbackParentResolver,
+    });
+
+    expect(fallbackParentResolver).toHaveBeenCalledWith('child');
+    expect(result).toEqual([
+      { role: 'user', content: 'root question' },
+      { role: 'assistant', content: 'root answer' },
+      { role: 'user', content: 'child question' },
+    ]);
+  });
 });

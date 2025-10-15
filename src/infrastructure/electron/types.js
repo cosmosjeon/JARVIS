@@ -119,4 +119,12 @@
  *   라이브러리 새로고침 이벤트를 구독합니다.
  */
 
+/**
+ * @typedef {Object} EnvironmentBridge
+ * @property {(key: string) => (string|undefined)} getEnv
+ *   환경 변수 값을 조회합니다.
+ * @property {() => { url?: string, anonKey?: string }} getSupabaseConfig
+ *   Supabase 연동에 필요한 URL/Anon Key를 제공합니다.
+ */
+
 export {}; // JSDoc 타입 선언 전용 파일

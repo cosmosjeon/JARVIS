@@ -73,35 +73,40 @@ function App() {
     }
   }, [mode, requestedMode]);
 
+  const isAuthCallbackPath = useMemo(
+    () => pathname.startsWith('/auth/callback'),
+    [pathname],
+  );
+
   useEffect(() => {
-    if (pathname.startsWith('/auth/callback')) {
+    if (isAuthCallbackPath) {
       document.body.classList.remove('widget-mode');
       return;
     }
     document.body.classList.toggle('widget-mode', mode !== MODES.LIBRARY);
-  }, [mode, pathname]);
-
-  if (pathname.startsWith('/auth/callback')) {
-    return <OAuthCallbackPage />;
-  }
+  }, [isAuthCallbackPath, mode]);
 
   const defaultTheme = mode === MODES.WIDGET ? 'glass' : 'light';
 
   return (
     <SupabaseProvider>
-      <ThemeProvider defaultTheme={defaultTheme} mode={mode}>
-        <SettingsProvider>
-          <SupabaseAuthGate mode={mode}>
-            {mode === MODES.LIBRARY ? (
-              <LibraryApp runtime={runtime} />
-            ) : (
-              <Suspense fallback={null}>
-                <WidgetShell />
-              </Suspense>
-            )}
-          </SupabaseAuthGate>
-        </SettingsProvider>
-      </ThemeProvider>
+      {isAuthCallbackPath ? (
+        <OAuthCallbackPage />
+      ) : (
+        <ThemeProvider defaultTheme={defaultTheme} mode={mode}>
+          <SettingsProvider>
+            <SupabaseAuthGate mode={mode}>
+              {mode === MODES.LIBRARY ? (
+                <LibraryApp runtime={runtime} />
+              ) : (
+                <Suspense fallback={null}>
+                  <WidgetShell />
+                </Suspense>
+              )}
+            </SupabaseAuthGate>
+          </SettingsProvider>
+        </ThemeProvider>
+      )}
     </SupabaseProvider>
   );
 }

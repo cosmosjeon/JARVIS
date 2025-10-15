@@ -31,6 +31,7 @@ import {
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
+import collectAncestorConversationMessages from 'features/tree/utils/assistantContext';
 
 const TYPING_INTERVAL_MS = 18;
 const AGENT_RESPONSE_TIMEOUT_MS = DEFAULT_AGENT_RESPONSE_TIMEOUT_MS;
@@ -1261,14 +1262,53 @@ const LibraryQAPanel = ({
       setMessages(pendingMessages);
     }
 
-    const requestMessages = pendingMessages
-      .filter((msg) => msg.id !== assistantId)
-      .map(mapToOpenAIMessage)
-      .filter(Boolean);
+    // 조상 노드의 대화 문맥 수집
+    const allNodes = selectedTree?.treeData?.nodes || [];
+    const parentByChild = new Map();
+    allNodes.forEach((node) => {
+      if (node.parentId) {
+        parentByChild.set(node.id, node.parentId);
+      }
+    });
+
+    const getConversation = (nodeId) => {
+      const node = allNodes.find((n) => n.id === nodeId);
+      return node?.conversation || [];
+    };
+
+    const ancestorMessages = selectedNode?.id
+      ? collectAncestorConversationMessages({
+          nodeId: selectedNode.id,
+          parentByChild,
+          getConversation,
+          maxMessages: 12,
+        })
+      : [];
+
+    console.log('[LibraryQAPanel] 조상 문맥 메시지 수집:', {
+      selectedNodeId: selectedNode?.id,
+      ancestorMessagesCount: ancestorMessages.length,
+      ancestorMessages
+    });
+
+    const requestMessages = [
+      ...ancestorMessages,
+      ...pendingMessages
+        .filter((msg) => msg.id !== assistantId)
+        .map(mapToOpenAIMessage)
+        .filter(Boolean),
+    ];
 
     if (requestMessages.length === 0 && question) {
       requestMessages.push({ role: 'user', content: question });
     }
+
+    console.log('[LibraryQAPanel] 최종 요청 메시지:', {
+      ancestorCount: ancestorMessages.length,
+      currentNodeCount: pendingMessages.length - 1,
+      totalCount: requestMessages.length,
+      requestMessages
+    });
 
     if (process.env.NODE_ENV === 'development') {
       // eslint-disable-next-line no-console

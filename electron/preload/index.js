@@ -8,6 +8,7 @@ if (process.env.ELECTRON_RUN_AS_NODE === '1') {
   console.log('[preload] Loading channel modules...');
   
   const channelFactories = {
+    environment: require('./channels/environment'),
     system: require('./channels/system'),
     windowControls: require('./channels/windowControls'),
     library: require('./channels/library'),

@@ -8,3 +8,4 @@ export { createTrayBridge } from './trayBridge';
 export { createSystemBridge } from './systemBridge';
 export { createOAuthBridge } from './oauthBridge';
 export { createLibraryBridge } from './libraryBridge';
+export { createEnvironmentBridge } from './environmentBridge';

@@ -32,6 +32,8 @@ export const FALLBACK_CONFIG = {
   },
 };
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const normalizeProvider = (value) => {
   const provider = typeof value === 'string' ? value.toLowerCase() : '';
   if (provider === PROVIDERS.AUTO) {
@@ -279,10 +281,25 @@ const normalizeMessages = (messages) => (
 );
 
 const mapToGeminiContents = (messages = []) => {
+  console.log('[mapToGeminiContents] 입력 메시지:', {
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    messages
+  });
+
   const { systemInstruction, conversation } = splitSystemAndConversation(messages);
-  const contents = conversation.map((message) => {
+  console.log('[mapToGeminiContents] 시스템/대화 분리 결과:', {
+    hasSystemInstruction: !!systemInstruction,
+    conversationCount: conversation.length
+  });
+
+  const contents = conversation.map((message, index) => {
     const role = message.role === 'assistant' ? 'model' : 'user';
     const text = extractTextFromMessage(message);
+    console.log(`[mapToGeminiContents] 메시지 ${index} 변환:`, {
+      originalMessage: message,
+      extractedText: text,
+      willInclude: !!text
+    });
     if (!text) {
       return null;
     }
@@ -291,6 +308,11 @@ const mapToGeminiContents = (messages = []) => {
       parts: [{ text }],
     };
   }).filter(Boolean);
+
+  console.log('[mapToGeminiContents] 최종 변환 결과:', {
+    contentsCount: contents.length,
+    contents
+  });
 
   return {
     contents,
@@ -301,10 +323,25 @@ const mapToGeminiContents = (messages = []) => {
 };
 
 const mapToClaudeMessages = (messages = []) => {
+  console.log('[mapToClaudeMessages] 입력 메시지:', {
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    messages
+  });
+
   const { systemInstruction, conversation } = splitSystemAndConversation(messages);
+  console.log('[mapToClaudeMessages] 시스템/대화 분리 결과:', {
+    hasSystemInstruction: !!systemInstruction,
+    conversationCount: conversation.length
+  });
+
   const claudeMessages = conversation
-    .map((message) => {
+    .map((message, index) => {
       const text = extractTextFromMessage(message);
+      console.log(`[mapToClaudeMessages] 메시지 ${index} 변환:`, {
+        originalMessage: message,
+        extractedText: text,
+        willInclude: !!text
+      });
       if (!text) {
         return null;
       }
@@ -315,6 +352,11 @@ const mapToClaudeMessages = (messages = []) => {
     })
     .filter(Boolean);
 
+  console.log('[mapToClaudeMessages] 최종 변환 결과:', {
+    claudeMessagesCount: claudeMessages.length,
+    claudeMessages
+  });
+
   return {
     systemInstruction,
     claudeMessages,
@@ -322,11 +364,28 @@ const mapToClaudeMessages = (messages = []) => {
 };
 
 const mapToOpenAIRequest = (messages = []) => {
+  console.log('[mapToOpenAIRequest] 입력 메시지:', {
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    messages
+  });
+
   const normalizedMessages = normalizeMessages(messages);
-  return normalizedMessages.map((message) => ({
+  console.log('[mapToOpenAIRequest] 정규화된 메시지:', {
+    normalizedCount: normalizedMessages.length,
+    normalizedMessages
+  });
+
+  const result = normalizedMessages.map((message) => ({
     ...message,
     content: mapToOpenAIContentParts(message),
   }));
+
+  console.log('[mapToOpenAIRequest] 최종 변환 결과:', {
+    resultCount: result.length,
+    result
+  });
+
+  return result;
 };
 
 const buildInvalidProviderError = (provider) => {
@@ -372,8 +431,12 @@ const callOpenAIChat = async ({
   const body = {
     model: effectiveModel,
     messages: openaiMessages,
-    temperature,
   };
+
+  const includeTemperature = typeof temperature === 'number' && Number.isFinite(temperature);
+  if (includeTemperature) {
+    body.temperature = temperature;
+  }
 
   if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
     body.max_tokens = maxTokens;
@@ -400,23 +463,39 @@ const callOpenAIChat = async ({
     ];
   }
 
-  const response = await fetch(config.baseUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const performRequest = async () => {
+    const response = await fetch(config.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const errorPayload = response.ok ? null : await response.json().catch(() => ({}));
+    return { response, errorPayload };
+  };
+
+  let { response, errorPayload } = await performRequest();
+
+  const isTemperatureUnsupportedError = () => {
+    if (!errorPayload || body.temperature === undefined) {
+      return false;
+    }
+    const message = String(errorPayload?.error?.message || '').toLowerCase();
+    return message.includes('temperature') && message.includes('does not support');
+  };
+
+  if (!response.ok && isTemperatureUnsupportedError()) {
+    delete body.temperature;
+    ({ response, errorPayload } = await performRequest());
+  }
 
   if (!response.ok) {
-    const errorPayload = await response.json().catch(() => ({}));
-    throw buildRequestFailedError({
-      error: {
-        message: errorPayload?.error?.message || response.statusText || 'OpenAI 요청에 실패했습니다.',
-        code: errorPayload?.error?.type || `http_${response.status}`,
-      },
-    });
+    const message = errorPayload?.error?.message || response.statusText || 'OpenAI 요청에 실패했습니다.';
+    const code = errorPayload?.error?.type || `http_${response.status}`;
+    throw buildRequestFailedError({ error: { message, code } });
   }
 
   const data = await response.json();
@@ -549,23 +628,47 @@ const callGeminiChat = async ({
   }
 
   const baseUrl = config.baseUrl.replace(/\/+$/, '');
-  const response = await fetch(`${baseUrl}/models/${encodeURIComponent(model || config.defaultModel)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
 
-  if (!response.ok) {
-    const errorPayload = await response.json().catch(() => ({}));
-    throw buildRequestFailedError({
-      error: {
-        message: errorPayload?.error?.message || response.statusText || 'Gemini 요청에 실패했습니다.',
-        code: errorPayload?.error?.status || `http_${response.status}`,
-      },
+  const performGeminiRequest = async () => {
+    const response = await fetch(`${baseUrl}/models/${encodeURIComponent(model || config.defaultModel)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
+    const errorPayload = response.ok ? null : await response.json().catch(() => ({}));
+    return { response, errorPayload };
+  };
+
+  const isOverloadedError = (response, errorPayload) => {
+    const status = response?.status;
+    const message = String(errorPayload?.error?.message || '').toLowerCase();
+    return status === 503 || message.includes('overloaded');
+  };
+
+  let attempt = 0;
+  const maxAttempts = 3;
+  let meta = await performGeminiRequest();
+
+  while (!meta.response.ok && attempt < maxAttempts - 1 && isOverloadedError(meta.response, meta.errorPayload)) {
+    attempt += 1;
+    await delay(500 * attempt);
+    meta = await performGeminiRequest();
   }
 
-  const data = await response.json();
+  if (!meta.response.ok && isOverloadedError(meta.response, meta.errorPayload) && getFallbackApiKey(PROVIDERS.OPENAI)) {
+    const fallback = await callOpenAIChat({ messages, model: undefined, temperature, maxTokens, reasoning, webSearchEnabled });
+    fallback.provider = PROVIDERS.OPENAI;
+    fallback.fallbackFrom = PROVIDERS.GEMINI;
+    return fallback;
+  }
+
+  if (!meta.response.ok) {
+    const message = meta.errorPayload?.error?.message || meta.response.statusText || 'Gemini 요청에 실패했습니다.';
+    const code = meta.errorPayload?.error?.status || `http_${meta.response.status}`;
+    throw buildRequestFailedError({ error: { message, code } });
+  }
+
+  const data = await meta.response.json();
   const answer = Array.isArray(data.candidates)
     ? data.candidates
         .map((candidate) => {

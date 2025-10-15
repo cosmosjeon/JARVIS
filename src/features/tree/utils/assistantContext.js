@@ -10,17 +10,27 @@ const resolveMessageLimit = (maxMessages, depth) => {
   return Math.min(MAX_DYNAMIC_MESSAGES, dynamicBase);
 };
 
-const resolveParentId = (parentByChild, nodeId) => {
-  if (!parentByChild || !nodeId) {
+const resolveParentId = (parentByChild, nodeId, fallbackParentResolver) => {
+  if (!nodeId) {
     return null;
   }
 
-  if (typeof parentByChild.get === 'function') {
-    return parentByChild.get(nodeId) ?? null;
+  if (parentByChild) {
+    if (typeof parentByChild.get === 'function') {
+      const resolved = parentByChild.get(nodeId);
+      if (resolved !== undefined && resolved !== null) {
+        return resolved;
+      }
+    } else if (typeof parentByChild === 'object' && parentByChild !== null) {
+      const resolved = parentByChild[nodeId];
+      if (resolved !== undefined && resolved !== null) {
+        return resolved;
+      }
+    }
   }
 
-  if (typeof parentByChild === 'object' && parentByChild !== null) {
-    return parentByChild[nodeId] ?? null;
+  if (typeof fallbackParentResolver === 'function') {
+    return fallbackParentResolver(nodeId) ?? null;
   }
 
   return null;
@@ -45,8 +55,10 @@ export const collectAncestorConversationMessages = ({
   parentByChild,
   getConversation,
   maxMessages = DEFAULT_MAX_MESSAGES,
+  fallbackParentResolver = null,
 } = {}) => {
   if (!nodeId || typeof getConversation !== 'function') {
+    console.log('[collectAncestorConversationMessages] 조기 반환: nodeId 또는 getConversation 없음', { nodeId, hasGetConversation: typeof getConversation === 'function' });
     return [];
   }
 
@@ -60,12 +72,25 @@ export const collectAncestorConversationMessages = ({
     }
     guard.add(currentId);
     chain.unshift(currentId);
-    currentId = resolveParentId(parentByChild, currentId);
+    currentId = resolveParentId(parentByChild, currentId, fallbackParentResolver);
   }
+
+  console.log('[collectAncestorConversationMessages] 노드 체인 수집 완료:', {
+    targetNodeId: nodeId,
+    chainLength: chain.length,
+    chain: chain
+  });
 
   const collected = [];
   chain.forEach((id) => {
     const history = getConversation(id);
+    console.log('[collectAncestorConversationMessages] 노드의 대화 히스토리:', {
+      nodeId: id,
+      historyType: Array.isArray(history) ? 'array' : typeof history,
+      historyLength: Array.isArray(history) ? history.length : 0,
+      history: history
+    });
+
     if (!Array.isArray(history)) {
       return;
     }
@@ -73,11 +98,20 @@ export const collectAncestorConversationMessages = ({
       const normalized = normalizeHistoryEntry(entry);
       if (normalized) {
         collected.push(normalized);
+      } else {
+        console.log('[collectAncestorConversationMessages] 메시지 정규화 실패:', { entry });
       }
     });
   });
 
   const limit = resolveMessageLimit(maxMessages, chain.length);
+  console.log('[collectAncestorConversationMessages] 최종 수집 결과:', {
+    totalCollected: collected.length,
+    limit,
+    finalCount: limit > 0 ? Math.min(collected.length, limit) : collected.length,
+    messages: collected
+  });
+
   if (limit > 0) {
     return collected.length > limit
       ? collected.slice(collected.length - limit)

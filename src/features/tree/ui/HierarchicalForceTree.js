@@ -1224,14 +1224,38 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     setSelectedNodeId((current) => (current === nodeId ? null : current));
   };
 
+  const resolveFallbackParentId = useCallback((childId) => {
+    if (!childId) {
+      return null;
+    }
+
+    const latestNodes = Array.isArray(dataRef.current?.nodes)
+      ? dataRef.current.nodes
+      : [];
+    const targetNode = latestNodes.find((item) => item && item.id === childId);
+    if (!targetNode) {
+      return null;
+    }
+
+    const pickParentId = (value) => (typeof value === 'string' && value.trim()
+      ? value.trim()
+      : null);
+
+    return pickParentId(targetNode.parentNodeId)
+      || pickParentId(targetNode.questionData?.parentNodeId)
+      || pickParentId(targetNode.placeholder?.parentNodeId)
+      || null;
+  }, []);
+
   const buildContextMessages = useCallback((nodeId) => (
     collectAncestorConversationMessages({
       nodeId,
       parentByChild,
       getConversation,
       maxMessages: 12,
+      fallbackParentResolver: resolveFallbackParentId,
     })
-  ), [getConversation, parentByChild]);
+  ), [getConversation, parentByChild, resolveFallbackParentId]);
 
   const invokeAgent = useCallback(async (channel, payload = {}) => {
     const {
@@ -1322,6 +1346,12 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       const nodeId = targetNode?.id;
       const historyMessages = buildContextMessages(nodeId);
 
+      console.log('[handleRequestAnswer] 조상 문맥 메시지 수집 완료:', {
+        nodeId,
+        historyMessagesCount: historyMessages.length,
+        historyMessages
+      });
+
       const focusKeywordSet = new Set();
       const appendFocusKeyword = (value) => {
         if (typeof value !== 'string') {
@@ -1381,12 +1411,25 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
         { role: 'user', content: userMessageContent },
       ];
 
+      console.log('[handleRequestAnswer] 최종 메시지 배열 생성 완료:', {
+        totalMessages: messages.length,
+        historyCount: historyMessages.length,
+        currentQuestionIncluded: true,
+        messages
+      });
+
       const payload = {
         question: trimmedQuestion,
         messages,
         nodeId,
         isRootNode,
       };
+
+      console.log('[handleRequestAnswer] AI 요청 페이로드:', {
+        payloadKeys: Object.keys(payload),
+        messagesCount: payload.messages.length,
+        payload
+      });
 
       if (focusKeywords.length > 0) {
         payload.focusKeywords = focusKeywords;
@@ -1898,11 +1941,15 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     setConversationForNode(newNodeData.id, initialConversation);
     pendingAssistantNodeRef.current = newNodeData;
 
-    setData((prev) => ({
-      ...prev,
-      nodes: [...prev.nodes, newNodeData],
-      links: [...prev.links, { source: parentNodeId, target: newNodeData.id, value: 1 }]
-    }));
+    setData((prev) => {
+      const nextState = {
+        ...prev,
+        nodes: [...prev.nodes, newNodeData],
+        links: [...prev.links, { source: parentNodeId, target: newNodeData.id, value: 1 }],
+      };
+      dataRef.current = nextState;
+      return nextState;
+    });
 
     questionService.current.setQuestionCount(parentNodeId, 1);
 
