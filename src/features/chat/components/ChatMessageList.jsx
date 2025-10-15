@@ -138,7 +138,7 @@ export default function ChatMessageList({
   className,
   onContainerRef,
   userBubbleMaxWidth = 320,
-  assistantMessageMaxWidth = 560,
+  assistantMessageMaxWidth = 800,
   retryingMessageMap,
   isScrollable = true,
 }) {
@@ -336,7 +336,7 @@ export default function ChatMessageList({
         const reasoningNode = renderReasoning(message.reasoning, status);
 
         return (
-          <div key={key} className="flex justify-start" data-role="assistant" data-status={status}>
+          <div key={key} className="flex justify-center px-12" data-role="assistant" data-status={status}>
             <div className="w-full" style={{ maxWidth: assistantMessageMaxWidth }}>
               {message.text ? (
                 <div className="w-full">
