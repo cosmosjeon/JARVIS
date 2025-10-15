@@ -6,7 +6,6 @@ import VoranBoxManager from './components/VoranBoxManager';
 import CreateDialog from './components/CreateDialog';
 import LibraryWindowTitleBar from './components/LibraryWindowTitleBar';
 import LibrarySettingsDialog from './components/LibrarySettingsDialog';
-import LibraryActionToolbar from './LibraryActionToolbar';
 import useLibraryAppViewModel from 'features/library/hooks/useLibraryAppViewModel';
 import { getRuntimeLabel, constants as runtimeConstants } from 'shared/utils/platform';
 
@@ -41,18 +40,7 @@ const LibraryApp = ({ runtime }) => {
           />
           <LibraryWindowTitleBar />
         </>
-      ) : (
-        <LibraryActionToolbar
-          user={user}
-          ActiveThemeIcon={theme.active.icon}
-          activeThemeLabel={theme.active.label}
-          onCycleTheme={theme.cycle}
-          onRefresh={handlers.refreshLibrary}
-          onSignOut={signOut}
-          isRefreshing={status.loading}
-          onOpenSettings={handlers.showSettingsDialog}
-        />
-      )}
+      ) : null}
       <div className="flex flex-1 overflow-hidden">
         <LibrarySidebar
           isElectron={isElectronRuntime}

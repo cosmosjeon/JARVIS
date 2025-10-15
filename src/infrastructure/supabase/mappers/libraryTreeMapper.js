@@ -27,10 +27,6 @@ const parseConversationField = (value) => {
 };
 
 const mapRowConversation = (row) => {
-  if (row?.node_type === 'memo') {
-    return EMPTY_ARRAY;
-  }
-
   const parsed = parseConversationField(row?.conversation);
   const sanitized = sanitizeConversationMessages(parsed);
   if (sanitized.length) {
@@ -57,67 +53,27 @@ export const normalizeTimestamp = (value) => {
   return Date.now();
 };
 
-const resolveMemoMetadata = (raw) => {
-  const value = raw?.memo_metadata;
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === 'object') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value);
-      return typeof parsed === 'object' && parsed !== null ? parsed : null;
-    } catch (error) {
-      return null;
-    }
-  }
-  return null;
-};
-
 export const mapNodeRow = (row, level = 0) => {
-  const nodeType = row.node_type || 'question';
-
-  const memo = nodeType === 'memo'
-    ? {
-      title: row.memo_title || row.keyword || row.question || '메모',
-      content: row.memo_content || '',
-      metadata: resolveMemoMetadata(row),
-    }
-    : null;
-
-  const conversation = nodeType === 'memo'
-    ? EMPTY_ARRAY
-    : mapRowConversation(row);
-
-  const keyword = nodeType === 'memo'
-    ? (memo?.title || row.keyword || row.question || '메모')
-    : (row.keyword || row.question || '신규 노드');
-
-  const fullText = nodeType === 'memo'
-    ? (memo?.content || '')
-    : (row.answer || '');
+  const conversation = mapRowConversation(row);
+  const keyword = row.keyword || row.question || '신규 노드';
+  const fullText = row.answer || '';
 
   return {
     id: row.id,
     keyword,
     fullText,
-    status: row.status || (nodeType === 'memo' ? 'memo' : 'answered'),
+    status: row.status || 'answered',
     level,
-    size: nodeType === 'memo' ? 8 : (level === 0 ? 20 : 14),
-    parentId: row.parent_id || row.memo_parent_id || null,
-    memoParentId: row.memo_parent_id || null,
-    nodeType,
-    memo: memo || undefined,
-    memoMetadata: memo?.metadata || null,
-    question: nodeType === 'memo' ? null : (row.question || null),
-    answer: nodeType === 'memo' ? null : (row.answer || null),
+    size: level === 0 ? 20 : 14,
+    parentId: row.parent_id || null,
+    nodeType: 'question',
+    question: row.question || null,
+    answer: row.answer || null,
     conversation: conversation.map((message) => ({ ...message })),
-    questionData: nodeType === 'memo' ? undefined : (row.question ? {
+    questionData: row.question ? {
       question: row.question,
       answer: row.answer || '',
-    } : undefined),
+    } : undefined,
     createdAt: normalizeTimestamp(row.created_at),
     updatedAt: normalizeTimestamp(row.updated_at),
   };
@@ -125,7 +81,7 @@ export const mapNodeRow = (row, level = 0) => {
 
 const buildLinks = (nodeRows) => nodeRows
   .map((node) => ({
-    parent: node.parent_id || node.memo_parent_id,
+    parent: node.parent_id,
     id: node.id,
   }))
   .filter((entry) => entry.parent)

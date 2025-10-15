@@ -72,15 +72,6 @@ export const useTreePersistence = ({
 
         const createdAt = node.createdAt || Date.now();
 
-        const memoPayload = node.memo
-          ? {
-            id: node.memo.id,
-            title: node.memo.title || node.keyword || '',
-            content: node.memo.content || node.fullText || '',
-            metadata: node.memo.metadata || node.memoMetadata || null,
-          }
-          : null;
-
         return {
           id: node.id,
           keyword: node.keyword || null,
@@ -93,10 +84,7 @@ export const useTreePersistence = ({
           parentId,
           conversation,
           questionData: node.questionData,
-          nodeType: node.nodeType || null,
-          memoParentId: node.memoParentId || null,
-          memo: memoPayload,
-          memoMetadata: memoPayload?.metadata || null,
+          nodeType: 'question',
         };
       });
 

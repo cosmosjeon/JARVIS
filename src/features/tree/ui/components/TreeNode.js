@@ -357,7 +357,6 @@ const TreeNode = ({
             treeNodes={treeNodes}
             treeLinks={treeLinks}
             onNodeSelect={onNodeSelect}
-            disableNavigation={node?.nodeType === 'memo'}
             attachments={attachments}
             onAttachmentsChange={onAttachmentsChange}
           />

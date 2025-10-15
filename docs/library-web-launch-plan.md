@@ -49,6 +49,8 @@
 - `buildRedirectUrl`을 환경 행렬 기반으로 재작성해 `local`/`preview`/`production` URL을 명시적으로 선택한다.
 - `.env.web.example`, `.env.electron.example`, `.env.local` 템플릿과 `docs/env/supabase-matrix.md`를 작성해 환경 변수 관리와 검증 절차를 문서화한다.
 - `npm run check:env` 스크립트를 도입해 필수 환경 변수 미설정 시 CI를 중단한다.
+- 브라우저 런타임에서 VORAN HTTP 프록시를 사용할 수 있도록 `REACT_APP_AGENT_HTTP_ENDPOINT`(필수)와 `REACT_APP_AGENT_HTTP_TOKEN`(선택)을 정의한다.
+- 프록시 배포 및 인증 토큰 관리 절차는 `docs/agent-http-proxy.md`에 정리한다.
 
 ### 3.5 빌드 & 배포 파이프라인
 - `package.json`에 `start:web`, `build:web`, `preview:web`, `smoke:web` 스크립트를 추가하고 `cross-env REACT_APP_PLATFORM=web`을 사용한다.

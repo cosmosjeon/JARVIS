@@ -10,7 +10,7 @@ import ProviderDropdown from 'features/chat/components/ProviderDropdown';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
 import EditableTitle, { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
 import { AttachmentDropOverlay } from 'shared/ui/AttachmentDropOverlay';
-import AgentClient from 'infrastructure/ai/agentClient';
+import AgentClient, { isAgentHttpBridgeAvailable } from 'infrastructure/ai/agentClient';
 import Highlighter from 'web-highlighter';
 import HighlightSelectionStore from 'features/tree/services/node-assistant/HighlightSelectionStore';
 import { cn } from 'shared/utils';
@@ -640,7 +640,8 @@ const LibraryQAPanel = ({
     const ua = window.navigator?.userAgent || '';
     const hasElectron = /Electron/i.test(ua) || Boolean(window.process?.versions?.electron);
     const hasFallbackKey = Boolean(process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
-    return hasElectron || hasFallbackKey;
+    const hasHttpBridge = isAgentHttpBridgeAvailable();
+    return hasElectron || hasFallbackKey || hasHttpBridge;
   }, []);
 
   // 선택된 노드가 변경될 때 메시지 초기화
@@ -1050,17 +1051,18 @@ const LibraryQAPanel = ({
     setError(null);
     setSlowResponseNotice(null);
 
-    let processingKey = resolveProcessingKey(selectedNode?.id, isLibraryIntroActive, selectedTree?.id);
+    const originalProcessingKey = resolveProcessingKey(selectedNode?.id, isLibraryIntroActive, selectedTree?.id);
+    let currentProcessingKey = originalProcessingKey;
     const switchProcessingKey = (nextKey) => {
-      if (!nextKey || nextKey === processingKey) {
+      if (!nextKey || nextKey === currentProcessingKey) {
         return;
       }
-      stopNodeProcessing(processingKey);
-      processingKey = nextKey;
-      startNodeProcessing(processingKey);
+      // 이전 키를 중단하지 않음 - finally에서 한 번에 정리
+      currentProcessingKey = nextKey;
+      startNodeProcessing(currentProcessingKey);
     };
 
-    startNodeProcessing(processingKey);
+    startNodeProcessing(originalProcessingKey);
 
     const timestamp = Date.now();
 
@@ -1423,7 +1425,10 @@ const LibraryQAPanel = ({
           ),
         );
       } finally {
-        stopNodeProcessing(processingKey);
+        stopNodeProcessing(originalProcessingKey);
+        if (currentProcessingKey !== originalProcessingKey) {
+          stopNodeProcessing(currentProcessingKey);
+        }
       }
       return;
     }
@@ -1478,7 +1483,10 @@ const LibraryQAPanel = ({
           ),
         );
       } finally {
-        stopNodeProcessing(processingKey);
+        stopNodeProcessing(originalProcessingKey);
+        if (currentProcessingKey !== originalProcessingKey) {
+          stopNodeProcessing(currentProcessingKey);
+        }
       }
       return;
     }
@@ -1634,7 +1642,10 @@ const LibraryQAPanel = ({
         ),
       );
     } finally {
-      stopNodeProcessing(processingKey);
+      stopNodeProcessing(originalProcessingKey);
+      if (currentProcessingKey !== originalProcessingKey) {
+        stopNodeProcessing(currentProcessingKey);
+      }
     }
   }, [
     animateAssistantResponse,
@@ -2065,7 +2076,7 @@ const LibraryQAPanel = ({
 
       {!isApiAvailable ? (
         <div className="text-center text-sm text-red-500 bg-red-50/80 px-3 py-2 rounded-xl border border-red-300/60">
-          VORAN API를 사용할 수 없습니다. Electron 환경에서 실행해주세요.
+          VORAN API를 사용할 수 없습니다. Electron 환경에서 실행하거나 서버 프록시(REACT_APP_AGENT_HTTP_ENDPOINT)를 설정해주세요.
         </div>
       ) : (
         <PromptInput

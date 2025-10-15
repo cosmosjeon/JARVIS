@@ -35,7 +35,7 @@ const buildTreeQuery = (supabase, userId) => {
 const buildNodeQuery = (supabase, treeIds, userId) => {
   const query = supabase
     .from('nodes')
-    .select('id, tree_id, parent_id, keyword, question, answer, status, node_type, memo_parent_id, memo_title, memo_content, memo_metadata, created_at, updated_at, deleted_at, conversation, user_id')
+    .select('id, tree_id, parent_id, keyword, question, answer, status, node_type, created_at, updated_at, deleted_at, conversation, user_id')
     .in('tree_id', treeIds)
     .is('deleted_at', null)
     .range(0, NODE_FETCH_LIMIT - 1);

@@ -124,7 +124,7 @@ const TreeCanvas = ({
       <div className="flex h-full items-center justify-center bg-muted/10">
         <div className="space-y-3 text-center text-muted-foreground">
           <FileText className="mx-auto h-14 w-14" />
-          <p className="text-sm">메모를 선택하면 트리가 표시됩니다.</p>
+          <p className="text-sm">트리를 선택하면 시각화가 표시됩니다.</p>
         </div>
       </div>
     );

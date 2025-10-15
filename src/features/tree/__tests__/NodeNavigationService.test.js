@@ -15,7 +15,6 @@ describe('NodeNavigationService', () => {
       { id: 'child2', keyword: 'Child 2', nodeType: 'question' },
       { id: 'grandchild1', keyword: 'Grandchild 1', nodeType: 'question' },
       { id: 'grandchild2', keyword: 'Grandchild 2', nodeType: 'question' },
-      { id: 'memo1', keyword: 'Memo 1', nodeType: 'memo' },
     ];
 
     // 테스트용 링크 데이터
@@ -24,7 +23,6 @@ describe('NodeNavigationService', () => {
       { source: 'root', target: 'child2' },
       { source: 'child1', target: 'grandchild1' },
       { source: 'child1', target: 'grandchild2' },
-      { source: 'child1', target: 'memo1' }, // 메모 링크 추가
     ];
 
         service.setTreeData(mockNodes, mockLinks);
@@ -114,7 +112,7 @@ describe('NodeNavigationService', () => {
         
         expect(pathInfo.node.id).toBe('child1');
         expect(pathInfo.parent.id).toBe('root');
-        expect(pathInfo.children).toHaveLength(2); // 메모 제외된 자식들
+        expect(pathInfo.children).toHaveLength(2);
         expect(pathInfo.siblings).toHaveLength(2);
         expect(pathInfo.siblingIndex).toBe(0);
         expect(pathInfo.hasParent).toBe(true);
@@ -123,30 +121,4 @@ describe('NodeNavigationService', () => {
       });
     });
 
-    describe('memo node navigation', () => {
-      test('should exclude memo nodes from child navigation', () => {
-        const children = service.findChildNodes('child1');
-        const childIds = children.map(child => child.id);
-        
-        expect(childIds).toContain('grandchild1');
-        expect(childIds).toContain('grandchild2');
-        expect(childIds).not.toContain('memo1');
-      });
-
-      test('should not navigate from memo nodes', () => {
-        const result = service.navigate('memo1', 'ArrowUp');
-        expect(result).toBeNull();
-      });
-
-      test('should not navigate to memo parent', () => {
-        const result = service.navigateUp('memo1');
-        expect(result).toBeNull();
-      });
-
-      test('should not navigate to memo children', () => {
-        // child1에서 아래로 이동하면 메모는 제외되고 grandchild만 나와야 함
-        const result = service.navigateDown('child1');
-        expect(result.id).toBe('grandchild1');
-      });
-    });
-});
+  });

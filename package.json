@@ -9,7 +9,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "start:web": "cross-env REACT_APP_PLATFORM=web react-scripts start",
+    "start:web": "cross-env REACT_APP_PLATFORM=web REACT_APP_DEPLOY_ENV=development react-scripts start",
+    "dev:web": "cross-env REACT_APP_PLATFORM=web REACT_APP_DEPLOY_ENV=development REACT_APP_SUPABASE_REDIRECT_URL_DEVELOPMENT=http://localhost:3000/auth/callback react-scripts start",
     "build:web": "cross-env REACT_APP_PLATFORM=web react-scripts build",
     "preview:web": "npm run start:web",
     "smoke:web": "node scripts/smoke/run-web-smoke.js",
@@ -19,6 +20,7 @@
     "electron:dev": "concurrently \"npm run start:renderer\" \"npm run start:electron\"",
     "electron:build": "npm run build && electron-builder",
     "electron:smoke": "node scripts/smoke/run-electron-smoke.js",
+    "start:agent-proxy": "node server/agent-proxy/server.mjs",
     "playwright:test": "playwright test --config=playwright.config.js"
   },
   "dependencies": {

@@ -40,10 +40,6 @@ const parseConversationField = (value) => {
 };
 
 const mapRowConversation = (row) => {
-  if (row?.node_type === 'memo') {
-    return [];
-  }
-
   const parsed = parseConversationField(row?.conversation);
   const sanitized = sanitizeConversationMessages(parsed);
   if (sanitized.length) {
@@ -66,7 +62,7 @@ const generateId = (prefix = 'tree') => {
 
 export const generateTreeId = () => generateId('tree');
 
-const ALLOWED_NODE_STATUSES = new Set(['placeholder', 'asking', 'answered', 'draft', 'memo']);
+const ALLOWED_NODE_STATUSES = new Set(['placeholder', 'asking', 'answered', 'draft']);
 
 const STATUS_ALIASES = Object.freeze({
   pending: 'asking',
@@ -75,11 +71,7 @@ const STATUS_ALIASES = Object.freeze({
   complete: 'answered',
 });
 
-const normalizeNodeStatus = (status, nodeType) => {
-  if (nodeType === 'memo') {
-    return 'memo';
-  }
-
+const normalizeNodeStatus = (status) => {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
   if (!normalized) {
     return 'answered';
@@ -114,65 +106,26 @@ const normalizeTimestamp = (value) => {
 };
 
 const mapNodeRow = (row, level = 0) => {
-  const nodeType = row.node_type || 'question';
-  const resolveMemoMetadata = () => {
-    const value = row.memo_metadata;
-    if (value === null || value === undefined) {
-      return null;
-    }
-    if (typeof value === 'object') {
-      return value;
-    }
-    if (typeof value === 'string') {
-      try {
-        const parsed = JSON.parse(value);
-        return typeof parsed === 'object' && parsed !== null ? parsed : null;
-      } catch (error) {
-        return null;
-      }
-    }
-    return null;
-  };
-
-  const memo = nodeType === 'memo'
-    ? {
-      title: row.memo_title || row.keyword || row.question || '메모',
-      content: row.memo_content || '',
-      metadata: resolveMemoMetadata(),
-    }
-    : null;
-
-  const conversation = nodeType === 'memo'
-    ? []
-    : mapRowConversation(row);
-
-  const keyword = nodeType === 'memo'
-    ? (memo?.title || row.keyword || row.question || '메모')
-    : (row.keyword || row.question || '신규 노드');
-
-  const fullText = nodeType === 'memo'
-    ? (memo?.content || '')
-    : (row.answer || '');
+  const conversation = mapRowConversation(row);
+  const keyword = row.keyword || row.question || '신규 노드';
+  const fullText = row.answer || '';
 
   return {
     id: row.id,
     keyword,
     fullText,
-    status: row.status || (nodeType === 'memo' ? 'memo' : 'answered'),
+    status: row.status || 'answered',
     level,
-    size: nodeType === 'memo' ? 8 : (level === 0 ? 20 : 14),
-    parentId: row.parent_id || row.memo_parent_id || null,
-    memoParentId: row.memo_parent_id || null,
-    nodeType,
-    memo: memo || undefined,
-    memoMetadata: memo?.metadata || null,
-    question: nodeType === 'memo' ? null : (row.question || null),
-    answer: nodeType === 'memo' ? null : (row.answer || null),
+    size: level === 0 ? 20 : 14,
+    parentId: row.parent_id || null,
+    nodeType: 'question',
+    question: row.question || null,
+    answer: row.answer || null,
     conversation: conversation.map((message) => ({ ...message })),
-    questionData: nodeType === 'memo' ? undefined : (row.question ? {
+    questionData: row.question ? {
       question: row.question,
       answer: row.answer || '',
-    } : undefined),
+    } : undefined,
     createdAt: normalizeTimestamp(row.created_at),
     updatedAt: normalizeTimestamp(row.updated_at),
   };
@@ -180,7 +133,7 @@ const mapNodeRow = (row, level = 0) => {
 
 const buildLinks = (nodeRows) => nodeRows
   .map((node) => ({
-    parent: node.parent_id || node.memo_parent_id,
+    parent: node.parent_id,
     id: node.id,
   }))
   .filter((entry) => entry.parent)
@@ -239,7 +192,6 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
   const supabase = ensureSupabase();
 
   const formattedNodes = nodes.map((node) => {
-    const nodeType = node.nodeType || node.node_type || (node.memo ? 'memo' : 'question');
     const question = typeof node.question === 'string' && node.question.trim()
       ? node.question.trim()
       : (node.questionData?.question || null);
@@ -247,33 +199,21 @@ export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
       ? node.answer.trim()
       : (node.fullText || node.questionData?.answer || null);
     const normalizedConversation = sanitizeConversationMessages(node.conversation);
-    const conversation = nodeType === 'memo'
-      ? []
-      : (normalizedConversation.length
-        ? normalizedConversation
-        : buildFallbackConversation(question, answer));
-
-    const memo = node.memo || (nodeType === 'memo' ? {
-      title: node.keyword || null,
-      content: node.fullText || null,
-    } : null);
-    const memoMetadata = node.memoMetadata || node.memo_metadata || memo?.metadata || null;
-    const status = normalizeNodeStatus(node.status, nodeType);
+    const conversation = normalizedConversation.length
+      ? normalizedConversation
+      : buildFallbackConversation(question, answer);
+    const status = normalizeNodeStatus(node.status);
 
     return {
       id: node.id,
       user_id: userId,
       tree_id: treeId,
-      parent_id: node.parentId || node.memoParentId || null,
-      keyword: node.keyword || (memo?.title ?? null),
-      question: nodeType === 'memo' ? null : question,
-      answer: nodeType === 'memo' ? null : answer,
+      parent_id: node.parentId || null,
+      keyword: node.keyword || question || null,
+      question,
+      answer,
       status,
-      node_type: nodeType,
-      memo_parent_id: node.memoParentId || node.parentId || null,
-      memo_title: memo?.title ?? null,
-      memo_content: memo?.content ?? null,
-      memo_metadata: memoMetadata || null,
+      node_type: 'question',
       created_at: normalizeTimestamp(node.createdAt) || Date.now(),
       updated_at: Date.now(),
       conversation,

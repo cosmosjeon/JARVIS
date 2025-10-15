@@ -97,17 +97,11 @@ const annotateHierarchyMetrics = (root, nodeMap) => {
   });
 };
 
-const nodeToHierarchy = (node) => {
-    const isMemoNode = node?.nodeType === 'memo';
-    const memoTitle = isMemoNode ? (node?.memo?.title || '') : '';
-    const resolvedName = (isMemoNode ? (memoTitle || node.keyword || node.id || 'Memo') : (node.keyword || node.id || 'Node'));
-
-    return {
-        name: resolvedName,
-        id: node.id,
-        data: { ...node }
-    };
-};
+const nodeToHierarchy = (node) => ({
+  name: node?.keyword || node?.id || 'Node',
+  id: node?.id,
+  data: { ...node },
+});
 
 const transformToHierarchy = (nodes, links) => {
     if (!Array.isArray(nodes) || nodes.length === 0) {
