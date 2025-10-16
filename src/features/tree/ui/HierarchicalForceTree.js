@@ -215,6 +215,19 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     isTreeSyncing,
     setIsTreeSyncing,
   } = treeState;
+  const activeTreeTitle = useMemo(() => {
+    const matched = availableTrees.find((tree) => tree.id === activeTreeId);
+    if (matched?.title) {
+      return matched.title;
+    }
+
+    const rootNode = Array.isArray(data?.nodes)
+      ? data.nodes.find((node) => node?.level === 0)
+        || data.nodes[0]
+      : null;
+
+    return rootNode?.keyword || '지식 트리';
+  }, [availableTrees, activeTreeId, data?.nodes]);
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const dataRef = useRef(data);
   const simulationRef = useRef(null);
@@ -2201,43 +2214,83 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     }
   }, []);
 
-  const handleNodeUpdate = useCallback(async (nodeId, updates = {}) => {
+  const handleNodeUpdate = useCallback(async (nodeOrId, updates = {}) => {
     try {
       const latestData = dataRef.current;
       if (!latestData || !Array.isArray(latestData.nodes)) {
         return;
       }
 
-      const updatedNodes = [...latestData.nodes];
-      const nodeIndex = updatedNodes.findIndex((node) => node.id === nodeId);
-      if (nodeIndex === -1) {
+      const isFullNodePayload = typeof nodeOrId === 'object' && nodeOrId !== null && nodeOrId.id;
+      let nextNode;
+
+      if (isFullNodePayload) {
+        nextNode = {
+          ...nodeOrId,
+        };
+      } else {
+        const nodeId = nodeOrId;
+        if (!nodeId) {
+          return;
+        }
+
+        const updatedNodes = latestData.nodes;
+        const nodeIndex = updatedNodes.findIndex((node) => node.id === nodeId);
+        if (nodeIndex === -1) {
+          return;
+        }
+
+        const existingNode = updatedNodes[nodeIndex];
+        nextNode = {
+          ...existingNode,
+          ...updates,
+        };
+
+        const providedKeyword = Object.prototype.hasOwnProperty.call(updates, 'keyword')
+          ? updates.keyword
+          : updates.name;
+
+        if (typeof providedKeyword === 'string') {
+          const trimmed = providedKeyword.trim();
+          const fallback = existingNode.keyword || existingNode.name || existingNode.id;
+          const resolved = trimmed || fallback;
+          nextNode.keyword = resolved;
+          nextNode.name = resolved;
+          nextNode.titleManuallyEdited = true;
+          nextNode.autoTitleAttempted = true;
+          nextNode.autoTitleGenerated = false;
+          nextNode.updatedAt = Date.now();
+          markNodeTitleManual(activeTreeId, nodeId, resolved);
+        }
+      }
+
+      if (!nextNode?.id) {
         return;
       }
 
-      const existingNode = updatedNodes[nodeIndex];
-      const nextNode = {
-        ...existingNode,
-        ...updates,
+      const normalizedConversation = Array.isArray(nextNode.conversation)
+        ? nextNode.conversation
+        : [];
+
+      const normalizedNode = {
+        ...nextNode,
+        treeId: nextNode.treeId || activeTreeId,
+        conversation: normalizedConversation,
+        updatedAt: nextNode.updatedAt || Date.now(),
       };
 
-      const providedKeyword = Object.prototype.hasOwnProperty.call(updates, 'keyword')
-        ? updates.keyword
-        : updates.name;
-
-      if (typeof providedKeyword === 'string') {
-        const trimmed = providedKeyword.trim();
-        const fallback = existingNode.keyword || existingNode.name || existingNode.id;
-        const resolved = trimmed || fallback;
-        nextNode.keyword = resolved;
-        nextNode.name = resolved;
-        nextNode.titleManuallyEdited = true;
-        nextNode.autoTitleAttempted = true;
-        nextNode.autoTitleGenerated = false;
-        nextNode.updatedAt = Date.now();
-        markNodeTitleManual(activeTreeId, nodeId, resolved);
+      if (!Number.isFinite(normalizedNode.level)) {
+        const parentLevel = normalizedNode.parentId ? getNodeLevel(normalizedNode.parentId) : -1;
+        normalizedNode.level = parentLevel + 1;
       }
 
-      updatedNodes[nodeIndex] = nextNode;
+      const updatedNodes = [...latestData.nodes];
+      const nodeIndex = updatedNodes.findIndex((node) => node.id === normalizedNode.id);
+      if (nodeIndex === -1) {
+        updatedNodes.push(normalizedNode);
+      } else {
+        updatedNodes[nodeIndex] = normalizedNode;
+      }
 
       const snapshot = {
         ...latestData,
@@ -2246,12 +2299,81 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
 
       setData(snapshot);
       dataRef.current = snapshot;
+      setConversationForNode(normalizedNode.id, normalizedConversation);
 
       await persistTreeData({ force: true, snapshot });
     } catch (error) {
       console.error('노드 업데이트 실패:', error);
     }
-  }, [activeTreeId, markNodeTitleManual, persistTreeData]);
+  }, [activeTreeId, getNodeLevel, markNodeTitleManual, persistTreeData]);
+
+  const handleAssistantNodeCreate = useCallback((newNode, link, options = {}) => {
+    if (!newNode || !newNode.id) {
+      return;
+    }
+
+    const latestData = dataRef.current || { nodes: [], links: [] };
+    const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+
+    const parentIdFromLink = link ? normalizeId(link.source) : null;
+
+    const normalizedNode = {
+      ...newNode,
+      treeId: newNode.treeId || activeTreeId,
+      parentId: newNode.parentId || parentIdFromLink || null,
+      conversation: Array.isArray(newNode.conversation) ? newNode.conversation : [],
+      createdAt: newNode.createdAt || Date.now(),
+      updatedAt: newNode.updatedAt || Date.now(),
+    };
+
+    if (!Number.isFinite(normalizedNode.level)) {
+      const parentLevel = normalizedNode.parentId ? getNodeLevel(normalizedNode.parentId) : -1;
+      normalizedNode.level = parentLevel + 1;
+    }
+
+    const filteredNodes = latestData.nodes.filter((node) => node.id !== normalizedNode.id);
+    const filteredLinks = latestData.links.filter((existingLink) => {
+      const targetId = normalizeId(existingLink.target);
+      return targetId !== normalizedNode.id;
+    });
+
+    const nextNodes = [...filteredNodes, normalizedNode];
+    const nextLinks = [...filteredLinks];
+
+    const resolvedParentId = normalizedNode.parentId;
+    if (resolvedParentId) {
+      const resolvedTargetId = normalizeId(link?.target) || normalizedNode.id;
+      const hasLink = nextLinks.some((existingLink) => {
+        const sourceId = normalizeId(existingLink.source);
+        const targetId = normalizeId(existingLink.target);
+        return sourceId === resolvedParentId && targetId === resolvedTargetId;
+      });
+
+      if (!hasLink) {
+        nextLinks.push({
+          source: link?.source || resolvedParentId,
+          target: link?.target || normalizedNode.id,
+          value: link?.value ?? 1,
+        });
+      }
+    }
+
+    const snapshot = {
+      ...latestData,
+      nodes: nextNodes,
+      links: nextLinks,
+    };
+
+    setData(snapshot);
+    dataRef.current = snapshot;
+    setConversationForNode(normalizedNode.id, normalizedNode.conversation);
+    persistTreeData({ force: true, snapshot }).catch(() => {});
+
+    if (options?.select !== false) {
+      setSelectedNodeId(normalizedNode.id);
+      setExpandedNodeId(normalizedNode.id);
+    }
+  }, [activeTreeId, getNodeLevel, persistTreeData, setConversationForNode, setData]);
 
   const handleManualNodeCreate = useCallback((parentNodeId) => {
     const latestData = dataRef.current;
@@ -2778,6 +2900,20 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       });
   }, [nodes, focusNodeToCenter, zoomOnClickEnabled]);
 
+  const handleAssistantNodeSelect = useCallback((candidate) => {
+    if (!candidate) {
+      setSelectedNodeId(null);
+      return;
+    }
+
+    const targetId = typeof candidate === 'string' ? candidate : candidate?.id;
+    if (!targetId) {
+      return;
+    }
+
+    handleNodeClickForAssistant({ id: targetId });
+  }, [handleNodeClickForAssistant]);
+
   // Drag behavior - 애니메이션 중에도 드래그 가능
 
   const getDragHandler = useCallback((nodeId) => createNodeDragHandler({
@@ -2988,45 +3124,14 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
             <div className="flex h-full w-full overflow-hidden">
               <NodeAssistantPanel
                 node={tidyAssistantNode}
-                color={d3.schemeCategory10[0]}
-                theme={theme}
-                onSizeChange={() => { }}
-                onSecondQuestion={handleSecondQuestion}
-                onPlaceholderCreate={handlePlaceholderCreate}
-                questionService={questionService.current}
-                initialConversation={getInitialConversationForNode(expandedNodeId)}
-                onConversationChange={(messages) => {
-                  if (expandedNodeId) {
-                    handleConversationChange(expandedNodeId, messages);
-                  }
-                }}
-                onRequestAnswer={handleRequestAnswer}
-                onAnswerComplete={handleAnswerComplete}
-                onAnswerError={handleAnswerError}
-                isRootNode={tidyAssistantIsRoot}
-                bootstrapMode={false}
+                treeId={activeTreeId}
+                treeTitle={activeTreeTitle}
+                treeNodes={Array.isArray(data?.nodes) ? data.nodes : []}
+                treeLinks={Array.isArray(data?.links) ? data.links : []}
+                onNodeUpdate={handleNodeUpdate}
+                onNewNodeCreated={handleAssistantNodeCreate}
+                onNodeSelect={handleAssistantNodeSelect}
                 onCloseNode={() => handleCloseNode(expandedNodeId)}
-                onPanZoomGesture={forwardPanZoomGesture}
-                nodeScaleFactor={nodeScaleFactor}
-                nodeSummary={{
-                  label: tidyAssistantNode.keyword || tidyAssistantNode.id,
-                  intro: tidyAssistantNode.fullText || '',
-                  bullets: [],
-                }}
-                treeNodes={Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : []}
-                treeLinks={Array.isArray(visibleGraph.links) ? visibleGraph.links : []}
-                onNodeSelect={(targetNode) => {
-                  const targetId = targetNode?.id;
-                  if (targetId && targetId !== expandedNodeId) {
-                    handleNodeClickForAssistant({ id: targetId, source: 'assistant-panel' });
-                  }
-                }}
-                attachments={tidyAssistantAttachments}
-                onAttachmentsChange={(nextAttachments) => {
-                  if (expandedNodeId) {
-                    setAttachmentsForNode(expandedNodeId, nextAttachments);
-                  }
-                }}
               />
             </div>
           </div>
@@ -3471,26 +3576,17 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         >
           <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
             <NodeAssistantPanel
-              node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
-              color={d3.schemeCategory10[0]}
-              theme={theme}
-              onSizeChange={() => { }}
-              onSecondQuestion={() => { }}
-              onPlaceholderCreate={() => { }}
-              questionService={questionService.current}
-              initialConversation={getInitialConversationForNode('__bootstrap__')}
-              onConversationChange={(messages) => handleConversationChange('__bootstrap__', messages)}
-              nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
-              isRootNode={true}
-              bootstrapMode={true}
-              isBootstrapCompact={isBootstrapCompact}
-              onBootstrapFirstSend={handleBootstrapSubmit}
-              onPanZoomGesture={forwardPanZoomGesture}
-              nodeScaleFactor={nodeScaleFactor}
-              attachments={pendingAttachmentsByNode['__bootstrap__'] || []}
-              onAttachmentsChange={(next) => setAttachmentsForNode('__bootstrap__', next)}
-              onDropdownOpenChange={handleCompactProviderDropdownOpenChange}
-              onTextareaHeightChange={handleTextareaHeightChange}
+              node={{ id: '__bootstrap__', keyword: '', fullText: '', level: 0, treeId: activeTreeId }}
+              treeId={activeTreeId}
+              treeTitle={activeTreeTitle}
+              treeNodes={Array.isArray(data?.nodes) ? data.nodes : []}
+              treeLinks={Array.isArray(data?.links) ? data.links : []}
+              onNodeUpdate={handleNodeUpdate}
+              onNewNodeCreated={handleAssistantNodeCreate}
+              onNodeSelect={handleAssistantNodeSelect}
+              onCloseNode={() => setShowBootstrapChat(false)}
+              isLibraryIntroActive
+              onLibraryIntroComplete={() => setShowBootstrapChat(false)}
             />
           </div>
         </div>
