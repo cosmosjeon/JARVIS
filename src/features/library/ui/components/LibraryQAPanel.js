@@ -1222,10 +1222,6 @@ const LibraryQAPanel = ({
       return;
     }
 
-    if (!selectedNode && !isLibraryIntroActive) {
-      return;
-    }
-
     if (!isApiAvailable) {
       setError('AI 응답을 사용할 수 없습니다. 환경 설정을 확인한 뒤 다시 시도해주세요.');
       return;
@@ -1673,8 +1669,6 @@ const LibraryQAPanel = ({
           ? TIMEOUT_MESSAGE
           : error?.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
-        clearStatusTimers();
-        setStatusVisibleCount(0);
         if (!isOverride) {
           setComposerValue(question);
           if (hasAttachments) {
@@ -1799,8 +1793,6 @@ const LibraryQAPanel = ({
           ? TIMEOUT_MESSAGE
           : error?.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
-        clearStatusTimers();
-        setStatusVisibleCount(0);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantId
@@ -1951,8 +1943,6 @@ const LibraryQAPanel = ({
       console.error('질문 처리 실패:', error);
       const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
       setError(errorMessage);
-      clearStatusTimers();
-      setStatusVisibleCount(0);
       if (!isOverride) {
         setComposerValue(question);
         if (hasAttachments) {
@@ -2115,65 +2105,6 @@ const LibraryQAPanel = ({
     setIsComposing(false);
   }, []);
 
-  if (!selectedNode && !isLibraryIntroActive) {
-    return (
-      <div
-        className={containerClassName}
-        style={panelStyle}
-        data-interactive-zone="true"
-        {...attachmentDropHandlers}
-      >
-        <div
-          className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
-        >
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="truncate text-lg font-semibold" style={{ color: chatPanelStyles.textColor }}>
-                질문 답변
-              </p>
-            </div>
-            <p className="mt-1 text-sm leading-relaxed" style={{ color: subtleTextColor }}>
-              노드를 선택하면 질문 답변을 시작할 수 있습니다.
-            </p>
-          </div>
-          <div className="flex items-center gap-1">
-            {onFullscreenToggle && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={onFullscreenToggle}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
-                      style={{ color: chatPanelStyles.textColor }}
-                      aria-label={isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}
-                    >
-                      {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
-                style={{ color: chatPanelStyles.textColor }}
-                aria-label="AI 패널 닫기"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div
       className={containerClassName}
@@ -2230,7 +2161,7 @@ const LibraryQAPanel = ({
         }, 100);
       }}
     >
-      {!isLibraryIntroActive && (
+      {!isLibraryIntroActive && selectedNode && (
         <div
           className="flex flex-shrink-0 flex-wrap items-start justify-between gap-3 pb-2"
         >
@@ -2241,7 +2172,7 @@ const LibraryQAPanel = ({
                 style={{ color: chatPanelStyles.textColor }}
               >
                 <EditableTitle
-                  title={(selectedNode.keyword && selectedNode.keyword.trim()) || selectedNode.id || '질문 답변'}
+                  title={(selectedNode?.keyword && selectedNode.keyword.trim()) || selectedNode?.id || '질문 답변'}
                   onUpdate={handleNodeTitleUpdate}
                   className="truncate text-lg font-semibold"
                   placeholder="노드 제목을 입력하세요"
@@ -2249,7 +2180,7 @@ const LibraryQAPanel = ({
               </div>
             </div>
             <p className="mt-1 text-xs" style={{ color: subtleTextColor }}>
-              {selectedNode.question || selectedNode.keyword || '대화를 시작해보세요.'}
+              {selectedNode?.question || selectedNode?.keyword || '대화를 시작해보세요.'}
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs font-medium" style={{ color: subtleTextColor }}>
@@ -2348,36 +2279,6 @@ const LibraryQAPanel = ({
           className="flex -mb-2 flex-shrink-0 items-center gap-2"
           style={{ position: 'relative', zIndex: 1002, pointerEvents: 'auto' }}
         >
-          <button
-            type="button"
-            onClick={(e) => {
-              console.log('🖱️ [버튼 DOM] onClick 이벤트 발생!', e);
-              console.log('이벤트 타겟:', e.target);
-              console.log('현재 타겟:', e.currentTarget);
-              toggleMultiQuestionMode();
-            }}
-            onMouseDown={(e) => {
-              console.log('🖱️ [버튼 DOM] onMouseDown 이벤트 발생!');
-            }}
-            aria-pressed={isMultiQuestionMode}
-            aria-label="하이라이트 모드"
-            className="rounded-xl border px-3 py-1 text-xs font-medium transition-all duration-200"
-            style={{
-              cursor: 'pointer',
-              pointerEvents: 'auto',
-              backgroundColor: isMultiQuestionMode 
-                ? 'rgba(16, 185, 129, 0.6)' 
-                : isDarkTheme 
-                  ? 'rgba(65, 65, 65, 0.8)' 
-                  : 'rgba(255, 255, 255, 0.8)',
-              borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.6)' : chatPanelStyles.borderColor,
-              borderWidth: '1px',
-              borderStyle: 'solid',
-              color: chatPanelStyles.textColor,
-            }}
-          >
-            다중 질문
-          </button>
 
           {highlightNotice && (
             <div
@@ -2481,6 +2382,42 @@ const LibraryQAPanel = ({
               align="start"
             />
             <div className="flex flex-1 items-center justify-end gap-2">
+              {/* 다중질문 버튼 */}
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PromptInputButton
+                      onClick={(e) => {
+                        console.log('🖱️ [다중질문 버튼] 클릭됨!');
+                        toggleMultiQuestionMode();
+                      }}
+                      disabled={isProcessing}
+                      variant="ghost"
+                      className={cn(
+                        "rounded-full p-2 text-xs font-medium transition-all duration-200 relative z-10",
+                        isMultiQuestionMode 
+                          ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" 
+                          : "hover:bg-gray-100 text-gray-500"
+                      )}
+                      style={{
+                        backgroundColor: isMultiQuestionMode 
+                          ? 'rgba(16, 185, 129, 0.1)' 
+                          : undefined,
+                        borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.3)' : undefined,
+                        borderWidth: isMultiQuestionMode ? '1px' : undefined,
+                        borderStyle: isMultiQuestionMode ? 'solid' : undefined,
+                      }}
+                    >
+                      다중질문
+                    </PromptInputButton>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>{isMultiQuestionMode ? "다중질문 모드 해제" : "다중질문 모드 활성화"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              
+              {/* 파일첨부 버튼 */}
               <TooltipProvider delayDuration={300}>
                 <div className="flex items-center gap-1 relative z-10">
                   <Tooltip>
