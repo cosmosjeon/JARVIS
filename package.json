@@ -52,6 +52,7 @@
     "katex": "^0.16.22",
     "lucide-react": "^0.544.0",
     "openai": "^4.59.1",
+    "pdfjs-dist": "^4.6.82",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",

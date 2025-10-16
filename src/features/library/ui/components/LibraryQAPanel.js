@@ -28,6 +28,18 @@ import { DEFAULT_AGENT_RESPONSE_TIMEOUT_MS } from 'shared/constants/agentTimeout
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 import collectAncestorConversationMessages from 'features/tree/utils/assistantContext';
 import {
+  ATTACHMENT_ERROR_MESSAGES,
+  MAX_ATTACHMENT_SIZE_BYTES,
+} from 'shared/constants/attachment';
+import {
+  createImageAttachment,
+  createPdfAttachment,
+  isSupportedFile,
+  isSupportedImageMime,
+  isSupportedPdfMime,
+  partitionFilesBySupport,
+} from 'shared/utils/attachmentUtils';
+import {
   DEFAULT_ASSISTANT_LOADING_MESSAGES,
   DEFAULT_ASSISTANT_LOADING_MESSAGE_INTERVAL_MS,
 } from 'features/chat/constants/loadingMessages';
@@ -457,41 +469,54 @@ const LibraryQAPanel = ({
       return;
     }
 
-    const files = Array.from(fileList).filter((file) => file.type?.startsWith('image/'));
+    const files = Array.from(fileList).filter(Boolean);
     if (!files.length) {
-      setHighlightNotice({ type: 'warning', message: '이미지 파일만 첨부할 수 있습니다.' });
       return;
     }
 
-    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
+    const { supported, unsupported } = partitionFilesBySupport(files);
+    if (unsupported.length) {
+      const hasOversized = unsupported.some((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
+      const hasUnsupportedType = unsupported.some((file) => !isSupportedImageMime(file.type) && !isSupportedPdfMime(file.type));
+      const message = hasOversized
+        ? ATTACHMENT_ERROR_MESSAGES.fileTooLarge
+        : hasUnsupportedType
+          ? ATTACHMENT_ERROR_MESSAGES.unsupportedType
+          : ATTACHMENT_ERROR_MESSAGES.unsupportedType;
+      setHighlightNotice({ type: 'warning', message });
+    }
+    if (!supported.length) {
+      return;
+    }
 
-    const baseTimestamp = Date.now();
     setIsAttachmentUploading(true);
+    const baseTimestamp = Date.now();
     try {
-      const nextAttachments = await Promise.all(
-        files.map(async (file, index) => {
-          const dataUrl = await readFileAsDataUrl(file);
-          return {
-            id: `upload-${baseTimestamp}-${index}-${Math.random().toString(16).slice(2, 8)}`,
-            type: 'image',
-            mimeType: file.type,
-            dataUrl,
-            name: file.name,
-            label: file.name,
-            size: file.size,
-            createdAt: baseTimestamp,
-          };
-        }),
-      );
-      setAttachments((prev) => [...prev, ...nextAttachments]);
-    } catch (uploadError) {
-      console.error('이미지 첨부 중 오류 발생:', uploadError);
-      setHighlightNotice({ type: 'warning', message: '이미지 첨부에 실패했습니다.' });
+      const nextAttachments = [];
+      for (const file of supported) {
+        try {
+          if (isSupportedImageMime(file.type)) {
+            nextAttachments.push(await createImageAttachment(file));
+          } else if (isSupportedPdfMime(file.type)) {
+            nextAttachments.push(await createPdfAttachment(file));
+          }
+        } catch (error) {
+          console.error('[LibraryQAPanel] attachment processing failed', error);
+          setHighlightNotice({
+            type: 'warning',
+            message: isSupportedPdfMime(file.type)
+              ? ATTACHMENT_ERROR_MESSAGES.pdfParseFailed
+              : ATTACHMENT_ERROR_MESSAGES.unsupportedType,
+          });
+        }
+      }
+
+      if (nextAttachments.length) {
+        setAttachments((prev) => [...prev, ...nextAttachments.map((attachment, index) => ({
+          ...attachment,
+          createdAt: attachment.createdAt ?? baseTimestamp + index,
+        }))]);
+      }
     } finally {
       setIsAttachmentUploading(false);
     }
@@ -503,6 +528,7 @@ const LibraryQAPanel = ({
   } = useFileDropZone({
     onDropFiles: handleAttachmentFiles,
     isDisabled: isAttachmentUploading || isProcessing,
+    shouldAccept: (files) => files.every(isSupportedFile),
   });
 
   const autoSelectionPreview = useMemo(() => {
@@ -2562,7 +2588,7 @@ const LibraryQAPanel = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf"
             multiple
             className="hidden"
             onChange={(event) => {

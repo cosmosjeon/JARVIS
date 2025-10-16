@@ -9,6 +9,17 @@ import HighlightSelectionStore from 'features/tree/services/node-assistant/Highl
 import { EDITABLE_TITLE_ACTIVE_ATTR } from 'shared/ui/EditableTitle';
 import { useAIModelPreference } from 'shared/hooks/useAIModelPreference';
 import selectAutoModel from 'shared/utils/aiModelSelector';
+import {
+  ATTACHMENT_ERROR_MESSAGES,
+  MAX_ATTACHMENT_SIZE_BYTES,
+} from 'shared/constants/attachment';
+import {
+  createImageAttachment,
+  createPdfAttachment,
+  isSupportedImageMime,
+  isSupportedPdfMime,
+  partitionFilesBySupport,
+} from 'shared/utils/attachmentUtils';
 
 export const PANEL_SIZES = {
   compact: { width: 1600, height: 900 },
@@ -204,38 +215,45 @@ export const useNodeAssistantPanelController = ({
       return;
     }
 
-    const files = Array.from(fileList).filter((file) => file.type?.startsWith('image/'));
+    const files = Array.from(fileList).filter(Boolean);
     if (!files.length) {
-      setPlaceholderNotice({ type: 'warning', message: '이미지 파일만 첨부할 수 있습니다.' });
       return;
     }
 
-    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
+    const { supported, unsupported } = partitionFilesBySupport(files);
+    if (unsupported.length) {
+      const hasOversized = unsupported.some((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
+      const hasUnsupportedType = unsupported.some((file) => !isSupportedImageMime(file.type) && !isSupportedPdfMime(file.type));
+      const message = hasOversized
+        ? ATTACHMENT_ERROR_MESSAGES.fileTooLarge
+        : hasUnsupportedType
+          ? ATTACHMENT_ERROR_MESSAGES.unsupportedType
+          : ATTACHMENT_ERROR_MESSAGES.unsupportedType;
+      setPlaceholderNotice({ type: 'warning', message });
+    }
+    if (!supported.length) {
+      return;
+    }
 
     setIsAttachmentUploading(true);
     try {
-      const nextAttachments = await Promise.all(files.map(async (file, index) => {
-        const dataUrl = await readFileAsDataUrl(file);
-        return {
-          id: `upload-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`,
-          type: 'image',
-          mimeType: file.type,
-          dataUrl,
-          name: file.name,
-          label: file.name,
-          size: file.size,
-          createdAt: Date.now(),
-        };
-      }));
+      const nextAttachments = [];
+      for (const file of supported) {
+        try {
+          if (isSupportedImageMime(file.type)) {
+            nextAttachments.push(await createImageAttachment(file));
+          } else if (isSupportedPdfMime(file.type)) {
+            nextAttachments.push(await createPdfAttachment(file));
+          }
+        } catch (error) {
+          console.error('[useNodeAssistantPanelController] attachment processing failed', error);
+          setPlaceholderNotice({ type: 'warning', message: isSupportedPdfMime(file.type) ? ATTACHMENT_ERROR_MESSAGES.pdfParseFailed : ATTACHMENT_ERROR_MESSAGES.unsupportedType });
+        }
+      }
 
-      updateAttachments([...draftAttachments, ...nextAttachments]);
-    } catch (error) {
-      setPlaceholderNotice({ type: 'warning', message: '이미지 첨부 중 오류가 발생했습니다.' });
+      if (nextAttachments.length) {
+        updateAttachments([...draftAttachments, ...nextAttachments]);
+      }
     } finally {
       setIsAttachmentUploading(false);
     }

@@ -1,5 +1,20 @@
 export const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
 
+const parseBase64FromDataUrl = (dataUrl, fallbackMime = '') => {
+  const trimmed = toTrimmedString(dataUrl);
+  const matches = trimmed.match(/^data:(.*?);base64,(.*)$/);
+  if (!matches || matches.length < 3) {
+    return {
+      mimeType: fallbackMime,
+      base64: '',
+    };
+  }
+  return {
+    mimeType: matches[1] || fallbackMime,
+    base64: matches[2],
+  };
+};
+
 export const PROVIDERS = {
   AUTO: 'auto',
   OPENAI: 'openai',
@@ -120,11 +135,53 @@ const sanitizeAttachmentList = (attachments) => {
   if (!Array.isArray(attachments)) {
     return [];
   }
+
   return attachments
-    .filter((item) => item && typeof item === 'object' && typeof item.dataUrl === 'string')
+    .filter((item) => item && typeof item === 'object')
     .map((item) => {
+      const type = (item.type || 'image').toLowerCase();
+      const mimeType = toTrimmedString(item.mimeType) || undefined;
+      const label = toTrimmedString(item.label) || undefined;
+      const base64 = toTrimmedString(item.base64);
       const dataUrl = toTrimmedString(item.dataUrl);
-      return dataUrl ? { dataUrl } : null;
+      const textContent = toTrimmedString(item.textContent);
+      const pageCount = Number.isFinite(item.pageCount) ? item.pageCount : undefined;
+
+      if (type === 'pdf') {
+        if (!textContent && !base64 && !dataUrl) {
+          return null;
+        }
+        const parsed = base64 || dataUrl
+          ? parseBase64FromDataUrl(dataUrl, mimeType || 'application/pdf')
+          : { mimeType, base64: '' };
+        return {
+          type: 'pdf',
+          mimeType: parsed.mimeType || 'application/pdf',
+          base64: base64 || parsed.base64,
+          dataUrl: dataUrl || '',
+          textContent,
+          label,
+          pageCount,
+        };
+      }
+
+      if (type === 'image') {
+        if (!dataUrl && !base64) {
+          return null;
+        }
+        const parsed = base64 || dataUrl
+          ? parseBase64FromDataUrl(dataUrl, mimeType)
+          : { mimeType, base64: '' };
+        return {
+          type: 'image',
+          mimeType: parsed.mimeType || mimeType || undefined,
+          base64: base64 || parsed.base64,
+          dataUrl,
+          label,
+        };
+      }
+
+      return null;
     })
     .filter(Boolean);
 };
@@ -192,11 +249,32 @@ const mapToOpenAIContentParts = (message) => {
     }
   };
 
-  const appendImage = (value) => {
-    const url = toTrimmedString(value);
-    if (url) {
-      parts.push({ type: imageType, image_url: url });
+  const appendImage = (attachment) => {
+    if (!attachment) {
+      return;
     }
+    const candidateUrl = toTrimmedString(attachment.dataUrl)
+      || (attachment.base64 && attachment.mimeType
+        ? `data:${attachment.mimeType};base64,${attachment.base64}`
+        : '');
+    if (candidateUrl) {
+      parts.push({ type: imageType, image_url: candidateUrl });
+    }
+  };
+
+  const appendPdf = (attachment) => {
+    if (!attachment) {
+      return;
+    }
+    const heading = [
+      'PDF 첨부',
+      attachment.label ? `(${attachment.label})` : '',
+      attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const pdfText = toTrimmedString(attachment.textContent);
+    appendText([heading || 'PDF 첨부', pdfText].filter(Boolean).join('\n\n'));
   };
 
   if (Array.isArray(message.content)) {
@@ -220,7 +298,7 @@ const mapToOpenAIContentParts = (message) => {
           : typeof part.image_url?.url === 'string'
             ? part.image_url.url
             : part.url;
-        appendImage(imageValue || part.dataUrl || '');
+        appendImage({ dataUrl: imageValue || part.dataUrl || '', mimeType: part.mimeType });
       }
     });
   } else {
@@ -232,7 +310,13 @@ const mapToOpenAIContentParts = (message) => {
   }
 
   const attachments = sanitizeAttachmentList(message.attachments);
-  attachments.forEach((attachment) => appendImage(attachment.dataUrl));
+  attachments.forEach((attachment) => {
+    if (attachment.type === 'pdf') {
+      appendPdf(attachment);
+    } else {
+      appendImage(attachment);
+    }
+  });
 
   if (!parts.length) {
     parts.push({ type: textType, text: '' });
@@ -268,7 +352,29 @@ const normalizeMessage = (message) => {
 
   const combined = text ? [{ type: 'text', text }] : [];
   attachments.forEach((attachment) => {
-    combined.push({ type: 'image_url', image_url: attachment.dataUrl });
+    if (attachment.type === 'pdf') {
+      if (attachment.textContent) {
+        const heading = [
+          'PDF 첨부',
+          attachment.label ? `(${attachment.label})` : '',
+          attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+        combined.push({
+          type: 'text',
+          text: [heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n'),
+        });
+      }
+    } else {
+      const imageUrl = toTrimmedString(attachment.dataUrl)
+        || (attachment.base64 && attachment.mimeType
+          ? `data:${attachment.mimeType};base64,${attachment.base64}`
+          : '');
+      if (imageUrl) {
+        combined.push({ type: 'image_url', image_url: imageUrl });
+      }
+    }
   });
 
   return { role, content: combined };
@@ -294,18 +400,69 @@ const mapToGeminiContents = (messages = []) => {
 
   const contents = conversation.map((message, index) => {
     const role = message.role === 'assistant' ? 'model' : 'user';
-    const text = extractTextFromMessage(message);
+    const parts = [];
+
+    const appendText = (value) => {
+      const text = toTrimmedString(value);
+      if (text) {
+        parts.push({ text });
+      }
+    };
+
+    const appendImage = (attachment) => {
+      if (!attachment) {
+        return;
+      }
+      const dataUrl = toTrimmedString(attachment.dataUrl)
+        || (attachment.base64 && attachment.mimeType
+          ? `data:${attachment.mimeType};base64,${attachment.base64}`
+          : '');
+      if (!dataUrl) {
+        return;
+      }
+      const parsed = parseBase64FromDataUrl(dataUrl, attachment.mimeType || 'image/png');
+      if (!parsed.base64) {
+        return;
+      }
+      parts.push({
+        inline_data: {
+          mime_type: parsed.mimeType || 'image/png',
+          data: parsed.base64,
+        },
+      });
+    };
+
+    const baseText = extractTextFromMessage(message);
+    appendText(baseText);
+
+    const attachments = sanitizeAttachmentList(message.attachments);
+    attachments.forEach((attachment) => {
+      if (attachment.type === 'pdf') {
+        const heading = [
+          'PDF 첨부',
+          attachment.label ? `(${attachment.label})` : '',
+          attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+        appendText([heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n'));
+      } else {
+        appendImage(attachment);
+      }
+    });
+
     console.log(`[mapToGeminiContents] 메시지 ${index} 변환:`, {
       originalMessage: message,
-      extractedText: text,
-      willInclude: !!text
+      hasParts: parts.length > 0,
     });
-    if (!text) {
+
+    if (!parts.length) {
       return null;
     }
+
     return {
       role,
-      parts: [{ text }],
+      parts,
     };
   }).filter(Boolean);
 
@@ -336,18 +493,97 @@ const mapToClaudeMessages = (messages = []) => {
 
   const claudeMessages = conversation
     .map((message, index) => {
-      const text = extractTextFromMessage(message);
+      const content = [];
+
+      const appendText = (value) => {
+        const text = toTrimmedString(value);
+        if (text) {
+          content.push({ type: 'text', text });
+        }
+      };
+
+      const appendImage = (attachment) => {
+        if (!attachment) {
+          return;
+        }
+        const dataUrl = toTrimmedString(attachment.dataUrl)
+          || (attachment.base64 && attachment.mimeType
+            ? `data:${attachment.mimeType};base64,${attachment.base64}`
+            : '');
+        if (!dataUrl) {
+          return;
+        }
+        const parsed = parseBase64FromDataUrl(dataUrl, attachment.mimeType || 'image/png');
+        if (!parsed.base64) {
+          return;
+        }
+        content.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: parsed.mimeType || 'image/png',
+            data: parsed.base64,
+          },
+        });
+      };
+
+      const appendPdf = (attachment) => {
+        if (!attachment) {
+          return;
+        }
+        const heading = [
+          'PDF 첨부',
+          attachment.label ? `(${attachment.label})` : '',
+          attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        appendText([heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n'));
+
+        const dataUrl = toTrimmedString(attachment.dataUrl)
+          || (attachment.base64 && attachment.mimeType
+            ? `data:${attachment.mimeType};base64,${attachment.base64}`
+            : '');
+        if (!dataUrl) {
+          return;
+        }
+        const parsed = parseBase64FromDataUrl(dataUrl, attachment.mimeType || 'application/pdf');
+        if (!parsed.base64) {
+          return;
+        }
+        content.push({
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: parsed.mimeType || 'application/pdf',
+            data: parsed.base64,
+          },
+        });
+      };
+
+      appendText(extractTextFromMessage(message));
+
+      const attachments = sanitizeAttachmentList(message.attachments);
+      attachments.forEach((attachment) => {
+        if (attachment.type === 'pdf') {
+          appendPdf(attachment);
+        } else {
+          appendImage(attachment);
+        }
+      });
+
       console.log(`[mapToClaudeMessages] 메시지 ${index} 변환:`, {
         originalMessage: message,
-        extractedText: text,
-        willInclude: !!text
+        contentLength: content.length,
       });
-      if (!text) {
+
+      if (!content.length) {
         return null;
       }
       return {
         role: message.role === 'assistant' ? 'assistant' : 'user',
-        content: [{ type: 'text', text }],
+        content,
       };
     })
     .filter(Boolean);
@@ -405,11 +641,33 @@ const buildOpenAIResponseParts = (message) => {
     }
   };
 
-  const appendImage = (value) => {
-    const url = typeof value === 'string' ? value.trim() : '';
-    if (url) {
-      parts.push({ type: imageType, image_url: url });
+  const appendImage = (attachment) => {
+    if (!attachment) {
+      return;
     }
+    const candidateUrl = toTrimmedString(attachment?.dataUrl)
+      || (attachment?.base64 && attachment?.mimeType
+        ? `data:${attachment.mimeType};base64,${attachment.base64}`
+        : '');
+    if (candidateUrl) {
+      parts.push({ type: imageType, image_url: candidateUrl });
+    }
+  };
+
+  const appendPdf = (attachment) => {
+    if (!attachment) {
+      return;
+    }
+    const pdfLabel = [
+      'PDF 첨부',
+      attachment.label ? `(${attachment.label})` : '',
+      attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const pdfText = toTrimmedString(attachment.textContent);
+    const combined = [pdfLabel || 'PDF 첨부', pdfText].filter(Boolean).join('\n\n');
+    appendText(combined);
   };
 
   if (Array.isArray(message.content)) {
@@ -432,7 +690,7 @@ const buildOpenAIResponseParts = (message) => {
           : typeof part.image_url?.url === 'string'
             ? part.image_url.url
             : part.url;
-        appendImage(imageValue || part.dataUrl || '');
+        appendImage({ dataUrl: imageValue || part.dataUrl || '', mimeType: part.mimeType });
       }
     });
   } else {
@@ -444,7 +702,13 @@ const buildOpenAIResponseParts = (message) => {
   }
 
   const attachments = sanitizeAttachmentList(message.attachments);
-  attachments.forEach((attachment) => appendImage(attachment.dataUrl));
+  attachments.forEach((attachment) => {
+    if (attachment.type === 'pdf') {
+      appendPdf(attachment);
+    } else {
+      appendImage(attachment);
+    }
+  });
 
   if (!parts.length) {
     parts.push({ type: textType, text: '' });

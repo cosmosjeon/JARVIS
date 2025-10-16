@@ -4,6 +4,7 @@ import ChatAttachmentPreviewList from 'features/chat/components/ChatAttachmentPr
 import ChatMessageList from 'features/chat/components/ChatMessageList';
 import ProviderDropdown from 'features/chat/components/ProviderDropdown';
 import { useFileDropZone } from 'shared/hooks/useFileDropZone';
+import { isSupportedFile } from 'shared/utils/attachmentUtils';
 import { ChatStatus } from 'features/chat/models/message';
 import { DEFAULT_CHAT_PANEL_STYLES } from 'features/chat/constants/panelStyles';
 import {
@@ -250,6 +251,7 @@ const NodeAssistantPanelView = ({
   } = useFileDropZone({
     onDropFiles: onAttachmentFiles,
     isDisabled: isAttachmentUploading || isStreaming,
+    shouldAccept: (files) => files.every(isSupportedFile),
   });
 
   return (
@@ -364,7 +366,7 @@ const NodeAssistantPanelView = ({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf"
           multiple
           className="hidden"
           onChange={handleAttachmentInputChange}

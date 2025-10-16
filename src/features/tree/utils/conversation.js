@@ -59,6 +59,8 @@ const extractText = (message) => {
   return '';
 };
 
+const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
+
 const normalizeAttachment = (attachment, fallbackId) => {
   if (!attachment || typeof attachment !== 'object') {
     return null;
@@ -67,28 +69,46 @@ const normalizeAttachment = (attachment, fallbackId) => {
     ? attachment.id.trim()
     : null;
   const id = rawId || fallbackId;
-  const dataUrl = typeof attachment.dataUrl === 'string' && attachment.dataUrl.trim()
-    ? attachment.dataUrl.trim()
-    : typeof attachment.url === 'string' && attachment.url.trim()
-      ? attachment.url.trim()
-      : typeof attachment.image_url === 'string'
-        ? attachment.image_url.trim()
-        : typeof attachment.image_url === 'object' && attachment.image_url !== null
-          && typeof attachment.image_url.url === 'string'
-          ? attachment.image_url.url.trim()
-          : '';
-  if (!id || !dataUrl) {
+  const resolvedType = attachment.type || attachment.kind || 'image';
+
+  const resolveDataUrl = () => {
+    if (typeof attachment.dataUrl === 'string' && attachment.dataUrl.trim()) {
+      return attachment.dataUrl.trim();
+    }
+    if (typeof attachment.url === 'string' && attachment.url.trim()) {
+      return attachment.url.trim();
+    }
+    if (typeof attachment.image_url === 'string' && attachment.image_url.trim()) {
+      return attachment.image_url.trim();
+    }
+    if (typeof attachment.image_url === 'object' && attachment.image_url !== null && typeof attachment.image_url.url === 'string') {
+      return attachment.image_url.url.trim();
+    }
+    return '';
+  };
+
+  const dataUrl = resolveDataUrl();
+  const textContent = toTrimmedString(attachment.textContent);
+  const preview = toTrimmedString(attachment.preview);
+  const base64 = toTrimmedString(attachment.base64);
+  const pageCount = Number.isFinite(attachment.pageCount) ? attachment.pageCount : null;
+
+  if (!id || (!dataUrl && !textContent)) {
     return null;
   }
   return {
     id,
-    type: attachment.type || attachment.kind || 'image',
+    type: resolvedType,
     mimeType: attachment.mimeType || attachment.mediaType || null,
     dataUrl,
+    base64: base64 || null,
     width: attachment.width,
     height: attachment.height,
     label: attachment.label || attachment.name || null,
     createdAt: attachment.createdAt ?? null,
+    textContent: textContent || null,
+    preview: preview || null,
+    pageCount,
   };
 };
 
