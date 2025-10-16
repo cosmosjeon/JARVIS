@@ -5,6 +5,8 @@ import TidyTreeView from 'features/tree/ui/tree1/TidyTreeView';
 import EditableTitle from 'shared/ui/EditableTitle';
 import { useTheme } from 'shared/components/library/ThemeProvider';
 import { resolveTreeBackground } from 'features/tree/constants/themeBackgrounds';
+import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
+import { upsertTreeNodes } from 'infrastructure/supabase/services/treeService';
 
 const TreeCanvas = ({
   selectedMemo,
@@ -17,6 +19,7 @@ const TreeCanvas = ({
   isQAPanelVisible = false,
 }) => {
   const { theme } = useTheme();
+  const { user } = useSupabaseAuth();
   const treeBackground = useMemo(() => resolveTreeBackground(theme), [theme]);
   const headerStyle = useMemo(
     () => ({ WebkitAppRegion: 'drag' }),
@@ -117,6 +120,58 @@ const TreeCanvas = ({
     }
   }, [onNodeSelect]);
 
+  const handleNodeDelete = useCallback((nodeId) => {
+    if (!onNodeRemove) {
+      return;
+    }
+    onNodeRemove(nodeId);
+  }, [onNodeRemove]);
+
+  const handleNodeRename = useCallback(async (nodeId, updates = {}) => {
+    if (!nodeId || !onNodeUpdate || !selectedMemo?.id) {
+      return;
+    }
+
+    const originalNode = nodesById.get(nodeId);
+    if (!originalNode) {
+      return;
+    }
+
+    const providedKeyword = typeof updates.keyword === 'string' ? updates.keyword.trim() : '';
+    const resolvedKeyword = providedKeyword || originalNode.keyword || originalNode.name || originalNode.id;
+
+    const nextNode = {
+      ...originalNode,
+      ...updates,
+      keyword: resolvedKeyword,
+      name: resolvedKeyword,
+      updatedAt: Date.now(),
+    };
+
+    onNodeUpdate(nextNode);
+    if (selectedNode?.id === nodeId && onNodeSelect) {
+      onNodeSelect(nextNode);
+    }
+
+    if (!user) {
+      return;
+    }
+
+    try {
+      await upsertTreeNodes({
+        treeId: selectedMemo.id,
+        nodes: [nextNode],
+        userId: user.id,
+      });
+    } catch (error) {
+      console.error('노드 이름 변경 실패:', error);
+      onNodeUpdate(originalNode);
+      if (selectedNode?.id === nodeId && onNodeSelect) {
+        onNodeSelect(originalNode);
+      }
+    }
+  }, [nodesById, onNodeSelect, onNodeUpdate, selectedMemo, selectedNode, user]);
+
   const activeSelectedNodeId = selectedNode?.id ?? null;
 
   if (!selectedMemo) {
@@ -176,6 +231,8 @@ const TreeCanvas = ({
               onBackgroundClick={handleBackgroundClick}
               onReorderSiblings={() => {}}
               isChatPanelOpen={isQAPanelVisible}
+              onNodeDelete={handleNodeDelete}
+              onNodeUpdate={handleNodeRename}
             />
           </div>
         ) : (

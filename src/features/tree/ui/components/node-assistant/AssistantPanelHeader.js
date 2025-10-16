@@ -1,4 +1,5 @@
 import React from 'react';
+import { X } from 'lucide-react';
 
 const AssistantPanelHeader = ({
   summaryLabel,
@@ -74,24 +75,11 @@ const AssistantPanelHeader = ({
             event.stopPropagation();
             onClose();
           }}
-          className="rounded-lg px-3 py-1 text-xs font-medium transition"
-          style={{
-            borderColor: panelStyles.borderColor,
-            backgroundColor: panelStyles.background,
-            borderWidth: '1px',
-            borderStyle: 'solid',
-            color: panelStyles.textColor,
-          }}
-          onMouseEnter={(event) => {
-            event.target.style.backgroundColor = theme === 'dark'
-              ? 'rgba(255, 255, 255, 0.1)'
-              : 'rgba(0, 0, 0, 0.1)';
-          }}
-          onMouseLeave={(event) => {
-            event.target.style.backgroundColor = panelStyles.background;
-          }}
+          className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+          style={{ color: panelStyles.textColor }}
+          aria-label="AI 패널 닫기"
         >
-          닫기
+          <X className="h-5 w-5" />
         </button>
       </div>
     )}

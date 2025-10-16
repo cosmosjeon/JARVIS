@@ -20,7 +20,7 @@ import {
   LONG_RESPONSE_NOTICE_DELAY_MS,
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
-import { Paperclip, Network, Maximize, Minimize } from 'lucide-react';
+import { Paperclip, Maximize, Minimize } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 
 const MODEL_LABELS = {
@@ -371,8 +371,10 @@ const NodeAssistantPanelView = ({
               onOpenChange={handleProviderDropdownOpenChange}
             />
             
-            {/* 다중 질문 버튼 */}
-            <TooltipProvider>
+          </div>
+          <div className="flex flex-1 items-center justify-end gap-2">
+            {/* 다중질문 버튼 */}
+            <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <PromptInputButton
@@ -385,44 +387,45 @@ const NodeAssistantPanelView = ({
                     className={cn(
                       "rounded-lg px-4 py-1.5 text-xs font-medium transition-all duration-200 relative z-10 min-w-fit",
                       isMultiQuestionMode 
-                        ? "bg-blue-100 text-blue-700 border border-blue-200" 
-                        : "hover:bg-gray-100 text-gray-600"
+                        ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" 
+                        : "hover:bg-gray-100 text-gray-500"
                     )}
+                    style={{
+                      backgroundColor: isMultiQuestionMode 
+                        ? 'rgba(16, 185, 129, 0.1)' 
+                        : undefined,
+                      borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.3)' : undefined,
+                      borderWidth: isMultiQuestionMode ? '1px' : undefined,
+                      borderStyle: isMultiQuestionMode ? 'solid' : undefined,
+                    }}
                   >
-                    <Network className="h-4 w-4 mr-1.5" />
-                    다중 질문
+                    다중질문
                   </PromptInputButton>
                 </TooltipTrigger>
-                <TooltipContent>
-                  <p>텍스트를 드래그하여 다중 질문 생성</p>
+                <TooltipContent side="top">
+                  <p>{isMultiQuestionMode ? "다중질문 모드 해제" : "다중질문 모드 활성화"}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          </div>
-          <div className="flex flex-1 items-center justify-end gap-2">
+            
             {/* 전체 화면 버튼 */}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <PromptInputButton
+                  <button
                     onClick={(e) => {
                       console.log('🖱️ [전체화면 버튼] 클릭됨!');
                       toggleFullscreen();
                     }}
-                    disabled={isStreaming}
-                    variant="ghost"
-                    className={cn(
-                      "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 relative z-10 min-w-fit",
-                      isFullscreen 
-                        ? "bg-green-100 text-green-700 border border-green-200" 
-                        : "hover:bg-gray-100 text-gray-600"
-                    )}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+                    style={{ color: panelStyles.textColor }}
+                    aria-label={isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}
                   >
-                    {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-                  </PromptInputButton>
+                    {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{isFullscreen ? '전체 화면 종료' : '전체 화면'}</p>
+                  <p>{isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

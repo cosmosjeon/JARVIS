@@ -254,11 +254,14 @@ export const useNodeAssistantPanelController = ({
     }
   }, []);
 
+  // 하이라이트 모드 비활성화
   const disableHighlightMode = useCallback(() => {
+    console.log('🔧 [disableHighlightMode] 호출됨, highlighter 존재:', Boolean(highlighterRef.current));
     const instance = highlighterRef.current;
     const { create, remove } = highlightHandlersRef.current;
 
     if (instance) {
+      console.log('🔧 highlighter 정리 시작...');
       if (create) {
         instance.off(Highlighter.event.CREATE, create);
       }
@@ -266,11 +269,13 @@ export const useNodeAssistantPanelController = ({
         instance.off(Highlighter.event.REMOVE, remove);
       }
       try {
-        instance.removeAll();
+        instance.dispose();
       } catch (error) {
-        // removeAll 실패는 무시
+        console.warn('🔧 dispose 실패:', error);
       }
-      instance.dispose();
+      console.log('🔧 highlighter 정리 완료');
+    } else {
+      console.log('🔧 highlighter 없음, 정리 스킵');
     }
 
     highlighterRef.current = null;
@@ -278,53 +283,30 @@ export const useNodeAssistantPanelController = ({
     highlightStoreRef.current.clear();
   }, []);
 
-  const handleHighlighterCreate = useCallback(({ sources = [] }) => {
-    const { added, size } = highlightStoreRef.current.addSources(sources);
-    if (!added) return;
-
-    setPlaceholderNotice({
-      type: 'info',
-      message: `${size}개의 텍스트가 하이라이트되었습니다.`,
-    });
-  }, []);
-
-  const handleHighlighterRemove = useCallback(({ ids = [] }) => {
-    const { removed, size } = highlightStoreRef.current.removeByIds(ids);
-    if (!removed) return;
-
-    setPlaceholderNotice({
-      type: 'info',
-      message: size === 0
-        ? '하이라이트된 텍스트가 없습니다.'
-        : `${size}개의 텍스트가 하이라이트되었습니다.`,
-    });
-  }, []);
-
+  // 하이라이트 모드 활성화
   const enableHighlightMode = useCallback(() => {
     if (highlighterRef.current) {
+      console.debug('[NodeAssistantPanel] highlight already active');
       return true;
-    }
-
-    if (typeof window === 'undefined') {
-      return false;
     }
 
     const root = messageContainerRef.current;
     if (!root) {
-      setPlaceholderNotice({ type: 'warning', message: '하이라이트 영역을 찾을 수 없습니다.' });
+      console.warn('[NodeAssistantPanel] messageContainerRef not available');
       return false;
     }
 
     try {
       const highlighter = new Highlighter({
         $root: root,
-        exceptSelectors: ['textarea', 'button', '[contenteditable="true"]'],
+        exceptSelectors: ['textarea', 'button', 'input', '[data-block-pan="true"]'],
         style: { className: 'node-highlight-wrap' },
       });
 
       highlightStoreRef.current.clear();
-      const createHandler = (payload) => handleHighlighterCreate(payload);
-      const removeHandler = (payload) => handleHighlighterRemove(payload);
+
+      const createHandler = (hl) => highlightStoreRef.current.add(hl);
+      const removeHandler = (hl) => highlightStoreRef.current.remove(hl);
 
       highlighter.on(Highlighter.event.CREATE, createHandler);
       highlighter.on(Highlighter.event.REMOVE, removeHandler);
@@ -333,15 +315,13 @@ export const useNodeAssistantPanelController = ({
       highlighterRef.current = highlighter;
       highlightHandlersRef.current = { create: createHandler, remove: removeHandler };
 
-      setPlaceholderNotice({ type: 'info', message: '하이라이트 모드가 활성화되었습니다.' });
+      console.log('🔧 highlighter 활성화 완료');
       return true;
     } catch (error) {
-      setPlaceholderNotice({ type: 'warning', message: '하이라이트 초기화에 실패했습니다.' });
+      console.error('🔧 highlighter 활성화 실패:', error);
       return false;
     }
-  }, [handleHighlighterCreate, handleHighlighterRemove]);
-
-  useEffect(() => () => disableHighlightMode(), [disableHighlightMode]);
+  }, []);
 
   useEffect(() => {
     const clipboardBridge = createClipboardBridge();
@@ -730,27 +710,83 @@ export const useNodeAssistantPanelController = ({
     };
   }, [node, onCloseNode]);
 
+  // 컴포넌트 마운트 시 초기화
+  useEffect(() => {
+    console.log('🎬 [마운트] 컴포넌트 마운트됨');
+    // 마운트 시에는 highlighter 정리하지 않음 (아직 없음)
+    return () => {
+      console.log('🎬 [언마운트] 컴포넌트 언마운트됨');
+      // 언마운트 시에만 정리
+      disableHighlightMode();
+    };
+  }, [disableHighlightMode]);
+
+  // 노드 변경 시 다중 질문 모드 종료
+  useEffect(() => {
+    console.log('🔄 [useEffect] 노드 변경 감지 - selectedNode 변경됨');
+    
+    // 다중 질문 모드가 켜져있으면 끄기
+    if (isMultiQuestionMode) {
+      console.log('🔄 노드 변경으로 다중 질문 모드 종료');
+      disableHighlightMode();
+      setIsMultiQuestionMode(false);
+      setHighlightNotice(null);
+    }
+  }, [node, isMultiQuestionMode, disableHighlightMode]);
+
+  // 하이라이트 알림 자동 사라짐
+  useEffect(() => {
+    if (!highlightNotice) {
+      return undefined;
+    }
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    // 다중 질문 모드가 켜져있을 때는 안내 메시지 유지
+    if (isMultiQuestionMode) {
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => setHighlightNotice(null), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightNotice, isMultiQuestionMode]);
+
   const isSendDisabled = isAttachmentUploading
     || (composerValue.trim().length === 0 && draftAttachments.length === 0);
 
   // 다중 질문 모드 토글
   const toggleMultiQuestionMode = useCallback(() => {
+    console.log('=================================');
     console.log('🔥 [다중질문버튼] 클릭됨!');
     console.log('현재 모드:', isMultiQuestionMode ? '켜짐' : '꺼짐');
+    console.log('메시지 컨테이너 존재:', Boolean(messageContainerRef.current));
+    console.log('=================================');
     
     if (isMultiQuestionMode) {
       console.log('✅ 다중 질문 모드 종료 시작...');
+      disableHighlightMode();
+      console.log('⚙️ setIsMultiQuestionMode(false) 호출 전');
       setIsMultiQuestionMode(false);
+      console.log('⚙️ setIsMultiQuestionMode(false) 호출 후');
       setHighlightNotice(null);
       console.log('✅ 다중 질문 모드 종료 완료');
       return;
     }
     
     console.log('🚀 다중 질문 모드 활성화 시작...');
-    setIsMultiQuestionMode(true);
-    setHighlightNotice({ type: 'info', message: '다중 질문 모드: 텍스트를 드래그하면 하이라이트됩니다. 일반 복사는 불가능합니다.' });
-    console.log('✅ 다중 질문 모드 활성화 완료');
-  }, [isMultiQuestionMode]);
+    const enabled = enableHighlightMode();
+    console.log('하이라이트 모드 활성화 결과:', enabled);
+    console.log('메시지 컨테이너:', messageContainerRef.current);
+    
+    if (enabled) {
+      console.log('⚙️ setIsMultiQuestionMode(true) 호출 전');
+      setIsMultiQuestionMode(true);
+      console.log('⚙️ setIsMultiQuestionMode(true) 호출 후');
+      setHighlightNotice({ type: 'info', message: '다중 질문 모드: 텍스트를 드래그하면 하이라이트됩니다. 일반 복사는 불가능합니다.' });
+      console.log('✅ 다중 질문 모드 활성화 완료');
+    } else {
+      console.error('❌ 다중 질문 모드 활성화 실패!');
+    }
+  }, [isMultiQuestionMode, disableHighlightMode, enableHighlightMode]);
 
   // 전체 화면 모드 토글
   const toggleFullscreen = useCallback(() => {
