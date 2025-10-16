@@ -116,13 +116,23 @@ const NodeAssistantPanelView = ({
   const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
   const textareaContainerRef = useRef(null);
 
+  const [providerDropdownHeight, setProviderDropdownHeight] = useState(0);
+
   const handleProviderDropdownOpenChange = useCallback((open) => {
     setIsProviderDropdownOpen(open);
     // 컴팩트 모드일 때만 부모로 상태 전달
     if (isBootstrapCompact && onDropdownOpenChange) {
-      onDropdownOpenChange(open);
+      onDropdownOpenChange(open, providerDropdownHeight);
     }
-  }, [isBootstrapCompact, onDropdownOpenChange]);
+  }, [isBootstrapCompact, onDropdownOpenChange, providerDropdownHeight]);
+
+  const handleProviderDropdownHeightChange = useCallback((height) => {
+    setProviderDropdownHeight(height);
+    // 높이가 측정되었고 드롭다운이 열려있으면 부모에게 알림
+    if (isBootstrapCompact && onDropdownOpenChange && isProviderDropdownOpen) {
+      onDropdownOpenChange(true, height);
+    }
+  }, [isBootstrapCompact, onDropdownOpenChange, isProviderDropdownOpen]);
 
   // Textarea 높이 변화 감지 (컴팩트 모드에서만 - 최적화)
   useEffect(() => {
@@ -369,67 +379,72 @@ const NodeAssistantPanelView = ({
               disabled={isAttachmentUploading || isStreaming}
               align="start"
               onOpenChange={handleProviderDropdownOpenChange}
+              onContentHeightChange={handleProviderDropdownHeightChange}
             />
-            
+
           </div>
           <div className="flex flex-1 items-center justify-end gap-2">
-            {/* 다중질문 버튼 */}
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <PromptInputButton
-                    onClick={(e) => {
-                      console.log('🖱️ [다중질문 버튼] 클릭됨!');
-                      toggleMultiQuestionMode();
-                    }}
-                    disabled={isStreaming}
-                    variant="ghost"
-                    className={cn(
-                      "rounded-lg px-4 py-1.5 text-xs font-medium transition-all duration-200 relative z-10 min-w-fit",
-                      isMultiQuestionMode 
-                        ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" 
-                        : "hover:bg-gray-100 text-gray-500"
-                    )}
-                    style={{
-                      backgroundColor: isMultiQuestionMode 
-                        ? 'rgba(16, 185, 129, 0.1)' 
-                        : undefined,
-                      borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.3)' : undefined,
-                      borderWidth: isMultiQuestionMode ? '1px' : undefined,
-                      borderStyle: isMultiQuestionMode ? 'solid' : undefined,
-                    }}
-                  >
-                    다중질문
-                  </PromptInputButton>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>{isMultiQuestionMode ? "다중질문 모드 해제" : "다중질문 모드 활성화"}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            
-            {/* 전체 화면 버튼 */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={(e) => {
-                      console.log('🖱️ [전체화면 버튼] 클릭됨!');
-                      toggleFullscreen();
-                    }}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
-                    style={{ color: panelStyles.textColor }}
-                    aria-label={isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}
-                  >
-                    {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            
+            {/* 다중질문 버튼 - 컴팩트 모드에서는 숨김 */}
+            {!isBootstrapCompact && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PromptInputButton
+                      onClick={(e) => {
+                        console.log('🖱️ [다중질문 버튼] 클릭됨!');
+                        toggleMultiQuestionMode();
+                      }}
+                      disabled={isStreaming}
+                      variant="ghost"
+                      className={cn(
+                        "rounded-lg px-4 py-1.5 text-xs font-medium transition-all duration-200 relative z-10 min-w-fit",
+                        isMultiQuestionMode
+                          ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                          : "hover:bg-gray-100 text-gray-500"
+                      )}
+                      style={{
+                        backgroundColor: isMultiQuestionMode
+                          ? 'rgba(16, 185, 129, 0.1)'
+                          : undefined,
+                        borderColor: isMultiQuestionMode ? 'rgba(16, 185, 129, 0.3)' : undefined,
+                        borderWidth: isMultiQuestionMode ? '1px' : undefined,
+                        borderStyle: isMultiQuestionMode ? 'solid' : undefined,
+                      }}
+                    >
+                      다중질문
+                    </PromptInputButton>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>{isMultiQuestionMode ? "다중질문 모드 해제" : "다중질문 모드 활성화"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            {/* 전체 화면 버튼 - 컴팩트 모드에서는 숨김 */}
+            {!isBootstrapCompact && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={(e) => {
+                        console.log('🖱️ [전체화면 버튼] 클릭됨!');
+                        toggleFullscreen();
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5"
+                      style={{ color: panelStyles.textColor }}
+                      aria-label={isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}
+                    >
+                      {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isFullscreen ? "스플릿뷰로 돌아가기" : "전체화면으로 확장"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
             <TooltipProvider delayDuration={300}>
               <div className="flex items-center gap-2 relative z-10">
                 <Tooltip>

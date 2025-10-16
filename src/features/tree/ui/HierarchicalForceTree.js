@@ -66,7 +66,7 @@ const TIDY_ASSISTANT_PANEL_GAP = 0;
 const TIDY_CANVAS_MIN_WIDTH = 320;
 
 const COMPACT_WIDGET_WIDTH = 430;
-const COMPACT_DEFAULT_HEIGHT = 40;
+const COMPACT_DEFAULT_HEIGHT = 130;
 const COMPACT_DROPDOWN_HEIGHT = 320;
 const COMPACT_PROVIDER_DROPDOWN_HEIGHT = 200;
 const COMPACT_RESIZE_BUFFER_MS = 60;
@@ -159,6 +159,8 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const [activeTabId, setActiveTabId] = useState(null);
   const [availableTrees, setAvailableTrees] = useState([]);
   const [isTreeDropdownOpen, setIsTreeDropdownOpen] = useState(false);
+  const [treeDropdownHeight, setTreeDropdownHeight] = useState(0);
+  const treeDropdownContentRef = useRef(null);
   const isTidyView = true;
 
   const closeHandleMenu = useCallback(() => {
@@ -482,13 +484,30 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   }, [isBootstrapCompact, onBootstrapCompactChange]);
 
   useEffect(() => {
+    const currentWidth = typeof window !== 'undefined'
+      ? Math.max(100, Math.floor(window.innerWidth || COMPACT_WIDGET_WIDTH))
+      : COMPACT_WIDGET_WIDTH;
+    const currentHeight = typeof window !== 'undefined'
+      ? Math.max(100, Math.floor(window.innerHeight || COMPACT_DEFAULT_HEIGHT))
+      : COMPACT_DEFAULT_HEIGHT;
+
+    if (isBootstrapCompact) {
+      applyWindowConstraints(true, {
+        minWidth: currentWidth,
+        minHeight: currentHeight,
+        maxWidth: currentWidth,    // 너비는 고정
+        maxHeight: 600,            // 높이는 드롭다운에 맞춰 조절 가능 (최대 600px)
+      });
+      return;
+    }
+
     applyWindowConstraints(true, {
       minWidth: DEFAULT_WIDGET_MIN_WIDTH,
       minHeight: DEFAULT_WIDGET_MIN_HEIGHT,
       maxWidth: 0,
       maxHeight: 0,
     });
-  }, [applyWindowConstraints]);
+  }, [applyWindowConstraints, isBootstrapCompact]);
   const [pendingAttachmentsByNode, setPendingAttachmentsByNode] = useState({});
   const [tidyPanelWidthOverride, setTidyPanelWidthOverride] = useState(null);
   const [isTidyPanelResizing, setIsTidyPanelResizing] = useState(false);
@@ -933,7 +952,6 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     return Math.max(minWidth, Math.min(safeRaw, maxWidth));
   }, [viewportWidth]);
   const tidyAssistantPanelVisible = !isBootstrapCompact && Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
-  const isCompactChatOnly = isBootstrapCompact && showBootstrapChat;
   const tidyAssistantDefaultWidth = useMemo(() => {
     const referenceWidth = viewportWidth && viewportWidth > 0
       ? viewportWidth * TIDY_ASSISTANT_PANEL_RATIO
@@ -1762,19 +1780,30 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
 
     setIsTreeDropdownOpen(isOpen);
     isDropdownOpenRef.current = isOpen;
+
+    // 측정된 높이가 있으면 사용, 없으면 기본값 사용
+    const dropdownHeight = treeDropdownHeight > 0
+      ? treeDropdownHeight + 80  // 여유 공간 (입력창 + padding)
+      : COMPACT_DROPDOWN_HEIGHT;
+
     resizeCompactWindowForDropdown(isOpen, {
       blockClose: true,
-      openHeight: COMPACT_DROPDOWN_HEIGHT,
-      animate: false,
+      openHeight: dropdownHeight,
+      animate: true,
     });
-  }, [isBootstrapCompact, resizeCompactWindowForDropdown]);
+  }, [isBootstrapCompact, resizeCompactWindowForDropdown, treeDropdownHeight]);
 
-  const handleCompactProviderDropdownOpenChange = useCallback((isOpen) => {
+  const handleCompactProviderDropdownOpenChange = useCallback((isOpen, measuredHeight) => {
     isDropdownOpenRef.current = isOpen;
+    // 측정된 높이가 있으면 사용, 없으면 기본값 사용
+    const dropdownHeight = measuredHeight && measuredHeight > 0
+      ? measuredHeight + 80  // 여유 공간 (입력창 + padding)
+      : COMPACT_PROVIDER_DROPDOWN_HEIGHT;
+
     resizeCompactWindowForDropdown(isOpen, {
       blockClose: false,
-      openHeight: COMPACT_PROVIDER_DROPDOWN_HEIGHT,
-      animate: false,
+      openHeight: dropdownHeight,
+      animate: true,
     });
   }, [resizeCompactWindowForDropdown]);
 
@@ -1785,7 +1814,40 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       preventDropdownCloseRef.current = false;
     }
   }, [isBootstrapCompact]);
-  
+
+  // 트리 드롭다운 높이 측정 및 창 크기 재조정
+  useEffect(() => {
+    if (!isTreeDropdownOpen || !isBootstrapCompact) {
+      return;
+    }
+
+    const measureAndResize = () => {
+      // SelectContent는 Portal을 통해 렌더링되므로 document에서 찾아야 함
+      const selectContent = document.querySelector('[data-radix-select-content]');
+      if (selectContent) {
+        const rect = selectContent.getBoundingClientRect();
+        if (rect.height > 0 && rect.height !== treeDropdownHeight) {
+          setTreeDropdownHeight(rect.height);
+
+          // 높이가 측정되면 창 크기를 재조정
+          const dropdownHeight = rect.height + 80; // 여유 공간
+          resizeCompactWindowForDropdown(true, {
+            blockClose: true,
+            openHeight: dropdownHeight,
+            animate: true,
+          });
+        }
+      }
+    };
+
+    // 약간의 지연을 두고 측정 (렌더링 완료 보장)
+    const timeoutId = setTimeout(measureAndResize, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [isTreeDropdownOpen, isBootstrapCompact, availableTrees.length, treeDropdownHeight, resizeCompactWindowForDropdown]);
+
   // 컴포넌트 언마운트 시 타임아웃 정리
   useEffect(() => {
     return () => {
@@ -2065,6 +2127,8 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         const generation = await generateNodeTitle({
           question: question || nodeSnapshot.question || '',
           treeBridge,
+          provider: selectedProvider,
+          model: selectedModel,
         });
 
         if (generation?.title) {
@@ -3059,162 +3123,6 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     };
   }, [clearPendingExpansion]);
 
-  if (isCompactChatOnly) {
-    return (
-      <div
-        className="relative flex h-full w-full items-start justify-center bg-transparent"
-        style={{ pointerEvents: 'auto', minHeight: '100vh' }}
-      >
-        <div
-          className="absolute top-2 left-1/2 z-[1300] transition-all duration-300"
-          style={{
-            transform: 'translateX(-50%)',
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            pointerEvents: 'auto',
-          }}
-        >
-          <div
-            className="flex h-6 items-center rounded-full bg-black/40 backdrop-blur-sm border border-black/30 shadow-lg hover:bg-black/60 transition-colors px-3 cursor-grab active:cursor-grabbing"
-            style={{
-              userSelect: 'none',
-              WebkitUserSelect: 'none',
-              pointerEvents: 'auto',
-              WebkitAppRegion: 'drag',
-            }}
-          >
-            <div className="flex items-center justify-center flex-1">
-              <div className="flex gap-1">
-                <div className="h-1 w-1 rounded-full bg-white/60" />
-                <div className="h-1 w-1 rounded-full bg-white/60" />
-                <div className="h-1 w-1 rounded-full bg-white/60" />
-              </div>
-            </div>
-            <button
-              className="ml-4 flex h-4 w-4 items-center justify-center rounded-full hover:bg-white/20 transition-colors"
-              style={{
-                WebkitAppRegion: 'no-drag',
-                pointerEvents: 'auto',
-              }}
-              onClick={() => {
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('[Jarvis] Compact drag handle close requested');
-                }
-
-                const hideWindow = () => {
-                  if (process.env.NODE_ENV === 'development') {
-                    console.log('[Jarvis] hideWindow fallback triggered');
-                  }
-                  try {
-                    const toggleResult = treeBridge.toggleWindow();
-                    if (toggleResult && typeof toggleResult.then === 'function') {
-                      toggleResult.catch(() => { });
-                      return;
-                    }
-                    if (toggleResult !== null && toggleResult !== undefined) {
-                      return;
-                    }
-                  } catch (toggleError) {
-                    if (process.env.NODE_ENV === 'development') {
-                      console.warn('[Jarvis] toggleWindow failed', toggleError);
-                    }
-                  }
-
-                  if (typeof window !== 'undefined' && typeof window.close === 'function') {
-                    window.close();
-                  }
-                };
-
-                try {
-                  const maybeResult = treeBridge.windowControls.close();
-                  if (process.env.NODE_ENV === 'development') {
-                    const tag = '[Jarvis] windowControls.close result';
-                    if (maybeResult && typeof maybeResult.then === 'function') {
-                      maybeResult.then((response) => {
-                        console.log(tag, response);
-                      }).catch((err) => {
-                        console.log(`${tag} (rejected)`, err);
-                      });
-                    } else {
-                      console.log(tag, maybeResult);
-                    }
-                  }
-
-                  if (maybeResult && typeof maybeResult.then === 'function') {
-                    maybeResult
-                      .then((response) => {
-                        if (process.env.NODE_ENV === 'development') {
-                          console.log('[Jarvis] close response (async)', response, response?.error);
-                        }
-                        if (!response?.success) {
-                          hideWindow();
-                        }
-                      })
-                      .catch((err) => {
-                        if (process.env.NODE_ENV === 'development') {
-                          console.warn('[Jarvis] close response error', err);
-                        }
-                        hideWindow();
-                      });
-                    return;
-                  }
-
-                  if (maybeResult && maybeResult.success === false) {
-                    hideWindow();
-                    return;
-                  }
-
-                  if (maybeResult !== null && maybeResult !== undefined) {
-                    return;
-                  }
-                } catch (error) {
-                  if (process.env.NODE_ENV === 'development') {
-                    console.warn('[Jarvis] windowControls.close failed', error);
-                  }
-                  hideWindow();
-                  return;
-                }
-
-                hideWindow();
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 8 8"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M1 1L7 7M7 1L1 7"
-                  stroke="white"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div className="relative z-[1000] w-full max-w-[460px] px-3 pb-4 pt-8">
-          <NodeAssistantPanel
-            node={{ id: '__bootstrap__', keyword: '', fullText: '', level: 0, treeId: activeTreeId }}
-            treeId={activeTreeId}
-            treeTitle={activeTreeTitle}
-            treeNodes={Array.isArray(data?.nodes) ? data.nodes : []}
-            treeLinks={Array.isArray(data?.links) ? data.links : []}
-            onNodeUpdate={handleNodeUpdate}
-            onNewNodeCreated={handleAssistantNodeCreate}
-            onNodeSelect={handleAssistantNodeSelect}
-            onCloseNode={() => setShowBootstrapChat(false)}
-            isLibraryIntroActive
-            onLibraryIntroComplete={() => setShowBootstrapChat(false)}
-          />
-        </div>
-      </div>
-    );
-  }
   return (
     <div
       className="relative flex overflow-hidden bg-transparent rounded-xl"
@@ -3281,14 +3189,47 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
             <div className="flex h-full w-full overflow-hidden">
               <NodeAssistantPanel
                 node={tidyAssistantNode}
+                color={d3.schemeCategory10[0]}
+                theme={theme}
+                onSizeChange={() => {}}
+                onSecondQuestion={handleSecondQuestion}
+                onPlaceholderCreate={handlePlaceholderCreate}
+                questionService={questionService.current}
+                initialConversation={getInitialConversationForNode(expandedNodeId)}
+                onConversationChange={(messages) => {
+                  if (expandedNodeId) {
+                    handleConversationChange(expandedNodeId, messages);
+                  }
+                }}
+                onRequestAnswer={handleRequestAnswer}
+                onAnswerComplete={handleAnswerComplete}
+                onAnswerError={handleAnswerError}
+                isRootNode={tidyAssistantIsRoot}
+                bootstrapMode={false}
+                onCloseNode={() => handleCloseNode(expandedNodeId)}
+                onPanZoomGesture={forwardPanZoomGesture}
+                nodeScaleFactor={nodeScaleFactor}
+                nodeSummary={{
+                  label: tidyAssistantNode.keyword || tidyAssistantNode.id,
+                  intro: tidyAssistantNode.fullText || '',
+                  bullets: [],
+                }}
                 treeId={activeTreeId}
                 treeTitle={activeTreeTitle}
-                treeNodes={Array.isArray(data?.nodes) ? data.nodes : []}
-                treeLinks={Array.isArray(data?.links) ? data.links : []}
-                onNodeUpdate={handleNodeUpdate}
-                onNewNodeCreated={handleAssistantNodeCreate}
-                onNodeSelect={handleAssistantNodeSelect}
-                onCloseNode={() => handleCloseNode(expandedNodeId)}
+                treeNodes={Array.isArray(visibleGraph.nodes) ? visibleGraph.nodes : []}
+                treeLinks={Array.isArray(visibleGraph.links) ? visibleGraph.links : []}
+                onNodeSelect={(targetNode) => {
+                  const targetId = targetNode?.id;
+                  if (targetId && targetId !== expandedNodeId) {
+                    handleNodeClickForAssistant({ id: targetId, source: 'assistant-panel' });
+                  }
+                }}
+                attachments={tidyAssistantAttachments}
+                onAttachmentsChange={(nextAttachments) => {
+                  if (expandedNodeId) {
+                    setAttachmentsForNode(expandedNodeId, nextAttachments);
+                  }
+                }}
               />
             </div>
           </div>
@@ -3296,7 +3237,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       )}
 
       {/* 컴팩트 모드용 작은 드래그 핸들 */}
-      {isBootstrapCompact && !isCompactChatOnly && (
+      {isBootstrapCompact && (
         <div
           className="absolute top-2 left-1/2 z-[1300] transition-all duration-300"
           style={{
@@ -3432,7 +3373,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       )}
 
       {/* 컴팩트 모드용 트리 선택 드롭다운 - 오른쪽 */}
-      {isBootstrapCompact && !isCompactChatOnly && availableTrees.length > 0 && (
+      {isBootstrapCompact && availableTrees.length > 0 && (
         <div
           className="absolute top-2 right-2 z-[1300]"
           style={{
@@ -3473,8 +3414,8 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
                 })()}
               </span>
             </SelectTrigger>
-            <SelectContent 
-              className="max-h-[252px] overflow-y-auto -mt-3 min-w-[160px] shadow-[0_18px_45px_rgba(15,23,42,0.24)] border border-white/30 bg-white/95 backdrop-blur-xl"
+            <SelectContent
+              className="max-h-[252px] overflow-y-auto -mt-3 min-w-[160px] shadow-[0_18px_45px_rgba(15,23,42,0.24)] border border-white/30 bg-white/95 backdrop-blur-xl transition-all duration-300 ease-out"
               style={{
                 WebkitAppRegion: 'no-drag',
               }}
@@ -3731,23 +3672,40 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         >
           <div className="pointer-events-auto" style={{ width: '100%', height: '100%' }}>
             <NodeAssistantPanel
-              node={{ id: '__bootstrap__', keyword: '', fullText: '', level: 0, treeId: activeTreeId }}
+              node={{ id: '__bootstrap__', keyword: '', fullText: '' }}
+              color={d3.schemeCategory10[0]}
+              theme={theme}
+              onSizeChange={() => {}}
+              onSecondQuestion={() => {}}
+              onPlaceholderCreate={() => {}}
+              questionService={questionService.current}
+              initialConversation={getInitialConversationForNode('__bootstrap__')}
+              onConversationChange={(messages) => handleConversationChange('__bootstrap__', messages)}
+              nodeSummary={{ label: '첫 노드', intro: '첫 노드를 생성하세요.', bullets: [] }}
+              isRootNode
+              bootstrapMode
+              isBootstrapCompact={isBootstrapCompact}
+              onBootstrapFirstSend={handleBootstrapSubmit}
+              onPanZoomGesture={forwardPanZoomGesture}
+              nodeScaleFactor={nodeScaleFactor}
               treeId={activeTreeId}
               treeTitle={activeTreeTitle}
               treeNodes={Array.isArray(data?.nodes) ? data.nodes : []}
               treeLinks={Array.isArray(data?.links) ? data.links : []}
-              onNodeUpdate={handleNodeUpdate}
-              onNewNodeCreated={handleAssistantNodeCreate}
-              onNodeSelect={handleAssistantNodeSelect}
+              attachments={pendingAttachmentsByNode['__bootstrap__'] || []}
+              onAttachmentsChange={(next) => setAttachmentsForNode('__bootstrap__', next)}
+              onDropdownOpenChange={handleCompactProviderDropdownOpenChange}
+              onTextareaHeightChange={handleTextareaHeightChange}
               onCloseNode={() => setShowBootstrapChat(false)}
-              isLibraryIntroActive
-              onLibraryIntroComplete={() => setShowBootstrapChat(false)}
+              onNodeSelect={handleAssistantNodeSelect}
+              onNewNodeCreated={handleAssistantNodeCreate}
+              onNodeUpdate={handleNodeUpdate}
             />
           </div>
         </div>
       )}
 
-  {isTidyView && !isCompactChatOnly && (
+  {isTidyView && (
     <div
       className="absolute inset-0"
       style={{

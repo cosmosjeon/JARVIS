@@ -339,27 +339,27 @@ const TreeNode = ({
         >
           <NodeAssistantPanel
             node={node}
-            treeId={node?.treeId}
-            treeTitle={memoizedSummary?.label}
+            color={color}
+            onSizeChange={handlePanelSizeChange}
+            onSecondQuestion={onSecondQuestion}
+            onPlaceholderCreate={onPlaceholderCreate}
+            questionService={questionService}
+            initialConversation={initialConversation}
+            onConversationChange={onConversationChange}
+            nodeSummary={memoizedSummary}
+            isRootNode={memoizedIsRoot}
+            onRequestAnswer={onRequestAnswer}
+            onAnswerComplete={onAnswerComplete}
+            onAnswerError={onAnswerError}
+            onCloseNode={handleAssistantPanelClose}
+            onPanZoomGesture={onPanZoomGesture}
+            nodeScaleFactor={nodeScaleFactor}
             treeNodes={treeNodes}
             treeLinks={treeLinks}
-            onNodeUpdate={(updatedNode) => {
-              onAnswerComplete?.(updatedNode.id, {
-                question: updatedNode.question,
-                answer: updatedNode.answer,
-                conversation: updatedNode.conversation,
-              });
-              onNodeSelect?.(updatedNode);
-            }}
-            onNewNodeCreated={(createdNode) => {
-              if (onSecondQuestion) {
-                onSecondQuestion(node.id, createdNode.question || createdNode.keyword || '');
-              } else if (onPlaceholderCreate) {
-                onPlaceholderCreate(node.id, [createdNode.keyword || createdNode.id]);
-              }
-            }}
             onNodeSelect={onNodeSelect}
-            onCloseNode={handleAssistantPanelClose}
+            disableNavigation={node?.nodeType === 'memo'}
+            attachments={attachments}
+            onAttachmentsChange={onAttachmentsChange}
           />
         </div>
       </motion.div>,
@@ -520,26 +520,6 @@ const TreeNode = ({
                 <NodeAssistantPanel
                   node={node}
                   color={color}
-                  treeId={node?.treeId}
-                  treeTitle={memoizedSummary?.label}
-                  treeNodes={treeNodes}
-                  treeLinks={treeLinks}
-                  onNodeUpdate={(updatedNode) => {
-                    onAnswerComplete?.(updatedNode.id, {
-                      question: updatedNode.question,
-                      answer: updatedNode.answer,
-                      conversation: updatedNode.conversation,
-                    });
-                    onNodeSelect?.(updatedNode);
-                  }}
-                  onNewNodeCreated={(createdNode) => {
-                    if (onSecondQuestion) {
-                      onSecondQuestion(node.id, createdNode.question || createdNode.keyword || '');
-                    } else if (onPlaceholderCreate) {
-                      onPlaceholderCreate(node.id, [createdNode.keyword || createdNode.id]);
-                    }
-                  }}
-                  onNodeSelect={onNodeSelect}
                   onSizeChange={handlePanelSizeChange}
                   onSecondQuestion={onSecondQuestion}
                   onPlaceholderCreate={onPlaceholderCreate}
@@ -554,6 +534,8 @@ const TreeNode = ({
                   onCloseNode={handleAssistantPanelClose}
                   onPanZoomGesture={onPanZoomGesture}
                   nodeScaleFactor={nodeScaleFactor}
+                  attachments={attachments}
+                  onAttachmentsChange={onAttachmentsChange}
                 />
               </div>
             </foreignObject>
