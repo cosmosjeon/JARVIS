@@ -40,8 +40,10 @@ export const useTreePersistence = ({
   const pendingTreeIdRef = useRef(null);
   const debounceRef = useRef(null);
 
-  const persistTreeData = useCallback(async () => {
-    if (!user || initializingTree || !Array.isArray(data?.nodes) || data.nodes.length === 0) {
+  const persistTreeDataRef = useRef(() => Promise.resolve());
+
+  const persistTreeData = useCallback(async ({ force = false } = {}) => {
+    if (!force && (!user || initializingTree || !Array.isArray(data?.nodes) || data.nodes.length === 0)) {
       return;
     }
 
@@ -211,12 +213,14 @@ export const useTreePersistence = ({
     setIsTreeSyncing,
   ]);
 
+  persistTreeDataRef.current = persistTreeData;
+
   const schedulePersist = useCallback(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
     debounceRef.current = setTimeout(() => {
-      persistTreeData();
+      persistTreeDataRef.current();
     }, TREE_SAVE_DEBOUNCE_MS);
   }, [persistTreeData]);
 
@@ -233,6 +237,7 @@ export const useTreePersistence = ({
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
+        debounceRef.current = null;
       }
     };
   }, [user, data, initializingTree, schedulePersist]);
@@ -240,8 +245,24 @@ export const useTreePersistence = ({
   useEffect(() => () => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+      persistTreeDataRef.current({ force: true });
     }
   }, []);
+
+  const wasInitializingRef = useRef(initializingTree);
+
+  useEffect(() => {
+    const wasInitializing = wasInitializingRef.current;
+    if (wasInitializing === false && initializingTree === true) {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      persistTreeDataRef.current({ force: true });
+    }
+    wasInitializingRef.current = initializingTree;
+  }, [initializingTree]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {

@@ -39,12 +39,13 @@ const VoranTreeListPanel = ({
 }) => (
   <div
     className={cn(
-      'flex-1 border-r border-border/60 bg-card/60 transition-colors',
+      'flex-1 border-r border-border/60 bg-card/60 transition-colors flex flex-col',
       dragOverTarget?.type === 'voran' && 'border-primary/50 bg-primary/10 ring-1 ring-primary/40'
     )}
     onDragOver={onDragOver}
     onDragLeave={onDragLeave}
     onDrop={onDrop}
+    style={{ height: '100%', maxHeight: '100%' }}
   >
     <div className="border-b border-border/60 px-4 h-[87px] flex flex-col justify-center">
       <div className="flex items-center justify-between">
@@ -85,7 +86,15 @@ const VoranTreeListPanel = ({
       )}
     </div>
 
-    <div className="flex-1 overflow-y-auto px-4 py-3" ref={listRef}>
+    <div 
+      className="flex-1 px-4 py-3" 
+      ref={listRef}
+      style={{ 
+        overflowY: 'auto',
+        height: 'calc(100% - 87px)',
+        minHeight: 0
+      }}
+    >
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <div className="text-sm text-muted-foreground">로딩 중...</div>

@@ -98,9 +98,17 @@ const VoranBoxManager = ({
                 }
             }}
         >
-            <DialogContent className="sm:max-w-6xl max-w-[90vw] w-full h-[80vh] p-0 border border-border bg-card shadow-xl overflow-hidden">
-                <div className="relative flex h-full w-full">
-                    <div className="flex h-full w-full">
+            <DialogContent 
+                className="sm:max-w-6xl max-w-[90vw] w-full h-[80vh] p-0 border border-border bg-card shadow-xl overflow-hidden"
+                style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    maxHeight: '80vh',
+                    height: '80vh'
+                }}
+            >
+                <div className="relative flex h-full w-full flex-1 min-h-0">
+                    <div className="flex h-full w-full min-h-0">
                         <VoranTreeListPanel
                             treeCount={voranTrees.length}
                             loading={loading}
