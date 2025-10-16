@@ -832,20 +832,30 @@ const LibraryQAPanel = ({
     }
   }, [messages]);
 
-  // 노드가 선택되거나 변경되면 입력창에 포커스 (선택 중이 아닐 때만)
+  // 노드가 선택되거나 변경되면 입력창에 포커스 (사용자가 다른 영역을 선택 중일 때는 스킵)
   useEffect(() => {
-    if (selectedNode && textareaRef.current) {
-      const timer = setTimeout(() => {
-        if (!textareaRef.current) {
-          return;
-        }
-        textareaRef.current.focus();
-        const length = textareaRef.current.value.length;
-        textareaRef.current.setSelectionRange(length, length);
-      }, 150);
-      return () => clearTimeout(timer);
+    if (!selectedNode || !textareaRef.current || isMultiQuestionMode) {
+      return undefined;
     }
-  }, [isComposing, isEditableTitleActive, isProcessing, selectedNode]);
+
+    if (typeof window !== 'undefined') {
+      const currentSelection = window.getSelection?.();
+      if (currentSelection && currentSelection.type === 'Range') {
+        return undefined;
+      }
+    }
+
+    const timer = setTimeout(() => {
+      if (!textareaRef.current) {
+        return;
+      }
+      textareaRef.current.focus();
+      const length = textareaRef.current.value.length;
+      textareaRef.current.setSelectionRange(length, length);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [isMultiQuestionMode, selectedNode?.id]);
 
   // 상태 변경 감지
   useEffect(() => {
