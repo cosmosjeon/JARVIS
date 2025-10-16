@@ -1523,14 +1523,51 @@ const LibraryQAPanel = ({
       }
 
       const messageAttachments = Array.isArray(msg.attachments)
-        ? msg.attachments.filter((item) => item && typeof item === 'object' && typeof item.dataUrl === 'string' && item.dataUrl)
+        ? msg.attachments.filter((item) => item && typeof item === 'object')
         : [];
 
       messageAttachments.forEach((item) => {
-        contentParts.push({
-          type: imageType,
-          image_url: item.dataUrl,
-        });
+        const typeLower = (item.type || '').toLowerCase();
+        const mimeLower = (item.mimeType || '').toLowerCase();
+        const isPdfAttachment = typeLower === 'pdf' || mimeLower.startsWith('application/pdf');
+        const isImageAttachment = typeLower === 'image' || mimeLower.startsWith('image/');
+
+        if (isPdfAttachment) {
+          const heading = [
+            'PDF 첨부',
+            item.label ? `(${item.label})` : '',
+            Number.isFinite(item.pageCount) ? `· ${item.pageCount}쪽` : '',
+          ].filter(Boolean).join(' ');
+          const pdfText = typeof item.textContent === 'string' ? item.textContent.trim() : '';
+          const combined = [heading || 'PDF 첨부', pdfText].filter(Boolean).join('\n\n');
+          if (combined) {
+            contentParts.push({ type: textType, text: combined });
+          }
+          return;
+        }
+
+        if (isImageAttachment) {
+          const fallbackMime = item.mimeType || 'image/png';
+          const base64Raw = typeof item.base64 === 'string' ? item.base64.trim() : '';
+          let dataUrl = typeof item.dataUrl === 'string' ? item.dataUrl.trim() : '';
+
+          if (!dataUrl && base64Raw) {
+            dataUrl = `data:${fallbackMime};base64,${base64Raw}`;
+          }
+
+          if (!dataUrl && typeof item.url === 'string') {
+            dataUrl = item.url.trim();
+          }
+
+          if (!dataUrl) {
+            return;
+          }
+
+          contentParts.push({
+            type: imageType,
+            image_url: dataUrl,
+          });
+        }
       });
 
       if (contentParts.length === 0) {
