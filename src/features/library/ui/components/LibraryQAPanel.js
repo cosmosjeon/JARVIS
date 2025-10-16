@@ -27,21 +27,18 @@ import selectAutoModel from 'shared/utils/aiModelSelector';
 import { DEFAULT_AGENT_RESPONSE_TIMEOUT_MS } from 'shared/constants/agentTimeouts';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 import collectAncestorConversationMessages from 'features/tree/utils/assistantContext';
+import {
+  DEFAULT_ASSISTANT_LOADING_MESSAGES,
+  DEFAULT_ASSISTANT_LOADING_MESSAGE_INTERVAL_MS,
+} from 'features/chat/constants/loadingMessages';
 
 const TYPING_INTERVAL_MS = 16;
 const MAX_TYPING_DURATION_MS = 1200;
 const MAX_TYPING_WORD_COUNT = 400;
 const AGENT_RESPONSE_TIMEOUT_MS = DEFAULT_AGENT_RESPONSE_TIMEOUT_MS;
 const TIMEOUT_MESSAGE = 'AI 응답이 지연되고 있습니다. 잠시 후 다시 시도하거나 다른 모델을 선택해 주세요.';
-
-const LOADING_MESSAGES = [
-  '답변을 생성하고 있습니다...',
-  '앞선 문맥을 읽고 있습니다...',
-  '더 좋은 답변을 위해 생각중입니다...',
-  '관련 정보를 수집하고 있습니다...',
-  '답변을 정리하고 있습니다...',
-];
-const LOADING_MESSAGE_INTERVAL_MS = 2000;
+const LOADING_MESSAGES = DEFAULT_ASSISTANT_LOADING_MESSAGES;
+const LOADING_MESSAGE_INTERVAL_MS = DEFAULT_ASSISTANT_LOADING_MESSAGE_INTERVAL_MS;
 
 const MODEL_LABELS = {
   'gpt-5': 'GPT-5',
@@ -2427,14 +2424,6 @@ const LibraryQAPanel = ({
                 panelStyles={chatPanelStyles}
                 retryingMessageMap={spinningMap}
               />
-            )}
-            {isProcessing && (
-              <div className="flex justify-center items-center py-8">
-                <div className="flex items-center gap-3 text-sm" style={{ color: subtleTextColor }}>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{currentLoadingMessage}</span>
-                </div>
-              </div>
             )}
           </div>
         )

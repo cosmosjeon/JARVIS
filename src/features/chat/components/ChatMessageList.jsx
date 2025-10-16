@@ -23,9 +23,15 @@ import {
   DEFAULT_CHAT_THEME,
   isLightLikeChatTheme,
 } from 'features/chat/constants/panelStyles';
+import {
+  DEFAULT_ASSISTANT_LOADING_MESSAGES,
+  DEFAULT_ASSISTANT_LOADING_MESSAGE_INTERVAL_MS,
+} from 'features/chat/constants/loadingMessages';
 
 const USER_ROLE = 'user';
 const SYSTEM_ROLE = 'system';
+const LOADING_MESSAGES = DEFAULT_ASSISTANT_LOADING_MESSAGES;
+const LOADING_MESSAGE_INTERVAL_MS = DEFAULT_ASSISTANT_LOADING_MESSAGE_INTERVAL_MS;
 
 const getMessageKey = (message, fallback) => {
   const rawId = message?.id;
@@ -147,6 +153,7 @@ export default function ChatMessageList({
   const [internalSpinningMap, setInternalSpinningMap] = useState({});
   const [openDropdowns, setOpenDropdowns] = useState({});
   const scrollContainerRef = useRef(null);
+  const [pendingMessageIndex, setPendingMessageIndex] = useState(0);
 
   const resolvedPanelStyles = useMemo(
     () => ({ ...DEFAULT_CHAT_PANEL_STYLES, ...(panelStyles || {}) }),
@@ -158,6 +165,22 @@ export default function ChatMessageList({
     () => messages.some((message) => message.status === 'typing' || message.status === 'pending'),
     [messages],
   );
+  const hasPendingAssistantMessage = useMemo(
+    () =>
+      messages.some(
+        (message) =>
+          (message?.role || 'assistant') === 'assistant' &&
+          (message.status === 'pending' || (message.status === 'typing' && !message.text)),
+      ),
+    [messages],
+  );
+  const pendingIndicatorText = useMemo(() => {
+    if (!LOADING_MESSAGES.length) {
+      return '';
+    }
+    const safeIndex = pendingMessageIndex % LOADING_MESSAGES.length;
+    return LOADING_MESSAGES[safeIndex] || LOADING_MESSAGES[0];
+  }, [pendingMessageIndex]);
 
   useEffect(() => {
     if (typeof onContainerRef === 'function') {
@@ -214,6 +237,23 @@ export default function ChatMessageList({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasPendingAssistantMessage || !LOADING_MESSAGES.length) {
+      setPendingMessageIndex(0);
+      return undefined;
+    }
+
+    setPendingMessageIndex(0);
+
+    const intervalId = window.setInterval(() => {
+      setPendingMessageIndex((prevIndex) => (prevIndex + 1) % LOADING_MESSAGES.length);
+    }, LOADING_MESSAGE_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [hasPendingAssistantMessage]);
 
   const hasExternalRetryingState = Boolean(retryingMessageMap);
   const activeSpinningMap = hasExternalRetryingState ? retryingMessageMap : internalSpinningMap;
@@ -336,6 +376,8 @@ export default function ChatMessageList({
           resolvedPanelStyles,
         );
         const reasoningNode = renderReasoning(message.reasoning, status);
+        const shouldShowPendingIndicator =
+          status === 'pending' || (status === 'typing' && !message.text);
 
         return (
           <div key={key} className={`flex justify-center ${isFullscreen ? 'px-12' : 'px-4'}`} data-role="assistant" data-status={status}>
@@ -348,6 +390,17 @@ export default function ChatMessageList({
                 boxSizing: 'border-box'
               }}
             >
+              {shouldShowPendingIndicator && pendingIndicatorText ? (
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: resolvedPanelStyles.subtleTextColor }}
+                  role="status"
+                  aria-live="polite"
+                  data-testid="assistant-loading-indicator"
+                >
+                  {pendingIndicatorText}
+                </p>
+              ) : null}
               {message.text ? (
                 <div className="w-full">
                   <Response
