@@ -3,6 +3,7 @@ import { ScrollArea } from 'shared/ui/scroll-area';
 import { Button } from 'shared/ui/button';
 import { Badge } from 'shared/ui/badge';
 import { cn } from 'shared/utils';
+import { getRuntime, constants as runtimeConstants } from 'shared/utils/platform';
 import ContextMenu from 'shared/ui/ContextMenu';
 import FolderSelectModal from 'shared/ui/FolderSelectModal';
 import {
@@ -354,7 +355,12 @@ const LibrarySidebar = ({
                           type="button"
                           draggable
                           onClick={() => onSelectTree(tree.id)}
-                          onDoubleClick={() => onOpenTree(tree.id)}
+                          onDoubleClick={() => {
+                            const runtime = getRuntime();
+                            if (runtime === runtimeConstants.RUNTIME_ELECTRON) {
+                              onOpenTree(tree.id);
+                            }
+                          }}
                           onDragStart={(event) => onDragStart(event, tree.id)}
                           onDragEnd={onDragEnd}
                           className={cn(
@@ -586,7 +592,12 @@ const LibrarySidebar = ({
                                 tabIndex={-1}
                                 draggable
                                 onClick={() => onSelectTree(tree.id, { folderId: folder.id })}
-                                onDoubleClick={() => onOpenTree(tree.id)}
+                                onDoubleClick={() => {
+                                  const runtime = getRuntime();
+                                  if (runtime === runtimeConstants.RUNTIME_ELECTRON) {
+                                    onOpenTree(tree.id);
+                                  }
+                                }}
                                 onDragStart={(event) => onDragStart(event, tree.id)}
                                 onDragEnd={onDragEnd}
                                 className={cn(
@@ -671,7 +682,12 @@ const LibrarySidebar = ({
                             tabIndex={-1}
                             draggable
                             onClick={() => onSelectTree(tree.id)}
-                            onDoubleClick={() => onOpenTree(tree.id)}
+                            onDoubleClick={() => {
+                            const runtime = getRuntime();
+                            if (runtime === runtimeConstants.RUNTIME_ELECTRON) {
+                              onOpenTree(tree.id);
+                            }
+                          }}
                             onDragStart={(event) => onDragStart(event, tree.id)}
                             onDragEnd={onDragEnd}
                             className={cn(

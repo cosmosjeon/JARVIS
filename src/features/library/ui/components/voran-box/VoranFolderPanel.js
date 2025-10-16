@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from 'shared/ui/button';
 import { Input } from 'shared/ui/input';
+import { getRuntime, constants as runtimeConstants } from 'shared/utils/platform';
 import { cn } from 'shared/utils';
 import VoranTreeListItem from './VoranTreeListItem';
 
@@ -230,7 +231,8 @@ const VoranFolderPanel = ({
                           }
                         }}
                         onDoubleClick={() => {
-                          if (!isEditing) {
+                          const runtime = getRuntime();
+                          if (runtime === runtimeConstants.RUNTIME_ELECTRON) {
                             onTreeDoubleClick(tree);
                           }
                         }}

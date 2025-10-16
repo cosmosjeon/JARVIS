@@ -1673,7 +1673,7 @@ const TidyTreeView = ({
         }}
         onRename={(nodeId, newName) => {
           if (onNodeUpdate) {
-            onNodeUpdate(nodeId, { name: newName });
+            onNodeUpdate(nodeId, { keyword: newName });
           }
         }}
       />

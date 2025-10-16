@@ -2117,21 +2117,32 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
   }, [treeBridge]);
 
   // 노드 및 하위 노드 제거 함수
-  const removeNodeAndDescendants = (nodeId) => {
-    if (!nodeId) return;
+  const removeNodeAndDescendants = useCallback((nodeId) => {
+    if (!nodeId) {
+      return;
+    }
+
+    const latestData = dataRef.current;
+    if (!latestData || !Array.isArray(latestData.nodes)) {
+      return;
+    }
 
     const normalizeId = (value) => (typeof value === 'object' && value !== null ? value.id : value);
+    const baseNodes = Array.isArray(latestData.nodes) ? latestData.nodes : [];
+    const baseLinks = Array.isArray(latestData.links) ? latestData.links : [];
+    const hierarchicalOnlyLinks = baseLinks.filter((link) => link?.relationship !== 'connection');
 
     const toRemove = new Set();
     const stack = [nodeId];
 
     while (stack.length > 0) {
       const current = stack.pop();
-      if (toRemove.has(current)) continue;
+      if (toRemove.has(current)) {
+        continue;
+      }
       toRemove.add(current);
 
-      // 현재 노드의 자식 노드들을 스택에 추가
-      hierarchicalLinks.forEach((link) => {
+      hierarchicalOnlyLinks.forEach((link) => {
         const sourceId = normalizeId(link.source);
         const targetId = normalizeId(link.target);
         if (sourceId === current) {
@@ -2140,28 +2151,38 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       });
     }
 
-    const newNodes = data.nodes.filter((n) => !toRemove.has(n.id));
-    const newLinks = data.links.filter((l) => {
-      const sourceId = normalizeId(l.source);
-      const targetId = normalizeId(l.target);
+    if (toRemove.size === 0) {
+      return;
+    }
+
+    const nextNodes = baseNodes.filter((node) => !toRemove.has(node.id));
+    const nextLinks = baseLinks.filter((link) => {
+      const sourceId = normalizeId(link.source);
+      const targetId = normalizeId(link.target);
       return !toRemove.has(sourceId) && !toRemove.has(targetId);
     });
 
-    setData({ ...data, nodes: newNodes, links: newLinks });
+    const snapshot = {
+      ...latestData,
+      nodes: nextNodes,
+      links: nextLinks,
+    };
 
-    // 대화 상태 정리
+    setData(snapshot);
+    dataRef.current = snapshot;
+    persistTreeData({ force: true, snapshot }).catch(() => {});
+
     toRemove.forEach((id) => {
       deleteConversation(id);
     });
 
-    // 선택/확장 상태 초기화
     if (selectedNodeId && toRemove.has(selectedNodeId)) {
       setSelectedNodeId(null);
     }
     if (expandedNodeId && toRemove.has(expandedNodeId)) {
       collapseAssistantPanel();
     }
-  };
+  }, [collapseAssistantPanel, deleteConversation, expandedNodeId, persistTreeData, selectedNodeId, setData, setSelectedNodeId]);
 
 
   const requestUserInput = useCallback((message, defaultValue = '') => {
@@ -2187,13 +2208,12 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         return;
       }
 
-      const nodeIndex = latestData.nodes.findIndex(node => node.id === nodeId);
+      const updatedNodes = [...latestData.nodes];
+      const nodeIndex = updatedNodes.findIndex((node) => node.id === nodeId);
       if (nodeIndex === -1) {
         return;
       }
 
-      // 노드 데이터 업데이트
-      const updatedNodes = [...latestData.nodes];
       const existingNode = updatedNodes[nodeIndex];
       const nextNode = {
         ...existingNode,
@@ -2206,33 +2226,32 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
 
       if (typeof providedKeyword === 'string') {
         const trimmed = providedKeyword.trim();
-        nextNode.keyword = trimmed || existingNode.keyword || existingNode.id;
+        const fallback = existingNode.keyword || existingNode.name || existingNode.id;
+        const resolved = trimmed || fallback;
+        nextNode.keyword = resolved;
+        nextNode.name = resolved;
         nextNode.titleManuallyEdited = true;
         nextNode.autoTitleAttempted = true;
         nextNode.autoTitleGenerated = false;
-        delete nextNode.name;
-        markNodeTitleManual(activeTreeId, nodeId, trimmed);
+        nextNode.updatedAt = Date.now();
+        markNodeTitleManual(activeTreeId, nodeId, resolved);
       }
 
       updatedNodes[nodeIndex] = nextNode;
 
-      // 상태 업데이트
-      setData(prev => ({
-        ...prev,
+      const snapshot = {
+        ...latestData,
         nodes: updatedNodes,
-      }));
+      };
 
-      // Supabase에 저장 (sizeScale 등 노드 속성 업데이트)
-      if (activeTreeId && user?.id) {
-        await saveTreeNodes({
-          treeId: activeTreeId,
-          nodes: updatedNodes,
-        });
-      }
+      setData(snapshot);
+      dataRef.current = snapshot;
+
+      await persistTreeData({ force: true, snapshot });
     } catch (error) {
       console.error('노드 업데이트 실패:', error);
     }
-  }, [activeTreeId, saveTreeNodes, user?.id]);
+  }, [activeTreeId, markNodeTitleManual, persistTreeData]);
 
   const handleManualNodeCreate = useCallback((parentNodeId) => {
     const latestData = dataRef.current;

@@ -1,3 +1,30 @@
+const { sanitizeSettings } = require('../settings');
+
+const SETTINGS_KEYS = [
+  'trayEnabled',
+  'zoomOnClickEnabled',
+  'autoPasteEnabled',
+  'inputMode',
+  'libraryTheme',
+  'widgetTheme',
+];
+
+const serializePreferences = (value) => JSON.stringify(value ?? {});
+const haveSettingsChanged = (previous, next) => {
+  if (SETTINGS_KEYS.some((key) => previous[key] !== next[key])) {
+    return true;
+  }
+  return serializePreferences(previous.preferences) !== serializePreferences(next.preferences);
+};
+
+const cloneSanitizedSettings = (value) => {
+  const sanitized = sanitizeSettings(value);
+  return {
+    ...sanitized,
+    preferences: { ...sanitized.preferences },
+  };
+};
+
 const registerSettingsHandlers = ({
   ipcMain,
   getSettings,
@@ -10,41 +37,22 @@ const registerSettingsHandlers = ({
     throw new Error('[ipc-handlers/settings] Missing required dependencies');
   }
 
-  ipcMain.handle('settings:get', () => ({ success: true, settings: { ...getSettings() } }));
+  ipcMain.handle('settings:get', () => ({
+    success: true,
+    settings: cloneSanitizedSettings(getSettings()),
+  }));
 
   ipcMain.handle('settings:update', (_event, payload = {}) => {
-    const nextSettings = { ...getSettings() };
-    let changed = false;
-    let shouldApplyTray = false;
-
-    if (typeof payload.trayEnabled === 'boolean' && payload.trayEnabled !== nextSettings.trayEnabled) {
-      nextSettings.trayEnabled = payload.trayEnabled;
-      changed = true;
-      shouldApplyTray = true;
-    }
-
-    if (typeof payload.zoomOnClickEnabled === 'boolean' && payload.zoomOnClickEnabled !== nextSettings.zoomOnClickEnabled) {
-      nextSettings.zoomOnClickEnabled = payload.zoomOnClickEnabled;
-      changed = true;
-    }
-
-    if (typeof payload.autoPasteEnabled === 'boolean' && payload.autoPasteEnabled !== nextSettings.autoPasteEnabled) {
-      nextSettings.autoPasteEnabled = payload.autoPasteEnabled;
-      changed = true;
-    }
-
-    if (typeof payload.inputMode === 'string' && payload.inputMode !== nextSettings.inputMode) {
-      nextSettings.inputMode = payload.inputMode;
-      changed = true;
-    }
-
-    if (typeof payload.theme === 'string' && payload.theme !== nextSettings.theme) {
-      nextSettings.theme = payload.theme;
-      changed = true;
-    }
+    const currentSettings = cloneSanitizedSettings(getSettings());
+    const mergedSettings = cloneSanitizedSettings({
+      ...currentSettings,
+      ...(typeof payload === 'object' && payload ? payload : {}),
+    });
+    const changed = haveSettingsChanged(currentSettings, mergedSettings);
+    const shouldApplyTray = currentSettings.trayEnabled !== mergedSettings.trayEnabled;
 
     if (changed) {
-      setSettings(nextSettings);
+      setSettings(mergedSettings);
       if (shouldApplyTray) {
         applyTraySettings();
       }
@@ -52,7 +60,7 @@ const registerSettingsHandlers = ({
       broadcastSettings();
     }
 
-    return { success: true, settings: { ...getSettings() } };
+    return { success: true, settings: cloneSanitizedSettings(getSettings()) };
   });
 };
 

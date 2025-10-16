@@ -97,6 +97,9 @@ export const useNodeAssistantPanelController = ({
 
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
+  const [isMultiQuestionMode, setIsMultiQuestionMode] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [highlightNotice, setHighlightNotice] = useState(null);
   const [hasFocusedComposer, setHasFocusedComposer] = useState(false);
   const [placeholderNotice, setPlaceholderNotice] = useState(null);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
@@ -730,6 +733,32 @@ export const useNodeAssistantPanelController = ({
   const isSendDisabled = isAttachmentUploading
     || (composerValue.trim().length === 0 && draftAttachments.length === 0);
 
+  // 다중 질문 모드 토글
+  const toggleMultiQuestionMode = useCallback(() => {
+    console.log('🔥 [다중질문버튼] 클릭됨!');
+    console.log('현재 모드:', isMultiQuestionMode ? '켜짐' : '꺼짐');
+    
+    if (isMultiQuestionMode) {
+      console.log('✅ 다중 질문 모드 종료 시작...');
+      setIsMultiQuestionMode(false);
+      setHighlightNotice(null);
+      console.log('✅ 다중 질문 모드 종료 완료');
+      return;
+    }
+    
+    console.log('🚀 다중 질문 모드 활성화 시작...');
+    setIsMultiQuestionMode(true);
+    setHighlightNotice({ type: 'info', message: '다중 질문 모드: 텍스트를 드래그하면 하이라이트됩니다. 일반 복사는 불가능합니다.' });
+    console.log('✅ 다중 질문 모드 활성화 완료');
+  }, [isMultiQuestionMode]);
+
+  // 전체 화면 모드 토글
+  const toggleFullscreen = useCallback(() => {
+    console.log('🖥️ [전체화면버튼] 클릭됨!');
+    console.log('현재 모드:', isFullscreen ? '전체화면' : '일반');
+    setIsFullscreen(prev => !prev);
+  }, [isFullscreen]);
+
   return {
     panelRef,
     panelStyles,
@@ -747,7 +776,7 @@ export const useNodeAssistantPanelController = ({
     handleRetryMessage,
     handleRetryWithModel,
     handleCopyMessage,
-    availableModels,
+    availableModels: [],
     spinningMap,
     registerMessageContainer,
     handleHighlightToggle,
@@ -772,6 +801,11 @@ export const useNodeAssistantPanelController = ({
     setSelectedModel,
     autoSelectionPreview,
     lastAutoSelection,
+    isMultiQuestionMode,
+    isFullscreen,
+    highlightNotice,
+    toggleMultiQuestionMode,
+    toggleFullscreen,
   };
 };
 

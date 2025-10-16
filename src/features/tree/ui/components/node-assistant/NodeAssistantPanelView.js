@@ -20,7 +20,7 @@ import {
   LONG_RESPONSE_NOTICE_DELAY_MS,
   LONG_RESPONSE_REMINDER_DELAY_MS,
 } from 'shared/constants/agentTimeouts';
-import { Paperclip } from 'lucide-react';
+import { Paperclip, Network, Maximize, Minimize } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from 'shared/ui/tooltip';
 
 const MODEL_LABELS = {
@@ -103,6 +103,11 @@ const NodeAssistantPanelView = ({
   setSelectedModel,
   autoSelectionPreview,
   lastAutoSelection,
+  isMultiQuestionMode,
+  isFullscreen,
+  highlightNotice,
+  toggleMultiQuestionMode,
+  toggleFullscreen,
   onDropdownOpenChange,
   onTextareaHeightChange,
 }) => {
@@ -324,6 +329,28 @@ const NodeAssistantPanelView = ({
         {...attachmentDropHandlers}
       >
         {isAttachmentDragOver ? <AttachmentDropOverlay /> : null}
+        
+        {/* 하이라이트 알림 */}
+        {highlightNotice && (
+          <div
+            className="rounded px-2 py-1 text-xs"
+            style={{
+              color: highlightNotice.type === 'warning'
+                ? 'rgba(180, 83, 9, 0.9)'
+                : highlightNotice.type === 'success'
+                  ? 'rgba(16, 185, 129, 0.9)'
+                  : 'rgba(59, 130, 246, 0.9)',
+              backgroundColor: highlightNotice.type === 'warning'
+                ? 'rgba(254, 243, 199, 0.5)'
+                : highlightNotice.type === 'success'
+                  ? 'rgba(209, 250, 229, 0.5)'
+                  : 'rgba(219, 234, 254, 0.5)',
+            }}
+          >
+            {highlightNotice.message}
+          </div>
+        )}
+        
         <input
           ref={fileInputRef}
           type="file"
@@ -343,8 +370,63 @@ const NodeAssistantPanelView = ({
               align="start"
               onOpenChange={handleProviderDropdownOpenChange}
             />
+            
+            {/* 다중 질문 버튼 */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PromptInputButton
+                    onClick={(e) => {
+                      console.log('🖱️ [다중질문 버튼] 클릭됨!');
+                      toggleMultiQuestionMode();
+                    }}
+                    disabled={isStreaming}
+                    variant="ghost"
+                    className={cn(
+                      "rounded-lg px-4 py-1.5 text-xs font-medium transition-all duration-200 relative z-10 min-w-fit",
+                      isMultiQuestionMode 
+                        ? "bg-blue-100 text-blue-700 border border-blue-200" 
+                        : "hover:bg-gray-100 text-gray-600"
+                    )}
+                  >
+                    <Network className="h-4 w-4 mr-1.5" />
+                    다중 질문
+                  </PromptInputButton>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>텍스트를 드래그하여 다중 질문 생성</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
           <div className="flex flex-1 items-center justify-end gap-2">
+            {/* 전체 화면 버튼 */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PromptInputButton
+                    onClick={(e) => {
+                      console.log('🖱️ [전체화면 버튼] 클릭됨!');
+                      toggleFullscreen();
+                    }}
+                    disabled={isStreaming}
+                    variant="ghost"
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 relative z-10 min-w-fit",
+                      isFullscreen 
+                        ? "bg-green-100 text-green-700 border border-green-200" 
+                        : "hover:bg-gray-100 text-gray-600"
+                    )}
+                  >
+                    {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                  </PromptInputButton>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isFullscreen ? '전체 화면 종료' : '전체 화면'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
             <TooltipProvider delayDuration={300}>
               <div className="flex items-center gap-2 relative z-10">
                 <Tooltip>

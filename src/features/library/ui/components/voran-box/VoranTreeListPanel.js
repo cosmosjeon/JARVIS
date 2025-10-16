@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, ChevronDown, ChevronUp, FolderTree as TreeIcon } from 'lucide-react';
 import { Button } from 'shared/ui/button';
 import { cn } from 'shared/utils';
+import { getRuntime, constants as runtimeConstants } from 'shared/utils/platform';
 import VoranTreeListItem from './VoranTreeListItem';
 
 const VoranTreeListPanel = ({
@@ -137,7 +138,8 @@ const VoranTreeListPanel = ({
                     }
                   }}
                   onDoubleClick={() => {
-                    if (!isEditing) {
+                    const runtime = getRuntime();
+                    if (runtime === runtimeConstants.RUNTIME_ELECTRON) {
                       onTreeDoubleClick(tree);
                     }
                   }}

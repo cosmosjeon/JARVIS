@@ -5,10 +5,7 @@ const createSettingsManager = ({ getLogger, broadcastSettingsToWidgets, getLibra
   let settings = settingsStore.get();
 
   const loadSettings = () => {
-    settings = {
-      ...settingsStoreModule.defaultSettings,
-      ...settingsStoreModule.readSettings(),
-    };
+    settings = settingsStore.reload();
     return settings;
   };
 
@@ -21,7 +18,11 @@ const createSettingsManager = ({ getLogger, broadcastSettingsToWidgets, getLibra
   };
 
   const setSettings = (next) => {
-    settings = next;
+    if (!next || typeof next !== 'object') {
+      return settings;
+    }
+    settings = settingsStore.set(next);
+    return settings;
   };
 
   const getSettings = () => settings;
