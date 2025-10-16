@@ -9,6 +9,11 @@ const TREE_SAVE_DEBOUNCE_MS = 800;
 
 const sanitizeTitle = (value) => (typeof value === 'string' ? value.trim() : '');
 
+const sanitizeTreeState = (value = {}) => ({
+  nodes: Array.isArray(value?.nodes) ? value.nodes : [],
+  links: Array.isArray(value?.links) ? value.links : [],
+});
+
 const mapError = (error) => {
   if (error instanceof Error) {
     return error;
@@ -42,8 +47,18 @@ export const useTreePersistence = ({
 
   const persistTreeDataRef = useRef(() => Promise.resolve());
 
-  const persistTreeData = useCallback(async ({ force = false } = {}) => {
-    if (!force && (!user || initializingTree || !Array.isArray(data?.nodes) || data.nodes.length === 0)) {
+  const persistTreeData = useCallback(async ({ force = false, snapshot } = {}) => {
+    const targetState = sanitizeTreeState(snapshot ?? data);
+
+    if (!user) {
+      return;
+    }
+
+    if (!force && (initializingTree || targetState.nodes.length === 0)) {
+      return;
+    }
+
+    if (targetState.nodes.length === 0) {
       return;
     }
 
@@ -51,12 +66,23 @@ export const useTreePersistence = ({
     setTreeSyncError(null);
 
     try {
-      const normalizedNodes = data.nodes.map((node) => {
+      const snapshotLinks = Array.isArray(snapshot?.links) ? snapshot.links : null;
+      const effectiveHierarchicalLinks = Array.isArray(snapshotLinks)
+        ? snapshotLinks
+        : (Array.isArray(hierarchicalLinks) ? hierarchicalLinks : []);
+
+      const normalizedNodes = targetState.nodes.map((node) => {
         const parentId = (() => {
-          if (!Array.isArray(hierarchicalLinks)) {
+          const explicitParent = node.parentId ?? node.parent_id ?? null;
+          if (explicitParent) {
+            return normalizeLinkEndpoint(explicitParent);
+          }
+
+          if (!Array.isArray(effectiveHierarchicalLinks)) {
             return null;
           }
-          const parentLink = hierarchicalLinks.find((link) => normalizeLinkEndpoint(link.target) === node.id);
+
+          const parentLink = effectiveHierarchicalLinks.find((link) => normalizeLinkEndpoint(link.target) === node.id);
           return parentLink ? normalizeLinkEndpoint(parentLink.source) : null;
         })();
 
@@ -91,7 +117,7 @@ export const useTreePersistence = ({
       });
 
       const rootNodeId = getRootNodeId();
-      const rootNode = data.nodes.find((node) => node.id === rootNodeId) || data.nodes[0];
+      const rootNode = targetState.nodes.find((node) => node.id === rootNodeId) || targetState.nodes[0];
       const rootTitleCandidate = sanitizeTitle(rootNode?.keyword)
         || sanitizeTitle(rootNode?.questionData?.question)
         || '새 지식 트리';

@@ -1,9 +1,6 @@
 import React from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Ban } from "lucide-react";
 import useVoranBoxManagerState from "features/library/hooks/useVoranBoxManagerState";
 import { Dialog, DialogContent } from "shared/ui/dialog";
-import VoranToastStack from "./VoranToastStack";
 import VoranTreeListPanel from "./voran-box/VoranTreeListPanel";
 import VoranFolderPanel from "./voran-box/VoranFolderPanel";
 import VoranKeyboardGuide from "./voran-box/VoranKeyboardGuide";
@@ -39,9 +36,6 @@ const VoranBoxManager = ({
     });
 
     const {
-        toasts,
-        toastVisuals,
-        handleToastAction,
         voranTrees,
         folderTreeCounts,
         canScrollUp,
@@ -83,8 +77,6 @@ const VoranBoxManager = ({
         showCreateFolder,
         setShowCreateFolder,
         isDragging,
-        showInvalidDropIndicator,
-        cursorPosition,
         activePreviewFolderId,
         formatDate,
     } = manager;
@@ -184,24 +176,7 @@ const VoranBoxManager = ({
                         />
                     </div>
 
-                    <VoranToastStack toasts={toasts} toastVisuals={toastVisuals} onToastAction={handleToastAction} />
 
-                    <AnimatePresence>
-                        {isDragging && showInvalidDropIndicator && (
-                            <motion.div
-                                key="invalid-drop-indicator"
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.9 }}
-                                transition={{ duration: 0.12 }}
-                                className="pointer-events-none fixed z-[102] flex items-center gap-2 rounded-md border border-red-400/50 bg-red-500/10 px-3 py-1 text-xs text-red-200 shadow-lg backdrop-blur-sm"
-                                style={{ transform: `translate3d(${cursorPosition.x + 14}px, ${cursorPosition.y + 18}px, 0)` }}
-                            >
-                                <Ban className="h-3.5 w-3.5" />
-                                <span>놓을 수 없습니다</span>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
                     <VoranKeyboardGuide />
                 </div>
             </DialogContent>

@@ -57,6 +57,11 @@ class QuestionService {
             fullText: `질문: ${question}\n\n답변: ${answer}`,
             level: this.getNodeLevel(parentNodeId, nodes) + 1,
             size: 12,
+            parentId: parentNodeId,
+            status: 'placeholder',
+            conversation: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
             questionData: {
                 question,
                 answer,

@@ -81,9 +81,6 @@ const VoranTreeListPanel = ({
       {navigationMode && localSelectedTreeId && (
         <div className="mt-2 text-xs text-primary font-medium">탭키로 폴더를 선택하고 엔터로 저장하세요</div>
       )}
-      {dragOverTarget?.type === 'voran' && (
-        <div className="mt-2 text-xs text-primary font-medium">여기에 트리를 놓으면 BOX로 이동합니다</div>
-      )}
     </div>
 
     <div 

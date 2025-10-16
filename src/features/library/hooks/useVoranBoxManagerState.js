@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import useVoranBoxToasts from './useVoranBoxToasts';
 
 const arraysEqual = (a, b) => {
   if (a === b) return true;
@@ -40,12 +39,9 @@ const useVoranBoxManagerState = ({
   const [editingTreeId, setEditingTreeId] = useState(null);
   const [editingTreeName, setEditingTreeName] = useState('');
   const [activePreviewFolderId, setActivePreviewFolderId] = useState(null);
-  const [showInvalidDropIndicator, setShowInvalidDropIndicator] = useState(false);
-  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [canScrollUp, setCanScrollUp] = useState(false);
   const [canScrollDown, setCanScrollDown] = useState(false);
 
-  const { toasts, toastVisuals, showToast, handleToastAction } = useVoranBoxToasts();
 
   const dragPreviewRef = useRef(null);
   const dragStatusRef = useRef({ canDrop: false });
@@ -343,7 +339,6 @@ const useVoranBoxManagerState = ({
     setDraggedTreeIds([]);
     setIsDragging(false);
     setDragOverTarget(null);
-    setShowInvalidDropIndicator(false);
     setActivePreviewFolderId(null);
     dragStatusRef.current.canDrop = false;
     if (folderHoverTimerRef.current) {
@@ -359,7 +354,6 @@ const useVoranBoxManagerState = ({
       event.dataTransfer.dropEffect = 'move';
     }
     dragStatusRef.current.canDrop = true;
-    setShowInvalidDropIndicator(false);
     setDragOverTarget({ type: targetType, id: targetId });
 
     if (targetType === 'folder') {
@@ -385,7 +379,6 @@ const useVoranBoxManagerState = ({
     if (!event.currentTarget.contains(event.relatedTarget)) {
       setDragOverTarget(null);
       dragStatusRef.current.canDrop = false;
-      setShowInvalidDropIndicator(false);
       if (folderHoverTimerRef.current) {
         clearTimeout(folderHoverTimerRef.current);
         folderHoverTimerRef.current = null;
@@ -399,7 +392,6 @@ const useVoranBoxManagerState = ({
     dragStatusRef.current.canDrop = false;
     setDragOverTarget(null);
     setActivePreviewFolderId(null);
-    setShowInvalidDropIndicator(false);
     if (folderHoverTimerRef.current) {
       clearTimeout(folderHoverTimerRef.current);
       folderHoverTimerRef.current = null;
@@ -472,42 +464,16 @@ const useVoranBoxManagerState = ({
         if (failureCount > 0) {
           message += ` (${successCount}개 성공, ${failureCount}개 실패)`;
         }
-        showToast({
-          type: failureCount > 0 ? 'warning' : 'success',
-          message,
-          duration: 3000,
-          actionLabel: result?.undo ? '되돌리기' : undefined,
-          onAction: result?.undo,
-        });
       }
 
-      if (Array.isArray(result?.renamed)) {
-        result.renamed.forEach((rename) => {
-          showToast({
-            type: 'info',
-            message: `동일한 이름이 있습니다. 바꾸기/겹치기 없이 새 이름으로 저장합니다. → ${rename.newTitle}`,
-            duration: 2500,
-          });
-        });
-      }
 
-      if (Array.isArray(result?.failures)) {
-        result.failures.forEach((failure) => {
-          showToast({
-            type: 'error',
-            message: failure?.message || '이동에 실패했습니다.',
-            duration: 3500,
-          });
-        });
-      }
     } catch (error) {
       console.error('Failed to move tree', error);
-      showToast({ type: 'error', message: error?.message || '이동에 실패했습니다.', duration: 3500 });
     } finally {
       setSelectedTreeIds((prev) => prev.filter((id) => !uniqueIds.includes(id)));
       handleTreeDragEnd();
     }
-  }, [draggedTreeIds, folders, handleTreeDragEnd, onFolderSelect, onTreeMoveToFolder, showToast, trees]);
+  }, [draggedTreeIds, folders, handleTreeDragEnd, onFolderSelect, onTreeMoveToFolder, trees]);
 
   const handleVoranBoxSelect = useCallback(() => {
     if (onFolderSelect) {
@@ -673,14 +639,13 @@ const useVoranBoxManagerState = ({
         }
       } catch (error) {
         console.error('Keyboard move failed', error);
-        showToast({ type: 'error', message: error?.message || '이동에 실패했습니다.', duration: 3500 });
       }
     }
 
     if (event.key === 'Escape') {
       handleClose();
     }
-  }, [currentFolderIndex, folders, handleClose, handleFolderCreate, localSelectedTreeId, navigationMode, onFolderSelect, onTreeMoveToFolder, showCreateFolder, showToast, trees, voranTrees]);
+  }, [currentFolderIndex, folders, handleClose, handleFolderCreate, localSelectedTreeId, navigationMode, onFolderSelect, onTreeMoveToFolder, showCreateFolder, trees, voranTrees]);
 
   useEffect(() => {
     if (isVisible) {
@@ -692,12 +657,10 @@ const useVoranBoxManagerState = ({
 
   useEffect(() => {
     if (!isDragging) {
-      setShowInvalidDropIndicator(false);
       return undefined;
     }
 
     const handleWindowDragOver = (event) => {
-      setCursorPosition({ x: event.clientX, y: event.clientY });
       const container = voranListRef.current;
       if (container) {
         const rect = container.getBoundingClientRect();
@@ -719,9 +682,6 @@ const useVoranBoxManagerState = ({
           }
           lastVibrateRef.current = now;
         }
-        setShowInvalidDropIndicator(true);
-      } else {
-        setShowInvalidDropIndicator(false);
       }
     };
 
@@ -747,9 +707,6 @@ const useVoranBoxManagerState = ({
   }, [handleTreeMouseDown]);
 
   return {
-    toasts,
-    toastVisuals,
-    handleToastAction,
     voranTrees,
     folderTreeCounts,
     canScrollUp,
@@ -791,8 +748,6 @@ const useVoranBoxManagerState = ({
     showCreateFolder,
     setShowCreateFolder,
     isDragging,
-    showInvalidDropIndicator,
-    cursorPosition,
     activePreviewFolderId,
     setActivePreviewFolderId,
     formatDate,

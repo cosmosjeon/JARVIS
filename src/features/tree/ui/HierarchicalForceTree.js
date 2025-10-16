@@ -587,7 +587,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     typeof endpoint === 'object' && endpoint !== null ? endpoint.id : endpoint
   ), []);
 
-  useTreePersistence({
+  const { persistTreeData } = useTreePersistence({
     user,
     data,
     hierarchicalLinks,
@@ -640,6 +640,8 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
       size: nodeData.size || 10,
       createdAt: now,
       updatedAt: now,
+      status: nodeData.status || 'placeholder',
+      parentId: resolvedParentId,
       conversation: [],
     };
 
@@ -656,6 +658,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     };
 
     setData(newData);
+    persistTreeData({ force: true, snapshot: newData }).catch(() => {});
     setConversationForNode(newNode.id, []);
   };
 
@@ -1862,7 +1865,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     const keyword = await extractImportantKeyword(trimmedQuestion || question);
 
     // 새 노드 생성 (빈 답변으로 시작)
-    const newNodeData = questionService.current.createSecondQuestionNode(
+    const createdNode = questionService.current.createSecondQuestionNode(
       parentNodeId,
       trimmedQuestion || question,
       '', // 빈 답변으로 시작
@@ -1870,12 +1873,20 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       { keyword }
     );
 
-    if (willCreateCycle(parentNodeId, newNodeData.id)) {
+    if (willCreateCycle(parentNodeId, createdNode.id)) {
       showLinkValidationMessage('사이클이 생기기 때문에 연결할 수 없습니다.');
       return;
     }
 
     const timestamp = Date.now();
+    const newNodeData = {
+      ...createdNode,
+      parentId: createdNode.parentId ?? parentNodeId,
+      status: createdNode.status || 'placeholder',
+      conversation: Array.isArray(createdNode.conversation) ? createdNode.conversation : [],
+      createdAt: createdNode.createdAt || timestamp,
+      updatedAt: createdNode.updatedAt || timestamp,
+    };
     const initialConversation = [
       { id: `${timestamp}-user`, role: 'user', text: trimmedQuestion || question },
       { id: `${timestamp}-assistant`, role: 'assistant', text: '', status: 'pending' }
@@ -1884,15 +1895,21 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     setConversationForNode(newNodeData.id, initialConversation);
     pendingAssistantNodeRef.current = newNodeData;
 
+    let nextTreeState = null;
     setData((prev) => {
       const nextState = {
         ...prev,
         nodes: [...prev.nodes, newNodeData],
         links: [...prev.links, { source: parentNodeId, target: newNodeData.id, value: 1 }],
       };
+      nextTreeState = nextState;
       dataRef.current = nextState;
       return nextState;
     });
+
+    if (nextTreeState) {
+      persistTreeData({ force: true, snapshot: nextTreeState }).catch(() => {});
+    }
 
     questionService.current.setQuestionCount(parentNodeId, 1);
 
@@ -1937,7 +1954,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         input.focus();
       }
     }, 50);
-  }, [extractImportantKeyword, handleRequestAnswer, showLinkValidationMessage, willCreateCycle]);
+  }, [extractImportantKeyword, handleRequestAnswer, persistTreeData, showLinkValidationMessage, willCreateCycle]);
 
   const handlePlaceholderCreate = (parentNodeId, keywords) => {
     if (!Array.isArray(keywords) || keywords.length === 0) return;
@@ -1958,6 +1975,9 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         size: 12,
         status: 'placeholder',
         conversation: [],
+        parentId: parentNodeId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
         placeholder: {
           parentNodeId,
           createdAt: timestamp,
@@ -1984,6 +2004,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     };
 
     setData(newData);
+    persistTreeData({ force: true, snapshot: newData }).catch(() => {});
     placeholderNodes.forEach((node) => {
       setConversationForNode(node.id, []);
     });
@@ -2264,22 +2285,29 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       conversation: [],
       createdAt: now,
       updatedAt: now,
+      parentId: resolvedParentId,
     };
 
     setConversationForNode(newNodeId, []);
 
+    let nextTreeState = null;
     setData((prev) => {
       const next = {
         ...prev,
         nodes: [...prev.nodes, nextNode],
         links: [...prev.links, { source: resolvedParentId, target: newNodeId, value: 1 }],
       };
+      nextTreeState = next;
       dataRef.current = next;
       return next;
     });
 
+    if (nextTreeState) {
+      persistTreeData({ force: true, snapshot: nextTreeState }).catch(() => {});
+    }
+
     return newNodeId;
-  }, [createClientGeneratedId, getRootNodeId, requestUserInput, setConversationForNode, showLinkValidationMessage, willCreateCycle]);
+  }, [createClientGeneratedId, getRootNodeId, persistTreeData, requestUserInput, setConversationForNode, showLinkValidationMessage, willCreateCycle]);
 
   const handleManualRootCreate = useCallback((options = {}) => {
     const now = Date.now();
@@ -2304,12 +2332,14 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       conversation: [],
       createdAt: now,
       updatedAt: now,
+      parentId: null,
       x: Number.isFinite(position.x) ? position.x : 0,
       y: Number.isFinite(position.y) ? position.y : 0,
     };
 
     setConversationForNode(newNodeId, []);
 
+    let nextTreeState = null;
     setData((prev) => {
       const nextState = (!prev || !Array.isArray(prev.nodes) || prev.nodes.length === 0)
         ? { nodes: [newNode], links: [] }
@@ -2319,15 +2349,20 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
           links: Array.isArray(prev.links) ? prev.links.slice() : [],
         };
 
+      nextTreeState = nextState;
       dataRef.current = nextState;
       return nextState;
     });
+
+    if (nextTreeState) {
+      persistTreeData({ force: true, snapshot: nextTreeState }).catch(() => {});
+    }
 
     setSelectedNodeId(newNodeId);
     setExpandedNodeId(null);
     setShowBootstrapChat(false);
     return newNodeId;
-  }, [createClientGeneratedId, setConversationForNode]);
+  }, [createClientGeneratedId, persistTreeData, setConversationForNode]);
 
   const handleManualLinkCreate = useCallback((sourceNodeId, targetNodeId) => {
     if (!sourceNodeId || !targetNodeId) {
