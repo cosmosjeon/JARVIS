@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon, ChevronDown } from 'lucide-react';
+import { Copy as CopyIcon, RefreshCcw as RefreshCcwIcon, ChevronDown, Loader2 } from 'lucide-react';
 import { Actions, Action } from 'shared/ui/shadcn-io/ai/actions';
 import { Response } from 'shared/ui/shadcn-io/ai/response';
 import { cn } from 'shared/utils';
@@ -32,6 +32,8 @@ const USER_ROLE = 'user';
 const SYSTEM_ROLE = 'system';
 const LOADING_MESSAGES = DEFAULT_ASSISTANT_LOADING_MESSAGES;
 const LOADING_MESSAGE_INTERVAL_MS = DEFAULT_ASSISTANT_LOADING_MESSAGE_INTERVAL_MS;
+const LOADING_ELLIPSIS_SEQUENCE = Object.freeze(['.', '..', '...']);
+const LOADING_ELLIPSIS_INTERVAL_MS = 500;
 
 const getMessageKey = (message, fallback) => {
   const rawId = message?.id;
@@ -154,6 +156,7 @@ export default function ChatMessageList({
   const [openDropdowns, setOpenDropdowns] = useState({});
   const scrollContainerRef = useRef(null);
   const [pendingMessageIndex, setPendingMessageIndex] = useState(0);
+  const [ellipsisIndex, setEllipsisIndex] = useState(0);
 
   const resolvedPanelStyles = useMemo(
     () => ({ ...DEFAULT_CHAT_PANEL_STYLES, ...(panelStyles || {}) }),
@@ -175,12 +178,37 @@ export default function ChatMessageList({
     [messages],
   );
   const pendingIndicatorText = useMemo(() => {
-    if (!LOADING_MESSAGES.length) {
+    if (!hasPendingAssistantMessage || !LOADING_MESSAGES.length) {
       return '';
     }
     const safeIndex = pendingMessageIndex % LOADING_MESSAGES.length;
     return LOADING_MESSAGES[safeIndex] || LOADING_MESSAGES[0];
-  }, [pendingMessageIndex]);
+  }, [hasPendingAssistantMessage, pendingMessageIndex]);
+  const pendingIndicatorBaseText = useMemo(() => {
+    if (!pendingIndicatorText) {
+      return '';
+    }
+    if (pendingIndicatorText.endsWith('...')) {
+      return pendingIndicatorText.slice(0, -3).trimEnd();
+    }
+    return pendingIndicatorText;
+  }, [pendingIndicatorText]);
+  const ellipsisText = useMemo(() => {
+    if (!LOADING_ELLIPSIS_SEQUENCE.length) {
+      return '';
+    }
+    const safeIndex = ellipsisIndex % LOADING_ELLIPSIS_SEQUENCE.length;
+    return LOADING_ELLIPSIS_SEQUENCE[safeIndex] || LOADING_ELLIPSIS_SEQUENCE[0];
+  }, [ellipsisIndex]);
+  const finalPendingText = useMemo(() => {
+    if (!pendingIndicatorBaseText && !ellipsisText) {
+      return '';
+    }
+    if (!pendingIndicatorBaseText) {
+      return ellipsisText;
+    }
+    return `${pendingIndicatorBaseText}${ellipsisText}`;
+  }, [ellipsisText, pendingIndicatorBaseText]);
 
   useEffect(() => {
     if (typeof onContainerRef === 'function') {
@@ -239,19 +267,40 @@ export default function ChatMessageList({
   }, []);
 
   useEffect(() => {
-    if (!hasPendingAssistantMessage || !LOADING_MESSAGES.length) {
+    if (!hasPendingAssistantMessage) {
       setPendingMessageIndex(0);
+      setEllipsisIndex(0);
       return undefined;
     }
 
     setPendingMessageIndex(0);
+    setEllipsisIndex(0);
 
-    const intervalId = window.setInterval(() => {
-      setPendingMessageIndex((prevIndex) => (prevIndex + 1) % LOADING_MESSAGES.length);
-    }, LOADING_MESSAGE_INTERVAL_MS);
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let messageIntervalId = null;
+    if (LOADING_MESSAGES.length > 1) {
+      messageIntervalId = window.setInterval(() => {
+        setPendingMessageIndex((prevIndex) => (prevIndex + 1) % LOADING_MESSAGES.length);
+      }, LOADING_MESSAGE_INTERVAL_MS);
+    }
+
+    let ellipsisIntervalId = null;
+    if (LOADING_ELLIPSIS_SEQUENCE.length > 0) {
+      ellipsisIntervalId = window.setInterval(() => {
+        setEllipsisIndex((prevIndex) => (prevIndex + 1) % LOADING_ELLIPSIS_SEQUENCE.length);
+      }, LOADING_ELLIPSIS_INTERVAL_MS);
+    }
 
     return () => {
-      window.clearInterval(intervalId);
+      if (messageIntervalId) {
+        window.clearInterval(messageIntervalId);
+      }
+      if (ellipsisIntervalId) {
+        window.clearInterval(ellipsisIntervalId);
+      }
     };
   }, [hasPendingAssistantMessage]);
 
@@ -390,16 +439,17 @@ export default function ChatMessageList({
                 boxSizing: 'border-box'
               }}
             >
-              {shouldShowPendingIndicator && pendingIndicatorText ? (
-                <p
-                  className="text-sm font-medium"
+              {shouldShowPendingIndicator && finalPendingText ? (
+                <div
+                  className="flex items-center gap-2 text-sm font-medium"
                   style={{ color: resolvedPanelStyles.subtleTextColor }}
                   role="status"
                   aria-live="polite"
                   data-testid="assistant-loading-indicator"
                 >
-                  {pendingIndicatorText}
-                </p>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{finalPendingText}</span>
+                </div>
               ) : null}
               {message.text ? (
                 <div className="w-full">
