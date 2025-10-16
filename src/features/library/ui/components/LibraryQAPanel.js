@@ -138,6 +138,7 @@ const LibraryQAPanel = ({
     setModel: setSelectedModel,
   } = useAIModelPreference();
   const [messages, setMessages] = useState([]);
+  const [localPendingMessages, setLocalPendingMessages] = useState(null); // 새 노드 생성 중 임시 메시지
   const [composerValue, setComposerValue] = useState('');
   const [isComposing, setIsComposing] = useState(false);
   const [globalProcessing, setGlobalProcessing] = useState(false);
@@ -155,6 +156,7 @@ const LibraryQAPanel = ({
   const [isComposerCollapsed, setIsComposerCollapsed] = useState(false);
 
   const messageContainerRef = useRef(null);
+  const prevSelectedNodeIdRef = useRef(null);
   const highlighterRef = useRef(null);
   const highlightHandlersRef = useRef({ create: null, remove: null });
   const highlightStoreRef = useRef(new HighlightSelectionStore());
@@ -230,7 +232,11 @@ const LibraryQAPanel = ({
 
   const handleRegisterMessageContainer = useCallback((element) => {
     messageContainerRef.current = element;
-    console.debug('[LibraryQAPanel] message container registered', element);
+    console.debug('[LibraryQAPanel] message container registered', {
+      hasElement: !!element,
+      isFullscreen,
+      selectedNodeId: latestSelectedNodeRef.current?.id,
+    });
     
     // 컨테이너가 마운트된 후 강제로 리사이즈 트리거 (스플릿뷰에서만)
     if (element && !isFullscreen) {
@@ -248,6 +254,8 @@ const LibraryQAPanel = ({
       }, 100);
     }
   }, [isFullscreen]);
+
+  
 
   const handleCopyMessage = useCallback((message) => {
     if (!message?.text) return;
@@ -278,6 +286,7 @@ const LibraryQAPanel = ({
     const nextCount = (map.get(key) || 0) + 1;
     map.set(key, nextCount);
     setProcessingVersion((prev) => prev + 1);
+    console.debug('[LibraryQAPanel] processing:start', { key, count: nextCount });
   }, []);
 
   const stopNodeProcessing = useCallback((key) => {
@@ -295,6 +304,7 @@ const LibraryQAPanel = ({
       map.set(key, nextCount);
     }
     setProcessingVersion((prev) => prev + 1);
+    console.debug('[LibraryQAPanel] processing:stop', { key, count: Math.max(0, nextCount) });
   }, []);
 
   const activeProcessingKey = useMemo(
@@ -705,17 +715,35 @@ const LibraryQAPanel = ({
     return hasElectron || hasFallbackKey || hasHttpBridge;
   }, []);
 
+  // messages state 변경 추적
+  useEffect(() => {
+    console.log('📊 [LibraryQAPanel] messages state 변경됨', {
+      messageCount: messages?.length || 0,
+      messages: messages?.map(m => ({ id: m.id, role: m.role, status: m.status, textLength: m.text?.length || 0 })),
+    });
+  }, [messages]);
+
   // 선택된 노드가 변경될 때 메시지 초기화
   useEffect(() => {
-    console.log('🔄 [useEffect] 노드 변경 감지 - selectedNode 변경됨');
-    
-    // 다중 질문 모드가 켜져있으면 끄기
-    if (isMultiQuestionMode) {
+    const prevId = prevSelectedNodeIdRef.current;
+    const currId = selectedNode?.id || null;
+
+    console.log('🔄 [LibraryQAPanel] 노드/대화 변경 감지', {
+      prevId,
+      currId,
+      conversationLength: selectedNode?.conversation?.length || 0,
+      messageCount: messages?.length || 0,
+    });
+
+    // 노드 ID가 변경되었을 때만 다중 질문 모드 종료
+    if (prevId !== currId && isMultiQuestionMode) {
       console.log('🔄 노드 변경으로 다중 질문 모드 종료');
       disableHighlightMode();
       setIsMultiQuestionMode(false);
     }
-    
+
+    prevSelectedNodeIdRef.current = currId;
+
     if (selectedNode) {
       const initialMessages = Array.isArray(selectedNode.conversation)
         ? selectedNode.conversation.map((msg) => {
@@ -731,15 +759,30 @@ const LibraryQAPanel = ({
           };
         })
         : [];
+
+      console.log('✅ [LibraryQAPanel] messages:update-from-conversation', { 
+        count: initialMessages.length,
+        nodeId: currId,
+        conversationChanged: selectedNode.conversation !== undefined,
+        initialMessages: initialMessages?.map(m => ({ id: m.id, role: m.role, status: m.status, textLength: m.text?.length || 0 })),
+      });
       setMessages(initialMessages);
+      setLocalPendingMessages(null); // localPendingMessages 리셋
+      console.log('✅ [LibraryQAPanel] setMessages 호출 완료 (useEffect)');
     } else {
+      console.log('⚠️ [LibraryQAPanel] messages:clear (no selectedNode)');
       setMessages([]);
+      setLocalPendingMessages(null);
     }
-    setComposerValue('');
-    setError(null);
-    highlightStoreRef.current.clear();
-    setHighlightNotice(null);
-  }, [selectedNode, disableHighlightMode]); // isMultiQuestionMode 제거!
+    
+    // 노드가 변경되었을 때만 입력창 초기화
+    if (prevId !== currId) {
+      setComposerValue('');
+      setError(null);
+      highlightStoreRef.current.clear();
+      setHighlightNotice(null);
+    }
+  }, [selectedNode?.id, selectedNode?.conversation, disableHighlightMode, isMultiQuestionMode]);
 
   // 메시지가 변경될 때 스크롤을 맨 아래로
   useEffect(() => {
@@ -752,16 +795,7 @@ const LibraryQAPanel = ({
   useEffect(() => {
     if (selectedNode && textareaRef.current) {
       const timer = setTimeout(() => {
-        if (!textareaRef.current || isProcessing || isComposing) {
-          return;
-        }
-        if (isEditableTitleActive()) {
-          return;
-        }
-        // 사용자가 텍스트를 선택 중이면 포커스하지 않음
-        const selection = window.getSelection();
-        if (selection && selection.toString().length > 0) {
-          console.log('⚠️ 텍스트 선택 중이므로 포커스 스킵');
+        if (!textareaRef.current) {
           return;
         }
         textareaRef.current.focus();
@@ -837,10 +871,7 @@ const LibraryQAPanel = ({
       requestPayload.onStreamChunk = onStreamChunk;
     }
 
-    const hasPreferredTemperature = typeof preferredTemperature === 'number' && Number.isFinite(preferredTemperature);
-    if ((!Number.isFinite(requestPayload.temperature)) && hasPreferredTemperature) {
-      requestPayload.temperature = preferredTemperature;
-    }
+    // 일부 모델은 temperature를 지원하지 않으므로 클라이언트에서 강제 지정하지 않음
 
     if (channel === 'askRoot') return AgentClient.askRoot(requestPayload);
     if (channel === 'askChild') return AgentClient.askChild(requestPayload);
@@ -1266,6 +1297,12 @@ const LibraryQAPanel = ({
     };
 
     startNodeProcessing(originalProcessingKey);
+    console.debug('[LibraryQAPanel] send:start', {
+      key: originalProcessingKey,
+      nodeId: selectedNode?.id,
+      question,
+      reuseCurrentNode,
+    });
 
     const timestamp = Date.now();
 
@@ -1301,13 +1338,44 @@ const LibraryQAPanel = ({
         model: effectiveModel,
       };
 
+    // ⚠️ 중요: useExistingNode 조건을 setMessages 이전에 평가해야 첫 질문 판별 가능
     const previousMessages = Array.isArray(messages) ? messages : [];
     const isPlaceholderNode = selectedNode
       ? selectedNode.status === 'placeholder' || Boolean(selectedNode.placeholder)
       : false;
     const hasUserConversation = previousMessages.some((msg) => msg.role === 'user');
-    const useExistingNode = Boolean(selectedNode)
-      && (reuseCurrentNode || (isPlaceholderNode && !hasUserConversation));
+    // 패널 세션 기준으로 '첫 질문' 강제 인식: 아직 어떤 사용자 메시지도 없는 경우
+    const isPanelVeryFirstQuestion = !previousMessages.some((m) => m.role === 'user');
+    const selectedNodeConversationLength = Array.isArray(selectedNode?.conversation)
+      ? selectedNode.conversation.length
+      : 0;
+    const isFirstQuestionAtNode = Boolean(selectedNode) && selectedNodeConversationLength === 0;
+    
+    // 인트로 모드(빈 트리)에서 첫 질문은 항상 새 노드 생성
+    const isIntroFirstQuestion = Boolean(isLibraryIntroActive) && isPanelVeryFirstQuestion;
+    
+    // 첫 질문은 반드시 현재 노드에서 처리 (자식 생성 금지) - 단, 인트로 모드 제외
+    const useExistingNode = !isIntroFirstQuestion
+      && Boolean(selectedNode)
+      && (
+        isPanelVeryFirstQuestion
+        || isFirstQuestionAtNode
+        || reuseCurrentNode
+        || (isPlaceholderNode && !hasUserConversation)
+      );
+
+    console.debug('[LibraryQAPanel] useExistingNode 판별:', {
+      useExistingNode,
+      isIntroFirstQuestion,
+      isPanelVeryFirstQuestion,
+      isFirstQuestionAtNode,
+      reuseCurrentNode,
+      isPlaceholderNode,
+      hasUserConversation,
+      isLibraryIntroActive,
+      previousMessagesCount: previousMessages.length,
+      selectedNodeId: selectedNode?.id,
+    });
 
     let userMessage;
     let assistantMessage;
@@ -1436,9 +1504,20 @@ const LibraryQAPanel = ({
     } else if (useExistingNode && selectedNode) {
       pendingMessages = [...previousMessages, userMessage, assistantMessage];
       setMessages(pendingMessages);
+      if (typeof window !== 'undefined') {
+        try { window.dispatchEvent(new Event('resize')); } catch {}
+        window.setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch {} }, 80);
+      }
     } else {
       pendingMessages = [userMessage, assistantMessage];
-      setMessages(pendingMessages);
+      console.log('🚀 [LibraryQAPanel] 새 노드용 pending 메시지 생성', {
+        pendingMessagesLength: pendingMessages.length,
+        userMessage,
+        assistantMessage,
+      });
+      // 새 노드 케이스: localPendingMessages에 저장하여 즉시 렌더링
+      setLocalPendingMessages(pendingMessages);
+      console.log('⚡ [LibraryQAPanel] localPendingMessages 설정 완료');
     }
 
     // 조상 노드의 대화 문맥 수집
@@ -1676,9 +1755,26 @@ const LibraryQAPanel = ({
         });
 
         onNodeUpdate?.(answeredNode);
-        const shouldRestoreFocus = latestSelectedNodeRef.current?.id === pendingNodeId;
-        if (shouldRestoreFocus) {
-          onNodeSelect?.(answeredNode);
+        console.debug('[LibraryQAPanel] answer:applied-to-node', {
+          nodeId: answeredNode.id,
+          hasText: !!answerText,
+          length: answerText?.length || 0,
+        });
+        
+        // 답변 완료 메시지를 즉시 UI에 반영
+        setMessages(updatedMessages);
+        setLocalPendingMessages(null); // localPendingMessages 리셋
+        console.debug('[LibraryQAPanel] 기존 노드 답변 완료, 메시지 UI 업데이트', {
+          nodeId: answeredNode.id,
+          conversationLength: updatedMessages.length,
+        });
+        
+        // 노드 재선택하여 conversation 변경 감지 트리거
+        if (onNodeSelect) {
+          console.debug('[LibraryQAPanel] 기존 노드 답변 완료 후 재선택', {
+            nodeId: answeredNode.id,
+          });
+          onNodeSelect(answeredNode);
         }
       } catch (error) {
         if (error?.name === 'AbortError') {
@@ -1690,6 +1786,7 @@ const LibraryQAPanel = ({
           ? TIMEOUT_MESSAGE
           : error?.message || '질문 처리 중 오류가 발생했습니다.';
         setError(errorMessage);
+        setLocalPendingMessages(null); // localPendingMessages 리셋
         if (!isOverride) {
           setComposerValue(question);
           if (hasAttachments) {
@@ -1856,12 +1953,25 @@ const LibraryQAPanel = ({
       newNode.modelInfo = pendingModelInfo;
     }
 
+    console.debug('[LibraryQAPanel] 새 노드 생성', {
+      nodeId: newNodeId,
+      conversationLength: pendingMessages.length,
+    });
+
     if (onNewNodeCreated) {
       onNewNodeCreated(newNode, {
         source: newNode.parentId,
         target: newNode.id,
         value: 1,
       });
+    }
+
+    // 새 노드를 즉시 선택
+    if (onNodeSelect) {
+      console.debug('[LibraryQAPanel] 새 노드 생성 후 즉시 선택', {
+        nodeId: newNodeId,
+      });
+      onNodeSelect(newNode);
     }
 
     if (isLibraryIntroActive && onLibraryIntroComplete) {
@@ -1956,14 +2066,27 @@ const LibraryQAPanel = ({
       if (onNodeUpdate) {
         onNodeUpdate(updatedNode);
       }
-      const shouldSelectUpdated = shouldAutoSelectNewNode || latestSelectedNodeRef.current?.id === newNodeId;
-      if (shouldSelectUpdated && onNodeSelect) {
+      
+      // 답변 완료 메시지를 즉시 UI에 반영
+      setMessages(updatedMessages);
+      setLocalPendingMessages(null); // localPendingMessages 리셋
+      console.debug('[LibraryQAPanel] 답변 완료, 메시지 UI 업데이트', {
+        nodeId: newNodeId,
+        conversationLength: updatedMessages.length,
+      });
+      
+      // 노드 재선택하여 conversation 변경 감지 트리거
+      if (onNodeSelect) {
+        console.debug('[LibraryQAPanel] 답변 완료 후 노드 재선택', {
+          nodeId: newNodeId,
+        });
         onNodeSelect(updatedNode);
       }
     } catch (error) {
       console.error('질문 처리 실패:', error);
       const errorMessage = error.message || '질문 처리 중 오류가 발생했습니다.';
       setError(errorMessage);
+      setLocalPendingMessages(null); // localPendingMessages 리셋
       if (!isOverride) {
         setComposerValue(question);
         if (hasAttachments) {
@@ -2091,6 +2214,30 @@ const LibraryQAPanel = ({
       });
   }, [handleSendMessage, messages, modelOptions, selectedNode, setSelectedModel]);
 
+  // 첫 메시지/답변 렌더 후 스플릿뷰 레이아웃 강제 갱신 (초기 표시 누락 방지)
+  useEffect(() => {
+    if (isFullscreen) return;
+    if (typeof window === 'undefined') return;
+    const hasAnyMessage = Array.isArray(messages) && messages.length > 0;
+    const hasCompletedAssistant = hasAnyMessage && messages.some((m) => m.role === 'assistant' && m.status === 'complete' && typeof m.text === 'string' && m.text.trim());
+    if (!hasAnyMessage && !isProcessing) return;
+    const id = window.setTimeout(() => {
+      try { window.dispatchEvent(new Event('resize')); } catch {}
+      if (messageContainerRef.current) {
+        try {
+          messageContainerRef.current.scrollTop = messageContainerRef.current.scrollHeight;
+        } catch {}
+      }
+    }, hasCompletedAssistant ? 30 : 90);
+    const id2 = window.setTimeout(() => {
+      try { window.dispatchEvent(new Event('resize')); } catch {}
+      if (messageContainerRef.current) {
+        try { messageContainerRef.current.scrollTop = messageContainerRef.current.scrollHeight; } catch {}
+      }
+    }, hasCompletedAssistant ? 120 : 180);
+    return () => { window.clearTimeout(id); window.clearTimeout(id2); };
+  }, [messages, isProcessing, isFullscreen]);
+
   // 다중 질문 모드에서 전역 키보드 이벤트 감지
   useEffect(() => {
     if (!isMultiQuestionMode) return;
@@ -2125,6 +2272,18 @@ const LibraryQAPanel = ({
   const handleComposerBlur = useCallback(() => {
     setIsComposing(false);
   }, []);
+
+  // 렌더링 시 사용할 메시지: localPendingMessages가 있으면 우선 사용
+  const displayMessages = localPendingMessages || messages;
+  
+  console.log('🎨 [LibraryQAPanel] 렌더링', {
+    selectedNodeId: selectedNode?.id,
+    messageCount: messages?.length || 0,
+    localPendingCount: localPendingMessages?.length || 0,
+    displayCount: displayMessages?.length || 0,
+    isProcessing,
+    displayMessages: displayMessages?.map(m => ({ id: m.id, role: m.role, status: m.status })),
+  });
 
   return (
     <div
@@ -2243,7 +2402,7 @@ const LibraryQAPanel = ({
       )}
 
       {!isLibraryIntroActive && (
-        messages.length === 0 && !isProcessing ? (
+        displayMessages.length === 0 && !isProcessing ? (
           <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
             <div className="py-8 text-center text-sm" style={{ color: subtleTextColor }}>
               질문을 입력해보세요.
@@ -2251,10 +2410,10 @@ const LibraryQAPanel = ({
           </div>
         ) : (
           <div className="glass-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
-            {messages.length > 0 && (
+            {displayMessages.length > 0 && (
               <ChatMessageList
                 title="Assistant"
-                messages={messages}
+                messages={displayMessages}
                 onRetry={handleRetryMessage}
                 onRetryWithModel={handleRetryWithModel}
                 onCopy={handleCopyMessage}

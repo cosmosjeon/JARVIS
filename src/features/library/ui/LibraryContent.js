@@ -67,6 +67,11 @@ const LibraryContent = ({
   const shouldShowIntroLayout = Boolean(selectedTree && (isIntroMode || isTreeEmpty));
 
   if (shouldShowIntroLayout) {
+    console.debug('[LibraryContent] render: intro layout', {
+      isIntroMode,
+      isTreeEmpty,
+      treeId: selectedTree?.id,
+    });
     const introSelectedNode = selectedNode ?? {
       id: selectedTree.id,
       keyword: selectedTree.title || '새 트리',
@@ -90,8 +95,15 @@ const LibraryContent = ({
   }
 
   if (selectedTree) {
+    console.debug('[LibraryContent] render: selectedTree present', {
+      treeId: selectedTree?.id,
+      selectedNodeId: selectedNode?.id,
+      isQAPanelVisible,
+      isQAPanelFullscreen,
+    });
     // isQAPanelVisible이 명시적으로 false일 때만 패널을 숨김 (undefined는 true로 처리)
     if (isQAPanelVisible === false) {
+      console.debug('[LibraryContent] QA panel hidden (isQAPanelVisible === false)');
       return (
         <TreeCanvas
           selectedMemo={selectedTree}
@@ -108,6 +120,7 @@ const LibraryContent = ({
 
     // 전체화면 모드일 때 QA 패널만 전체 영역에 표시
     if (isQAPanelFullscreen) {
+      console.debug('[LibraryContent] render: QA fullscreen');
       return (
         <LibraryQAPanel
           selectedNode={selectedNode}
@@ -124,6 +137,7 @@ const LibraryContent = ({
       );
     }
 
+    console.debug('[LibraryContent] render: split view');
     return (
       <ResizablePanelGroup direction="horizontal" className="h-full overflow-hidden">
         <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 bg-background">
