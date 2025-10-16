@@ -141,6 +141,7 @@ export default function ChatMessageList({
   assistantMessageMaxWidth = 800,
   retryingMessageMap,
   isScrollable = true,
+  isFullscreen = false,
 }) {
   const [internalCopiedMap, setInternalCopiedMap] = useState({});
   const [internalSpinningMap, setInternalSpinningMap] = useState({});
@@ -175,6 +176,7 @@ export default function ChatMessageList({
     }
     return undefined;
   }, [onContainerRef]);
+
 
   useEffect(() => {
     if (!isScrollable) {
@@ -336,8 +338,16 @@ export default function ChatMessageList({
         const reasoningNode = renderReasoning(message.reasoning, status);
 
         return (
-          <div key={key} className="flex justify-center px-12" data-role="assistant" data-status={status}>
-            <div className="w-full" style={{ maxWidth: assistantMessageMaxWidth }}>
+          <div key={key} className={`flex justify-center ${isFullscreen ? 'px-12' : 'px-4'}`} data-role="assistant" data-status={status}>
+            <div 
+              className="w-full min-w-0"
+              style={{ 
+                maxWidth: assistantMessageMaxWidth,
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                boxSizing: 'border-box'
+              }}
+            >
               {message.text ? (
                 <div className="w-full">
                   <Response

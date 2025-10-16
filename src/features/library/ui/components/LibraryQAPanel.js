@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Paperclip, Network, Shield, Maximize, Minimize } from 'lucide-react';
+import { Loader2, X, Paperclip, Network, Shield, Maximize, Minimize, ChevronUp, ChevronDown } from 'lucide-react';
 import QuestionService from 'features/tree/services/QuestionService';
 import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 import { useFileDropZone } from 'shared/hooks/useFileDropZone';
@@ -152,6 +152,7 @@ const LibraryQAPanel = ({
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
   const [lastAutoSelection, setLastAutoSelection] = useState(null);
   const [spinningMap, setSpinningMap] = useState({});
+  const [isComposerCollapsed, setIsComposerCollapsed] = useState(false);
 
   const messageContainerRef = useRef(null);
   const highlighterRef = useRef(null);
@@ -230,7 +231,23 @@ const LibraryQAPanel = ({
   const handleRegisterMessageContainer = useCallback((element) => {
     messageContainerRef.current = element;
     console.debug('[LibraryQAPanel] message container registered', element);
-  }, []);
+    
+    // 컨테이너가 마운트된 후 강제로 리사이즈 트리거 (스플릿뷰에서만)
+    if (element && !isFullscreen) {
+      setTimeout(() => {
+        // ResizeObserver를 사용해서 컨테이너 크기 변경 감지
+        const resizeObserver = new ResizeObserver(() => {
+          // 컨테이너 크기가 변경되면 강제로 리렌더링
+          element.style.width = '100%';
+          resizeObserver.disconnect();
+        });
+        resizeObserver.observe(element);
+        
+        // 추가로 window resize 이벤트도 트리거
+        window.dispatchEvent(new Event('resize'));
+      }, 100);
+    }
+  }, [isFullscreen]);
 
   const handleCopyMessage = useCallback((message) => {
     if (!message?.text) return;
@@ -497,6 +514,10 @@ const LibraryQAPanel = ({
 
   const clearAttachments = useCallback(() => {
     setAttachments([]);
+  }, []);
+
+  const toggleComposer = useCallback(() => {
+    setIsComposerCollapsed(prev => !prev);
   }, []);
 
   const isDarkTheme = theme === 'dark';
@@ -2242,6 +2263,7 @@ const LibraryQAPanel = ({
                 className=""
                 onContainerRef={handleRegisterMessageContainer}
                 isScrollable={false}
+                isFullscreen={isFullscreen}
                 theme={theme}
                 panelStyles={chatPanelStyles}
                 retryingMessageMap={spinningMap}
@@ -2340,12 +2362,40 @@ const LibraryQAPanel = ({
         </div>
       )}
 
+
       {!isApiAvailable ? (
         <div className="text-center text-sm text-red-500 bg-red-50/80 px-3 py-2 rounded-xl border border-red-300/60">
           VORAN API를 사용할 수 없습니다. Electron 환경에서 실행하거나 서버 프록시(REACT_APP_AGENT_HTTP_ENDPOINT)를 설정해주세요.
         </div>
-      ) : (
-        <PromptInput
+      ) : !isComposerCollapsed ? (
+        <div className="relative">
+          {/* 입력창 토글 버튼 - 입력창 위에 오버레이 */}
+          {!isLibraryIntroActive && (
+            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 z-20">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={toggleComposer}
+                      className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-black/5 hover:border hover:border-gray-200 transition-colors"
+                      style={{ color: chatPanelStyles.textColor }}
+                      aria-label={isComposerCollapsed ? "입력창 펼치기" : "입력창 접기"}
+                    >
+                      {isComposerCollapsed ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isComposerCollapsed ? "입력창 펼치기" : "입력창 접기"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
+          <PromptInput
           onSubmit={(e) => {
             e.preventDefault();
             handleSendMessage();
@@ -2394,7 +2444,7 @@ const LibraryQAPanel = ({
                       disabled={isProcessing}
                       variant="ghost"
                       className={cn(
-                        "rounded-full p-2 text-xs font-medium transition-all duration-200 relative z-10",
+                        "rounded-lg px-4 py-1.5 text-xs font-medium transition-all duration-200 relative z-10 min-w-fit",
                         isMultiQuestionMode 
                           ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" 
                           : "hover:bg-gray-100 text-gray-500"
@@ -2459,7 +2509,29 @@ const LibraryQAPanel = ({
               status={isProcessing ? 'streaming' : 'ready'}
             />
           </div>
-        </PromptInput>
+          </PromptInput>
+        </div>
+      ) : !isComposerCollapsed ? null : (
+        /* 접힌 상태일 때 토글 버튼만 표시 */
+        <div className="flex justify-center">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={toggleComposer}
+                  className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-black/5 hover:border hover:border-gray-200 transition-colors"
+                  style={{ color: chatPanelStyles.textColor }}
+                  aria-label="입력창 펼치기"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>입력창 펼치기</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       )}
     </div>
   );
