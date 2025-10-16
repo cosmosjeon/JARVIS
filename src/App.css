@@ -60,26 +60,26 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.tree-canvas-header,
-.tree-canvas-header * {
+.widget-mode .tree-canvas-header,
+.widget-mode .tree-canvas-header * {
   -webkit-app-region: drag;
   z-index: 9999 !important;
 }
 
-.tree-canvas-header button,
-.tree-canvas-header [role="button"],
-.tree-canvas-header a,
-.tree-canvas-header input,
-.tree-canvas-header textarea,
-.tree-canvas-header select,
-.tree-canvas-header [contenteditable="true"],
-.tree-canvas-header .no-drag,
-.tree-canvas-header [data-no-drag="true"] {
+.widget-mode .tree-canvas-header button,
+.widget-mode .tree-canvas-header [role="button"],
+.widget-mode .tree-canvas-header a,
+.widget-mode .tree-canvas-header input,
+.widget-mode .tree-canvas-header textarea,
+.widget-mode .tree-canvas-header select,
+.widget-mode .tree-canvas-header [contenteditable="true"],
+.widget-mode .tree-canvas-header .no-drag,
+.widget-mode .tree-canvas-header [data-no-drag="true"] {
   -webkit-app-region: no-drag;
 }
 
-.tree-canvas-header .group,
-.tree-canvas-header .group * {
+.widget-mode .tree-canvas-header .group,
+.widget-mode .tree-canvas-header .group * {
   -webkit-app-region: no-drag;
 }
 

@@ -253,13 +253,34 @@ const mapToOpenAIContentParts = (message) => {
     if (!attachment) {
       return;
     }
-    const candidateUrl = toTrimmedString(attachment.dataUrl)
-      || (attachment.base64 && attachment.mimeType
-        ? `data:${attachment.mimeType};base64,${attachment.base64}`
-        : '');
-    if (candidateUrl) {
-      parts.push({ type: imageType, image_url: candidateUrl });
+    const fallbackMime = attachment.mimeType || 'image/png';
+    const base64Raw = toTrimmedString(attachment.base64);
+    let dataUrl = toTrimmedString(attachment.dataUrl);
+
+    if (!dataUrl && base64Raw) {
+      dataUrl = `data:${fallbackMime};base64,${base64Raw}`;
     }
+
+    if (!dataUrl && fallbackMime.startsWith('image/')) {
+      const parsed = parseBase64FromDataUrl(attachment.dataUrl || '', fallbackMime);
+      if (parsed.base64) {
+        dataUrl = `data:${parsed.mimeType || fallbackMime};base64,${parsed.base64}`;
+      }
+    }
+
+    if (!dataUrl) {
+      return;
+    }
+
+    const parsed = parseBase64FromDataUrl(dataUrl, fallbackMime);
+    if (!parsed.base64) {
+      return;
+    }
+
+    parts.push({
+      type: imageType,
+      image_url: `data:${parsed.mimeType || fallbackMime};base64,${parsed.base64}`,
+    });
   };
 
   const appendPdf = (attachment) => {
@@ -311,10 +332,32 @@ const mapToOpenAIContentParts = (message) => {
 
   const attachments = sanitizeAttachmentList(message.attachments);
   attachments.forEach((attachment) => {
+    const type = (attachment.type || '').toLowerCase();
+    const mime = (attachment.mimeType || '').toLowerCase();
+    const isPdf =
+      type === 'pdf'
+      || mime.startsWith('application/pdf');
+
+    if (isPdf) {
+      appendPdf({
+        ...attachment,
+        mimeType: attachment.mimeType || 'application/pdf',
+      });
+      return;
+    }
+
+    const isImage =
+      type === 'image'
+      || mime.startsWith('image/');
+
+    if (isImage) {
+      appendImage(attachment);
+      return;
+    }
+
+    // Unsupported type -> ignore
     if (attachment.type === 'pdf') {
       appendPdf(attachment);
-    } else {
-      appendImage(attachment);
     }
   });
 
@@ -413,21 +456,76 @@ const mapToGeminiContents = (messages = []) => {
       if (!attachment) {
         return;
       }
-      const dataUrl = toTrimmedString(attachment.dataUrl)
-        || (attachment.base64 && attachment.mimeType
-          ? `data:${attachment.mimeType};base64,${attachment.base64}`
-          : '');
-      if (!dataUrl) {
+      const fallbackMime = attachment.mimeType || 'image/png';
+      const normalizedBase64 = toTrimmedString(attachment.base64);
+      let resolvedBase64 = normalizedBase64;
+      let resolvedMime = fallbackMime;
+
+      if (!resolvedBase64) {
+        const dataUrl = toTrimmedString(attachment.dataUrl)
+          || (attachment.base64 && attachment.mimeType
+            ? `data:${attachment.mimeType};base64,${attachment.base64}`
+            : '');
+        if (!dataUrl) {
+          return;
+        }
+        const parsed = parseBase64FromDataUrl(dataUrl, fallbackMime);
+        resolvedBase64 = parsed.base64 || '';
+        resolvedMime = parsed.mimeType || fallbackMime;
+      }
+
+      if (!resolvedBase64) {
         return;
       }
-      const parsed = parseBase64FromDataUrl(dataUrl, attachment.mimeType || 'image/png');
-      if (!parsed.base64) {
-        return;
-      }
+
       parts.push({
         inline_data: {
-          mime_type: parsed.mimeType || 'image/png',
-          data: parsed.base64,
+          mime_type: resolvedMime || 'image/png',
+          data: resolvedBase64,
+        },
+      });
+    };
+
+    const appendPdf = (attachment) => {
+      if (!attachment) {
+        return;
+      }
+
+      const heading = [
+        'PDF 첨부',
+        attachment.label ? `(${attachment.label})` : '',
+        attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      appendText([heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n'));
+
+      const fallbackMime = attachment.mimeType || 'application/pdf';
+      const normalizedBase64 = toTrimmedString(attachment.base64);
+      let resolvedBase64 = normalizedBase64;
+      let resolvedMime = fallbackMime;
+
+      if (!resolvedBase64) {
+        const dataUrl = toTrimmedString(attachment.dataUrl)
+          || (attachment.base64 && attachment.mimeType
+            ? `data:${attachment.mimeType};base64,${attachment.base64}`
+            : '');
+        if (dataUrl) {
+          const parsed = parseBase64FromDataUrl(dataUrl, fallbackMime);
+          resolvedBase64 = parsed.base64 || '';
+          resolvedMime = parsed.mimeType || fallbackMime;
+        }
+      }
+
+      if (!resolvedBase64) {
+        return;
+      }
+
+      parts.push({
+        inline_data: {
+          mime_type: resolvedMime || 'application/pdf',
+          data: resolvedBase64,
         },
       });
     };
@@ -438,14 +536,7 @@ const mapToGeminiContents = (messages = []) => {
     const attachments = sanitizeAttachmentList(message.attachments);
     attachments.forEach((attachment) => {
       if (attachment.type === 'pdf') {
-        const heading = [
-          'PDF 첨부',
-          attachment.label ? `(${attachment.label})` : '',
-          attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
-        ]
-          .filter(Boolean)
-          .join(' ');
-        appendText([heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n'));
+        appendPdf(attachment);
       } else {
         appendImage(attachment);
       }
@@ -1402,24 +1493,76 @@ const callGeminiChat = async ({
   }
 
   const data = await meta.response.json();
-  const answer = Array.isArray(data.candidates)
-    ? data.candidates
-        .map((candidate) => {
-          const text = Array.isArray(candidate?.content?.parts)
-            ? candidate.content.parts
-                .map((part) => (typeof part?.text === 'string' ? part.text : ''))
-                .filter(Boolean)
-                .join('\n')
-                .trim()
-            : '';
-          return text;
-        })
-        .filter(Boolean)
-        .join('\n')
-        .trim()
-    : '';
+
+  const collectCandidateTexts = (candidate) => {
+    const textSegments = [];
+
+    const collectParts = (parts) => {
+      if (!Array.isArray(parts)) {
+        return;
+      }
+      parts.forEach((part) => {
+        if (typeof part?.text === 'string') {
+          textSegments.push(part.text.trim());
+        }
+      });
+    };
+
+    if (Array.isArray(candidate?.content?.parts)) {
+      collectParts(candidate.content.parts);
+    }
+
+    if (Array.isArray(candidate?.content)) {
+      candidate.content.forEach((contentItem) => {
+        collectParts(contentItem?.parts);
+      });
+    }
+
+    if (Array.isArray(candidate?.contents)) {
+      candidate.contents.forEach((contentItem) => {
+        collectParts(contentItem?.parts);
+      });
+    }
+
+    if (typeof candidate?.text === 'string') {
+      textSegments.push(candidate.text.trim());
+    }
+
+    if (typeof candidate?.output_text === 'string') {
+      textSegments.push(candidate.output_text.trim());
+    }
+
+    return textSegments.filter(Boolean);
+  };
+
+  const collectedAnswerSegments = Array.isArray(data.candidates)
+    ? data.candidates.flatMap((candidate) => collectCandidateTexts(candidate))
+    : [];
+
+  const answer = collectedAnswerSegments.filter(Boolean).join('\n').trim();
 
   if (!answer) {
+    const promptFeedback = data?.promptFeedback;
+    const blockReason = promptFeedback?.blockReason || promptFeedback?.block_reason;
+    if (blockReason) {
+      throw buildRequestFailedError({
+        error: {
+          code: `gemini_block_${String(blockReason).toLowerCase()}`,
+          message: `Gemini에서 요청이 차단되었습니다: ${blockReason}`,
+        },
+      });
+    }
+
+    const finishReason = data?.candidates?.[0]?.finishReason || data?.candidates?.[0]?.finish_reason;
+    if (finishReason && finishReason.toUpperCase() === 'SAFETY') {
+      throw buildRequestFailedError({
+        error: {
+          code: 'gemini_safety_block',
+          message: 'Gemini가 안전 정책에 의해 응답을 차단했습니다.',
+        },
+      });
+    }
+
     throw buildRequestFailedError({ error: { message: 'Gemini 응답이 비어 있습니다.' } });
   }
 
@@ -1520,30 +1663,41 @@ const callClaudeChat = async ({
   }
 
   const data = await response.json();
-  const answer = Array.isArray(data.content)
-    ? data.content
-        .map((block) => {
-          if (!block || typeof block !== 'object') {
-            return '';
-          }
-          if (block.type === 'text' && typeof block.text === 'string') {
-            return block.text.trim();
-          }
-          if (block.type === 'message' && Array.isArray(block.content)) {
-            return block.content
-              .map((part) => (typeof part?.text === 'string' ? part.text : ''))
-              .filter(Boolean)
-              .join('\n')
-              .trim();
-          }
+
+  const extractClaudeTexts = (contentBlocks) => {
+    if (!Array.isArray(contentBlocks)) {
+      return [];
+    }
+    return contentBlocks
+      .map((block) => {
+        if (!block || typeof block !== 'object') {
           return '';
-        })
-        .filter(Boolean)
-        .join('\n')
-        .trim()
-    : '';
+        }
+        if (typeof block.text === 'string') {
+          return block.text.trim();
+        }
+        if (Array.isArray(block.content)) {
+          return block.content
+            .map((part) => (typeof part?.text === 'string' ? part.text.trim() : ''))
+            .filter(Boolean)
+            .join('\n')
+            .trim();
+        }
+        return '';
+      })
+      .filter(Boolean);
+  };
+
+  const answerSegments = extractClaudeTexts(data.content || data.contents || []);
+  const answer = answerSegments.join('\n').trim();
 
   if (!answer) {
+    if (Array.isArray(data.content)) {
+      const blockedBlock = data.content.find((block) => block?.type === 'error' && block?.error);
+      if (blockedBlock?.error?.message) {
+        throw buildRequestFailedError({ error: { message: blockedBlock.error.message, code: blockedBlock.error.code } });
+      }
+    }
     throw buildRequestFailedError({ error: { message: 'Claude 응답이 비어 있습니다.' } });
   }
 

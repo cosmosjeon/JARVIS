@@ -362,7 +362,15 @@ export default function ChatMessageList({
       role="log"
       data-testid="chat-message-list"
       data-assistant-name={title}
-      style={{ userSelect: 'text', position: 'relative', zIndex: 0 }}
+      style={{ 
+        userSelect: 'text', 
+        WebkitUserSelect: 'text',
+        MozUserSelect: 'text',
+        msUserSelect: 'text',
+        position: 'relative', 
+        zIndex: 0, 
+        WebkitAppRegion: 'no-drag' 
+      }}
     >
       {messages.map((message, index) => {
         const key = getMessageKey(message, `message-${index}`);

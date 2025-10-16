@@ -435,19 +435,37 @@ const LibraryQAPanel = ({
     try {
       const highlighter = new Highlighter({
         $root: root,
-        exceptSelectors: ['textarea', 'button', 'input', '[data-block-pan="true"]'],
+        exceptSelectors: ['textarea', 'button', 'input', '[data-block-pan="true"]', '.actions', '[data-dropdown]'],
         style: { className: 'node-highlight-wrap' },
+        // 텍스트 선택과 충돌하지 않도록 설정
+        useWrapNode: false,
+        wrapTag: 'span',
       });
 
       highlightStoreRef.current.clear();
 
-      const createHandler = (payload) => handleHighlighterCreate(payload);
+      const createHandler = (payload) => {
+        // 기존 텍스트 선택을 유지하면서 하이라이트 생성
+        const selection = window.getSelection();
+        if (selection.toString().trim()) {
+          handleHighlighterCreate(payload);
+        }
+      };
       const removeHandler = (payload) => handleHighlighterRemove(payload);
 
       highlighter.on(Highlighter.event.CREATE, createHandler);
       highlighter.on(Highlighter.event.REMOVE, removeHandler);
-      highlighter.run();
-
+      
+      // 텍스트 선택이 완료된 후에만 하이라이트 모드 활성화
+      const handleSelectionEnd = () => {
+        const selection = window.getSelection();
+        if (selection.toString().trim()) {
+          highlighter.run();
+        }
+      };
+      
+      document.addEventListener('mouseup', handleSelectionEnd, { once: true });
+      
       highlighterRef.current = highlighter;
       highlightHandlersRef.current = { create: createHandler, remove: removeHandler };
 
@@ -2317,52 +2335,10 @@ const LibraryQAPanel = ({
         WebkitUserSelect: 'text',
         MozUserSelect: 'text',
         msUserSelect: 'text',
+        WebkitAppRegion: 'no-drag',
       }}
       data-interactive-zone="true"
       {...attachmentDropHandlers}
-      onMouseDown={(e) => {
-        console.log('🖱️ [패널] mouseDown 이벤트', {
-          target: e.target,
-          button: e.button,
-          defaultPrevented: e.defaultPrevented,
-        });
-      }}
-      onSelectStart={(e) => {
-        console.log('🖱️ [패널] selectStart 이벤트', {
-          target: e.target,
-          defaultPrevented: e.defaultPrevented,
-        });
-      }}
-      onDoubleClick={(e) => {
-        console.log('🖱️ [패널] doubleClick 이벤트', {
-          target: e.target,
-          targetTag: e.target.tagName,
-          defaultPrevented: e.defaultPrevented,
-        });
-      }}
-      onSelect={(e) => {
-        const selection = window.getSelection();
-        console.log('🖱️ [패널] select 이벤트', {
-          selection: selection.toString(),
-          rangeCount: selection.rangeCount,
-        });
-      }}
-      onMouseUp={(e) => {
-        const selection = window.getSelection();
-        console.log('🖱️ [패널] mouseUp 이벤트', {
-          selection: selection.toString(),
-          rangeCount: selection.rangeCount,
-        });
-        // 선택이 사라지는지 추적
-        setTimeout(() => {
-          const laterSelection = window.getSelection();
-          console.log('⏱️ [100ms 후] selection:', {
-            selection: laterSelection.toString(),
-            rangeCount: laterSelection.rangeCount,
-            cleared: laterSelection.toString() === '' && selection.toString() !== '',
-          });
-        }, 100);
-      }}
     >
       {!isLibraryIntroActive && selectedNode && (
         <div

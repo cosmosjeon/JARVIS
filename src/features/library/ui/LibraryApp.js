@@ -22,22 +22,10 @@ const LibraryApp = ({ runtime }) => {
 
   const runtimeLabel = useMemo(() => runtime || getRuntimeLabel(), [runtime]);
   const isElectronRuntime = runtimeLabel === runtimeConstants.RUNTIME_ELECTRON;
-  const sidebarWidth = state.isSidebarCollapsed ? 60 : 240;
-  const dragZoneHeight = state.isQAPanelVisible !== false ? '20px' : '80px';
-
   return (
     <div className="relative flex flex-col h-screen bg-background text-foreground overflow-hidden">
       {isElectronRuntime ? (
         <>
-          <div
-            className="absolute right-0 top-0 z-[9999]"
-            style={{
-              left: `${sidebarWidth}px`,
-              height: dragZoneHeight,
-              WebkitAppRegion: 'drag',
-              pointerEvents: 'auto',
-            }}
-          />
           <LibraryWindowTitleBar />
         </>
       ) : null}
