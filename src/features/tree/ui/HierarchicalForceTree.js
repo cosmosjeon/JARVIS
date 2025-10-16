@@ -933,6 +933,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     return Math.max(minWidth, Math.min(safeRaw, maxWidth));
   }, [viewportWidth]);
   const tidyAssistantPanelVisible = !isBootstrapCompact && Boolean(expandedNodeId) && Boolean(tidyAssistantNode);
+  const isCompactChatOnly = isBootstrapCompact && showBootstrapChat;
   const tidyAssistantDefaultWidth = useMemo(() => {
     const referenceWidth = viewportWidth && viewportWidth > 0
       ? viewportWidth * TIDY_ASSISTANT_PANEL_RATIO
@@ -3058,6 +3059,162 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
     };
   }, [clearPendingExpansion]);
 
+  if (isCompactChatOnly) {
+    return (
+      <div
+        className="relative flex h-full w-full items-start justify-center bg-transparent"
+        style={{ pointerEvents: 'auto', minHeight: '100vh' }}
+      >
+        <div
+          className="absolute top-2 left-1/2 z-[1300] transition-all duration-300"
+          style={{
+            transform: 'translateX(-50%)',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div
+            className="flex h-6 items-center rounded-full bg-black/40 backdrop-blur-sm border border-black/30 shadow-lg hover:bg-black/60 transition-colors px-3 cursor-grab active:cursor-grabbing"
+            style={{
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              pointerEvents: 'auto',
+              WebkitAppRegion: 'drag',
+            }}
+          >
+            <div className="flex items-center justify-center flex-1">
+              <div className="flex gap-1">
+                <div className="h-1 w-1 rounded-full bg-white/60" />
+                <div className="h-1 w-1 rounded-full bg-white/60" />
+                <div className="h-1 w-1 rounded-full bg-white/60" />
+              </div>
+            </div>
+            <button
+              className="ml-4 flex h-4 w-4 items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+              style={{
+                WebkitAppRegion: 'no-drag',
+                pointerEvents: 'auto',
+              }}
+              onClick={() => {
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('[Jarvis] Compact drag handle close requested');
+                }
+
+                const hideWindow = () => {
+                  if (process.env.NODE_ENV === 'development') {
+                    console.log('[Jarvis] hideWindow fallback triggered');
+                  }
+                  try {
+                    const toggleResult = treeBridge.toggleWindow();
+                    if (toggleResult && typeof toggleResult.then === 'function') {
+                      toggleResult.catch(() => { });
+                      return;
+                    }
+                    if (toggleResult !== null && toggleResult !== undefined) {
+                      return;
+                    }
+                  } catch (toggleError) {
+                    if (process.env.NODE_ENV === 'development') {
+                      console.warn('[Jarvis] toggleWindow failed', toggleError);
+                    }
+                  }
+
+                  if (typeof window !== 'undefined' && typeof window.close === 'function') {
+                    window.close();
+                  }
+                };
+
+                try {
+                  const maybeResult = treeBridge.windowControls.close();
+                  if (process.env.NODE_ENV === 'development') {
+                    const tag = '[Jarvis] windowControls.close result';
+                    if (maybeResult && typeof maybeResult.then === 'function') {
+                      maybeResult.then((response) => {
+                        console.log(tag, response);
+                      }).catch((err) => {
+                        console.log(`${tag} (rejected)`, err);
+                      });
+                    } else {
+                      console.log(tag, maybeResult);
+                    }
+                  }
+
+                  if (maybeResult && typeof maybeResult.then === 'function') {
+                    maybeResult
+                      .then((response) => {
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log('[Jarvis] close response (async)', response, response?.error);
+                        }
+                        if (!response?.success) {
+                          hideWindow();
+                        }
+                      })
+                      .catch((err) => {
+                        if (process.env.NODE_ENV === 'development') {
+                          console.warn('[Jarvis] close response error', err);
+                        }
+                        hideWindow();
+                      });
+                    return;
+                  }
+
+                  if (maybeResult && maybeResult.success === false) {
+                    hideWindow();
+                    return;
+                  }
+
+                  if (maybeResult !== null && maybeResult !== undefined) {
+                    return;
+                  }
+                } catch (error) {
+                  if (process.env.NODE_ENV === 'development') {
+                    console.warn('[Jarvis] windowControls.close failed', error);
+                  }
+                  hideWindow();
+                  return;
+                }
+
+                hideWindow();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 8 8"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M1 1L7 7M7 1L1 7"
+                  stroke="white"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="relative z-[1000] w-full max-w-[460px] px-3 pb-4 pt-8">
+          <NodeAssistantPanel
+            node={{ id: '__bootstrap__', keyword: '', fullText: '', level: 0, treeId: activeTreeId }}
+            treeId={activeTreeId}
+            treeTitle={activeTreeTitle}
+            treeNodes={Array.isArray(data?.nodes) ? data.nodes : []}
+            treeLinks={Array.isArray(data?.links) ? data.links : []}
+            onNodeUpdate={handleNodeUpdate}
+            onNewNodeCreated={handleAssistantNodeCreate}
+            onNodeSelect={handleAssistantNodeSelect}
+            onCloseNode={() => setShowBootstrapChat(false)}
+            isLibraryIntroActive
+            onLibraryIntroComplete={() => setShowBootstrapChat(false)}
+          />
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       className="relative flex overflow-hidden bg-transparent rounded-xl"
@@ -3139,7 +3296,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       )}
 
       {/* 컴팩트 모드용 작은 드래그 핸들 */}
-      {isBootstrapCompact && (
+      {isBootstrapCompact && !isCompactChatOnly && (
         <div
           className="absolute top-2 left-1/2 z-[1300] transition-all duration-300"
           style={{
@@ -3158,7 +3315,6 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
               WebkitAppRegion: 'drag',
             }}
           >
-            {/* 드래그 영역 (전체 영역) */}
             <div className="flex items-center justify-center flex-1">
               <div className="flex gap-1">
                 <div className="h-1 w-1 rounded-full bg-white/60"></div>
@@ -3166,8 +3322,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
                 <div className="h-1 w-1 rounded-full bg-white/60"></div>
               </div>
             </div>
-            
-            {/* 닫기 버튼 */}
+
             <button
               className="ml-4 flex h-4 w-4 items-center justify-center rounded-full hover:bg-white/20 transition-colors"
               style={{
@@ -3277,7 +3432,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
       )}
 
       {/* 컴팩트 모드용 트리 선택 드롭다운 - 오른쪽 */}
-      {isBootstrapCompact && availableTrees.length > 0 && (
+      {isBootstrapCompact && !isCompactChatOnly && availableTrees.length > 0 && (
         <div
           className="absolute top-2 right-2 z-[1300]"
           style={{
@@ -3592,7 +3747,7 @@ const resizeCompactWindowForDropdown = useCallback((isOpen, options = {}) => {
         </div>
       )}
 
-  {isTidyView && (
+  {isTidyView && !isCompactChatOnly && (
     <div
       className="absolute inset-0"
       style={{
