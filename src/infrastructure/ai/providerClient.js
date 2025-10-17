@@ -2,17 +2,29 @@ export const toTrimmedString = (value) => (typeof value === 'string' ? value.tri
 
 const parseBase64FromDataUrl = (dataUrl, fallbackMime = '') => {
   const trimmed = toTrimmedString(dataUrl);
+  console.log('[parseBase64FromDataUrl] 입력:', {
+    dataUrlLength: dataUrl?.length,
+    trimmedLength: trimmed?.length,
+    dataUrlPreview: dataUrl?.substring(0, 100),
+  });
   const matches = trimmed.match(/^data:(.*?);base64,(.*)$/);
   if (!matches || matches.length < 3) {
+    console.log('[parseBase64FromDataUrl] 매칭 실패:', { hasMatches: !!matches, matchesLength: matches?.length });
     return {
       mimeType: fallbackMime,
       base64: '',
     };
   }
-  return {
+  const result = {
     mimeType: matches[1] || fallbackMime,
     base64: matches[2],
   };
+  console.log('[parseBase64FromDataUrl] 파싱 성공:', {
+    mimeType: result.mimeType,
+    base64Length: result.base64?.length,
+    base64Preview: result.base64?.substring(0, 50),
+  });
+  return result;
 };
 
 export const PROVIDERS = {
@@ -200,20 +212,39 @@ const sanitizeAttachmentList = (attachments) => {
         console.log(`[sanitizeAttachmentList] 이미지 처리 (항목 ${index}):`, {
           hasDataUrl: !!dataUrl,
           hasBase64: !!base64,
+          mimeType,
+          dataUrlPreview: dataUrl?.substring(0, 50),
+          base64Preview: base64?.substring(0, 50),
         });
 
         if (!dataUrl && !base64) {
           console.log(`[sanitizeAttachmentList] 이미지 항목 ${index}: 데이터가 없어서 null 반환`);
           return null;
         }
-        const parsed = base64 || dataUrl
-          ? parseBase64FromDataUrl(dataUrl, mimeType)
-          : { mimeType, base64: '' };
+
+        // Base64 우선, 없으면 dataUrl에서 추출
+        let finalBase64 = base64;
+        let finalMimeType = mimeType;
+
+        if (!finalBase64 && dataUrl) {
+          const parsed = parseBase64FromDataUrl(dataUrl, mimeType);
+          finalBase64 = parsed.base64 || '';
+          finalMimeType = parsed.mimeType || mimeType;
+          console.log(`[sanitizeAttachmentList] 이미지 항목 ${index} dataUrl 파싱:`, {
+            parsedBase64Length: finalBase64?.length,
+            parsedMimeType: finalMimeType,
+          });
+        }
+
+        if (!finalBase64) {
+          console.log(`[sanitizeAttachmentList] 이미지 항목 ${index}: base64 추출 실패, null 반환`);
+          return null;
+        }
 
         const imageResult = {
           type: 'image',
-          mimeType: parsed.mimeType || mimeType || undefined,
-          base64: base64 || parsed.base64,
+          mimeType: finalMimeType || 'image/png',
+          base64: finalBase64,
           dataUrl,
           label,
         };
@@ -683,31 +714,34 @@ const mapToGeminiContents = (messages = []) => {
           dataPreview: pdfPart.inline_data.data.substring(0, 50) + '...',
         });
         parts.push(pdfPart);
-      }
-
-      // 텍스트 설명도 추가 (컨텍스트 제공)
-      if (attachment.textContent) {
-        const heading = [
-          'PDF 첨부',
-          attachment.label ? `(${attachment.label})` : '',
-          attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
-        ]
-          .filter(Boolean)
-          .join(' ');
-        const combinedText = [heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n');
-        console.log('[mapToGeminiContents] PDF 텍스트 추가:', {
-          heading,
-          textContentLength: attachment.textContent.length,
-          combinedTextLength: combinedText.length,
-        });
-        appendText(combinedText);
+      } else {
+        // Base64가 없을 경우에만 텍스트 fallback 사용
+        if (attachment.textContent) {
+          const heading = [
+            'PDF 첨부',
+            attachment.label ? `(${attachment.label})` : '',
+            attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+          const combinedText = [heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n');
+          console.log('[mapToGeminiContents] PDF Base64 없음, 텍스트만 추가:', {
+            heading,
+            textContentLength: attachment.textContent.length,
+            combinedTextLength: combinedText.length,
+          });
+          appendText(combinedText);
+        }
       }
     };
 
-    const baseText = extractTextFromMessage(message);
-    appendText(baseText);
-
+    // Gemini는 이미지/PDF를 먼저, 텍스트를 나중에 추가해야 함
     const attachments = sanitizeAttachmentList(message.attachments);
+    console.log(`[mapToGeminiContents] 메시지 ${index} 첨부파일:`, {
+      attachmentsCount: attachments.length,
+      attachments,
+    });
+
     attachments.forEach((attachment) => {
       if (attachment.type === 'pdf') {
         appendPdf(attachment);
@@ -716,9 +750,14 @@ const mapToGeminiContents = (messages = []) => {
       }
     });
 
-    console.log(`[mapToGeminiContents] 메시지 ${index} 변환:`, {
+    // 텍스트는 이미지/PDF 다음에 추가
+    const baseText = extractTextFromMessage(message);
+    appendText(baseText);
+
+    console.log(`[mapToGeminiContents] 메시지 ${index} 변환 완료:`, {
       originalMessage: message,
-      hasParts: parts.length > 0,
+      partsCount: parts.length,
+      parts,
     });
 
     if (!parts.length) {
@@ -840,19 +879,6 @@ const mapToClaudeMessages = (messages = []) => {
           hasTextContent: !!attachment.textContent,
         });
 
-        const heading = [
-          'PDF 첨부',
-          attachment.label ? `(${attachment.label})` : '',
-          attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
-        ]
-          .filter(Boolean)
-          .join(' ');
-
-        // textContent가 있으면 텍스트로 추가
-        if (attachment.textContent) {
-          appendText([heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n'));
-        }
-
         const fallbackMime = attachment.mimeType || 'application/pdf';
 
         // Claude는 순수 base64만 필요
@@ -864,47 +890,63 @@ const mapToClaudeMessages = (messages = []) => {
           const dataUrl = toTrimmedString(attachment.dataUrl);
           console.log('[mapToClaudeMessages] PDF dataUrl에서 base64 추출:', { hasDataUrl: !!dataUrl, dataUrlLength: dataUrl?.length });
 
-          if (!dataUrl) {
-            console.log('[mapToClaudeMessages] appendPdf: base64와 dataUrl 모두 없음, textContent만 사용');
-            return;  // textContent만 전송됨
+          if (dataUrl) {
+            const parsed = parseBase64FromDataUrl(dataUrl, fallbackMime);
+            pureBase64 = parsed.base64 || '';
+            resolvedMime = parsed.mimeType || fallbackMime;
+
+            console.log('[mapToClaudeMessages] PDF parseBase64 결과:', {
+              hasPureBase64: !!pureBase64,
+              resolvedMime,
+              base64Length: pureBase64.length,
+            });
           }
-
-          const parsed = parseBase64FromDataUrl(dataUrl, fallbackMime);
-          pureBase64 = parsed.base64 || '';
-          resolvedMime = parsed.mimeType || fallbackMime;
-
-          console.log('[mapToClaudeMessages] PDF parseBase64 결과:', {
-            hasPureBase64: !!pureBase64,
-            resolvedMime,
-            base64Length: pureBase64.length,
-          });
-        }
-
-        if (!pureBase64) {
-          console.log('[mapToClaudeMessages] appendPdf: 순수 base64가 없음, textContent만 사용');
-          return;  // textContent만 전송됨
         }
 
         // Claude PDF는 document 타입으로 전송
-        const docPart = {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: resolvedMime || 'application/pdf',
-            data: pureBase64,  // 순수 base64만!
-          },
-        };
-        console.log('[mapToClaudeMessages] PDF 문서 파트 추가:', {
-          media_type: docPart.source.media_type,
-          dataLength: docPart.source.data.length,
-          dataPreview: docPart.source.data.substring(0, 50) + '...',
-        });
-        content.push(docPart);
+        if (pureBase64) {
+          const docPart = {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: resolvedMime || 'application/pdf',
+              data: pureBase64,  // 순수 base64만!
+            },
+          };
+          console.log('[mapToClaudeMessages] PDF 문서 파트 추가 (document):', {
+            media_type: docPart.source.media_type,
+            dataLength: docPart.source.data.length,
+            dataPreview: docPart.source.data.substring(0, 50) + '...',
+          });
+          content.push(docPart);
+        } else {
+          // Base64가 없을 경우에만 텍스트 fallback 사용
+          const heading = [
+            'PDF 첨부',
+            attachment.label ? `(${attachment.label})` : '',
+            attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+
+          if (attachment.textContent) {
+            const combinedText = [heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n');
+            console.log('[mapToClaudeMessages] PDF Base64 없음, 텍스트만 추가:', {
+              heading,
+              textContentLength: attachment.textContent.length,
+            });
+            appendText(combinedText);
+          }
+        }
       };
 
-      appendText(extractTextFromMessage(message));
-
+      // Claude는 이미지/PDF를 먼저, 텍스트를 나중에 추가해야 함
       const attachments = sanitizeAttachmentList(message.attachments);
+      console.log(`[mapToClaudeMessages] 메시지 ${index} 첨부파일:`, {
+        attachmentsCount: attachments.length,
+        attachments,
+      });
+
       attachments.forEach((attachment) => {
         if (attachment.type === 'pdf') {
           appendPdf(attachment);
@@ -913,9 +955,13 @@ const mapToClaudeMessages = (messages = []) => {
         }
       });
 
-      console.log(`[mapToClaudeMessages] 메시지 ${index} 변환:`, {
+      // 텍스트는 이미지/PDF 다음에 추가
+      appendText(extractTextFromMessage(message));
+
+      console.log(`[mapToClaudeMessages] 메시지 ${index} 변환 완료:`, {
         originalMessage: message,
         contentLength: content.length,
+        content,
       });
 
       if (!content.length) {
@@ -1700,6 +1746,14 @@ const callGeminiChat = async ({
 
   const baseUrl = config.baseUrl.replace(/\/+$/, '');
 
+  // API 요청 전 최종 body 로깅
+  console.log('[callGeminiChat] API 요청 body:', {
+    contentsCount: body.contents?.length,
+    contents: body.contents,
+    hasSystemInstruction: !!body.systemInstruction,
+    generationConfig: body.generationConfig,
+  });
+
   const performGeminiRequest = async () => {
     const response = await fetch(`${baseUrl}/models/${encodeURIComponent(model || config.defaultModel)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
@@ -1907,6 +1961,15 @@ const callClaudeChat = async ({
   if (typeof temperature === 'number' && Number.isFinite(temperature)) {
     body.temperature = temperature;
   }
+
+  // API 요청 전 최종 body 로깅
+  console.log('[callClaudeChat] API 요청 body:', {
+    model: body.model,
+    messagesCount: body.messages?.length,
+    messages: body.messages,
+    hasSystem: !!body.system,
+    max_tokens: body.max_tokens,
+  });
 
   const response = await fetch(config.baseUrl, {
     method: 'POST',
