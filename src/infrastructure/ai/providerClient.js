@@ -374,6 +374,31 @@ const mapToOpenAIContentParts = (message) => {
       textContentLength: attachment.textContent?.length,
     });
 
+    const fallbackMime = attachment.mimeType || 'application/pdf';
+    const base64Raw = toTrimmedString(attachment.base64);
+    let pdfDataUrl = toTrimmedString(attachment.dataUrl);
+
+    // dataUrl 없으면 base64에서 생성
+    if (!pdfDataUrl && base64Raw) {
+      pdfDataUrl = `data:${fallbackMime};base64,${base64Raw}`;
+      console.log('[mapToOpenAIContentParts] base64에서 PDF dataUrl 생성:', { dataUrlLength: pdfDataUrl.length });
+    }
+
+    // PDF Base64를 image_url 형식으로 전송 (GPT-5/4o는 PDF 직접 처리 가능)
+    if (pdfDataUrl) {
+      const pdfPart = {
+        type: imageType,
+        image_url: pdfDataUrl,
+      };
+      console.log('[mapToOpenAIContentParts] PDF 파트 추가 (image_url 형식):', {
+        type: pdfPart.type,
+        imageUrlLength: pdfPart.image_url.length,
+        imageUrlPreview: pdfPart.image_url.substring(0, 50) + '...',
+      });
+      parts.push(pdfPart);
+    }
+
+    // 추가로 텍스트 설명도 포함 (컨텍스트 제공 및 fallback)
     const heading = [
       'PDF 첨부',
       attachment.label ? `(${attachment.label})` : '',
@@ -382,13 +407,15 @@ const mapToOpenAIContentParts = (message) => {
       .filter(Boolean)
       .join(' ');
     const pdfText = toTrimmedString(attachment.textContent);
-    const combinedText = [heading || 'PDF 첨부', pdfText].filter(Boolean).join('\n\n');
-    console.log('[mapToOpenAIContentParts] PDF 텍스트 추출:', {
-      heading,
-      pdfTextLength: pdfText.length,
-      combinedTextLength: combinedText.length,
-    });
-    appendText(combinedText);
+    if (pdfText) {
+      const combinedText = [heading || 'PDF 첨부', pdfText].filter(Boolean).join('\n\n');
+      console.log('[mapToOpenAIContentParts] PDF 텍스트 추가:', {
+        heading,
+        pdfTextLength: pdfText.length,
+        combinedTextLength: combinedText.length,
+      });
+      appendText(combinedText);
+    }
   };
 
   if (Array.isArray(message.content)) {
@@ -607,43 +634,74 @@ const mapToGeminiContents = (messages = []) => {
 
     const appendPdf = (attachment) => {
       if (!attachment) {
+        console.log('[mapToGeminiContents] appendPdf: attachment가 없음');
         return;
       }
-
-      const heading = [
-        'PDF 첨부',
-        attachment.label ? `(${attachment.label})` : '',
-        attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
-
-      appendText([heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n'));
+      console.log('[mapToGeminiContents] appendPdf 시작:', {
+        type: attachment.type,
+        mimeType: attachment.mimeType,
+        hasBase64: !!attachment.base64,
+        hasDataUrl: !!attachment.dataUrl,
+        hasTextContent: !!attachment.textContent,
+      });
 
       const fallbackMime = attachment.mimeType || 'application/pdf';
-      const normalizedBase64 = toTrimmedString(attachment.base64);
-      let resolvedBase64 = normalizedBase64;
+
+      // 순수 base64 추출
+      let pureBase64 = toTrimmedString(attachment.base64);
       let resolvedMime = fallbackMime;
 
-      if (!resolvedBase64) {
-        const dataUrl = toTrimmedString(attachment.dataUrl)
-          || (attachment.base64 && attachment.mimeType
-            ? `data:${attachment.mimeType};base64,${attachment.base64}`
-            : '');
+      // base64가 없으면 dataUrl에서 추출
+      if (!pureBase64) {
+        const dataUrl = toTrimmedString(attachment.dataUrl);
+        console.log('[mapToGeminiContents] PDF dataUrl에서 base64 추출:', { hasDataUrl: !!dataUrl, dataUrlLength: dataUrl?.length });
+
         if (dataUrl) {
           const parsed = parseBase64FromDataUrl(dataUrl, fallbackMime);
-          resolvedBase64 = parsed.base64 || '';
+          pureBase64 = parsed.base64 || '';
           resolvedMime = parsed.mimeType || fallbackMime;
+
+          console.log('[mapToGeminiContents] PDF parseBase64 결과:', {
+            hasPureBase64: !!pureBase64,
+            resolvedMime,
+            base64Length: pureBase64.length,
+          });
         }
       }
 
-      if (!resolvedBase64) {
-        return;
+      // Gemini는 inline_data로 PDF 전송 (Gemini 2.5는 PDF 직접 처리 가능)
+      if (pureBase64) {
+        const pdfPart = {
+          inline_data: {
+            mime_type: resolvedMime,
+            data: pureBase64,  // 순수 base64만!
+          },
+        };
+        console.log('[mapToGeminiContents] PDF 파트 추가 (inline_data):', {
+          mime_type: pdfPart.inline_data.mime_type,
+          dataLength: pdfPart.inline_data.data.length,
+          dataPreview: pdfPart.inline_data.data.substring(0, 50) + '...',
+        });
+        parts.push(pdfPart);
       }
 
-      // Gemini PDFs should be referenced via File API or textual description.
-      // To avoid 500 errors, include metadata only.
-      return;
+      // 텍스트 설명도 추가 (컨텍스트 제공)
+      if (attachment.textContent) {
+        const heading = [
+          'PDF 첨부',
+          attachment.label ? `(${attachment.label})` : '',
+          attachment.pageCount ? `· ${attachment.pageCount}쪽` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+        const combinedText = [heading || 'PDF 첨부', attachment.textContent].filter(Boolean).join('\n\n');
+        console.log('[mapToGeminiContents] PDF 텍스트 추가:', {
+          heading,
+          textContentLength: attachment.textContent.length,
+          combinedTextLength: combinedText.length,
+        });
+        appendText(combinedText);
+      }
     };
 
     const baseText = extractTextFromMessage(message);

@@ -34,3 +34,30 @@ export const ATTACHMENT_ERROR_MESSAGES = Object.freeze({
   fileTooLarge: '파일 용량이 너무 큽니다. 15MB 이하의 파일만 첨부할 수 있습니다.',
   pdfParseFailed: 'PDF 내용을 읽는 중 오류가 발생했습니다.',
 });
+
+// Provider별 첨부 파일 지원 매트릭스
+export const PROVIDER_CAPABILITIES = Object.freeze({
+  openai: {
+    images: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+    documents: ['application/pdf'], // GPT-5/4o는 PDF 직접 지원
+    maxImageSize: 20 * 1024 * 1024, // 20MB
+    maxDocumentSize: 32 * 1024 * 1024, // 32MB
+    maxDocumentPages: 100,
+  },
+  gemini: {
+    images: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+    documents: ['application/pdf'], // Gemini 2.5는 PDF 직접 지원
+    maxImageSize: 20 * 1024 * 1024, // 20MB
+    maxDocumentSize: 50 * 1024 * 1024, // 50MB
+    maxDocumentPages: 1000,
+    maxImageCount: 3600,
+  },
+  claude: {
+    images: ['image/jpeg', 'image/png', 'image/webp'], // GIF 미지원
+    documents: ['application/pdf'],
+    maxImageSize: 10 * 1024 * 1024, // ~8.4 million pixels
+    maxDocumentSize: 32 * 1024 * 1024, // 32MB
+    maxDocumentPages: 100,
+    maxImageCount: 100,
+  },
+});
