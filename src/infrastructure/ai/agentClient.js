@@ -228,6 +228,14 @@ const buildMissingBridgeError = (provider) => {
 
 export class AgentClient {
   static async request(channel, payload = {}, bridgeOverride) {
+    console.log('[AgentClient.request] 호출됨:', {
+      channel,
+      provider: payload?.provider,
+      hasAttachments: !!payload?.attachments,
+      attachmentsCount: payload?.attachments?.length,
+      payload,
+    });
+
     const normalizedProvider = normalizeProvider(payload?.provider);
     const basePayload = { ...payload, provider: normalizedProvider };
     const {
@@ -235,6 +243,13 @@ export class AgentClient {
       onStreamChunk,
       ...forwardPayload
     } = basePayload;
+
+    console.log('[AgentClient.request] forwardPayload 생성:', {
+      provider: forwardPayload.provider,
+      hasAttachments: !!forwardPayload.attachments,
+      attachmentsCount: forwardPayload.attachments?.length,
+      forwardPayload,
+    });
 
     const effectiveProvider = forwardPayload.provider;
     const startedAt = Date.now();
@@ -280,6 +295,11 @@ export class AgentClient {
 
     const canDirectAgentCall = (channel === 'askRoot' || channel === 'askChild') && canUseFallback(effectiveProvider);
     if (canDirectAgentCall) {
+      console.log('[AgentClient.request] directProvider 태스크 등록:', {
+        provider: effectiveProvider,
+        hasAttachments: !!forwardPayload.attachments,
+        attachmentsCount: forwardPayload.attachments?.length,
+      });
       registerTask('directProvider', () =>
         executeWithTimeout(
           () => callProvider({
@@ -302,14 +322,28 @@ export class AgentClient {
       );
     }
 
+    console.log('[AgentClient.request] 등록된 태스크:', {
+      taskCount: tasks.length,
+      hasBridge,
+      isHttpBridgeAvailable: isAgentHttpBridgeAvailable(),
+      canDirectAgentCall,
+    });
+
     let response = null;
 
     if (tasks.length) {
       try {
+        console.log('[AgentClient.request] Promise.any 실행 시작');
         const { result } = await Promise.any(tasks.map((task) => task()));
+        console.log('[AgentClient.request] Promise.any 성공:', { hasResult: !!result });
         response = result;
       } catch (aggregateError) {
+        console.error('[AgentClient.request] Promise.any 실패:', aggregateError);
         if (aggregateError instanceof AggregateError && Array.isArray(aggregateError.errors) && aggregateError.errors.length) {
+          console.error('[AgentClient.request] AggregateError 상세:', {
+            errorCount: aggregateError.errors.length,
+            errors: aggregateError.errors,
+          });
           throw aggregateError.errors[aggregateError.errors.length - 1];
         }
         throw aggregateError;

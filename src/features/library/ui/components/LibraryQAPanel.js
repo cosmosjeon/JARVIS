@@ -445,27 +445,19 @@ const LibraryQAPanel = ({
       highlightStoreRef.current.clear();
 
       const createHandler = (payload) => {
-        // 기존 텍스트 선택을 유지하면서 하이라이트 생성
-        const selection = window.getSelection();
-        if (selection.toString().trim()) {
-          handleHighlighterCreate(payload);
+        const sources = Array.isArray(payload?.sources) ? payload.sources : [];
+        const hasText = sources.some((source) => typeof source?.text === 'string' && source.text.trim().length > 0);
+        if (!hasText) {
+          return;
         }
+        handleHighlighterCreate(payload);
       };
       const removeHandler = (payload) => handleHighlighterRemove(payload);
 
       highlighter.on(Highlighter.event.CREATE, createHandler);
       highlighter.on(Highlighter.event.REMOVE, removeHandler);
-      
-      // 텍스트 선택이 완료된 후에만 하이라이트 모드 활성화
-      const handleSelectionEnd = () => {
-        const selection = window.getSelection();
-        if (selection.toString().trim()) {
-          highlighter.run();
-        }
-      };
-      
-      document.addEventListener('mouseup', handleSelectionEnd, { once: true });
-      
+      highlighter.run();
+
       highlighterRef.current = highlighter;
       highlightHandlersRef.current = { create: createHandler, remove: removeHandler };
 
@@ -1357,16 +1349,54 @@ const LibraryQAPanel = ({
 
     const timestamp = Date.now();
 
-    const sanitizedAttachments = attachmentSnapshot.map((item, index) => ({
-      id: item.id || `attachment-${timestamp}-${index}`,
-      type: item.type || 'image',
-      mimeType: item.mimeType,
-      dataUrl: item.dataUrl,
-      name: item.name,
-      label: item.label || item.name || `첨부 이미지 ${index + 1}`,
-      size: item.size,
-      createdAt: item.createdAt || timestamp,
-    }));
+    const sanitizedAttachments = attachmentSnapshot.map((item, index) => {
+      const isPdf = (item.type || '').toLowerCase() === 'pdf'
+        || (item.mimeType || '').toLowerCase().includes('application/pdf');
+      const fallbackMime = isPdf
+        ? (item.mimeType || 'application/pdf')
+        : (item.mimeType || 'image/png');
+      const base64Raw = typeof item.base64 === 'string' ? item.base64.trim() : '';
+      let dataUrl = typeof item.dataUrl === 'string' ? item.dataUrl.trim() : '';
+
+      if (!dataUrl && base64Raw) {
+        dataUrl = `data:${fallbackMime};base64,${base64Raw}`;
+      }
+
+      const attachment = {
+        id: item.id || `attachment-${timestamp}-${index}`,
+        type: isPdf ? 'pdf' : (item.type || 'image'),
+        mimeType: fallbackMime,
+        dataUrl,
+        base64: base64Raw || null,
+        name: item.name,
+        label: item.label || item.name || `첨부 이미지 ${index + 1}`,
+        size: item.size,
+        createdAt: item.createdAt || timestamp,
+      };
+
+      // PDF 전용 필드 추가
+      if (isPdf) {
+        attachment.textContent = item.textContent;
+        attachment.pageCount = item.pageCount;
+        attachment.dataUrl = dataUrl; // Gemini/Claude 변환 시 텍스트로만 사용
+      }
+
+      console.log(`[handleSendMessage] 첨부 파일 ${index} 정규화:`, {
+        type: attachment.type,
+        mimeType: attachment.mimeType,
+        hasDataUrl: !!attachment.dataUrl,
+        hasBase64: !!attachment.base64,
+        hasTextContent: !!attachment.textContent,
+        dataUrlLength: attachment.dataUrl?.length,
+        base64Length: attachment.base64?.length,
+      });
+
+      return attachment;
+    });
+    console.log('[handleSendMessage] 최종 sanitizedAttachments:', {
+      count: sanitizedAttachments.length,
+      sanitizedAttachments,
+    });
     const hasAttachments = sanitizedAttachments.length > 0;
 
     const effectiveProvider = providerOverride || selectedProvider;
@@ -1693,14 +1723,23 @@ const LibraryQAPanel = ({
     }
 
       try {
-        const response = await executeAgentCall('askRoot', assistantId, {
+        const agentPayload = {
           messages: requestMessages,
           attachments: hasAttachments ? sanitizedAttachments : undefined,
           autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
           question,
           provider: effectiveProvider,
           model: effectiveModel,
+        };
+        console.log('[handleSendMessage] executeAgentCall 호출 (useExistingNode):', {
+          channel: 'askRoot',
+          hasAttachments,
+          attachmentsCount: sanitizedAttachments.length,
+          provider: effectiveProvider,
+          model: effectiveModel,
+          agentPayload,
         });
+        const response = await executeAgentCall('askRoot', assistantId, agentPayload);
 
         if (response?.success === false && response?.error?.message) {
           throw new Error(response.error.message);
@@ -1901,14 +1940,23 @@ const LibraryQAPanel = ({
 
     if (isRetryFlow && !selectedNode) {
       try {
-        const response = await executeAgentCall('askRoot', assistantId, {
+        const agentPayload = {
           messages: requestMessages,
           attachments: hasAttachments ? sanitizedAttachments : undefined,
           autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
           question,
           provider: effectiveProvider,
           model: effectiveModel,
+        };
+        console.log('[handleSendMessage] executeAgentCall 호출 (isRetryFlow):', {
+          channel: 'askRoot',
+          hasAttachments,
+          attachmentsCount: sanitizedAttachments.length,
+          provider: effectiveProvider,
+          model: effectiveModel,
+          agentPayload,
         });
+        const response = await executeAgentCall('askRoot', assistantId, agentPayload);
 
         if (response?.success === false && response?.error?.message) {
           throw new Error(response.error.message);
@@ -2070,15 +2118,25 @@ const LibraryQAPanel = ({
     try {
       console.log('변환된 OpenAI 메시지:', requestMessages);
 
+      const agentPayload = {
+        messages: requestMessages,
+        attachments: hasAttachments ? sanitizedAttachments : undefined,
+        autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
+        question,
+        provider: effectiveProvider,
+        model: effectiveModel,
+      };
+      console.log('[handleSendMessage] invokeAgent 호출 (새 노드):', {
+        channel: 'askRoot',
+        hasAttachments,
+        attachmentsCount: sanitizedAttachments.length,
+        provider: effectiveProvider,
+        model: effectiveModel,
+        agentPayload,
+      });
+
       const response = await withTimeout(
-        invokeAgent('askRoot', {
-          messages: requestMessages,
-          attachments: hasAttachments ? sanitizedAttachments : undefined,
-          autoSelectionHint: effectiveProvider === 'auto' ? activeAutoSelection : undefined,
-          question,
-          provider: effectiveProvider,
-          model: effectiveModel,
-        }),
+        invokeAgent('askRoot', agentPayload),
         AGENT_RESPONSE_TIMEOUT_MS,
       );
 
