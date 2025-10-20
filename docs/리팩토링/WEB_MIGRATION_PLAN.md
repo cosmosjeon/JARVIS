@@ -931,6 +931,17 @@ git branch -D web-migration/phase0        # 브랜치 전체 폐기 (미병합 �
 
 ---
 
+### 사용자 수동 점검 가이드 (Phase 0)
+
+- **기대 상태**: 로그인 화면까지는 정상 진입 가능해야 하며, Electron 전용 기능(트레이 아이콘, 위젯 등)은 일시적으로 동작하지 않아도 된다.
+- **허용 가능한 문제**: 브라우저 전용 최적화 미적용, 일부 기능이 Electron 분기 제거로 인해 숨겨진 상태.
+- **점검 포인트**:
+  - `npm run dev` 실행 후 주요 화면 진입 여부.
+  - 삭제된 파일/기능으로 인한 치명적 콘솔 에러가 발생하지 않는지 확인.
+  - docs/logs/phase-0-execution.md 및 docs/ops/manual-checklist.md 갱신.
+
+---
+
 ## Phase 1: 프로젝트 기반 구축
 
 > **목표**: Vite + TypeScript + Zustand 프로젝트 생성
@@ -1718,6 +1729,15 @@ tree src/ -L 2 -I "node_modules"
 # 환경 변수 확인
 grep VITE_ .env
 ```
+
+### 사용자 수동 점검 가이드 (Phase 1)
+
+- **기대 상태**: Vite 개발 서버가 브라우저에서 로드되고 기본 UI가 뜨는지 확인한다. 아직 Clean Architecture 재편이나 기능 이식은 진행되지 않았으므로 Electron 전용 기능은 동작하지 않아도 된다.
+- **허용 가능한 문제**: 일부 화면에서 데이터가 비어 있거나 스타일이 깨질 수 있음, 그러나 치명적 JS 오류나 빌드 실패는 용납되지 않는다.
+- **점검 포인트**:
+  - `npm run dev` 실행 후 로그인 화면 진입 및 간단한 네비게이션 시도.
+  - `npm run build` 결과물 실행(Manual)에서 404/콘솔 에러 여부.
+  - 로그/체크리스트 문서 갱신 여부 확인.
 
 **다음 단계**: Phase 2 (아키텍처 재정비)
 
@@ -2657,6 +2677,15 @@ git commit -m "refactor: Phase 2 complete - Clean Architecture restructure\n\n- 
 # Manual: git push origin web-migration/phase2 (인간 검토 후 진행)
 ```
 
+### 사용자 수동 점검 가이드 (Phase 2)
+
+- **기대 상태**: 도메인/인프라/피처 레이어 간 의존성이 문서와 일치하고 주요 유닛 테스트가 통과해야 한다. UI는 아직 이전되지 않았으므로 화면이 완전하지 않을 수 있다.
+- **허용 가능한 문제**: 일부 UI가 깨지거나 데이터 로딩이 실패할 수 있음. 단, 빌드·테스트 실패나 순환 의존성은 허용되지 않는다.
+- **점검 포인트**:
+  - `grep -r "from.*features" src/infrastructure/` 등 의존성 점검 명령 결과 확인.
+  - 기존 Electron 전용 분기가 제거되고, 웹 경로에서 치명적 에러가 없는지 콘솔 확인.
+  - Phase 2 로그 및 Manual 체크리스트 항목 반영.
+
 ---
 
 ## Phase 3: 점진적 코드 이식
@@ -2778,6 +2807,15 @@ git commit -m "feat: migrate features to browser-first architecture"
 # Manual: git push origin web-migration/phase3
 ```
 
+### 사용자 수동 점검 가이드 (Phase 3)
+
+- **기대 상태**: 브라우저 환경에서 핵심 기능(로그인, 라이브러리 탐색, 노드 관리, AI 패널)이 동작하고 E2E 시나리오가 통과해야 한다.
+- **허용 가능한 문제**: 성능 수치가 아직 목표치에 못 미치거나 배포 자동화가 미완성일 수 있다.
+- **점검 포인트**:
+  - Supabase 스테이징에서 OAuth 로그인이 실제로 성공하는지 수동 확인.
+  - Playwright/Cypress 스모크 테스트 결과와 번들 분석 리포트 검토.
+  - `npm run dev`와 `npm run build` 결과물에서 치명적 콘솔 에러가 없는지 점검.
+
 ---
 
 ## Phase 4: 품질 향상 및 배포
@@ -2852,6 +2890,15 @@ git commit -m "chore: harden web release pipeline"
 
 # Manual: git push origin web-migration/phase4
 ```
+
+### 사용자 수동 점검 가이드 (Phase 4)
+
+- **기대 상태**: 테스트 커버리지 목표 달성, Lighthouse 지표 충족, GitHub Actions와 Vercel 배포가 정상 작동해야 한다. 운영 모니터링과 알림 채널이 설정되어 있어야 한다.
+- **허용 가능한 문제**: 경미한 스타일/카피 수정 등 비핵심 항목은 후속 티켓으로 이월 가능하나, 배포 실패나 모니터링 부재는 허용되지 않는다.
+- **점검 포인트**:
+  - `coverage/coverage-summary.json` 수치 확인과 주요 테스트 리포트 검토.
+  - Lighthouse 결과 스크린샷/리포트 저장 후 목표치 충족 여부 확인.
+  - GitHub Actions 로그, Vercel 프리뷰/프로덕션 URL 접속, 운영 Runbook 및 알림 채널 동작 확인.
 
 ---
 
