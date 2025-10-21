@@ -2,6 +2,12 @@
   "redirects": [
     {
       "source": "/",
+      "missing": [
+        {
+          "type": "query",
+          "key": "mode"
+        }
+      ],
       "destination": "/?mode=library",
       "permanent": false
     }
