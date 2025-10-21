@@ -1,8 +1,6 @@
 import AgentClient, { PROVIDERS } from 'infrastructure/ai/agentClient';
 
 const MAX_TITLE_LENGTH = 48;
-const GEMINI_FLASH_LITE = 'gemini-2.0-flash-lite';
-const CLAUDE_HAIKU = 'claude-haiku-4-5';
 
 const toTrimmed = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -74,9 +72,7 @@ const buildHeuristicTitle = (source) => {
 };
 
 const DEFAULT_PROVIDER_PRIORITY = [
-  { provider: PROVIDERS.GEMINI, model: GEMINI_FLASH_LITE },
   { provider: PROVIDERS.OPENAI, model: null },
-  { provider: PROVIDERS.CLAUDE, model: CLAUDE_HAIKU },
 ];
 
 const normalizeProviderId = (providerId) => {

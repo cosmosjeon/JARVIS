@@ -140,7 +140,7 @@ export const partitionFilesBySupport = (files = []) => {
 /**
  * Provider별 첨부 파일 검증
  * @param {Object} attachment - 첨부 파일 객체
- * @param {string} provider - Provider 이름 (openai, gemini, claude)
+ * @param {string} provider - Provider 이름 (openai 전용)
  * @returns {Object} { valid: boolean, error?: string }
  */
 export const validateAttachmentForProvider = (attachment, provider) => {

@@ -6,14 +6,13 @@
       "permanent": false
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/auth/callback",
-      "destination": "/auth/callback"
+      "handle": "filesystem"
     },
     {
-      "source": "/(.*)",
-      "destination": "/"
+      "src": "/.*",
+      "dest": "/index.html"
     }
   ]
 }

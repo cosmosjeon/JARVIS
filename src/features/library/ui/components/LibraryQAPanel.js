@@ -55,11 +55,6 @@ const LOADING_MESSAGE_INTERVAL_MS = DEFAULT_ASSISTANT_LOADING_MESSAGE_INTERVAL_M
 const MODEL_LABELS = {
   'gpt-5': 'GPT-5',
   'gpt-5-mini': 'GPT-5 mini',
-  'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-2.5-flash': 'Gemini 2.5 Flash',
-  'claude-sonnet-4-5': 'Claude Sonnet 4.5',
-  'claude-haiku-4-5': 'Claude Haiku 4.5',
-  'claude-3-5-haiku-latest': 'Claude 3.5 Haiku',
 };
 
 const formatModelLabel = (value) => {
@@ -72,8 +67,6 @@ const formatModelLabel = (value) => {
     return mapped;
   }
   if (normalized.startsWith('gpt-5')) return 'GPT-5';
-  if (normalized.includes('gemini')) return 'Gemini';
-  if (normalized.includes('claude')) return 'Claude';
   return value;
 };
 
@@ -83,8 +76,6 @@ const formatProviderLabel = (value) => {
   }
   const normalized = value.toLowerCase();
   if (normalized === 'openai') return 'GPT';
-  if (normalized === 'gemini') return 'Gemini';
-  if (normalized === 'claude') return 'Claude';
   return value.replace(/^[a-z]/, (char) => char.toUpperCase());
 };
 
@@ -1378,7 +1369,7 @@ const LibraryQAPanel = ({
       if (isPdf) {
         attachment.textContent = item.textContent;
         attachment.pageCount = item.pageCount;
-        attachment.dataUrl = dataUrl; // Gemini/Claude 변환 시 텍스트로만 사용
+        attachment.dataUrl = dataUrl; // PDF 전송 시 텍스트도 유지
       }
 
       console.log(`[handleSendMessage] 첨부 파일 ${index} 정규화:`, {

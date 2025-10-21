@@ -13,8 +13,8 @@
     "dev:web": "cross-env REACT_APP_PLATFORM=web REACT_APP_DEPLOY_ENV=development REACT_APP_SUPABASE_REDIRECT_URL_DEVELOPMENT=http://localhost:3000/auth/callback react-scripts start",
     "build:web": "cross-env REACT_APP_PLATFORM=web react-scripts build",
     "preview:web": "npm run start:web",
-    "smoke:web": "node scripts/smoke/run-web-smoke.js",
-    "check:env": "node scripts/check-env.js",
+    "smoke:web": "cross-env DOTENV_CONFIG_PATH=.env.local REACT_APP_PLATFORM=web node -r dotenv/config scripts/smoke/run-web-smoke.js",
+    "check:env": "cross-env DOTENV_CONFIG_PATH=.env.local node -r dotenv/config scripts/check-env.js",
     "start:renderer": "cross-env BROWSER=none react-scripts start",
     "start:electron": "wait-on tcp:3000 && electron .",
     "electron:dev": "concurrently \"npm run start:renderer\" \"npm run start:electron\"",
@@ -24,8 +24,6 @@
     "playwright:test": "playwright test --config=playwright.config.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.24.1",
-    "@google/generative-ai": "^0.24.1",
     "@icons-pack/react-simple-icons": "^13.8.0",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-context-menu": "^2.2.16",

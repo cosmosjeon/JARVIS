@@ -44,20 +44,4 @@ export const PROVIDER_CAPABILITIES = Object.freeze({
     maxDocumentSize: 32 * 1024 * 1024, // 32MB
     maxDocumentPages: 100,
   },
-  gemini: {
-    images: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
-    documents: ['application/pdf'], // Gemini 2.5는 PDF 직접 지원
-    maxImageSize: 20 * 1024 * 1024, // 20MB
-    maxDocumentSize: 50 * 1024 * 1024, // 50MB
-    maxDocumentPages: 1000,
-    maxImageCount: 3600,
-  },
-  claude: {
-    images: ['image/jpeg', 'image/png', 'image/webp'], // GIF 미지원
-    documents: ['application/pdf'],
-    maxImageSize: 10 * 1024 * 1024, // ~8.4 million pixels
-    maxDocumentSize: 32 * 1024 * 1024, // 32MB
-    maxDocumentPages: 100,
-    maxImageCount: 100,
-  },
 });

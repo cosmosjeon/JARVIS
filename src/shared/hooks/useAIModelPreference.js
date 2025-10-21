@@ -17,30 +17,6 @@ export const AI_MODEL_OPTIONS = [
     description: 'OpenAI의 빠른 모델',
     provider: 'openai',
   },
-  {
-    id: 'gemini-2.5-pro',
-    label: 'Gemini 2.5 Pro',
-    description: 'Google의 강력한 성능 모델',
-    provider: 'gemini',
-  },
-  {
-    id: 'gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash',
-    description: 'Google의 빠른 모델',
-    provider: 'gemini',
-  },
-  {
-    id: 'claude-sonnet-4-5',
-    label: 'Claude Sonnet 4.5',
-    description: 'Anthropic의 강력한 성능 모델',
-    provider: 'claude',
-  },
-  {
-    id: 'claude-haiku-4-5',
-    label: 'Claude Haiku 4.5',
-    description: 'Anthropic의 빠른 모델',
-    provider: 'claude',
-  },
 ];
 
 const MODEL_MAP = AI_MODEL_OPTIONS.reduce((acc, model) => {
