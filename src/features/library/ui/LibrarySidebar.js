@@ -459,7 +459,7 @@ const LibrarySidebar = ({
 
           <ScrollArea className="flex-1">
             <div className="space-y-2 px-2 py-3">
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-nowrap">
                 <Button
                   type="button"
                   variant="outline"
@@ -472,54 +472,16 @@ const LibrarySidebar = ({
                   </span>
                   <span className="text-xs text-muted-foreground">+</span>
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-xs font-medium shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
-                      disabled={!canCreateTree || isLoading}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <GitBranch className="h-3.5 w-3.5" />
-                        <span className="truncate">새 트리</span>
-                      </span>
-                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-48">
-                    {widgetActionsEnabled ? (
-                      <DropdownMenuItem
-                        onSelect={(event) => {
-                          event.preventDefault();
-                          onCreateTreeWidget?.();
-                        }}
-                        disabled={!canCreateTree || isLoading}
-                        className="flex items-center gap-2 text-xs"
-                      >
-                        <Monitor className="h-3.5 w-3.5" />
-                        <div className="flex flex-col">
-                          <span className="font-medium text-foreground">위젯으로 생성</span>
-                          <span className="text-[11px] text-muted-foreground">현재처럼 독립 위젯에서 시작</span>
-                        </div>
-                      </DropdownMenuItem>
-                    ) : null}
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        onCreateTreeInApp?.();
-                      }}
-                      disabled={!canCreateTree || isLoading}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">라이브러리에서 생성</span>
-                        <span className="text-[11px] text-muted-foreground">앱 중앙에서 바로 질문 시작</span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex w-full items-center gap-1.5 rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-xs font-medium shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
+                  onClick={onCreateTreeInApp}
+                  disabled={!canCreateTree || isLoading}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  <span className="truncate">새 트리</span>
+                </Button>
               </div>
 
               {folders.map((folder) => {

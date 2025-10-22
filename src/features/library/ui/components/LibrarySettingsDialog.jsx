@@ -123,8 +123,8 @@ const LibrarySettingsDialog = ({
   };
 
   const renderSidebar = () => (
-    <div className="w-72 border-r border-border bg-muted/30 p-6 flex-shrink-0">
-      <div className="space-y-2">
+    <div className="w-full md:w-72 border-b md:border-b-0 md:border-r border-border bg-muted/30 p-6 md:flex-shrink-0">
+      <div className="flex flex-row md:flex-col gap-2 md:gap-0 md:space-y-2 overflow-x-auto md:overflow-x-visible">
         {SETTINGS_SECTIONS.map((section) => {
           const Icon = section.icon;
           const isActive = activeSection === section.id;
@@ -134,9 +134,9 @@ const LibrarySettingsDialog = ({
               key={section.id}
               onClick={() => setActiveSection(section.id)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
-                isActive 
-                  ? "bg-accent text-accent-foreground shadow-sm" 
+                "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 md:flex-shrink-0 md:w-full",
+                isActive
+                  ? "bg-accent text-accent-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent/30"
               )}
             >
@@ -400,7 +400,7 @@ const LibrarySettingsDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[90vw] h-[85vh] p-0 flex flex-col gap-0">
+      <DialogContent className="max-w-5xl w-[90vw] md:w-[85vw] h-[90vh] md:h-[85vh] p-0 flex flex-col gap-0">
         <DialogHeader className="px-6 py-4 flex-shrink-0 space-y-0">
           <DialogTitle className="text-xl font-semibold flex items-center gap-2">
             <SettingsIcon className="h-5 w-5" />
@@ -408,7 +408,7 @@ const LibrarySettingsDialog = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-1 min-h-0 border-t border-border">
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 border-t border-border">
           {renderSidebar()}
           <div className="flex-1 p-6 overflow-y-auto">
             {renderMainContent()}
