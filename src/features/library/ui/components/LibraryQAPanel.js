@@ -2575,7 +2575,7 @@ const LibraryQAPanel = ({
           <img
             src="/logo.jpg"
             alt="Treedi Logo"
-            className="h-20 w-auto max-w-[250px] rounded-2xl object-contain"
+            className="h-32 w-auto max-w-[400px] rounded-2xl object-contain"
           />
           <h2 className="text-2xl font-bold tracking-tight" style={{ color: chatPanelStyles.textColor }}>
             첫 트리를 시작하세요
