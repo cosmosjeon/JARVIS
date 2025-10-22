@@ -2571,44 +2571,15 @@ const LibraryQAPanel = ({
       )}
 
       {isLibraryIntroActive && (
-        <div className="flex flex-col items-center justify-center gap-6 text-center max-w-md mx-auto px-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 backdrop-blur-sm">
-            <img
-              src="/logo.jpg"
-              alt="Treedi Logo"
-              className="h-12 w-12 rounded-xl object-contain"
-            />
-          </div>
-          <div className="flex flex-col gap-3">
-            <h2 className="text-2xl font-bold tracking-tight" style={{ color: chatPanelStyles.textColor }}>
-              첫 트리를 시작하세요
-            </h2>
-            <p className="text-base leading-relaxed" style={{ color: subtleTextColor }}>
-              궁금한 것을 질문하거나 탐구하고 싶은 주제를 입력해보세요
-            </p>
-          </div>
-          <div 
-            className="relative w-full rounded-xl border px-4 py-3 backdrop-blur-sm"
-            style={{
-              backgroundColor: isDarkTheme ? 'rgba(139, 92, 246, 0.12)' : 'rgba(139, 92, 246, 0.08)',
-              borderColor: isDarkTheme ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.2)',
-              zIndex: 1,
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 mt-0.5">
-                <Shield className="h-5 w-5 text-violet-600" strokeWidth={2} />
-              </div>
-              <div className="flex flex-col gap-1 text-left text-sm leading-relaxed" style={{ color: subtleTextColor }}>
-                <p className="font-medium" style={{ color: chatPanelStyles.textColor }}>
-                  각 대화는 독립된 문맥을 가집니다
-                </p>
-                <p className="text-xs">
-                  수많은 질문을 해도 문맥이 오염되지 않습니다
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className="flex flex-col items-center justify-center gap-4 text-center max-w-md mx-auto px-4">
+          <img
+            src="/logo.jpg"
+            alt="Treedi Logo"
+            className="h-20 w-auto max-w-[250px] rounded-2xl object-contain"
+          />
+          <h2 className="text-2xl font-bold tracking-tight" style={{ color: chatPanelStyles.textColor }}>
+            첫 트리를 시작하세요
+          </h2>
         </div>
       )}
 
