@@ -2573,7 +2573,11 @@ const LibraryQAPanel = ({
       {isLibraryIntroActive && (
         <div className="flex flex-col items-center justify-center gap-6 text-center max-w-md mx-auto px-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 backdrop-blur-sm">
-            <Network className="h-8 w-8 text-violet-600" strokeWidth={2} />
+            <img
+              src="/logo.jpg"
+              alt="Treedi Logo"
+              className="h-12 w-12 rounded-xl object-contain"
+            />
           </div>
           <div className="flex flex-col gap-3">
             <h2 className="text-2xl font-bold tracking-tight" style={{ color: chatPanelStyles.textColor }}>

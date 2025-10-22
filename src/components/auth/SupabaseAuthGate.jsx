@@ -79,9 +79,9 @@ const SupabaseAuthGate = ({ children, mode = 'widget' }) => {
             <CardHeader className="space-y-2 pb-4">
               <div className="flex items-center justify-center">
                 <img
-                  src="/logotree_page-0001 (1).jpg"
+                  src="/logo.jpg"
                   alt="Treedi Logo"
-                  className="h-16 w-auto max-w-[200px] rounded-2xl object-contain"
+                  className="h-24 w-auto max-w-[300px] rounded-2xl object-contain"
                 />
               </div>
               <div className="text-center">
