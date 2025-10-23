@@ -69,6 +69,46 @@ export const fetchTreesWithNodes = async (userId) => {
   return transformTreeRowsToLibraryData(treeRows, nodeRows || []);
 };
 
+export const fetchTreeSummaries = async (userId) => {
+  const supabase = ensureSupabase();
+
+  const { data, error } = await buildTreeQuery(supabase, userId);
+  if (error) {
+    throw error;
+  }
+
+  return Array.isArray(data) ? data : [];
+};
+
+export const fetchTreeWithNodesById = async ({ treeId, userId }) => {
+  if (!treeId) {
+    throw new Error('treeId is required');
+  }
+
+  const supabase = ensureSupabase();
+
+  const treeQuery = buildTreeQuery(supabase, userId)
+    .eq('id', treeId)
+    .maybeSingle();
+
+  const { data: treeRow, error: treeError } = await treeQuery;
+  if (treeError) {
+    throw treeError;
+  }
+
+  if (!treeRow) {
+    return null;
+  }
+
+  const { data: nodeRows, error: nodeError } = await buildNodeQuery(supabase, [treeId], userId);
+  if (nodeError) {
+    throw nodeError;
+  }
+
+  const [mapped] = transformTreeRowsToLibraryData([treeRow], nodeRows || []);
+  return mapped || null;
+};
+
 export const upsertTreeMetadata = async ({ treeId, title, userId }) => {
   const supabase = ensureSupabase();
   const now = Date.now();
@@ -178,6 +218,8 @@ export const moveTreeToFolder = async ({ treeId, folderId, userId }) => {
 
 export default {
   fetchTreesWithNodes,
+  fetchTreeSummaries,
+  fetchTreeWithNodesById,
   upsertTreeMetadata,
   deleteTree,
   deleteNodes,

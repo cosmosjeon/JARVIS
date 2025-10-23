@@ -15,7 +15,7 @@ import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
  */
 export const useTreeSelection = ({ existingTabIds = [], maxTabs = 10 }) => {
     const { user } = useSupabaseAuth();
-    const { loadTrees } = useTreeDataSource();
+    const { loadTreeSummaries } = useTreeDataSource();
     const [trees, setTrees] = useState([]);
     const [folders, setFolders] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -34,7 +34,7 @@ export const useTreeSelection = ({ existingTabIds = [], maxTabs = 10 }) => {
 
         try {
             const [fetchedTrees, fetchedFolders] = await Promise.all([
-                loadTrees(),
+                loadTreeSummaries(),
                 fetchFolders(user.id),
             ]);
 
@@ -47,7 +47,7 @@ export const useTreeSelection = ({ existingTabIds = [], maxTabs = 10 }) => {
         } finally {
             setLoading(false);
         }
-    }, [user?.id, loadTrees]);
+    }, [user?.id, loadTreeSummaries]);
 
     // 트리 선택 가능 여부 검증
     const canSelectTree = useCallback((treeId) => {
@@ -75,4 +75,3 @@ export const useTreeSelection = ({ existingTabIds = [], maxTabs = 10 }) => {
 };
 
 export default useTreeSelection;
-

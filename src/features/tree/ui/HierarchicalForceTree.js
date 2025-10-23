@@ -77,7 +77,8 @@ const COMPACT_TEXTAREA_MAX_HEIGHT = 560;
 const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const { user } = useSupabaseAuth();
   const {
-    loadTrees,
+    loadTreeSummaries,
+    loadTreeById,
     saveTreeMetadata,
     saveTreeNodes,
     removeTree,
@@ -270,7 +271,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
 
     const fetchTrees = async () => {
       try {
-        const trees = await loadTrees();
+        const trees = await loadTreeSummaries();
         setAvailableTrees(Array.isArray(trees) ? trees : []);
       } catch (error) {
         console.error('[Jarvis] Failed to load trees for selector', error);
@@ -279,7 +280,7 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
     };
 
     fetchTrees();
-  }, [user, loadTrees]);
+  }, [user, loadTreeSummaries]);
 
   // 키보드 탭(→ 다음 탭), Shift+Tab(← 이전 탭)으로 탭 전환 (Ref를 통해 안전 호출)
   useEffect(() => {
@@ -436,7 +437,8 @@ const HierarchicalForceTree = ({ onBootstrapCompactChange }) => {
   const { loadActiveTree, requestedTreeIdRef } = useTreeDataController({
     user,
     baseTreeData: treeData,
-    loadTrees,
+    loadTreeSummaries,
+    loadTreeById,
     loadTree,
     hydrateFromNodes,
     clearConversationStore,
