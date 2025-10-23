@@ -7,7 +7,7 @@ const THEME_OPTIONS = Object.freeze([
   { label: '다크', value: 'dark', icon: Moon },
 ]);
 
-export const useLibraryThemeController = ({ theme }) => {
+export const useLibraryThemeController = ({ theme, setTheme }) => {
   const { setLibraryThemePreference } = useSettings();
 
   // 현재 활성 테마 결정
@@ -22,9 +22,14 @@ export const useLibraryThemeController = ({ theme }) => {
     const nextIndex = (currentIndex + 1) % THEME_OPTIONS.length;
     const nextTheme = THEME_OPTIONS[nextIndex].value;
 
-    // 설정 업데이트 (내부적으로 ThemeProvider의 setTheme 호출)
+    if (typeof setTheme === 'function') {
+      setTheme(nextTheme);
+      setLibraryThemePreference(nextTheme, { syncTheme: false });
+      return;
+    }
+
     setLibraryThemePreference(nextTheme);
-  }, [active.value, setLibraryThemePreference]);
+  }, [active.value, setLibraryThemePreference, setTheme]);
 
   return useMemo(() => ({
     active,
