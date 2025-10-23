@@ -7,7 +7,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { CodeBlock, CodeBlockCopyButton } from './code-block';
 import 'katex/dist/katex.min.css';
-import hardenReactMarkdown from 'harden-react-markdown';
 
 
 /**
@@ -153,9 +152,6 @@ function parseIncompleteMarkdown(text) {
 
   return result;
 }
-
-// Create a hardened version of ReactMarkdown
-const HardenedMarkdown = hardenReactMarkdown(ReactMarkdown);
 
 const components = {
   ol: ({ node, children, className, ...props }) => (
@@ -337,9 +333,6 @@ export const Response = memo(({
   className,
   options,
   children,
-  allowedImagePrefixes,
-  allowedLinkPrefixes,
-  defaultOrigin,
   parseIncompleteMarkdown: shouldParseIncompleteMarkdown = true,
   ...props
 }) => {
@@ -353,16 +346,13 @@ export const Response = memo(({
     <div
       className={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}
       {...props}>
-      <HardenedMarkdown
-        allowedImagePrefixes={allowedImagePrefixes ?? ['*']}
-        allowedLinkPrefixes={allowedLinkPrefixes ?? ['*']}
+      <ReactMarkdown
         components={components}
-        defaultOrigin={defaultOrigin}
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, remarkMath]}
         {...options}>
         {parsedChildren}
-      </HardenedMarkdown>
+      </ReactMarkdown>
     </div>
   );
 }, areResponsePropsEqual);

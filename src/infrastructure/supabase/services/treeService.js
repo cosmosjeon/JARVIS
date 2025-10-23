@@ -6,6 +6,8 @@ import {
 
 import {
   fetchTreesWithNodes as repositoryFetchTreesWithNodes,
+  fetchTreeSummaries as repositoryFetchTreeSummaries,
+  fetchTreeWithNodesById as repositoryFetchTreeWithNodesById,
   upsertTreeMetadata as repositoryUpsertTreeMetadata,
   deleteTree as repositoryDeleteTree,
   deleteNodes as repositoryDeleteNodes,
@@ -187,6 +189,22 @@ export const transformTreeRowsToLibraryData = (trees, nodeRows) => {
 };
 
 export const fetchTreesWithNodes = (userId) => repositoryFetchTreesWithNodes(userId);
+
+export const fetchTreeSummaries = async (userId) => {
+  const summaries = await repositoryFetchTreeSummaries(userId);
+  return summaries.map((tree) => ({
+    id: tree.id,
+    title: typeof tree.title === 'string' && tree.title.trim() ? tree.title.trim() : '제목 없는 트리',
+    createdAt: normalizeTimestamp(tree.created_at),
+    updatedAt: normalizeTimestamp(tree.updated_at),
+    folderId: tree.folder_id || null,
+  }));
+};
+
+export const fetchTreeWithNodesById = async ({ treeId, userId }) => {
+  const tree = await repositoryFetchTreeWithNodesById({ treeId, userId });
+  return tree ? { ...tree } : null;
+};
 
 export const upsertTreeNodes = async ({ treeId, nodes, userId }) => {
   const supabase = ensureSupabase();

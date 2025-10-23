@@ -8,7 +8,8 @@ const getNormalizedId = (value) => (
 const useTreeDataController = ({
   user,
   baseTreeData,
-  loadTrees,
+  loadTreeSummaries,
+  loadTreeById,
   loadTree,
   hydrateFromNodes,
   clearConversationStore,
@@ -64,11 +65,12 @@ const useTreeDataController = ({
       return;
     }
 
+    const loadStart = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : null;
+
     try {
-      const trees = await loadTrees();
-      const targetTree = Array.isArray(trees)
-        ? trees.find((tree) => tree.id === resolvedTreeId)
-        : undefined;
+      const targetTree = await loadTreeById(resolvedTreeId);
 
       if (targetTree) {
         const rawNodes = Array.isArray(targetTree.treeData?.nodes)
@@ -112,12 +114,23 @@ const useTreeDataController = ({
     } catch (error) {
       setTreeSyncError(error);
     } finally {
+      if (loadStart !== null && typeof performance !== 'undefined' && typeof performance.now === 'function') {
+        const elapsed = performance.now() - loadStart;
+        if (process.env.NODE_ENV === 'development') {
+          // 개발 환경에서만 로딩 시간 로깅
+          // eslint-disable-next-line no-console
+          console.debug('[Jarvis] loadActiveTree', {
+            treeId: resolvedTreeId,
+            durationMs: Math.round(elapsed),
+          });
+        }
+      }
       requestedTreeIdRef.current = null;
       setInitializingTree(false);
     }
   }, [
     user,
-    loadTrees,
+    loadTreeById,
     hydrateFromNodes,
     loadTree,
     resetToEmptyTree,
@@ -151,7 +164,7 @@ const useTreeDataController = ({
       }
 
       try {
-        const existingTrees = await loadTrees();
+        const existingTrees = await loadTreeSummaries();
         const hasTrees = Array.isArray(existingTrees) && existingTrees.length > 0;
         const shouldCreateNewTree = sessionInfo?.fresh || !hasTrees;
 
@@ -208,7 +221,7 @@ const useTreeDataController = ({
     user,
     sessionInfo?.initialTreeId,
     sessionInfo?.fresh,
-    loadTrees,
+    loadTreeSummaries,
     readSessionTreeId,
     writeSessionTreeId,
     loadActiveTree,

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import {
-  fetchTreesWithNodes,
+  fetchTreeSummaries,
+  fetchTreeWithNodesById,
   upsertTreeMetadata,
   upsertTreeNodes,
   deleteTree,
@@ -10,21 +11,32 @@ import { useSupabaseAuth } from 'shared/hooks/useSupabaseAuth';
 /**
  * Supabase tree service wrappers.
  *
- * | Function            | Source export           | Responsibility                          |
- * | ------------------- | ----------------------- | --------------------------------------- |
- * | loadTrees           | fetchTreesWithNodes     | 사용자별 트리 목록 + 노드 데이터 로드          |
- * | saveTreeNodes       | upsertTreeNodes         | 노드 컬렉션을 Supabase에 일괄 저장            |
- * | saveTreeMetadata    | upsertTreeMetadata      | 트리 메타데이터(제목 등)를 사용자 ID와 함께 저장 |
+ * | Function              | Source export                | Responsibility                          |
+ * | --------------------- | ---------------------------- | --------------------------------------- |
+ * | loadTreeSummaries     | fetchTreeSummaries           | 사용자별 트리 메타데이터 목록 로드           |
+ * | loadTreeById          | fetchTreeWithNodesById       | 단일 트리 노드 데이터 로드                  |
+ * | saveTreeNodes         | upsertTreeNodes              | 노드 컬렉션을 Supabase에 일괄 저장            |
+ * | saveTreeMetadata      | upsertTreeMetadata           | 트리 메타데이터(제목 등)를 사용자 ID와 함께 저장 |
  */
 export const useTreeDataSource = (overrides = {}) => {
   const { user } = useSupabaseAuth();
   const userId = overrides.userId ?? user?.id ?? null;
 
-  const loadTrees = useCallback(async () => {
+  const loadTreeSummaries = useCallback(async () => {
     if (!userId) {
       return [];
     }
-    return fetchTreesWithNodes(userId);
+    return fetchTreeSummaries(userId);
+  }, [userId]);
+
+  const loadTreeById = useCallback(async (treeId) => {
+    if (!userId) {
+      return null;
+    }
+    if (!treeId) {
+      throw new Error('loadTreeById requires a treeId');
+    }
+    return fetchTreeWithNodesById({ treeId, userId });
   }, [userId]);
 
   const saveTreeMetadata = useCallback(async ({ treeId, title }) => {
@@ -62,11 +74,13 @@ export const useTreeDataSource = (overrides = {}) => {
 
   return useMemo(() => ({
     userId,
-    loadTrees,
+    loadTreeSummaries,
+    loadTreeById,
+    loadTrees: loadTreeSummaries,
     saveTreeMetadata,
     saveTreeNodes,
     removeTree,
-  }), [userId, loadTrees, saveTreeMetadata, saveTreeNodes, removeTree]);
+  }), [userId, loadTreeSummaries, loadTreeById, saveTreeMetadata, saveTreeNodes, removeTree]);
 };
 
 export default useTreeDataSource;

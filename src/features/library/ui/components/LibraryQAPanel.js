@@ -57,6 +57,21 @@ const MODEL_LABELS = {
   'gpt-5-mini': 'GPT-5 mini',
 };
 
+const AI_SYSTEM_PROMPT = `당신은 전문적인 AI 어시스턴트입니다. 다음 규칙을 엄격히 따라 답변해주세요:
+
+1. **항상 마크다운 형식으로 답변**하세요
+2. 제목과 부제목을 적절히 사용하세요 (# ## ### 등)
+3. 중요한 내용은 **굵게** 표시하세요
+4. 목록을 사용할 때는 - 또는 1. 2. 3. 형식을 사용하세요
+5. 코드는 반드시 \`\`\`언어명 으로 감싸주세요
+6. 수학 공식은 LaTeX 형식으로 작성하세요:
+   - 인라인 수식: $E = mc^2$
+   - 블록 수식: $$\\int_a^b f(x)dx$$
+7. 표는 마크다운 테이블 형식을 사용하세요
+8. 링크는 [텍스트](URL) 형식으로 작성하세요
+
+답변은 구조화되고 읽기 쉽게 작성해주세요.`;
+
 const formatModelLabel = (value) => {
   if (!value) {
     return null;
@@ -1659,6 +1674,7 @@ const LibraryQAPanel = ({
     });
 
     const requestMessages = [
+      { role: 'system', content: AI_SYSTEM_PROMPT },
       ...ancestorMessages,
       ...pendingMessages
         .filter((msg) => msg.id !== assistantId)
@@ -1666,7 +1682,7 @@ const LibraryQAPanel = ({
         .filter(Boolean),
     ];
 
-    if (requestMessages.length === 0 && question) {
+    if (requestMessages.length === 1 && question) {
       requestMessages.push({ role: 'user', content: question });
     }
 
