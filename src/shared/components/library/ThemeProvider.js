@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useMemo, useState } from 'react';
+import React, { createContext, useContext, useCallback, useMemo, useState, useRef } from 'react';
 
 const ThemeContext = createContext(null);
 
@@ -14,67 +14,65 @@ export const ThemeProvider = ({ children, defaultTheme = 'glass', mode = 'widget
   const themeKey = `jarvis.theme.${mode}`;
 
   // 초기 테마 로드
-  const getInitialTheme = () => {
+  const loadInitialTheme = () => {
     try {
-      const savedTheme = localStorage.getItem(themeKey);
-      return savedTheme || defaultTheme;
+      const saved = localStorage.getItem(themeKey);
+      return saved || defaultTheme;
     } catch {
       return defaultTheme;
     }
   };
 
-  const [theme, setThemeState] = useState(getInitialTheme);
+  const [theme, setThemeState] = useState(loadInitialTheme);
+  const isUpdatingRef = useRef(false); // 중복 호출 방지
 
-  // 테마 변경 함수: 상태와 DOM을 동시에 업데이트
+  // 테마 변경 함수 - 완전히 동기적으로 처리
   const setTheme = useCallback((newTheme) => {
-    if (!newTheme) {
+    // 중복 호출 방지
+    if (isUpdatingRef.current) {
       return;
     }
 
-    // 현재 DOM의 테마와 비교
-    const root = window.document.documentElement;
-    const allThemes = ['glass', 'light', 'dark'];
-    const currentTheme = allThemes.find(t => root.classList.contains(t));
-
-    if (currentTheme === newTheme) {
-      return; // 이미 적용된 테마면 아무것도 하지 않음
+    if (!newTheme || newTheme === theme) {
+      return;
     }
 
-    // DOM 업데이트: 기존 테마 제거 후 새 테마 추가 (한 번에 처리)
-    allThemes.forEach(t => {
-      if (t === newTheme) {
-        root.classList.add(t);
-      } else {
-        root.classList.remove(t);
-      }
-    });
+    isUpdatingRef.current = true;
 
-    // 상태 업데이트
-    setThemeState(newTheme);
-
-    // localStorage 저장
     try {
-      localStorage.setItem(themeKey, newTheme);
-    } catch {
-      // localStorage 접근 실패는 무시
-    }
-  }, [themeKey]);
+      const root = document.documentElement;
 
-  // 초기 테마 적용 (마운트 시 한 번만)
-  React.useEffect(() => {
-    const root = window.document.documentElement;
-    const initialTheme = getInitialTheme();
-
-    // 초기 테마 클래스 적용
-    const allThemes = ['glass', 'light', 'dark'];
-    allThemes.forEach(t => {
-      if (t === initialTheme) {
-        root.classList.add(t);
-      } else {
-        root.classList.remove(t);
+      // DOM 업데이트 - 한 번에 처리
+      if (!root.classList.contains(newTheme)) {
+        ['glass', 'light', 'dark'].forEach(t => root.classList.remove(t));
+        root.classList.add(newTheme);
       }
-    });
-  }, []); // 빈 배열: 마운트 시 한 번만 실행
+
+      // 상태 업데이트
+      setThemeState(newTheme);
+
+      // localStorage 저장
+      try {
+        localStorage.setItem(themeKey, newTheme);
+      } catch {
+        // 무시
+      }
+    } finally {
+      // 다음 프레임에서 플래그 해제
+      requestAnimationFrame(() => {
+        isUpdatingRef.current = false;
+      });
+    }
+  }, [theme, themeKey]);
+
+  // 초기 DOM 설정 (한 번만)
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const initial = loadInitialTheme();
+
+    ['glass', 'light', 'dark'].forEach(t => root.classList.remove(t));
+    root.classList.add(initial);
+  }, []);
 
   const value = useMemo(() => ({ theme, setTheme, mode }), [theme, setTheme, mode]);
 
