@@ -2573,7 +2573,7 @@ const LibraryQAPanel = ({
       {isLibraryIntroActive && (
         <div className="flex flex-col items-center justify-center gap-4 text-center max-w-md mx-auto px-4">
           <img
-            src="/logo.jpg"
+            src={isDarkTheme ? "/Frame 11.jpg" : "/logo.jpg"}
             alt="Treedi Logo"
             className="h-32 w-auto max-w-[400px] rounded-2xl object-contain"
           />

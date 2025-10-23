@@ -156,12 +156,16 @@ export const SettingsProvider = ({ children }) => {
     setInputModeState(sanitized.inputMode);
     setLibraryThemeState(sanitized.libraryTheme);
     setWidgetThemeState(sanitized.widgetTheme);
+
+    // ThemeProvider 업데이트 (현재 테마와 다를 때만)
     const mode = themeBridge?.mode;
-    if (mode === 'library') {
+    const currentTheme = themeBridge?.theme;
+    if (mode === 'library' && currentTheme !== sanitized.libraryTheme) {
       themeBridge?.setTheme?.(sanitized.libraryTheme);
-    } else if (mode === 'widget') {
+    } else if (mode === 'widget' && currentTheme !== sanitized.widgetTheme) {
       themeBridge?.setTheme?.(sanitized.widgetTheme);
     }
+
     settingsSnapshotRef.current = sanitized;
     return sanitized;
   }, [themeBridge]);
@@ -300,23 +304,41 @@ export const SettingsProvider = ({ children }) => {
 
   const setLibraryThemePreference = useCallback((next) => {
     const normalized = normalizeLibraryTheme(next, LIBRARY_THEME_FALLBACK);
+
+    // 현재 상태와 같으면 아무것도 하지 않음 (중복 방지)
+    if (libraryTheme === normalized) {
+      return;
+    }
+
     setLibraryThemeState(normalized);
-    if (themeBridge?.mode === 'library') {
+
+    // ThemeProvider 업데이트 (library 모드일 때만, 그리고 현재 테마와 다를 때만)
+    if (themeBridge?.mode === 'library' && themeBridge?.theme !== normalized) {
       themeBridge?.setTheme?.(normalized);
     }
+
     persistSettingsChange({ libraryTheme: normalized });
     loggerBridge.log?.('info', 'settings_library_theme_changed', { theme: normalized });
-  }, [loggerBridge, persistSettingsChange, themeBridge]);
+  }, [libraryTheme, loggerBridge, persistSettingsChange, themeBridge]);
 
   const setWidgetThemePreference = useCallback((next) => {
     const normalized = normalizeWidgetTheme(next, WIDGET_THEME_FALLBACK);
+
+    // 현재 상태와 같으면 아무것도 하지 않음 (중복 방지)
+    if (widgetTheme === normalized) {
+      return;
+    }
+
     setWidgetThemeState(normalized);
-    if (themeBridge?.mode === 'widget') {
+
+    // ThemeProvider 업데이트 (widget 모드일 때만, 그리고 현재 테마와 다를 때만)
+    if (themeBridge?.mode === 'widget' && themeBridge?.theme !== normalized) {
       themeBridge?.setTheme?.(normalized);
     }
+
     persistSettingsChange({ widgetTheme: normalized });
     loggerBridge.log?.('info', 'settings_widget_theme_changed', { theme: normalized });
-  }, [loggerBridge, persistSettingsChange, themeBridge]);
+  }, [widgetTheme, loggerBridge, persistSettingsChange, themeBridge]);
 
   useEffect(() => {
     if (!user) {

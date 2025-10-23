@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useCallback, useMemo, useState, useRef } from 'react';
 
 const ThemeContext = createContext(null);
 
@@ -13,43 +13,68 @@ export const useTheme = () => {
 export const ThemeProvider = ({ children, defaultTheme = 'glass', mode = 'widget' }) => {
   const themeKey = `jarvis.theme.${mode}`;
 
-  const [theme, setTheme] = useState(() => {
+  // 초기 테마 로드
+  const loadInitialTheme = () => {
     try {
-      const savedTheme = localStorage.getItem(themeKey);
-      return savedTheme || defaultTheme;
+      const saved = localStorage.getItem(themeKey);
+      return saved || defaultTheme;
     } catch {
       return defaultTheme;
     }
-  });
+  };
 
-  useEffect(() => {
-    const root = window.document.documentElement;
-    const applyTheme = (value) => {
-      root.classList.remove('glass', 'light', 'dark');
-      root.classList.add(value);
-    };
+  const [theme, setThemeState] = useState(loadInitialTheme);
+  const isUpdatingRef = useRef(false); // 중복 호출 방지
 
-    applyTheme(theme);
+  // 테마 변경 함수 - 완전히 동기적으로 처리
+  const setTheme = useCallback((newTheme) => {
+    // 중복 호출 방지
+    if (isUpdatingRef.current) {
+      return;
+    }
+
+    if (!newTheme || newTheme === theme) {
+      return;
+    }
+
+    isUpdatingRef.current = true;
 
     try {
-      localStorage.setItem(themeKey, theme);
-    } catch {
-      // localStorage 접근 실패는 무시
+      const root = document.documentElement;
+
+      // DOM 업데이트 - 한 번에 처리
+      if (!root.classList.contains(newTheme)) {
+        ['glass', 'light', 'dark'].forEach(t => root.classList.remove(t));
+        root.classList.add(newTheme);
+      }
+
+      // 상태 업데이트
+      setThemeState(newTheme);
+
+      // localStorage 저장
+      try {
+        localStorage.setItem(themeKey, newTheme);
+      } catch {
+        // 무시
+      }
+    } finally {
+      // 다음 프레임에서 플래그 해제
+      requestAnimationFrame(() => {
+        isUpdatingRef.current = false;
+      });
     }
   }, [theme, themeKey]);
 
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === themeKey && event.newValue && event.newValue !== theme) {
-        setTheme(event.newValue);
-      }
-    };
+  // 초기 DOM 설정 (한 번만)
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const initial = loadInitialTheme();
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [theme, themeKey]);
+    ['glass', 'light', 'dark'].forEach(t => root.classList.remove(t));
+    root.classList.add(initial);
+  }, []);
 
-  const value = useMemo(() => ({ theme, setTheme, mode }), [theme, mode]);
+  const value = useMemo(() => ({ theme, setTheme, mode }), [theme, setTheme, mode]);
 
   return (
     <ThemeContext.Provider value={value}>
