@@ -436,24 +436,13 @@ const LibrarySidebar = ({
         ) : (
           <>
             <div className={`flex items-center gap-2 border-b border-border px-3 ${isElectron ? 'pt-8 pb-4' : 'py-4'}`}>
-              {voranBoxEnabled ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1 min-w-0 justify-between rounded-lg border border-border/70 bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-card/90 hover:shadow-md"
-                  onClick={onManageVoranBox}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Box className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">BOX</span>
-                  </span>
-                  <span className="text-[10px] text-muted-foreground flex-shrink-0">관리</span>
-                </Button>
-              ) : (
-                <div className="flex-1 min-w-0 truncate text-xs font-medium text-muted-foreground/80">
-                  라이브러리
-                </div>
-              )}
+              <div className="flex-1 min-w-0 flex items-center justify-center max-h-8">
+                <img 
+                  src="/logotree_page-0001.jpg" 
+                  alt="Logo" 
+                  className="h-16 w-auto object-contain ml-2"
+                />
+              </div>
               {renderToggleButton(false, 'ml-auto flex-shrink-0')}
             </div>
 
@@ -463,14 +452,11 @@ const LibrarySidebar = ({
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-left text-xs text-foreground shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-card px-1.5 py-1.5 text-xs text-foreground shadow-sm transition hover:border-border hover:bg-accent/30 sm:flex-1"
                   onClick={onCreateFolder}
                 >
-                  <span className="flex items-center gap-1.5">
-                    <FolderIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">새 폴더</span>
-                  </span>
-                  <span className="text-xs text-muted-foreground">+</span>
+                  <FolderIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="truncate">새 폴더</span>
                 </Button>
                 <Button
                   type="button"
