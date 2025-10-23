@@ -302,18 +302,22 @@ export const SettingsProvider = ({ children }) => {
     loggerBridge.log?.('info', 'settings_input_mode_changed', { mode: normalized });
   }, [loggerBridge, persistSettingsChange]);
 
-  const setLibraryThemePreference = useCallback((next) => {
+  const setLibraryThemePreference = useCallback((next, options = {}) => {
     const normalized = normalizeLibraryTheme(next, LIBRARY_THEME_FALLBACK);
+    const shouldSyncTheme = options?.syncTheme !== false;
 
     // 현재 상태와 같으면 아무것도 하지 않음 (중복 방지)
     if (libraryTheme === normalized) {
+      if (shouldSyncTheme && themeBridge?.mode === 'library' && themeBridge?.theme !== normalized) {
+        themeBridge?.setTheme?.(normalized);
+      }
       return;
     }
 
     setLibraryThemeState(normalized);
 
     // ThemeProvider 업데이트 (library 모드일 때만, 그리고 현재 테마와 다를 때만)
-    if (themeBridge?.mode === 'library' && themeBridge?.theme !== normalized) {
+    if (shouldSyncTheme && themeBridge?.mode === 'library' && themeBridge?.theme !== normalized) {
       themeBridge?.setTheme?.(normalized);
     }
 

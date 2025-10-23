@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useCallback, useMemo, useState, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 const ThemeContext = createContext(null);
 
@@ -10,6 +17,14 @@ export const useTheme = () => {
   return context;
 };
 
+const AVAILABLE_THEMES = ['glass', 'light', 'dark'];
+const useIsomorphicLayoutEffect = typeof window !== 'undefined'
+  ? React.useLayoutEffect
+  : React.useEffect;
+const normalizeTheme = (value, fallback) => (
+  AVAILABLE_THEMES.includes(value) ? value : fallback
+);
+
 export const ThemeProvider = ({ children, defaultTheme = 'glass', mode = 'widget' }) => {
   const themeKey = `jarvis.theme.${mode}`;
 
@@ -17,62 +32,55 @@ export const ThemeProvider = ({ children, defaultTheme = 'glass', mode = 'widget
   const loadInitialTheme = () => {
     try {
       const saved = localStorage.getItem(themeKey);
-      return saved || defaultTheme;
+      return normalizeTheme(saved, defaultTheme);
     } catch {
-      return defaultTheme;
+      return normalizeTheme(null, defaultTheme);
     }
   };
 
   const [theme, setThemeState] = useState(loadInitialTheme);
-  const isUpdatingRef = useRef(false); // 중복 호출 방지
+  const appliedThemeRef = useRef(null);
+
+  const applyThemeToRoot = useCallback((nextTheme) => {
+    if (typeof document === 'undefined') {
+      appliedThemeRef.current = nextTheme;
+      return;
+    }
+
+    const root = document.documentElement;
+    if (appliedThemeRef.current === nextTheme && root.classList.contains(nextTheme)) {
+      return;
+    }
+
+    AVAILABLE_THEMES.forEach((className) => {
+      if (className !== nextTheme) {
+        root.classList.remove(className);
+      }
+    });
+    root.classList.add(nextTheme);
+    appliedThemeRef.current = nextTheme;
+  }, []);
 
   // 테마 변경 함수 - 완전히 동기적으로 처리
   const setTheme = useCallback((newTheme) => {
-    // 중복 호출 방지
-    if (isUpdatingRef.current) {
+    const normalized = normalizeTheme(newTheme, defaultTheme);
+    if (!normalized || normalized === theme) {
       return;
     }
 
-    if (!newTheme || newTheme === theme) {
-      return;
-    }
+    setThemeState(normalized);
+  }, [defaultTheme, theme]);
 
-    isUpdatingRef.current = true;
-
+  // DOM 및 저장소 동기화
+  useIsomorphicLayoutEffect(() => {
+    const normalized = normalizeTheme(theme, defaultTheme);
+    applyThemeToRoot(normalized);
     try {
-      const root = document.documentElement;
-
-      // DOM 업데이트 - 한 번에 처리
-      if (!root.classList.contains(newTheme)) {
-        ['glass', 'light', 'dark'].forEach(t => root.classList.remove(t));
-        root.classList.add(newTheme);
-      }
-
-      // 상태 업데이트
-      setThemeState(newTheme);
-
-      // localStorage 저장
-      try {
-        localStorage.setItem(themeKey, newTheme);
-      } catch {
-        // 무시
-      }
-    } finally {
-      // 다음 프레임에서 플래그 해제
-      requestAnimationFrame(() => {
-        isUpdatingRef.current = false;
-      });
+      localStorage.setItem(themeKey, normalized);
+    } catch {
+      // 저장 실패는 무시
     }
-  }, [theme, themeKey]);
-
-  // 초기 DOM 설정 (한 번만)
-  React.useEffect(() => {
-    const root = document.documentElement;
-    const initial = loadInitialTheme();
-
-    ['glass', 'light', 'dark'].forEach(t => root.classList.remove(t));
-    root.classList.add(initial);
-  }, []);
+  }, [applyThemeToRoot, defaultTheme, theme, themeKey]);
 
   const value = useMemo(() => ({ theme, setTheme, mode }), [theme, setTheme, mode]);
 
