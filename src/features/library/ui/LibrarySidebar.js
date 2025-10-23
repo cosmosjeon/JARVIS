@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { ScrollArea } from 'shared/ui/scroll-area';
 import { Button } from 'shared/ui/button';
 import { Badge } from 'shared/ui/badge';
 import { cn } from 'shared/utils';
 import { getRuntime, constants as runtimeConstants } from 'shared/utils/platform';
+import { useTheme } from 'shared/components/library/ThemeProvider';
 import ContextMenu from 'shared/ui/ContextMenu';
 import FolderSelectModal from 'shared/ui/FolderSelectModal';
 import {
@@ -77,6 +78,9 @@ const LibrarySidebar = ({
   onOpenSettings,
   isElectron = true,
 }) => {
+  const { theme: currentTheme } = useTheme();
+  const isDarkMode = currentTheme === 'dark';
+
   const folderTreeMap = useMemo(() => {
     return folders.reduce((acc, folder) => {
       acc.set(
@@ -438,9 +442,9 @@ const LibrarySidebar = ({
             <div className={`flex items-center gap-2 border-b border-border px-3 ${isElectron ? 'pt-8 pb-4' : 'py-4'}`}>
               <div className="flex-1 min-w-0 flex items-center justify-center max-h-8">
                 <img 
-                  src="/logotree_page-0001.jpg" 
+                  src={isDarkMode ? "/Frame 8.jpg" : "/Frame 9.jpg"} 
                   alt="Logo" 
-                  className="h-16 w-auto object-contain ml-2"
+                  className="h-8 w-auto object-contain ml-2"
                 />
               </div>
               {renderToggleButton(false, 'ml-auto flex-shrink-0')}
